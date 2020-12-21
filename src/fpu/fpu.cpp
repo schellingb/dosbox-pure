@@ -631,3 +631,12 @@ void FPU_Init(Section*) {
 }
 
 #endif
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_FPU(DBPArchive& ar)
+{
+	#if C_FPU
+	ar.Serialize(fpu);
+	#endif
+}

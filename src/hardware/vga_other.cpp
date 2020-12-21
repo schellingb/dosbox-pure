@@ -814,15 +814,19 @@ void VGA_SetupOther(void) {
 		extern Bit8u int10_font_14[256 * 14];
 		for (i=0;i<256;i++)	memcpy(&vga.draw.font[i*32],&int10_font_14[i*14],14);
 		vga.draw.font_tables[0]=vga.draw.font_tables[1]=vga.draw.font;
+#ifdef C_DBP_ENABLE_MAPPER
 		MAPPER_AddHandler(CycleHercPal,MK_f11,0,"hercpal","Herc Pal");
+#endif
 	}
 	if (machine==MCH_CGA) {
 		IO_RegisterWriteHandler(0x3d8,write_cga,IO_MB);
 		IO_RegisterWriteHandler(0x3d9,write_cga,IO_MB);
+#ifdef C_DBP_ENABLE_MAPPER
 		MAPPER_AddHandler(IncreaseHue,MK_f11,MMOD2,"inchue","Inc Hue");
 		MAPPER_AddHandler(DecreaseHue,MK_f11,0,"dechue","Dec Hue");
 		MAPPER_AddHandler(CGAModel,MK_f11,MMOD1|MMOD2,"cgamodel","CGA Model");
 		MAPPER_AddHandler(Composite,MK_f12,0,"cgacomp","CGA Comp");
+#endif
 	}
 	if (machine==MCH_TANDY) {
 		write_tandy( 0x3df, 0x0, 0 );
@@ -864,4 +868,23 @@ void VGA_SetupOther(void) {
 		}
 	}
 
+}
+
+void DBP_CGA_SetModelAndComposite(bool new_model, Bitu new_comp_mode) {
+	if (new_cga != new_model) {
+		new_cga = new_model;
+		update_cga16_color();
+	}
+	if (cga_comp != new_comp_mode) {
+		cga_comp = new_comp_mode;
+		if (vga.tandy.mode_control & 0x2)
+			write_cga(0x3d8,vga.tandy.mode_control,1);
+	}
+}
+
+void DBP_Hercules_SetPalette(Bit8u pal) {
+	herc_pal = pal;
+	if (herc_pal>2) herc_pal=0;
+	Herc_Palette();
+	VGA_DAC_CombineColor(1,7);
 }

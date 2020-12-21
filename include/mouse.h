@@ -35,7 +35,11 @@ void Mouse_CursorSet(float x,float y);
 void Mouse_ButtonPressed(Bit8u button);
 void Mouse_ButtonReleased(Bit8u button);
 
+#ifdef C_DBP_ENABLE_AUTOLOCK
 void Mouse_AutoLock(bool enable);
+#else
+#define Mouse_AutoLock(dummy)
+#endif
 void Mouse_BeforeNewVideoMode(bool setmode);
 void Mouse_AfterNewVideoMode(bool setmode);
 

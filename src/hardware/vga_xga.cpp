@@ -1317,3 +1317,10 @@ void VGA_SetupXGA(void) {
 	IO_RegisterWriteHandler(0xe2ea,&XGA_Write,IO_MB | IO_MW | IO_MD);
 	IO_RegisterReadHandler(0xe2ea,&XGA_Read,IO_MB | IO_MW | IO_MD);
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_VGA_XGA(DBPArchive& ar)
+{
+	ar.Serialize(xga);
+}

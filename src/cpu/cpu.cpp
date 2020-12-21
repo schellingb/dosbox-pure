@@ -2083,6 +2083,7 @@ void CPU_ENTER(bool use32,Bitu bytes,Bitu level) {
 	reg_esp=(reg_esp&cpu.stack.notmask)|((sp_index)&cpu.stack.mask);
 }
 
+#ifdef C_DBP_ENABLE_MAPPER
 static void CPU_CycleIncrease(bool pressed) {
 	if (!pressed) return;
 	if (CPU_CycleAutoAdjust) {
@@ -2143,6 +2144,7 @@ void CPU_Enable_SkipAutoAdjust(void) {
 void CPU_Disable_SkipAutoAdjust(void) {
 	CPU_SkipCycleAutoAdjust=false;
 }
+#endif
 
 
 extern Bit32s ticksDone;
@@ -2212,8 +2214,10 @@ public:
 #elif (C_DYNREC)
 		CPU_Core_Dynrec_Init();
 #endif
+#ifdef C_DBP_ENABLE_MAPPER
 		MAPPER_AddHandler(CPU_CycleDecrease,MK_f11,MMOD1,"cycledown","Dec Cycles");
 		MAPPER_AddHandler(CPU_CycleIncrease,MK_f12,MMOD1,"cycleup"  ,"Inc Cycles");
+#endif
 		Change_Config(configuration);	
 		CPU_JMP(false,0,0,0);					//Setup the first cpu core
 	}
@@ -2387,7 +2391,11 @@ public:
 		else GFX_SetTitle(CPU_CycleMax,-1,false);
 		return true;
 	}
-	~CPU(){ /* empty */};
+	~CPU(){
+		//DBP: Added cleanup on core restart
+		bool DBP_IsShuttingDown();
+		if (DBP_IsShuttingDown()) inited = false;
+	};
 };
 	
 static CPU * test;
@@ -2407,3 +2415,98 @@ void CPU_Init(Section* sec) {
 }
 //initialize static members
 bool CPU::inited=false;
+
+//This function is safer than setting new cycle settings through config (can cause FPU overflow crashes)
+void DBP_CPU_ModifyCycles(const char* val)
+{
+	if (val[0] == 'm') { //max
+		CPU_CycleAutoAdjust = true;
+		CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT));
+	} else if (val[0] == 'a') { // auto
+		if (cpu.pmode) {
+			CPU_AutoDetermineMode |= (CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT);
+			CPU_OldCycleMax = 3000;
+			CPU_CycleAutoAdjust = true;
+		} else {
+			CPU_AutoDetermineMode |= CPU_AUTODETERMINE_CYCLES;
+			CPU_CycleMax = 3000;
+			CPU_CycleAutoAdjust = false;
+		}
+	} else {
+		CPU_CycleAutoAdjust = false;
+		CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT));
+		CPU_CycleMax = atoi(val);
+		if (CPU_CycleMax < CPU_CYCLES_LOWER_LIMIT) CPU_CycleMax = CPU_CYCLES_LOWER_LIMIT;
+	}
+	CPU_CycleLeft = CPU_Cycles = 0;
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_CPU(DBPArchive& ar)
+{
+	// The variable machine is serialized in DBPSerialize_All and validated to be unchanged during load
+	ar
+		.Serialize(cpu_regs)
+		.Serialize(cpu.cpl)
+		.Serialize(cpu.mpl)
+		.Serialize(cpu.cr0)
+		.Serialize(cpu.pmode)
+		.Serialize(cpu.gdt)
+		.Serialize(cpu.idt)
+		.Serialize(cpu.stack)
+		.Serialize(cpu.code)
+		.Serialize(cpu.hlt.cs)
+		.Serialize(cpu.hlt.eip)
+		.Serialize(cpu.exception)
+		.Serialize(cpu.direction)
+		.Serialize(cpu.trap_skip)
+		.SerializeArray(cpu.drx)
+		.SerializeArray(cpu.trx)
+		.Serialize(Segs)
+		.Serialize(CPU_Cycles)
+		.Serialize(CPU_CycleLeft)
+		.Serialize(CPU_IODelayRemoved)
+		.Serialize(cpu_tss)
+		.Serialize(lastint)
+		.Serialize(lflags);
+
+	typedef CPU_Decoder* CPU_DecoderPtr;
+	DBP_SERIALIZE_STATIC_POINTER_LIST(CPU_DecoderPtr, CPU, 
+		&CPU_Core_Full_Run,
+		&CPU_Core_Normal_Run,
+		&CPU_Core_Prefetch_Run,
+		&CPU_Core_Simple_Run,
+		&CPU_Core_Normal_Trap_Run,
+		&CPU_Core_Prefetch_Trap_Run,
+		&CPU_Core_Simple_Trap_Run,
+		&HLT_Decode,
+		&CPU_Core_Normal_Trap_Run);
+	#if (C_DYNAMIC_X86)
+	DBP_SERIALIZE_STATIC_POINTER_LIST(CPU_DecoderPtr, CPU_Dyn, CPU_Core_Dyn_X86_Run, CPU_Core_Dyn_X86_Trap_Run);
+	#elif (C_DYNREC)
+	DBP_SERIALIZE_STATIC_POINTER_LIST(CPU_DecoderPtr, CPU_Dyn, CPU_Core_Dynrec_Run, CPU_Core_Dynrec_Trap_Run);
+	#else
+	DBP_SERIALIZE_STATIC_POINTER_LIST(CPU_DecoderPtr, CPU_Dyn, NULL);
+	#endif
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(CPU_DecoderPtr, IO);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(CPU_DecoderPtr, Paging);
+	ar.SerializePointers((void**)&cpudecoder, 1, false, 4,
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, CPU),
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, CPU_Dyn),
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, IO),
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, Paging));
+	ar.SerializePointers((void**)&cpu.hlt.old_decoder, 1, false, 4,
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, CPU),
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, CPU_Dyn),
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, IO),
+		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, Paging));
+
+	#if (C_DYNAMIC_X86)
+	void DBPSerialize_CPU_Core_Dyn_X86(DBPArchive& ar);
+	DBPSerialize_CPU_Core_Dyn_X86(ar);
+	#elif (C_DYNREC)
+	void DBPSerialize_CPU_Core_Dynrec(DBPArchive& ar);
+	DBPSerialize_CPU_Core_Dynrec(ar);
+	#endif
+}

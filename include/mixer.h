@@ -97,6 +97,7 @@ public:
 	const char * name;
 	bool interpolate;
 	bool enabled;
+	bool ever_enabled; //DBP: added for serialization
 	bool last_samples_were_stereo;
 	bool last_samples_were_silence;
 	MixerChannel * next;

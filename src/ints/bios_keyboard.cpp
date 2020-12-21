@@ -25,7 +25,12 @@
 #include "regs.h"
 #include "inout.h"
 #include "dos_inc.h"
+#ifdef C_DBP_USE_SDL
 #include "SDL.h"
+#else
+#define SDL_VERSION_ATLEAST(...) 0
+#define CAN_USE_LOCK 1
+#endif
 
 /* SDL by default treats numlock and scrolllock different from all other keys.
  * In recent versions this can disabled by a environment variable which we set in sdlmain.cpp
@@ -591,8 +596,13 @@ static Bitu INT16_Handler(void) {
 }
 
 //Keyboard initialisation. src/gui/sdlmain.cpp
+#ifdef C_DBP_USE_SDL
 extern bool startup_state_numlock;
 extern bool startup_state_capslock;
+#else
+static bool startup_state_numlock;
+static bool startup_state_capslock;
+#endif
 
 static void InitBiosSegment(void) {
 	/* Setup the variables for keyboard in the bios data segment */

@@ -23,13 +23,23 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#ifdef C_DBP_USE_SDL
 #include <unistd.h>
+#endif
 
 #include "dosbox.h"
+#ifdef C_DBP_USE_SDL
 #include "SDL.h"
+#endif
 #include "support.h"
 #include "cdrom.h"
 
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+#include "dos_system.h"
+#include "dos_inc.h"
+#endif
+
+#ifdef C_DBP_USE_SDL
 CDROM_Interface_SDL::CDROM_Interface_SDL(void) {
 	driveID		= 0;
 	oldLeadOut	= 0;
@@ -142,6 +152,7 @@ bool CDROM_Interface_SDL::LoadUnloadMedia(bool unload) {
 	bool success = (SDL_CDEject(cd)==0);
 	return success;
 }
+#endif /* C_DBP_USE_SDL */
 
 int CDROM_GetMountType(char* path, int forceCD) {
 // 0 - physical CDROM
@@ -150,6 +161,7 @@ int CDROM_GetMountType(char* path, int forceCD) {
 	// 1. Smells like a real cdrom 
 	// if ((strlen(path)<=3) && (path[2]=='\\') && (strchr(path,'\\')==strrchr(path,'\\')) && 	(GetDriveType(path)==DRIVE_CDROM)) return 0;
 
+#ifdef C_DBP_USE_SDL
 	const char* cdName;
 	char buffer[512];
 	strcpy(buffer,path);
@@ -169,7 +181,17 @@ int CDROM_GetMountType(char* path, int forceCD) {
 		cdName = SDL_CDName(i);
 		if (strcmp(buffer,cdName)==0) return 0;
 	};
-	
+#endif /* C_DBP_USE_SDL */
+
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+	if (path[0] == '$')
+	{
+		DOS_Drive* drive = Drives[path[1] - 'A'];
+		FileStat_Block block;
+		return (drive->FileStat(path+4, &block) && block.size ? 1 : -1);
+	}
+#endif /* C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE */
+
 	// Detect ISO
 	struct stat file_stat;
 	if ((stat(path, &file_stat) == 0) && (file_stat.st_mode & S_IFREG)) return 1; 

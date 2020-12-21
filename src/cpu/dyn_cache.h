@@ -16,6 +16,20 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+#ifdef HAVE_LIBNX
+#include "../../../switch/mman.h"
+#endif
+
+#ifdef VITA
+#include <psp2/kernel/sysmem.h>
+static int sceBlock;
+/* Allocation size must be a power of 2.
+   Right now 16 MiB. It must be more than
+   CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1
+   +PAGESIZE_TEMP which is currently 8.1MiB.  */
+int _newlib_vm_size_user = 0x1000000;
+extern "C" int getVMBlock();
+#endif
 
 class CodePageHandlerDynRec;	// forward
 
@@ -86,6 +100,11 @@ class CodePageHandlerDynRec : public PageHandler {
 public:
 	CodePageHandlerDynRec() {
 		invalidation_map=NULL;
+	}
+	//DBP: memory cleanup
+	~CodePageHandlerDynRec() {
+		if (invalidation_map!=NULL)
+			free(invalidation_map);
 	}
 
 	void SetupAt(Bitu _phys_page,PageHandler * _old_pagehandler) {
@@ -553,25 +572,49 @@ static void cache_closeblock(void) {
 
 // place an 8bit value into the cache
 static INLINE void cache_addb(Bit8u val) {
+#ifdef HAVE_LIBNX
+	Bit8u* rwPos = (Bit8u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	*rwPos=val;
+	cache.pos++;
+#else
 	*cache.pos++=val;
+#endif
 }
 
 // place a 16bit value into the cache
 static INLINE void cache_addw(Bit16u val) {
+#ifdef HAVE_LIBNX
+	Bit16u* rwPos = (Bit16u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	*rwPos=val;
+	cache.pos+=2;
+#else
 	*(Bit16u*)cache.pos=val;
 	cache.pos+=2;
+#endif
 }
 
 // place a 32bit value into the cache
 static INLINE void cache_addd(Bit32u val) {
+#ifdef HAVE_LIBNX
+	Bit32u* rwPos = (Bit32u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	*rwPos=val;
+	cache.pos+=4;
+#else
 	*(Bit32u*)cache.pos=val;
 	cache.pos+=4;
+#endif
 }
 
 // place a 64bit value into the cache
 static INLINE void cache_addq(Bit64u val) {
+#ifdef HAVE_LIBNX
+	Bit64u* rwPos = (Bit64u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	*rwPos=val;
+	cache.pos+=8;
+#else
 	*(Bit64u*)cache.pos=val;
 	cache.pos+=8;
+#endif
 }
 
 
@@ -614,6 +657,16 @@ static void cache_init(bool enable) {
 				MEM_COMMIT,PAGE_EXECUTE_READWRITE);
 			if (!cache_code_start_ptr)
 				cache_code_start_ptr=(Bit8u*)malloc(CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
+#elif defined (HAVE_LIBNX)
+			cache_code_start_ptr=(Bit8u*)mmap(NULL, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP, 0, 0, 0, 0);
+#elif defined (VITA)
+			sceBlock = getVMBlock();
+			if (sceBlock >= 0) {
+				int ret = sceKernelGetMemBlockBase(sceBlock, (void **)&cache_code_start_ptr);
+				if(ret < 0) cache_code_start_ptr = NULL;
+				ret = sceKernelOpenVMDomain();
+				if (ret < 0) cache_code_start_ptr = NULL;
+			}
 #else
 			cache_code_start_ptr=(Bit8u*)malloc(CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #endif
@@ -666,26 +719,69 @@ static void cache_init(bool enable) {
 }
 
 static void cache_close(void) {
-/*	for (;;) {
-		if (cache.used_pages) {
-			CodePageHandler * cpage=cache.used_pages;
-			CodePageHandler * npage=cache.used_pages->next;
-			cpage->ClearRelease();
-			delete cpage;
-			cache.used_pages=npage;
-		} else break;
+	//DBP: Memory cleanup
+	for (CodePageHandlerDynRec * cpage=cache.used_pages, * npage; cpage; cpage = npage) {
+		npage = cpage->next;
+		cpage->ClearRelease(); // move it into free_pages
 	}
+	for (CodePageHandlerDynRec * cpage=cache.free_pages, * npage; cpage; cpage = npage) {
+		npage = cpage->next;
+		delete cpage;
+	}
+	cache.free_pages=0;
 	if (cache_blocks != NULL) {
 		free(cache_blocks);
 		cache_blocks = NULL;
 	}
 	if (cache_code_start_ptr != NULL) {
-		### care: under windows VirtualFree() has to be used if
-		###       VirtualAlloc was used for memory allocation
+#if defined (WIN32)
+		if (!VirtualFree(cache_code_start_ptr, 0, MEM_RELEASE))
+			free(cache_code_start_ptr);
+#elif defined (HAVE_LIBNX)
+		munmap(cache_code_start_ptr, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
+#elif defined (VITA)
+		sceKernelFreeMemBlock(sceBlock)
+		sceBlock = 0;
+#else
 		free(cache_code_start_ptr);
+#endif
 		cache_code_start_ptr = NULL;
 	}
 	cache_code = NULL;
 	cache_code_link_blocks = NULL;
-	cache_initialized = false; */
+	cache_initialized = false;
+}
+
+static void DBPSerialize_cache_reset(void) {
+	if (cache_initialized) {
+		for (CodePageHandlerDynRec * cpage=cache.used_pages, * npage; cpage; cpage = npage) {
+			npage = cpage->next;
+			cpage->ClearRelease(); // move it into free_pages
+		}
+
+		DBP_ASSERT(cache_blocks);
+		memset(cache_blocks,0,sizeof(CacheBlockDynRec)*CACHE_BLOCKS);
+		cache.block.free=&cache_blocks[0];
+		for (Bits i=0;i<CACHE_BLOCKS-1;i++) {
+			cache_blocks[i].link[0].to=(CacheBlockDynRec *)1;
+			cache_blocks[i].link[1].to=(CacheBlockDynRec *)1;
+			cache_blocks[i].cache.next=&cache_blocks[i+1];
+		}
+
+		DBP_ASSERT(cache_code_start_ptr);
+		CacheBlockDynRec * block=cache_getblock();
+		cache.block.first=block;
+		cache.block.active=block;
+		block->cache.start=&cache_code[0];
+		block->cache.size=CACHE_TOTAL;
+		block->cache.next=0;
+
+		/* Setup the default blocks for block linkage returns */
+		cache.pos=&cache_code_link_blocks[0];
+		link_blocks[0].cache.start=cache.pos;
+		dyn_return(BR_Link1,false);
+		cache.pos=&cache_code_link_blocks[32];
+		link_blocks[1].cache.start=cache.pos;
+		dyn_return(BR_Link2,false);
+	}
 }

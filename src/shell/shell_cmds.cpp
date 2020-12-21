@@ -818,12 +818,13 @@ void DOS_Shell::CMD_COPY(char * args) {
 							static Bit8u buffer[0x8000]; // static, otherwise stack overflow possible.
 							bool	failed = false;
 							Bit16u	toread = 0x8000;
+							//DBP: Fixed wrong behavior here
 							do {
-								failed |= DOS_ReadFile(sourceHandle,buffer,&toread);
-								failed |= DOS_WriteFile(targetHandle,buffer,&toread);
-							} while (toread==0x8000);
-							failed |= DOS_CloseFile(sourceHandle);
-							failed |= DOS_CloseFile(targetHandle);
+								failed |= !DOS_ReadFile(sourceHandle,buffer,&toread);
+								failed |= !DOS_WriteFile(targetHandle,buffer,&toread);
+							} while (toread==0x8000 && !failed);
+							DOS_CloseFile(sourceHandle);
+							DOS_CloseFile(targetHandle);
 							WriteOut(" %s\n",name);
 							if(!source.concat && !special) count++; //Only count concat files once
 						} else {
@@ -1166,56 +1167,51 @@ void DOS_Shell::CMD_SUBST (char * args) {
 	localDrive* ldp=0;
 	char mountstring[DOS_PATHLENGTH+CROSS_LEN+20];
 	char temp_str[2] = { 0,0 };
-	try {
-		strcpy(mountstring,"MOUNT ");
-		StripSpaces(args);
-		std::string arg;
-		CommandLine command(0,args);
+	//DBP: Moved things around here to get rid of the silly exception usage
+	strcpy(mountstring,"MOUNT ");
+	StripSpaces(args);
+	std::string arg;
+	CommandLine command(0,args);
 
-		if (command.GetCount() != 2) throw 0 ;
-  
-		command.FindCommand(1,arg);
-		if( (arg.size()>1) && arg[1] !=':')  throw(0);
-		temp_str[0]=(char)toupper(args[0]);
-		command.FindCommand(2,arg);
-		if((arg=="/D") || (arg=="/d")) {
-			if(!Drives[temp_str[0]-'A'] ) throw 1; //targetdrive not in use
-			strcat(mountstring,"-u ");
-			strcat(mountstring,temp_str);
-			this->ParseLine(mountstring);
+	if (command.GetCount() != 2) goto ERROR_FAILURE;
+
+	command.FindCommand(1,arg);
+	if( (arg.size()>1) && arg[1] !=':') goto ERROR_FAILURE;
+	temp_str[0]=(char)toupper(args[0]);
+	command.FindCommand(2,arg);
+	if((arg=="/D") || (arg=="/d")) {
+		if(!Drives[temp_str[0]-'A'] )
+		{
+			//targetdrive not in use
+			WriteOut(MSG_Get("SHELL_CMD_SUBST_NO_REMOVE"));
 			return;
 		}
-		if(Drives[temp_str[0]-'A'] ) throw 0; //targetdrive in use
+		strcat(mountstring,"-u ");
 		strcat(mountstring,temp_str);
-		strcat(mountstring," ");
-
-   		Bit8u drive;char fulldir[DOS_PATHLENGTH];
-		if (!DOS_MakeName(const_cast<char*>(arg.c_str()),fulldir,&drive)) throw 0;
-	
-		if( ( ldp=dynamic_cast<localDrive*>(Drives[drive])) == 0 ) throw 0;
-		char newname[CROSS_LEN];   
-		strcpy(newname, ldp->basedir);	   
-		strcat(newname,fulldir);
-		CROSS_FILENAME(newname);
-		ldp->dirCache.ExpandName(newname);
-		strcat(mountstring,"\"");	   
-		strcat(mountstring, newname);
-		strcat(mountstring,"\"");	   
 		this->ParseLine(mountstring);
-	}
-	catch(int a){
-		if(a == 0) {
-			WriteOut(MSG_Get("SHELL_CMD_SUBST_FAILURE"));
-		} else {
-		       	WriteOut(MSG_Get("SHELL_CMD_SUBST_NO_REMOVE"));
-		}
 		return;
 	}
-	catch(...) {		//dynamic cast failed =>so no localdrive
-		WriteOut(MSG_Get("SHELL_CMD_SUBST_FAILURE"));
-		return;
-	}
-   
+	if(Drives[temp_str[0]-'A'] ) goto ERROR_FAILURE; //targetdrive in use
+	strcat(mountstring,temp_str);
+	strcat(mountstring," ");
+
+	Bit8u drive;char fulldir[DOS_PATHLENGTH];
+	if (!DOS_MakeName(const_cast<char*>(arg.c_str()),fulldir,&drive)) goto ERROR_FAILURE;
+	
+	if( ( ldp=dynamic_cast<localDrive*>(Drives[drive])) == 0 ) goto ERROR_FAILURE;
+	char newname[CROSS_LEN];   
+	strcpy(newname, ldp->basedir);	   
+	strcat(newname,fulldir);
+	CROSS_FILENAME(newname);
+	ldp->dirCache.ExpandName(newname);
+	strcat(mountstring,"\"");	   
+	strcat(mountstring, newname);
+	strcat(mountstring,"\"");	   
+	this->ParseLine(mountstring);
+	return;
+
+ERROR_FAILURE:
+	WriteOut(MSG_Get("SHELL_CMD_SUBST_FAILURE"));
 	return;
 }
 

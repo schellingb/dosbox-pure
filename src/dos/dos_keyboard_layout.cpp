@@ -36,7 +36,7 @@
 #include <windows.h>
 #endif
 
-
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 static FILE* OpenDosboxFile(const char* name) {
 	Bit8u drive;
 	char fullname[DOS_PATHLENGTH];
@@ -44,19 +44,24 @@ static FILE* OpenDosboxFile(const char* name) {
 	localDrive* ldp=0;
 	// try to build dos name
 	if (DOS_MakeName(name,fullname,&drive)) {
+#ifdef C_DBP_ENABLE_EXCEPTIONS //this try catch is meaningless anyway, nothing in it throws
 		try {
+#endif
 			// try to open file on mounted drive first
 			ldp=dynamic_cast<localDrive*>(Drives[drive]);
 			if (ldp) {
 				FILE *tmpfile=ldp->GetSystemFilePtr(fullname, "rb");
 				if (tmpfile != NULL) return tmpfile;
 			}
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 		}
 		catch(...) {}
+#endif
 	}
 	FILE *tmpfile=fopen(name, "rb");
 	return tmpfile;
 }
+#endif
 
 
 class keyboard_layout {
@@ -148,6 +153,7 @@ void keyboard_layout::read_keyboard_file(Bit32s specific_layout) {
 		this->read_keyboard_file(current_keyboard_file_name, specific_layout, dos.loaded_codepage);
 }
 
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 static Bit32u read_kcl_file(const char* kcl_file_name, const char* layout_id, bool first_id_only) {
 	FILE* tempfile = OpenDosboxFile(kcl_file_name);
 	if (tempfile==0) return 0;
@@ -206,6 +212,7 @@ static Bit32u read_kcl_file(const char* kcl_file_name, const char* layout_id, bo
 	fclose(tempfile);
 	return 0;
 }
+#endif
 
 static Bit32u read_kcl_data(Bit8u * kcl_data, Bit32u kcl_data_size, const char* layout_id, bool first_id_only) {
 	// check ID-bytes
@@ -266,6 +273,7 @@ Bitu keyboard_layout::read_keyboard_file(const char* keyboard_file_name, Bit32s 
 	Bit32u read_buf_size, read_buf_pos, bytes_read;
 	Bit32u start_pos=5;
 
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	char nbuf[512];
 	read_buf_size = 0;
 	sprintf(nbuf, "%s.kl", keyboard_file_name);
@@ -284,7 +292,9 @@ Bitu keyboard_layout::read_keyboard_file(const char* keyboard_file_name, Bit32s 
 			tempfile = OpenDosboxFile("keybrd2.sys");
 		} else if ((start_pos=read_kcl_file("keybrd3.sys",keyboard_file_name,false))) {
 			tempfile = OpenDosboxFile("keybrd3.sys");
-		} else if ((start_pos=read_kcl_data(layout_keyboardsys,33196,keyboard_file_name,true))) {
+		} else
+#endif
+		if ((start_pos=read_kcl_data(layout_keyboardsys,33196,keyboard_file_name,true))) {
 			read_buf_size=0;
 			for (Bitu ct=start_pos+2; ct<33196; ct++) read_buf[read_buf_size++]=layout_keyboardsys[ct];
 		} else if ((start_pos=read_kcl_data(layout_keybrd2sys,25431,keyboard_file_name,true))) {
@@ -306,12 +316,15 @@ Bitu keyboard_layout::read_keyboard_file(const char* keyboard_file_name, Bit32s 
 			LOG(LOG_BIOS,LOG_ERROR)("Keyboard layout file %s not found",keyboard_file_name);
 			return KEYB_FILENOTFOUND;
 		}
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 		if (tempfile) {
 			fseek(tempfile, start_pos+2, SEEK_SET);
 			read_buf_size=(Bit32u)fread(read_buf, sizeof(Bit8u), 65535, tempfile);
 			fclose(tempfile);
 		}
+#endif
 		start_pos=0;
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	} else {
 		// check ID-bytes of file
 		Bit32u dr=(Bit32u)fread(read_buf, sizeof(Bit8u), 4, tempfile);
@@ -324,6 +337,7 @@ Bitu keyboard_layout::read_keyboard_file(const char* keyboard_file_name, Bit32s 
 		read_buf_size=(Bit32u)fread(read_buf, sizeof(Bit8u), 65535, tempfile);
 		fclose(tempfile);
 	}
+#endif
 
 	Bit8u data_len,submappings;
 	data_len=read_buf[start_pos++];
@@ -619,6 +633,7 @@ Bit16u keyboard_layout::extract_codepage(const char* keyboard_file_name) {
 	static Bit8u read_buf[65535];
 	Bit32u start_pos=5;
 
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	char nbuf[512];
 	sprintf(nbuf, "%s.kl", keyboard_file_name);
 	FILE* tempfile = OpenDosboxFile(nbuf);
@@ -636,7 +651,9 @@ Bit16u keyboard_layout::extract_codepage(const char* keyboard_file_name) {
 			tempfile = OpenDosboxFile("keybrd2.sys");
 		} else if ((start_pos=read_kcl_file("keybrd3.sys",keyboard_file_name,false))) {
 			tempfile = OpenDosboxFile("keybrd3.sys");
-		} else if ((start_pos=read_kcl_data(layout_keyboardsys,33196,keyboard_file_name,true))) {
+		} else
+#endif
+		if ((start_pos=read_kcl_data(layout_keyboardsys,33196,keyboard_file_name,true))) {
 			read_buf_size=0;
 			for (Bitu ct=start_pos+2; ct<33196; ct++) read_buf[read_buf_size++]=layout_keyboardsys[ct];
 		} else if ((start_pos=read_kcl_data(layout_keybrd2sys,25431,keyboard_file_name,true))) {
@@ -659,12 +676,15 @@ Bit16u keyboard_layout::extract_codepage(const char* keyboard_file_name) {
 			LOG(LOG_BIOS,LOG_ERROR)("Keyboard layout file %s not found",keyboard_file_name);
 			return 437;
 		}
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 		if (tempfile) {
 			fseek(tempfile, start_pos+2, SEEK_SET);
 			read_buf_size=(Bit32u)fread(read_buf, sizeof(Bit8u), 65535, tempfile);
 			fclose(tempfile);
 		}
+#endif
 		start_pos=0;
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	} else {
 		// check ID-bytes of file
 		Bit32u dr=(Bit32u)fread(read_buf, sizeof(Bit8u), 4, tempfile);
@@ -677,6 +697,7 @@ Bit16u keyboard_layout::extract_codepage(const char* keyboard_file_name) {
 		read_buf_size=(Bit32u)fread(read_buf, sizeof(Bit8u), 65535, tempfile);
 		fclose(tempfile);
 	}
+#endif
 
 	Bit8u data_len,submappings;
 	data_len=read_buf[start_pos++];
@@ -684,6 +705,13 @@ Bit16u keyboard_layout::extract_codepage(const char* keyboard_file_name) {
 	start_pos+=data_len;		// start_pos==absolute position of KeybCB block
 
 	submappings=read_buf[start_pos];
+
+#ifndef C_DBP_NATIVE_KEYBOARDFILES
+	// prefer 437 if available
+	for (Bit16u sub_map=0; (sub_map<submappings); sub_map++)
+		if (host_readw(&read_buf[start_pos+0x14+sub_map*8]) == 437)
+			return 437;
+#endif
 
 	// check all submappings and use them if general submapping or same codepage submapping
 	for (Bit16u sub_map=0; (sub_map<submappings); sub_map++) {
@@ -698,12 +726,15 @@ Bit16u keyboard_layout::extract_codepage(const char* keyboard_file_name) {
 }
 
 Bitu keyboard_layout::read_codepage_file(const char* codepage_file_name, Bit32s codepage_id) {
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	char cp_filename[512];
 	strcpy(cp_filename, codepage_file_name);
 	if (!strcmp(cp_filename,"none")) return KEYB_NOERROR;
+#endif
 
 	if (codepage_id==dos.loaded_codepage) return KEYB_NOERROR;
 
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	if (!strcmp(cp_filename,"auto")) {
 		// select matching .cpi-file for specified codepage
 		switch (codepage_id) {
@@ -732,10 +763,12 @@ Bitu keyboard_layout::read_codepage_file(const char* codepage_file_name, Bit32s 
 				return KEYB_INVALIDCPFILE;
 		}
 	}
+#endif
 
 	Bit32u start_pos;
 	Bit16u number_of_codepages;
 
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	char nbuf[512];
 	sprintf(nbuf, "%s", cp_filename);
 	FILE* tempfile=OpenDosboxFile(nbuf);
@@ -754,12 +787,15 @@ Bitu keyboard_layout::read_codepage_file(const char* codepage_file_name, Bit32s 
 			}
 		}
 	}
+#endif
 
 	static Bit8u cpi_buf[65536];
 	Bit32u cpi_buf_size=0,size_of_cpxdata=0;;
 	bool upxfound=false;
 	Bit16u found_at_pos=5;
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	if (tempfile==NULL) {
+#endif
 		// check if build-in codepage is available
 		switch (codepage_id) {
 			case 437:	case 850:	case 852:	case 853:	case 857:	case 858:	
@@ -781,6 +817,7 @@ Bitu keyboard_layout::read_codepage_file(const char* codepage_file_name, Bit32s 
 		upxfound=true;
 		found_at_pos=0x29;
 		size_of_cpxdata=cpi_buf_size;
+#ifdef C_DBP_NATIVE_KEYBOARDFILES
 	} else {
 		Bit32u dr=(Bit32u)fread(cpi_buf, sizeof(Bit8u), 5, tempfile);
 		// check if file is valid
@@ -835,6 +872,7 @@ Bitu keyboard_layout::read_codepage_file(const char* codepage_file_name, Bit32s 
 			cpi_buf_size=(Bit32u)fread(cpi_buf, sizeof(Bit8u), 65536, tempfile);
 		}
 	}
+#endif
 
 	if (upxfound) {
 		if (size_of_cpxdata>0xfe00) E_Exit("Size of cpx-compressed data too big");
@@ -1101,6 +1139,7 @@ public:
 
 		const char * layoutname=section->Get_string("keyboardlayout");
 
+#ifdef C_DBP_NATIVE_KEYBOARDLAYOUT
 		Bits wants_dos_codepage = -1;
 		if (!strncmp(layoutname,"auto",4)) {
 #if defined (WIN32)
@@ -1248,14 +1287,17 @@ public:
 			}
 #endif
 		}
+#endif /* C_DBP_NATIVE_KEYBOARDLAYOUT */
 
 		bool extract_codepage = true;
+#ifdef C_DBP_NATIVE_KEYBOARDLAYOUT
 		if (wants_dos_codepage>0) {
 			if ((loaded_layout->read_codepage_file("auto", (Bitu)wants_dos_codepage)) == KEYB_NOERROR) {
 				// preselected codepage was successfully loaded
 				extract_codepage = false;
 			}
 		}
+#endif
 		if (extract_codepage) {
 			// try to find a good codepage for the requested layout
 			Bitu req_codepage = loaded_layout->extract_codepage(layoutname);

@@ -70,12 +70,16 @@ void GFX_EndUpdate( const Bit16u *changedLines );
 void GFX_GetSize(int &width, int &height, bool &fullscreen);
 void GFX_LosingFocus(void);
 
+#ifdef C_DBP_USE_SDL
 #if defined (WIN32)
 bool GFX_SDLUsingWinDIB(void);
 #endif
+#endif
 
+#ifdef C_DBP_ENABLE_MAPPER
 #if defined (REDUCE_JOYSTICK_POLLING)
 void MAPPER_UpdateJoysticks(void);
+#endif
 #endif
 
 /* Mouse related */

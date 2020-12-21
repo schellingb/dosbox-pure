@@ -471,3 +471,12 @@ void TIMER_Init(Section* sec) {
 	test = new TIMER(sec);
 	sec->AddDestroyFunction(&TIMER_Destroy);
 }
+
+#include <dbp_serialize.h>
+
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, TIMER, PIT0_Event);
+
+void DBPSerialize_Timer(DBPArchive& ar)
+{
+	ar.SerializeArray(pit) << gate2 << latched_timerstatus << latched_timerstatus_locked;
+}

@@ -805,3 +805,11 @@ void SVGA_Setup_TsengET3K(void) {
 	phys_writeb(rom_base+0x007a,'g');
 	phys_writeb(rom_base+0x007b,' ');
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_VGA_Tseng(DBPArchive& ar)
+{
+	ar.Serialize(et4k).Serialize(et3k);
+	if (ar.mode == DBPArchive::MODE_ZERO) et4k.extensionsEnabled = 1;
+}

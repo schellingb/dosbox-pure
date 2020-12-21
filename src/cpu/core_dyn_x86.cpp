@@ -476,4 +476,28 @@ void CPU_Core_Dyn_X86_SetFPUMode(bool dh_fpu) {
 #endif
 }
 
+#include <dbp_serialize.h>
+
+void DBPSerialize_CPU_Core_Dyn_X86(DBPArchive& ar)
+{
+	bool stored_initialized = cache_initialized;
+	ar
+		.Serialize(stored_initialized)
+		.Serialize(core_dyn)
+		.Serialize(extra_regs);
+	#if defined(X86_DYNFPU_DH_ENABLED)
+	ar.Serialize(dyn_dh_fpu);
+	#endif
+
+	//We are currently not serializing the state of DynRegs.
+	//It's not that simple (as it contains multiple pointers) but hopefully it isn't required to be serialized.
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		if (stored_initialized && cache_initialized) DBPSerialize_cache_reset();
+		else if (stored_initialized && !cache_initialized) cache_init(true);
+		else if (!stored_initialized && cache_initialized) cache_close();
+	}
+}
+
 #endif

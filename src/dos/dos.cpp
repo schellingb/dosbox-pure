@@ -1269,7 +1269,22 @@ public:
 		dos.internal_output=false;
 	}
 	~DOS(){
+		//DBP: Cleanup memory (need to make sure this is called before drives are deleted (may contain disks mounted from files managed by drives)
+		void BIOS_ShutdownDisks(void);
+		BIOS_ShutdownDisks();
+
 		for (Bit16u i=0;i<DOS_DRIVES;i++) delete Drives[i];
+
+		//DBP: Cleanup memory
+		for (DOS_File* f : Files) delete f;
+		for (DOS_Device* d : Devices) delete d;
+		memset(Files, 0, sizeof(Files));
+		memset(Drives, 0, sizeof(Drives));
+		memset(Devices, 0, sizeof(Devices));
+		void DOS_ShutdownMisc(void);
+		DOS_ShutdownMisc();
+		void DOS_ShutdownTables(void);
+		DOS_ShutdownTables();
 	}
 };
 
@@ -1283,4 +1298,47 @@ void DOS_Init(Section* sec) {
 	test = new DOS(sec);
 	/* shutdown function */
 	sec->AddDestroyFunction(&DOS_ShutDown,false);
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_DOS(DBPArchive& ar)
+{
+	extern Bit16u biosConfigSeg;
+	extern Bit16u size_extended;
+	extern Bit16u dos_memseg;
+	extern Bits other_memsystems;
+	Bit16u old_dos_memseg = dos_memseg;
+	Bit16u old_info_seg = dos_infoblock.seg;
+	Bits old_other_memsystems = other_memsystems;
+	Bit16u memallocstrategy = DOS_GetMemAllocStrategy();
+
+	ar
+		.Serialize(biosConfigSeg)
+		.Serialize(size_extended)
+		.Serialize(dos_memseg)
+		.Serialize(dos_infoblock.seg)
+		.Serialize(other_memsystems)
+		.Serialize(memallocstrategy)
+		.Serialize(dos.errorcode)
+		.Serialize(dos.return_code)
+		.Serialize(dos.return_mode)
+		.Serialize(dos.current_drive)
+		.Serialize(dos.verify)
+		.Serialize(dos.breakcheck)
+		.Serialize(dos.echo)
+		.Serialize(dos.direct_output)
+		.Serialize(dos.internal_output);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		if (old_dos_memseg != dos_memseg) ar.warnings |= DBPArchive::WARN_WRONGPROGRAM;
+		if (old_info_seg != dos_infoblock.seg) ar.warnings |= DBPArchive::WARN_WRONGPROGRAM;
+		if (old_other_memsystems != other_memsystems) ar.warnings |= DBPArchive::WARN_WRONGPROGRAM;
+		DOS_SetMemAllocStrategy(memallocstrategy);
+	}
+	else if (ar.mode == DBPArchive::MODE_ZERO)
+	{
+		dos_memseg = DOS_PRIVATE_SEGMENT;
+	}
 }

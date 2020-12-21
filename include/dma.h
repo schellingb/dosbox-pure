@@ -106,6 +106,8 @@ public:
 	}
 	void WriteControllerReg(Bitu reg,Bitu val,Bitu len);
 	Bitu ReadControllerReg(Bitu reg,Bitu len);
+
+	friend void DBPSerialize(struct DBPArchive& ar, DmaController* self);
 };
 
 DmaChannel * GetDMAChannel(Bit8u chan);

@@ -212,3 +212,8 @@ void DOS_SetupMisc(void) {
 	CALLBACK_Setup(call_int2a,&INT2A_Handler,CB_IRET,"DOS Int 2a");
 	RealSetVec(0x2A,CALLBACK_RealPointer(call_int2a));
 }
+
+//DBP: Added shutdown for restart support
+void DOS_ShutdownMisc(void) {
+	Multiplex.clear();
+}

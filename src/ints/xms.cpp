@@ -427,7 +427,8 @@ public:
 		DOS_AddMultiplexHandler(multiplex_xms);
 
 		/* place hookable callback in writable memory area */
-		xms_callback=RealMake(DOS_GetMemory(0x1)-1,0x10);
+		//DBP: Avoid DOS memory leak
+		if (!xms_callback) xms_callback=RealMake(DOS_GetMemory(0x1)-1,0x10);
 		callbackhandler.Install(&XMS_Handler,CB_HOOKABLE,Real2Phys(xms_callback),"XMS Handler");
 		// pseudocode for CB_HOOKABLE:
 		//	jump near skip
@@ -470,6 +471,10 @@ public:
 		/* Free used memory while skipping the 0 handle */
 		for (Bitu i = 1;i<XMS_HANDLES;i++) 
 			if(!xms_handles[i].free) XMS_FreeMemory(i);
+
+		//DBP: Added cleanup for restart support
+		bool DBP_IsShuttingDown();
+		if (DBP_IsShuttingDown()) xms_callback=0;
 	}
 
 };
@@ -482,4 +487,13 @@ void XMS_ShutDown(Section* /*sec*/) {
 void XMS_Init(Section* sec) {
 	test = new XMS(sec);
 	sec->AddDestroyFunction(&XMS_ShutDown,true);
+}
+
+#include <dbp_serialize.h>
+
+INLINE DBPArchive& operator<<(DBPArchive& ar, XMS_Block& i) { return ar << i.size << i.mem << i.locked << i.free; }
+
+void DBPSerialize_XMS(DBPArchive& ar)
+{
+	ar.Serialize(umb_available).SerializeArray(xms_handles);
 }

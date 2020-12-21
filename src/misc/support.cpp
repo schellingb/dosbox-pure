@@ -189,5 +189,10 @@ void E_Exit(const char * format,...) {
 	buf[sizeof(buf) - 1] = '\0';
 	//strcat(buf,"\n"); catcher should handle the end of line.. 
 
+#ifdef C_DBP_USE_SDL
 	throw(buf);
+#else
+	void DBP_Crash(const char* msg);
+	DBP_Crash(buf);
+#endif
 }

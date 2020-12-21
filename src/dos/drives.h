@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2002-2020  The DOSBox Team
+ *  Copyright (C) 2020-2020  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -68,10 +69,15 @@ public:
 	virtual bool FileExists(const char* name);
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
 	virtual Bit8u GetMediaByte(void);
+	virtual void EmptyCache(void) { dirCache.EmptyCache(label); };
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);
 	virtual Bits UnMount(void);
 	const char* getBasedir() {return basedir;};
+
+	//DBP: Moved from DOS_Drive
+	DOS_Drive_Cache dirCache;
+
 protected:
 	char basedir[CROSS_LEN];
 private:
@@ -152,6 +158,7 @@ class imageDisk;
 class fatDrive : public DOS_Drive {
 public:
 	fatDrive(const char * sysFilename, Bit32u bytesector, Bit32u cylsector, Bit32u headscyl, Bit32u cylinders, Bit32u startSector);
+	~fatDrive();
 	virtual bool FileOpen(DOS_File * * file,char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file,char * name,Bit16u attributes);
 	virtual bool FileUnlink(char * name);
@@ -223,7 +230,7 @@ private:
 	Bit32u curFatSect;
 };
 
-
+#ifdef C_DBP_NATIVE_CDROM
 class cdromDrive : public localDrive
 {
 public:
@@ -244,6 +251,7 @@ private:
 	Bit8u subUnit;
 	char driveLetter;
 };
+#endif /* C_DBP_NATIVE_CDROM */
 
 #ifdef _MSC_VER
 #pragma pack (1)
@@ -389,6 +397,7 @@ struct VFILE_Block;
 class Virtual_Drive: public DOS_Drive {
 public:
 	Virtual_Drive();
+	~Virtual_Drive();
 	bool FileOpen(DOS_File * * file,char * name,Bit32u flags);
 	bool FileCreate(DOS_File * * file,char * name,Bit16u attributes);
 	bool FileUnlink(char * name);
@@ -412,6 +421,7 @@ private:
 	VFILE_Block * search_file;
 };
 
+#ifdef C_DBP_NATIVE_OVERLAY
 class Overlay_Drive: public localDrive {
 public:
 	Overlay_Drive(const char * startdir,const char* overlay, Bit16u _bytes_sector,Bit8u _sectors_cluster,Bit16u _total_clusters,Bit16u _free_clusters,Bit8u _mediaid,Bit8u &error);
@@ -464,6 +474,215 @@ private:
 	std::vector<std::string> DOSnames_cache; //Also set is probably better.
 	std::vector<std::string> DOSdirs_cache; //Can not blindly change its type. it is important that subdirs come after the parent directory.
 	const std::string special_prefix;
+};
+#endif /* C_DBP_NATIVE_OVERLAY */
+
+//DBP: New drive types
+#define FALSE_SET_DOSERR(ERRNAME) (dos.errorcode = (DOSERR_##ERRNAME), false)
+void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data = 0);
+bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
+Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len);
+
+template <typename TVal> struct StringToPointerHashMap
+{
+	StringToPointerHashMap() : len(0), maxlen(0), keys(NULL), vals(NULL) { }
+	~StringToPointerHashMap() { free(keys); free(vals); }
+
+	static Bit32u Hash(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	{
+		for (const char* e = str + str_limit; *str && str != e;)
+			hash_init = ((hash_init * (Bit32u)0x01000193) ^ (Bit32u)*(str++));
+		return hash_init;
+	}
+
+	TVal* Get(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	{
+		if (len == 0) return NULL;
+		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
+		{
+			if (keys[i &= maxlen] == key) return vals[i];
+			if (!keys[i]) return NULL;
+		}
+	}
+
+	void Put(const char* str, TVal* val, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	{
+		if (len * 2 >= maxlen) Grow();
+		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
+		{
+			if (!keys[i &= maxlen]) { len++; keys[i] = key; vals[i] = val; return; }
+			if (keys[i] == key) { vals[i] = val; return; }
+		}
+	}
+
+	bool Remove(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	{
+		if (len == 0) return false;
+		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
+		{
+			if (keys[i &= maxlen] == key)
+			{
+				keys[i] = 0;
+				len--;
+				while ((key = keys[i = (i + 1) & maxlen]) != 0)
+				{
+					for (Bit32u j = key;; j++)
+					{
+						if (keys[j &= maxlen] == key) break;
+						if (!keys[j]) { keys[i] = 0; keys[j] = key; vals[j] = vals[i]; break; }
+					}
+				}
+				return true;
+			}
+			if (!keys[i]) return false;
+		}
+	}
+
+	void Clear() { memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
+
+	Bit32u Len() { return len; }
+	Bit32u Capacity() { return (maxlen ? maxlen + 1 : 0); }
+	TVal* GetAtIndex(Bit32u idx) { return (keys[idx] ? vals[idx] : NULL); }
+
+	struct Iterator
+	{
+		Iterator(StringToPointerHashMap<TVal>& _map, Bit32u _index) : map(_map), index(_index - 1) { this->operator++(); }
+		StringToPointerHashMap<TVal>& map;
+		Bit32u index;
+		TVal* operator *() const { return map.vals[index]; }
+		bool operator ==(const Iterator &other) const { return index == other.index; }
+		bool operator !=(const Iterator &other) const { return index != other.index; }
+		Iterator& operator ++()
+		{
+			if (!map.maxlen) { index = 0; return *this; }
+			if (++index > map.maxlen) index = map.maxlen + 1;
+			while (index <= map.maxlen && !map.keys[index]) index++;
+			return *this;
+		}
+	};
+
+	Iterator begin() { return Iterator(*this, 0); }
+	Iterator end() { return Iterator(*this, (maxlen ? maxlen + 1 : 0)); }
+
+private:
+	Bit32u len, maxlen, *keys;
+	TVal** vals;
+
+	void Grow()
+	{
+		Bit32u oldMax = maxlen, oldCap = (maxlen ? oldMax + 1 : 0), *oldKeys = keys;
+		TVal **oldVals = vals;
+		maxlen  = (maxlen ? maxlen * 2 + 1 : 15);
+		keys = (Bit32u*)calloc(maxlen + 1, sizeof(Bit32u));
+		vals = (TVal**)malloc((maxlen + 1) * sizeof(TVal*));
+		for (Bit32u i = 0; i != oldCap; i++)
+		{
+			if (!oldKeys[i]) continue;
+			for (Bit32u key = oldKeys[i], j = key;; j++)
+			{
+				if (!keys[j &= maxlen]) { keys[j] = key; vals[j] = oldVals[i]; break; }
+			}
+		}
+		free(oldKeys);
+		free(oldVals);
+	}
+
+	// not copyable
+	StringToPointerHashMap(const StringToPointerHashMap&);
+	StringToPointerHashMap& operator=(const StringToPointerHashMap&);
+};
+
+//Used to load drive images and archives from the native filesystem not a DOS_Drive
+struct rawFile : public DOS_File
+{
+	FILE* f;
+	rawFile(FILE* _f, bool writable) : f(_f) { open = true; if (writable) flags |= OPEN_READWRITE; }
+	~rawFile() { if (f) fclose(f); }
+	virtual bool Close() { if (refCtr == 1) open = false; return true; }
+	virtual bool Read(Bit8u* data, Bit16u* size) { *size = (Bit16u)fread(data, 1, *size, f); return open; }
+	virtual bool Write(Bit8u* data, Bit16u* size) { if (!OPEN_IS_WRITING(flags)) return false; *size = (Bit16u)fwrite(data, 1, *size, f); return (*size && open); }
+	virtual bool Seek(Bit32u* pos, Bit32u type) { fseek(f, *pos, type); *pos = ftell(f); return open; }
+	Bit16u GetInformation(void) { return 0; }
+};
+
+class memoryDrive : public DOS_Drive {
+public:
+	memoryDrive();
+	virtual ~memoryDrive();
+	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
+	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
+	virtual bool Rename(char * oldname,char * newname);
+	virtual bool FileUnlink(char * name);
+	virtual bool FileExists(const char* name);
+	virtual bool RemoveDir(char * dir);
+	virtual bool MakeDir(char * dir);
+	virtual bool TestDir(char * dir);
+	virtual bool FindFirst(char * dir, DOS_DTA & dta, bool fcb_findfirst=false);
+	virtual bool FindNext(DOS_DTA & dta);
+	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
+	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual Bit8u GetMediaByte(void);
+	virtual bool isRemote(void);
+	virtual bool isRemovable(void);
+	virtual Bits UnMount(void);
+
+	bool CloneEntry(DOS_Drive* src_drv, const char* src_path);
+private:
+	struct memoryDriveImpl* impl;
+};
+
+class zipDrive : public DOS_Drive {
+public:
+	zipDrive(DOS_File* zip, bool enter_solo_root_dir);
+	virtual ~zipDrive();
+	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
+	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
+	virtual bool FileUnlink(char * name);
+	virtual bool RemoveDir(char * dir);
+	virtual bool MakeDir(char * dir);
+	virtual bool TestDir(char * dir);
+	virtual bool FindFirst(char * dir, DOS_DTA & dta, bool fcb_findfirst=false);
+	virtual bool FindNext(DOS_DTA & dta);
+	virtual bool Rename(char * oldname,char * newname);
+	virtual bool FileExists(const char* name);
+	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
+	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual Bit8u GetMediaByte(void);
+	virtual bool isRemote(void);
+	virtual bool isRemovable(void);
+	virtual Bits UnMount(void);
+	static void Uncompress(const Bit8u* src, Bit32u src_len, Bit8u* trg, Bit32u trg_len);
+private:
+	struct zipDriveImpl* impl;
+};
+
+class unionDrive : public DOS_Drive {
+public:
+	unionDrive(DOS_Drive& under, DOS_Drive& over, bool autodelete_under = false, bool autodelete_over = false);
+	unionDrive(DOS_Drive& under, const char* save_file = NULL, bool autodelete_under = false);
+	bool IsShadowedDrive(const DOS_Drive* drv) const;
+	virtual ~unionDrive();
+	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
+	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
+	virtual bool Rename(char * oldname,char * newname);
+	virtual bool FileUnlink(char * name);
+	virtual bool FileExists(const char* name);
+	virtual bool MakeDir(char * dir);
+	virtual bool RemoveDir(char * dir);
+	virtual bool TestDir(char * dir);
+	virtual bool FindFirst(char * dir, DOS_DTA & dta, bool fcb_findfirst=false);
+	virtual bool FindNext(DOS_DTA & dta);
+	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
+	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual Bit8u GetMediaByte(void);
+	virtual bool isRemote(void);
+	virtual bool isRemovable(void);
+	virtual Bits UnMount(void);
+private:
+	struct unionDriveImpl* impl;
 };
 
 #endif

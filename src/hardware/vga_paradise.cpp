@@ -239,3 +239,10 @@ void SVGA_Setup_ParadisePVGA1A(void) {
 
 	IO_Write(0x3cf, 0x05); // Enable!
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_VGA_Paradise(DBPArchive& ar)
+{
+	ar.Serialize(pvga1a);
+}

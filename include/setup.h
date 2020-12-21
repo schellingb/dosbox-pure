@@ -106,9 +106,17 @@ public:
 	std::string ToString() const;
 
 private:
-	void destroy() throw();
+	void destroy()
+#ifdef C_DBP_ENABLE_EXCEPTIONS
+		throw()
+#endif
+		;
 	Value& copy(Value const& in);
-	void plaincopy(Value const& in) throw();
+	void plaincopy(Value const& in)
+#ifdef C_DBP_ENABLE_EXCEPTIONS
+		throw()
+#endif
+		;
 	bool set_hex(std::string const& in);
 	bool set_int(std::string const&in);
 	bool set_bool(std::string const& in);
@@ -211,6 +219,7 @@ public:
 	virtual bool CheckValue(Value const& in, bool warn);
 	~Prop_string(){ }
 };
+#ifdef C_DBP_NATIVE_CONFIGFILE
 class Prop_path:public Prop_string{
 public:
 	std::string realpath;
@@ -222,6 +231,7 @@ public:
 	bool SetValue(std::string const& in);
 	~Prop_path(){ }
 };
+#endif
 
 class Prop_hex:public Property {
 public:
@@ -277,7 +287,9 @@ public:
 	Section_prop(std::string const&  _sectionname):Section(_sectionname){}
 	Prop_int* Add_int(std::string const& _propname, Property::Changeable::Value when, int _value=0);
 	Prop_string* Add_string(std::string const& _propname, Property::Changeable::Value when, char const * const _value=NULL);
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	Prop_path* Add_path(std::string const& _propname, Property::Changeable::Value when, char const * const _value=NULL);
+#endif
 	Prop_bool*  Add_bool(std::string const& _propname, Property::Changeable::Value when, bool _value=false);
 	Prop_hex* Add_hex(std::string const& _propname, Property::Changeable::Value when, Hex _value=0);
 //	void Add_double(char const * const _propname, double _value=0.0);
@@ -290,7 +302,9 @@ public:
 	bool Get_bool(std::string const& _propname) const;
 	Hex Get_hex(std::string const& _propname) const;
 	double Get_double(std::string const& _propname) const;
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	Prop_path* Get_path(std::string const& _propname) const;
+#endif
 	Prop_multival* Get_multival(std::string const& _propname) const;
 	Prop_multival_remain* Get_multivalremain(std::string const& _propname) const;
 	bool HandleInputline(std::string const& gegevens);

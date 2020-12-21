@@ -31,6 +31,7 @@
 #include "render.h"
 #include "cross.h"
 
+#ifdef C_DBP_ENABLE_CAPTURE
 #if (C_SSHOT)
 #include <png.h>
 #endif
@@ -38,9 +39,13 @@
 #include "../libs/zmbv/zmbv.cpp"
 #endif
 
+#ifdef C_DBP_ENABLE_CAPTURE
 static std::string capturedir;
+#endif
 extern const char* RunningProgram;
+#ifdef C_DBP_ENABLE_CAPTURE
 Bitu CaptureState;
+#endif
 
 static const char version_text[] = "DOSBox " VERSION;
 
@@ -1026,9 +1031,12 @@ class HARDWARE:public Module_base{
 public:
 	HARDWARE(Section* configuration):Module_base(configuration){
 		Section_prop * section = static_cast<Section_prop *>(configuration);
+#ifdef C_DBP_ENABLE_CAPTURE
 		Prop_path* proppath= section->Get_path("captures");
 		capturedir = proppath->realpath;
 		CaptureState = 0;
+#endif
+#ifdef C_DBP_ENABLE_MAPPER
 		MAPPER_AddHandler(CAPTURE_WaveEvent,MK_f6,MMOD1,"recwave","Rec Wave");
 		MAPPER_AddHandler(CAPTURE_MidiEvent,MK_f8,MMOD1|MMOD2,"caprawmidi","Cap MIDI");
 #if (C_SSHOT)
@@ -1037,6 +1045,7 @@ public:
 #if (C_SRECORD)
 		MAPPER_AddHandler(CAPTURE_VideoEvent,MK_f5,MMOD1|MMOD2,"video","Video");
 #endif
+#endif // C_DBP_ENABLE_MAPPER
 	}
 	~HARDWARE(){
 #if (C_SRECORD)
@@ -1057,3 +1066,4 @@ void HARDWARE_Init(Section * sec) {
 	test = new HARDWARE(sec);
 	sec->AddDestroyFunction(&HARDWARE_Destroy,true);
 }
+#endif

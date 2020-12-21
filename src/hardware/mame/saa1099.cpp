@@ -178,7 +178,7 @@ void saa1099_device::device_start()
 	m_sample_rate = clock() / 256;
 
 	/* for each chip allocate one stream */
-	m_stream = stream_alloc(0, 2, m_sample_rate);
+	m_stream = stream_alloc(0, 2, (int)m_sample_rate);
 
 	save_item(NAME(m_noise_params));
 	save_item(NAME(m_env_enable));
@@ -468,4 +468,25 @@ WRITE8_MEMBER(saa1099_device::write)
 		control_w(space, 0, data);
 	else
 		data_w(space, 0, data);
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize(DBPArchive& ar, saa1099_device* self)
+{
+	ar
+		.SerializeArray(self->m_noise_params)
+		.SerializeArray(self->m_env_enable)
+		.SerializeArray(self->m_env_reverse_right)
+		.SerializeArray(self->m_env_mode)
+		.SerializeArray(self->m_env_bits)
+		.SerializeArray(self->m_env_clock)
+		.SerializeArray(self->m_env_step)
+		.Serialize(self->m_all_ch_enable)
+		.Serialize(self->m_sync_state)
+		.Serialize(self->m_selected_reg)
+		.SerializeArray(self->m_channels)
+		.SerializeArray(self->m_noise)
+		.Serialize(self->m_sample_rate)
+		.Serialize(self->m_master_clock);
 }

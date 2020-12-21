@@ -64,25 +64,21 @@ DOS_Drive_Cache::DOS_Drive_Cache(void) {
 	dirBase			= new CFileInfo;
 	save_dir		= 0;
 	srchNr			= 0;
-	label[0]		= 0;
 	basePath[0]		= 0;
 	nextFreeFindFirst	= 0;
 	for (Bit32u i=0; i<MAX_OPENDIRS; i++) { dirSearch[i] = 0; dirFindFirst[i] = 0; };
 	SetDirSort(DIRALPHABETICAL);
-	updatelabel = true;
 }
 
-DOS_Drive_Cache::DOS_Drive_Cache(const char* path) {
+DOS_Drive_Cache::DOS_Drive_Cache(const char* path, DOS_Label& label) {
 	dirBase			= new CFileInfo;
 	save_dir		= 0;
 	srchNr			= 0;
-	label[0]		= 0;
 	basePath[0]		= 0;
 	nextFreeFindFirst	= 0;
 	for (Bit32u i=0; i<MAX_OPENDIRS; i++) { dirSearch[i] = 0; dirFindFirst[i] = 0; };
 	SetDirSort(DIRALPHABETICAL);
-	SetBaseDir(path);
-	updatelabel = true;
+	SetBaseDir(path, label);
 }
 
 DOS_Drive_Cache::~DOS_Drive_Cache(void) {
@@ -96,16 +92,16 @@ void DOS_Drive_Cache::Clear(void) {
 	for (Bit32u i=0; i<MAX_OPENDIRS; i++) dirSearch[i] = 0;
 }
 
-void DOS_Drive_Cache::EmptyCache(void) {
+void DOS_Drive_Cache::EmptyCache(DOS_Label& label) {
 	// Empty Cache and reinit
 	Clear();
 	dirBase		= new CFileInfo;
 	save_dir	= 0;
 	srchNr		= 0;
-	if (basePath[0] != 0) SetBaseDir(basePath);
+	if (basePath[0] != 0) SetBaseDir(basePath, label);
 }
 
-void DOS_Drive_Cache::SetLabel(const char* vname,bool cdrom,bool allowupdate) {
+void DOS_Label::SetLabel(const char* vname,bool cdrom,bool allowupdate) {
 /* allowupdate defaults to true. if mount sets a label then allowupdate is 
  * false and will this function return at once after the first call.
  * The label will be set at the first call. */
@@ -113,7 +109,7 @@ void DOS_Drive_Cache::SetLabel(const char* vname,bool cdrom,bool allowupdate) {
 	if(!this->updatelabel) return;
 	this->updatelabel = allowupdate;
 	Set_Label(vname,label,cdrom);
-	LOG(LOG_DOSMISC,LOG_NORMAL)("DIRCACHE: Set volume label to %s",label);
+	LOG(LOG_DOSMISC,LOG_NORMAL)("LABEL: Set volume label to %s",label);
 }
 
 Bit16u DOS_Drive_Cache::GetFreeID(CFileInfo* dir) {
@@ -130,7 +126,7 @@ Bit16u DOS_Drive_Cache::GetFreeID(CFileInfo* dir) {
 	return 0;
 }
 
-void DOS_Drive_Cache::SetBaseDir(const char* baseDir) {
+void DOS_Drive_Cache::SetBaseDir(const char* baseDir, DOS_Label& label) {
 	if (strlen(baseDir) == 0) return;
 
 	Bit16u id;
@@ -160,7 +156,7 @@ void DOS_Drive_Cache::SetBaseDir(const char* baseDir) {
 	if (rc == NO_ERROR) {
 #endif
 		/* Set label and allow being updated */
-		SetLabel(labellocal,cdrom,true);
+		label.SetLabel(labellocal,cdrom,true);
 	}
 #endif
 }
@@ -233,6 +229,7 @@ void DOS_Drive_Cache::AddEntry(const char* path, bool checkExists) {
 //		LOG_DEBUG("DIR: Error: Failed to add %s",path);	
 	}
 }
+#ifdef C_DBP_NATIVE_OVERLAY
 void DOS_Drive_Cache::AddEntryDirOverlay(const char* path, bool checkExists) {
 	// Get Last part...
 	char file	[CROSS_LEN];
@@ -299,6 +296,7 @@ void DOS_Drive_Cache::AddEntryDirOverlay(const char* path, bool checkExists) {
 		//		LOG_DEBUG("DIR: Error: Failed to add %s",path);	
 	}
 }
+#endif
 
 void DOS_Drive_Cache::DeleteEntry(const char* path, bool ignoreLastDir) {
 	CacheOut(path,ignoreLastDir);
@@ -349,7 +347,11 @@ void DOS_Drive_Cache::CacheOut(const char* path, bool ignoreLastDir) {
 }
 
 bool DOS_Drive_Cache::IsCachedIn(CFileInfo* curDir) {
-	return (curDir->isOverlayDir || curDir->fileList.size()>0);
+	return (
+#ifdef C_DBP_NATIVE_OVERLAY
+		curDir->isOverlayDir || 
+#endif
+		curDir->fileList.size()>0);
 }
 
 
@@ -749,7 +751,11 @@ bool DOS_Drive_Cache::OpenDir(CFileInfo* dir, const char* expand, Bit16u& id) {
 	if (dirSearch[id]) {
 		// open dir
 		dir_information* dirp = open_directory(expandcopy);
-		if (dirp || dir->isOverlayDir) { 
+		if (dirp
+#ifdef C_DBP_NATIVE_OVERLAY
+			|| dir->isOverlayDir
+#endif
+			) { 
 			// Reset it..
 			if (dirp) close_directory(dirp);
 			strcpy(dirPath,expandcopy);

@@ -27,6 +27,8 @@
 #include "pic.h"
 #include "hardware.h"
 
+namespace Adlib { class Module; }
+void DBPSerialize(struct DBPArchive& ar, Adlib::Module* self);
 
 namespace Adlib {
 
@@ -144,8 +146,10 @@ public:
 //The cache for 2 chips or an opl3
 typedef Bit8u RegisterCache[512];
 
+#ifdef C_DBP_ENABLE_CAPTURE
 //Internal class used for dro capturing
 class Capture;
+#endif
 
 class Module: public Module_base {
 	IO_ReadHandleObject ReadHandler[3];
@@ -176,8 +180,10 @@ public:
 	Bit32u lastUsed;				//Ticks when adlib was last used to turn of mixing after a few second
 
 	Handler* handler;				//Handler that will generate the sound
-	RegisterCache cache;
+	//RegisterCache cache; //DBP: moved into static data
+#ifdef C_DBP_ENABLE_CAPTURE
 	Capture* capture;
+#endif
 	Chip	chip[2];
 
 	//Handle port writes
@@ -187,6 +193,8 @@ public:
 
 	Module( Section* configuration); 
 	~Module();
+
+	friend void ::DBPSerialize(struct ::DBPArchive& ar, Module* self);
 };
 
 

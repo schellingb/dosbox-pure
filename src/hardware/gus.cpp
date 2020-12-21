@@ -900,6 +900,8 @@ public:
 		memset(&myGUS,0,sizeof(myGUS));
 		delete[] GUSRam;
 		GUSRam = NULL;
+		//DBP: Added cleanup for restart support
+		gus_chan=0;
 	}
 };
 
@@ -912,4 +914,33 @@ void GUS_ShutDown(Section* /*sec*/) {
 void GUS_Init(Section* sec) {
 	test = new GUS(sec);
 	sec->AddDestroyFunction(&GUS_ShutDown,true);
+}
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, GUS, GUS_TimerEvent);
+DBP_SERIALIZE_SET_POINTER_LIST(DMA_CallBack, GUS, GUS_DMA_Callback);
+
+void DBPSerialize_GUS(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, gus_chan);
+	if (ar.IsSkip()) return;
+
+	Bit8u chan_idx = 32;
+	if (ar.mode == DBPArchive::MODE_SAVE && curchan)
+		for (chan_idx = 0; chan_idx < 32; chan_idx++)
+			if (guschan[chan_idx] == curchan)
+				break;
+
+	ar.Serialize(myGUS);
+	ar.Serialize(adlib_commandreg);
+	ar.SerializeSparse(GUSRam, GUSRAM_SIZE);
+	ar.SerializeArray(vol16bit);
+	ar.SerializeArray(pantable);
+	ar.Serialize(chan_idx);
+
+	for (Bit8u i = 0; i != 32; i++)
+		ar.Serialize(*guschan[i]);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+		curchan = (chan_idx < 32 ? guschan[chan_idx] : NULL);
 }

@@ -160,17 +160,7 @@ bool localDrive::FileUnlink(char * name) {
 		//File exists and can technically be deleted, nevertheless it failed.
 		//This means that the file is probably open by some process.
 		//See if We have it open.
-		bool found_file = false;
-		for(Bitu i = 0;i < DOS_FILES;i++){
-			if(Files[i] && Files[i]->IsName(name)) {
-				Bitu max = DOS_FILES;
-				while(Files[i]->IsOpen() && max--) {
-					Files[i]->Close();
-					if (Files[i]->RemoveRef()<=0) break;
-				}
-				found_file=true;
-			}
-		}
+		bool found_file = DriveForceCloseFile(this, name);
 		if(!found_file) {
 			DOS_SetError(DOSERR_ACCESS_DENIED);
 			return false;
@@ -214,25 +204,25 @@ bool localDrive::FindFirst(char * _dir,DOS_DTA & dta,bool fcb_findfirst) {
 	if (this->isRemote() && this->isRemovable()) {
 		// cdroms behave a bit different than regular drives
 		if (sAttr == DOS_ATTR_VOLUME) {
-			dta.SetResult(dirCache.GetLabel(),0,0,0,DOS_ATTR_VOLUME);
+			dta.SetResult(label.GetLabel(),0,0,0,DOS_ATTR_VOLUME);
 			return true;
 		}
 	} else {
 		if (sAttr == DOS_ATTR_VOLUME) {
-			if ( strcmp(dirCache.GetLabel(), "") == 0 ) {
+			if ( strcmp(label.GetLabel(), "") == 0 ) {
 //				LOG(LOG_DOSMISC,LOG_ERROR)("DRIVELABEL REQUESTED: none present, returned  NOLABEL");
 //				dta.SetResult("NO_LABEL",0,0,0,DOS_ATTR_VOLUME);
 //				return true;
 				DOS_SetError(DOSERR_NO_MORE_FILES);
 				return false;
 			}
-			dta.SetResult(dirCache.GetLabel(),0,0,0,DOS_ATTR_VOLUME);
+			dta.SetResult(label.GetLabel(),0,0,0,DOS_ATTR_VOLUME);
 			return true;
 		} else if ((sAttr & DOS_ATTR_VOLUME)  && (*_dir == 0) && !fcb_findfirst) { 
 		//should check for a valid leading directory instead of 0
 		//exists==true if the volume label matches the searchmask and the path is valid
-			if (WildFileCmp(dirCache.GetLabel(),tempDir)) {
-				dta.SetResult(dirCache.GetLabel(),0,0,0,DOS_ATTR_VOLUME);
+			if (WildFileCmp(label.GetLabel(),tempDir)) {
+				dta.SetResult(label.GetLabel(),0,0,0,DOS_ATTR_VOLUME);
 				return true;
 			}
 		}
@@ -440,13 +430,13 @@ localDrive::localDrive(const char * startdir,Bit16u _bytes_sector,Bit8u _sectors
 	allocation.free_clusters=_free_clusters;
 	allocation.mediaid=_mediaid;
 
-	dirCache.SetBaseDir(basedir);
+	dirCache.SetBaseDir(basedir, label);
 }
 
 
 //TODO Maybe use fflush, but that seemed to fuck up in visual c
 bool localFile::Read(Bit8u * data,Bit16u * size) {
-	if ((this->flags & 0xf) == OPEN_WRITE) {	// check if file opened in write-only mode
+	if (!OPEN_IS_READING(flags)) {	// check if file opened in write-only mode
 		DOS_SetError(DOSERR_ACCESS_DENIED);
 		return false;
 	}
@@ -462,8 +452,7 @@ bool localFile::Read(Bit8u * data,Bit16u * size) {
 }
 
 bool localFile::Write(Bit8u * data,Bit16u * size) {
-	Bit32u lastflags = this->flags & 0xf;
-	if (lastflags == OPEN_READ || lastflags == OPEN_READ_NO_MOD) {	// check if file opened in read-only mode
+	if (!OPEN_IS_WRITING(flags)) {	// check if file opened in read-only mode
 		DOS_SetError(DOSERR_ACCESS_DENIED);
 		return false;
 	}
@@ -560,6 +549,7 @@ void localFile::Flush(void) {
 }
 
 
+#ifdef C_DBP_NATIVE_CDROM
 // ********************************************
 // CDROM DRIVE
 // ********************************************
@@ -582,7 +572,7 @@ cdromDrive::cdromDrive(const char driveLetter, const char * startdir,Bit16u _byt
 	this->driveLetter = driveLetter;
 	// Get Volume Label
 	char name[32];
-	if (MSCDEX_GetVolumeName(subUnit,name)) dirCache.SetLabel(name,true,true);
+	if (MSCDEX_GetVolumeName(subUnit,name)) label.SetLabel(name,true,true);
 }
 
 bool cdromDrive::FileOpen(DOS_File * * file,char * name,Bit32u flags) {
@@ -665,3 +655,4 @@ Bits cdromDrive::UnMount(void) {
 	}
 	return 2;
 }
+#endif /* C_DBP_NATIVE_CDROM */

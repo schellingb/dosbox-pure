@@ -412,3 +412,32 @@ void DMA_Init(Section* sec) {
 		ems_board_mapping[i]=i;
 	}
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize(DBPArchive& ar, DmaController* self)
+{
+	ar << self->flipflop;
+	for (Bit8u i = 0; i != 4; i++)
+	{
+		DmaChannel *c = (self ? self->DmaChannels[i] : NULL);
+		ar << c->pagebase << c->baseaddr << c->curraddr << c->basecnt << c->currcnt << c->pagenum << c->DMA16 << c->increment << c->autoinit << c->masked << c->tcount << c->request;
+		DBP_SERIALIZE_EXTERN_POINTER_LIST(DMA_CallBack, GUS);
+		DBP_SERIALIZE_EXTERN_POINTER_LIST(DMA_CallBack, SBLASTER);
+		DBP_SERIALIZE_EXTERN_POINTER_LIST(DMA_CallBack, Tandy);
+		ar.SerializePointers((void**)&c->callback, 1, false, 3,
+			DBP_SERIALIZE_GET_POINTER_LIST(DMA_CallBack, GUS),
+			DBP_SERIALIZE_GET_POINTER_LIST(DMA_CallBack, SBLASTER),
+			DBP_SERIALIZE_GET_POINTER_LIST(DMA_CallBack, Tandy));
+	}
+}
+
+void DBPSerialize_DMA(DBPArchive& ar)
+{
+	ar.Serialize(dma_wrapping).SerializeArray(ems_board_mapping);
+	for (DmaController *c : DmaControllers)
+	{
+		DBPArchiveOptional aro(ar, c);
+		if (!aro.IsSkip()) DBPSerialize(aro, c);
+	}
+}

@@ -26,10 +26,10 @@
 #include "support.h"
 #include "cross.h"
 
+//DBP: Changed potentially memory leaking pointer in VFILE_Block to std::vector and clear everything up in Virtual_Drive::~Virtual_Drive
 struct VFILE_Block {
 	const char * name;
-	Bit8u * data;
-	Bit32u size;
+	std::vector<Bit8u> data;
 	Bit16u date;
 	Bit16u time;
 	VFILE_Block * next;
@@ -41,8 +41,8 @@ static VFILE_Block * first_file;
 void VFILE_Register(const char * name,Bit8u * data,Bit32u size) {
 	VFILE_Block * new_file=new VFILE_Block;
 	new_file->name=name;
-	new_file->data=data;
-	new_file->size=size;
+	new_file->data.resize(size);
+	if (size) memcpy(&new_file->data[0], data, size);
 	new_file->date=DOS_PackDate(2002,10,1);
 	new_file->time=DOS_PackTime(12,34,56);
 	new_file->next=first_file;
@@ -125,6 +125,7 @@ bool Virtual_File::Seek(Bit32u * new_pos,Bit32u type){
 }
 
 bool Virtual_File::Close(){
+	if (refCtr == 1) open = false;
 	return true;
 }
 
@@ -139,6 +140,13 @@ Virtual_Drive::Virtual_Drive() {
 	search_file=0;
 }
 
+Virtual_Drive::~Virtual_Drive() {
+	for (VFILE_Block *f = first_file, *next = NULL; f; f = next) {
+		next = f->next;
+		delete f;
+	}
+	first_file = NULL;
+}
 
 bool Virtual_Drive::FileOpen(DOS_File * * file,char * name,Bit32u flags) {
 /* Scan through the internal list of files */
@@ -146,7 +154,9 @@ bool Virtual_Drive::FileOpen(DOS_File * * file,char * name,Bit32u flags) {
 	while (cur_file) {
 		if (strcasecmp(name,cur_file->name)==0) {
 		/* We have a match */
-			*file=new Virtual_File(cur_file->data,cur_file->size);
+			*file=new Virtual_File((cur_file->data.size() ? &cur_file->data[0] : NULL),(Bit32u)cur_file->data.size());
+			//DBP: Added missing SetName (needed for state serializing)
+			(*file)->SetName(name);
 			(*file)->flags=flags;
 			return true;
 		}
@@ -182,7 +192,7 @@ bool Virtual_Drive::FileStat(const char* name, FileStat_Block * const stat_block
 	while (cur_file) {
 		if (strcasecmp(name,cur_file->name)==0) {
 			stat_block->attr=DOS_ATTR_ARCHIVE;
-			stat_block->size=cur_file->size;
+			stat_block->size=(Bit32u)cur_file->data.size();
 			stat_block->date=DOS_PackDate(2002,10,1);
 			stat_block->time=DOS_PackTime(12,34,56);
 			return true;
@@ -222,7 +232,7 @@ bool Virtual_Drive::FindNext(DOS_DTA & dta) {
 	dta.GetSearchParams(attr,pattern);
 	while (search_file) {
 		if (WildFileCmp(search_file->name,pattern)) {
-			dta.SetResult(search_file->name,search_file->size,search_file->date,search_file->time,DOS_ATTR_ARCHIVE);
+			dta.SetResult(search_file->name,(Bit32u)search_file->data.size(),search_file->date,search_file->time,DOS_ATTR_ARCHIVE);
 			search_file=search_file->next;
 			return true;
 		}

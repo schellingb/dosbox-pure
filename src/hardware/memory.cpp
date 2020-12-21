@@ -612,3 +612,25 @@ void MEM_Init(Section * sec) {
 	test = new MEMORY(sec);
 	sec->AddDestroyFunction(&MEM_ShutDown);
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_Memory(DBPArchive& ar)
+{
+	if (ar.mode == DBPArchive::MODE_ZERO) { ar.Serialize(memory); return; }
+
+	// memory.pages is serialized in DBPSerialize_All and validated to be unchanged during load
+	ar.Serialize(memory.lfb.start_page);
+	ar.Serialize(memory.lfb.end_page);
+	ar.Serialize(memory.lfb.pages);
+	ar.Serialize(memory.a20);
+	ar.SerializeSparse((char*)MemBase, (memory.pages * MEM_PAGE_SIZE));
+	ar.SerializeBytes(memory.mhandles, memory.pages * sizeof(MemHandle));
+
+	typedef PageHandler* PageHandlerPtr;
+	DBP_SERIALIZE_STATIC_POINTER_LIST(PageHandlerPtr, Memory, &illegal_page_handler, &ram_page_handler, &rom_page_handler);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PageHandlerPtr, VGA);
+	ar.SerializePointers((void**)memory.phandlers, memory.pages, true, 2,
+		DBP_SERIALIZE_GET_POINTER_LIST(PageHandlerPtr, Memory),
+		DBP_SERIALIZE_GET_POINTER_LIST(PageHandlerPtr, VGA));
+}

@@ -34,6 +34,10 @@
 
 Bitu call_program;
 
+#ifdef ANDROID
+#include "nonlibc.h"
+#endif
+
 /* This registers a file on the virtual drive and creates the correct structure for it*/
 
 static Bit8u exe_block[]={
@@ -52,7 +56,12 @@ static Bit8u exe_block[]={
 static std::vector<PROGRAMS_Main*> internal_progs;
 
 void PROGRAMS_MakeFile(char const * const name,PROGRAMS_Main * main) {
+	//DBP: removed memleak by copying data inside VFILE_Register
+	#if 0
 	Bit8u * comdata=(Bit8u *)malloc(32); //MEM LEAK
+	#else
+	Bit8u comdata[32];
+	#endif
 	memcpy(comdata,&exe_block,sizeof(exe_block));
 	comdata[CB_POS]=(Bit8u)(call_program&0xff);
 	comdata[CB_POS+1]=(Bit8u)((call_program>>8)&0xff);
@@ -134,7 +143,11 @@ void Program::WriteOut(const char * format,...) {
 	va_list msg;
 	
 	va_start(msg,format);
+#ifdef ANDROID
+	portable_vsnprintf(buf,2047,format,msg);
+#else
 	vsnprintf(buf,2047,format,msg);
+#endif
 	va_end(msg);
 
 	Bit16u size = (Bit16u)strlen(buf);
@@ -258,6 +271,7 @@ bool Program::SetEnv(const char * entry,const char * new_string) {
 	return true;
 }
 
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 bool MSG_Write(const char *);
 void restart_program(std::vector<std::string> & parameters);
 
@@ -766,12 +780,19 @@ void CONFIG::Run(void) {
 static void CONFIG_ProgramStart(Program * * make) {
 	*make=new CONFIG;
 }
+#endif
 
+//DBP: memory cleanup
+static void PROGRAMS_ShutDown(Section* /*sec*/) {
+	internal_progs.clear();
+}
 
-void PROGRAMS_Init(Section* /*sec*/) {
+void PROGRAMS_Init(Section* sec) {
+	sec->AddDestroyFunction(&PROGRAMS_ShutDown);
 	/* Setup a special callback to start virtual programs */
 	call_program=CALLBACK_Allocate();
 	CALLBACK_Setup(call_program,&PROGRAMS_Handler,CB_RETF,"internal program");
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 	PROGRAMS_MakeFile("CONFIG.COM",CONFIG_ProgramStart);
 
 	// listconf
@@ -819,4 +840,5 @@ void PROGRAMS_Init(Section* /*sec*/) {
 	MSG_Add("PROGRAM_CONFIG_GET_SYNTAX","Correct syntax: config -get \"section property\".\n");
 	MSG_Add("PROGRAM_CONFIG_PRINT_STARTUP","\nDOSBox was started with the following command line parameters:\n%s");
 	MSG_Add("PROGRAM_CONFIG_MISSINGPARAM","Missing parameter.");
+#endif
 }

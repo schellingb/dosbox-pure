@@ -963,6 +963,8 @@ void VGA_SetupMemory(Section* sec) {
 
 	vga.fastmem_orgptr = new Bit8u[(vga.vmemsize<<1)+4096+16];
 	vga.fastmem=(Bit8u*)(((Bitu)vga.fastmem_orgptr + 16-1) & ~(16-1));
+	//DBP: Added this zeroeing for better compression of serialized data
+	memset(vga.fastmem,0,(vga.vmemsize<<1)+4096);
 
 	// In most cases these values stay the same. Assumptions: vmemwrap is power of 2,
 	// vmemwrap <= vmemsize, fastmem implicitly has mem wrap twice as big
@@ -985,4 +987,40 @@ void VGA_SetupMemory(Section* sec) {
 		   conventional memory below 128k */
 		//TODO map?	
 	} 
+}
+
+#include <dbp_serialize.h>
+
+typedef PageHandler* PageHandlerPtr;
+DBP_SERIALIZE_SET_POINTER_LIST(PageHandlerPtr, VGA,
+	&vgaph.map,        &vgaph.changes, &vgaph.text, &vgaph.tandy,
+	&vgaph.cega,       &vgaph.cvga,    &vgaph.uega, &vgaph.uvga,
+	&vgaph.pcjr,       &vgaph.herc,    &vgaph.lin4, &vgaph.lfb,
+	&vgaph.lfbchanges, &vgaph.mmio,    &vgaph.empty);
+
+void DBPSerialize_VGA_Memory(DBPArchive& ar)
+{
+	if (ar.mode == DBPArchive::MODE_ZERO)
+	{
+		// it is assumed this is done after VGA_Memory_ShutDown has been called
+		ar.Serialize(vga.mem).Serialize(vga.vmemwrap).Serialize(vga.vmemsize).Serialize(vgapages);
+		#ifdef VGA_KEEP_CHANGES
+		ar.Serialize(vga.changes);
+		#endif
+		return;
+	}
+
+	// vga.vmemsize is serialized in DBPSerialize_All and validated to be unchanged during load
+	Bit32u vga_allocsize = vga.vmemsize;
+	if (vga_allocsize < 512*1024) vga_allocsize = 512*1024;
+	vga_allocsize += 2048;
+	ar.SerializeSparse(vga.mem.linear, vga_allocsize);
+	ar.Serialize(vga.vmemwrap);
+	ar.SerializeSparse(vga.fastmem, (vga.vmemsize<<1)+4096);
+	ar.Serialize(vgapages);
+
+	#ifdef VGA_KEEP_CHANGES
+	ar.SerializeExcept(vga.changes, vga.changes.map);
+	ar.Serialize(vga.changes.map, (vga.vmemsize >> VGA_CHANGE_SHIFT) + 32);
+	#endif
 }

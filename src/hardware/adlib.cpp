@@ -29,6 +29,11 @@
 #include "dbopl.h"
 #include "cpu.h"
 
+#ifdef C_DBP_ENABLE_NUKEDOPL3
+#include "nukedopl3.h"
+#endif
+
+#ifdef C_DBP_ENABLE_OLDOPL
 #include "mame/emu.h"
 #include "mame/fmopl.h"
 #include "mame/ymf262.h"
@@ -166,9 +171,8 @@ struct Handler : public Adlib::Handler {
 }
 
 
-
 #define RAW_SIZE 1024
-
+#endif /* C_DBP_ENABLE_OLDOPL */
 
 /*
 	Main Adlib implementation
@@ -177,6 +181,8 @@ struct Handler : public Adlib::Handler {
 
 namespace Adlib {
 
+//DBP: moved out of dynamically allocated data into static so it preserves across runtime config modifications
+static RegisterCache cache;
 
 /* Raw DRO capture stuff */
 
@@ -210,6 +216,7 @@ struct RawHeader {
 	After the conversion table the raw data follows immediatly till the end of the chunk
 */
 
+#ifdef C_DBP_ENABLE_CAPTURE
 //Table to map the opl register to one <127 for dro saving
 class Capture {
 	//127 entries to go from raw data to registers
@@ -435,6 +442,7 @@ skipWrite:
 	}
 
 };
+#endif
 
 /*
 Chip
@@ -498,10 +506,12 @@ Bit8u Chip::Read( ) {
 }
 
 void Module::CacheWrite( Bit32u reg, Bit8u val ) {
+#ifdef C_DBP_ENABLE_CAPTURE
 	//capturing?
 	if ( capture ) {
 		capture->DoWrite( reg, val );
 	}
+#endif
 	//Store it into the cache
 	cache[ reg ] = val;
 }
@@ -681,7 +691,6 @@ Bitu Module::PortRead( Bitu port, Bitu iolen ) {
 
 void Module::Init( Mode m ) {
 	mode = m;
-	memset(cache, 0, sizeof(cache));
 	switch ( mode ) {
 	case MODE_OPL3:
 	case MODE_OPL3GOLD:
@@ -707,7 +716,7 @@ static void OPL_CallBack(Bitu len) {
 	//Disable the sound generation after 30 seconds of silence
 	if ((PIC_Ticks - module->lastUsed) > 30000) {
 		Bitu i;
-		for (i=0xb0;i<0xb9;i++) if (module->cache[i]&0x20||module->cache[i+0x100]&0x20) break;
+		for (i=0xb0;i<0xb9;i++) if (Adlib::cache[i]&0x20||Adlib::cache[i+0x100]&0x20) break;
 		if (i==0xb9) module->mixerChan->Enable(false);
 		else module->lastUsed = PIC_Ticks;
 	}
@@ -721,6 +730,7 @@ void OPL_Write(Bitu port,Bitu val,Bitu iolen) {
 	module->PortWrite( port, val, iolen );
 }
 
+#ifdef C_DBP_ENABLE_CAPTURE
 /*
 	Save the current state of the operators as instruments in an reality adlib tracker file
 */
@@ -737,7 +747,7 @@ static void SaveRad() {
 	b[w++] = 0x06;		//default speed and no description
 	//Write 18 instuments for all operators in the cache
 	for ( int i = 0; i < 18; i++ ) {
-		Bit8u* set = module->cache + ( i / 9 ) * 256;
+		Bit8u* set = Adlib::cache + ( i / 9 ) * 256;
 		Bitu offset = ((i % 9) / 3) * 8 + (i % 3);
 		Bit8u* base = set + offset;
 		b[w++] = 1 + i;		//instrument number
@@ -775,9 +785,10 @@ static void OPL_SaveRawEvent(bool pressed) {
 		LOG_MSG("Stopped Raw OPL capturing.");
 	} else {
 		LOG_MSG("Preparing to capture Raw OPL, will start with first note played.");
-		module->capture = new Adlib::Capture( &module->cache );
+		module->capture = new Adlib::Capture( &Adlib::cache );
 	}
 }
+#endif
 
 namespace Adlib {
 
@@ -790,7 +801,9 @@ Module::Module( Section* configuration ) : Module_base(configuration) {
 	ctrl.lvol = 0xff;
 	ctrl.rvol = 0xff;
 	handler = 0;
+#ifdef C_DBP_ENABLE_CAPTURE
 	capture = 0;
+#endif
 
 	Section_prop * section=static_cast<Section_prop *>(configuration);
 	Bitu base = section->Get_hex("sbbase");
@@ -801,13 +814,19 @@ Module::Module( Section* configuration ) : Module_base(configuration) {
 	std::string oplemu( section->Get_string( "oplemu" ) );
 	ctrl.mixer = section->Get_bool("sbmixer");
 
+#ifdef C_DBP_ENABLE_NUKEDOPL3
+	if (oplemu == "nuked") rate = 49716; // fix frequency for nuked opl
+#endif
+
 	mixerChan = mixerObject.Install(OPL_CallBack,rate,"FM");
 	//Used to be 2.0, which was measured to be too high. Exact value depends on card/clone.
 	mixerChan->SetScale( 1.5f );  
 
 	if (oplemu == "fast") {
 		handler = new DBOPL::Handler();
-	} else if (oplemu == "compat") {
+	}
+#ifdef C_DBP_ENABLE_OLDOPL
+	else if (oplemu == "compat") {
 		if ( oplmode == OPL_opl2 ) {
 			handler = new OPL2::Handler();
 		} else {
@@ -821,7 +840,14 @@ Module::Module( Section* configuration ) : Module_base(configuration) {
 		else {
 			handler = new MAMEOPL3::Handler();
 		}
-	} else {
+	}
+#endif
+#ifdef C_DBP_ENABLE_NUKEDOPL3
+	else if (oplemu == "nuked") {
+		handler = new NukedOPL::Handler();
+	}
+#endif
+	else {
 		handler = new DBOPL::Handler();
 	}
 	handler->Init( rate );
@@ -853,13 +879,17 @@ Module::Module( Section* configuration ) : Module_base(configuration) {
 	WriteHandler[2].Install(base+8,OPL_Write,IO_MB, 2);
 	ReadHandler[2].Install(base+8,OPL_Read,IO_MB, 1);
 
+#if defined(C_DBP_ENABLE_CAPTURE) && defined(C_DBP_ENABLE_MAPPER)
 	MAPPER_AddHandler(OPL_SaveRawEvent,MK_f7,MMOD1|MMOD2,"caprawopl","Cap OPL");
+#endif
 }
 
 Module::~Module() {
+#ifdef C_DBP_ENABLE_CAPTURE
 	if ( capture ) {
 		delete capture;
 	}
+#endif
 	if ( handler ) {
 		delete handler;
 	}
@@ -870,14 +900,47 @@ OPL_Mode Module::oplmode=OPL_none;
 
 };	//Adlib Namespace
 
+#include "control.h"
 
 void OPL_Init(Section* sec,OPL_Mode oplmode) {
 	Adlib::Module::oplmode = oplmode;
 	module = new Adlib::Module( sec );
+
+	//DBP: Reset registers to their latest values
+	if (control->initialised)
+		for (Bit32u i = 0; i != 512; i++)
+			module->handler->WriteReg(i, Adlib::cache[i]);
 }
 
 void OPL_ShutDown(Section* sec){
 	delete module;
 	module = 0;
 
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize(DBPArchive& ar, Adlib::Module* self)
+{
+	ar
+		.Serialize(self->reg)
+		.Serialize(self->ctrl)
+		.Serialize(self->oplmode)
+		.Serialize(self->lastUsed)
+		.SerializeArray(self->chip)
+		.SerializeArray(Adlib::cache);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		// Reset registers to their latest values
+		for (Bit32u i = 0; i != 512; i++)
+			self->handler->WriteReg(i, Adlib::cache[i]);
+	}
+}
+
+void DBPSerialize_OPL(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, (module ? module->mixerChan : NULL));
+	if (ar.IsSkip()) return;
+	DBPSerialize(ar, module);
 }

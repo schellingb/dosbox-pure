@@ -164,8 +164,15 @@ Bit8u imageDisk::Read_AbsoluteSector(Bit32u sectnum, void * data) {
 
 	bytenum = sectnum * sector_size;
 
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	if (last_action==WRITE || bytenum!=current_fpos) dos_file->Seek(&bytenum, DOS_SEEK_SET);
+	DBP_ASSERT(sector_size <= 0xFFFF);
+	Bit16u read_size = (Bit16u)sector_size;
+	size_t ret=dos_file->Read((Bit8u*)data, &read_size)?read_size:0;
+	#else
 	if (last_action==WRITE || bytenum!=current_fpos) fseek(diskimg,bytenum,SEEK_SET);
 	size_t ret=fread(data, 1, sector_size, diskimg);
+	#endif
 	current_fpos=bytenum+ret;
 	last_action=READ;
 
@@ -188,8 +195,15 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 
 	//LOG_MSG("Writing sectors to %ld at bytenum %d", sectnum, bytenum);
 
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	if (last_action==READ || bytenum!=current_fpos) dos_file->Seek(&bytenum, DOS_SEEK_SET);
+	DBP_ASSERT(sector_size <= 0xFFFF);
+	Bit16u write_size = (Bit16u)sector_size;
+	size_t ret=dos_file->Write((Bit8u*)data, &write_size)?write_size:0;
+	#else
 	if (last_action==READ || bytenum!=current_fpos) fseek(diskimg,bytenum,SEEK_SET);
 	size_t ret=fwrite(data, 1, sector_size, diskimg);
+	#endif
 	current_fpos=bytenum+ret;
 	last_action=WRITE;
 
@@ -197,15 +211,117 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 
 }
 
+#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+DOS_File *imageDisk::OpenDosFile(char const * filename, Bit32u *bsize, bool* writable, char const * relative_to) {
+	if (relative_to && *relative_to) {
+		std::string merge = relative_to;
+		size_t lastfs = merge.rfind('/'), lastbs = merge.rfind('\\');
+		size_t lasts = (lastfs != std::string::npos && lastfs > lastbs ? lastfs : lastbs);
+		if (lasts == std::string::npos) merge.clear();
+		else merge.erase(lasts + 1, merge.length() - lasts - 1);
+		merge += filename;
+		DOS_File *merge_file = OpenDosFile(merge.c_str(), bsize);
+		if (merge_file) return merge_file;
+	}
+
+	bool force_mounted = (filename[0] == '$');
+	if (force_mounted) filename++;
+
+	Bit8u drive;
+	char fullname[DOS_PATHLENGTH];
+	DOS_File *dos_file;
+	if (DOS_MakeName(const_cast<char*>(filename),fullname,&drive)) {
+		if (writable && Drives[drive]->FileOpen(&dos_file, fullname, OPEN_READWRITE))
+			goto get_file_size;
+		if (Drives[drive]->FileOpen(&dos_file, fullname, OPEN_READ))
+			goto get_file_size_write_protected;
+	}
+	if (!force_mounted) {
+		//File not found on mounted filesystem. Try regular filesystem
+		std::string filename_s(filename);
+		Cross::ResolveHomedir(filename_s);
+		FILE* raw_file_h;
+		if (writable && (raw_file_h = fopen_wrap(filename_s.c_str(), "rb+")) != NULL) {
+			dos_file = new rawFile(raw_file_h, true);
+			goto get_file_size;
+		}
+		if ((raw_file_h = fopen_wrap(filename_s.c_str(), "rb")) != NULL) {
+			dos_file = new rawFile(raw_file_h, false);
+			goto get_file_size_write_protected;
+		}
+	}
+	return NULL;
+
+	get_file_size_write_protected:
+	if (writable) { *writable = false; writable = NULL; }
+	get_file_size:
+	if (writable) *writable = true;
+	dos_file->AddRef();
+	Bit32u seek;
+	bool can_seek = dos_file->Seek(&(seek = 0), DOS_SEEK_END);
+	DBP_ASSERT(can_seek);
+	if (bsize) *bsize = seek;
+	dos_file->Seek(&(seek = 0), DOS_SEEK_SET);
+	return dos_file;
+}
+
+Bit32u imageDisk::Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len)
+{
+	if ((Bit32u)seek != current_fpos)
+	{
+		current_fpos = (Bit32u)seek;
+		dos_file->Seek(&current_fpos, DOS_SEEK_SET);
+	}
+	for (Bit32u remain = (Bit32u)len; remain;)
+	{
+		Bit16u sz = (remain > 0xFFFF ? 0xFFFF : (Bit16u)remain);
+		if (!dos_file->Read(buffer, &sz) || !sz) { len -= remain; break; }
+		remain -= sz;
+		buffer += sz;
+	}
+	current_fpos += (Bit32u)len;
+	return len;
+}
+
+imageDisk::~imageDisk()
+{
+	for (Bit16u i=0;i<DOS_DRIVES;i++)
+	{
+		fatDrive* fat_drive = (Drives[i] ? dynamic_cast<fatDrive*>(Drives[i]) : NULL);
+		if (!fat_drive || fat_drive->loadedDisk != this) continue;
+		fat_drive->loadedDisk = NULL;
+	}
+	if (dos_file)
+	{
+		if (dos_file->IsOpen()) dos_file->Close();
+		if (dos_file->RemoveRef() <= 0) delete dos_file;
+	}
+	for(int i=0;i<MAX_SWAPPABLE_DISKS;i++)
+		if (diskSwap[i] == this)
+			diskSwap[i] = NULL;
+	for(int i=0;i<MAX_DISK_IMAGES;i++)
+		if (imageDiskList[i] == this)
+			imageDiskList[i] = NULL;
+}
+
+imageDisk::imageDisk(DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk) {
+#else
 imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk) {
+#endif
 	heads = 0;
 	cylinders = 0;
 	sectors = 0;
 	sector_size = 512;
 	current_fpos = 0;
 	last_action = NONE;
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	DBP_ASSERT(imgFile->refCtr >= 1);
+	dos_file = imgFile;
+	dos_file->Seek(&current_fpos, DOS_SEEK_SET);
+	#else
 	diskimg = imgFile;
 	fseek(diskimg,0,SEEK_SET);
+	#endif
 	memset(diskname,0,512);
 	safe_strncpy(diskname, imgName, sizeof(diskname));
 	active = false;
@@ -571,7 +687,8 @@ void BIOS_SetupDisks(void) {
 	CALLBACK_Setup(call_int13,&INT13_DiskHandler,CB_INT13,"Int 13 Bios disk");
 	RealSetVec(0x13,CALLBACK_RealPointer(call_int13));
 	int i;
-	for(i=0;i<4;i++) {
+	//DBP: Changed fixed 4 to MAX_DISK_IMAGES
+	for(i=0;i<MAX_DISK_IMAGES;i++) {
 		imageDiskList[i] = NULL;
 	}
 
@@ -598,7 +715,25 @@ void BIOS_SetupDisks(void) {
 /* Setup the Bios Area */
 	mem_writeb(BIOS_HARDDISK_COUNT,2);
 
+#ifdef C_DBP_ENABLE_MAPPER
 	MAPPER_AddHandler(swapInNextDisk,MK_f4,MMOD1,"swapimg","Swap Image");
+#endif
 	killRead = false;
 	swapping_requested = false;
+}
+
+//DBP: Memory cleanup
+void BIOS_ShutdownDisks(void) {
+	for (int i = 0; i != MAX_SWAPPABLE_DISKS + MAX_DISK_IMAGES; i++) {
+		imageDisk* id = (i < MAX_SWAPPABLE_DISKS ? diskSwap[i] : imageDiskList[i - MAX_SWAPPABLE_DISKS]);
+		if (!id) continue;
+		delete id;
+		for (int j = 0; j != MAX_SWAPPABLE_DISKS + MAX_DISK_IMAGES; j++) {
+			imageDisk*& jd = (j < MAX_SWAPPABLE_DISKS ? diskSwap[j] : imageDiskList[j - MAX_SWAPPABLE_DISKS]);
+			if (jd == id) jd = NULL;
+		}
+	}
+	imgDTASeg = 0;
+	imgDTAPtr = 0;
+	if (imgDTA) { delete imgDTA; imgDTA = NULL; }
 }

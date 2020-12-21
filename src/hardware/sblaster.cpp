@@ -428,6 +428,8 @@ static void GenerateDMASound(Bitu size) {
 		if (sb.dma.left <= sb.dma.min) 
 			size = sb.dma.left;
 	}
+	//DBP: limit size (maybe DMA_BUFSIZE should be doubled instead)
+	if (size > DMA_BUFSIZE) size = DMA_BUFSIZE;
 
 	//Read the actual data, process it and send it off to the mixer
 	switch (sb.dma.mode) {
@@ -1749,6 +1751,8 @@ public:
 		}
 		if (sb.type==SBT_NONE || sb.type==SBT_GB) return;
 		DSP_Reset(); // Stop everything	
+		//DBP: Added cleanup for restart support
+		sb.chan=0;
 	}	
 }; //End of SBLASTER class
 
@@ -1761,4 +1765,32 @@ void SBLASTER_ShutDown(Section* /*sec*/) {
 void SBLASTER_Init(Section* sec) {
 	test = new SBLASTER(sec);
 	sec->AddDestroyFunction(&SBLASTER_ShutDown,true);
+}
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, SBLASTER, DMA_Silent_Event, END_DMA_Event, DSP_FinishReset, DSP_RaiseIRQEvent);
+DBP_SERIALIZE_SET_POINTER_LIST(DMA_CallBack, SBLASTER, DSP_ADC_CallBack, DSP_DMA_CallBack, DSP_E2_DMA_CallBack);
+
+void DBPSerialize_SBLASTER(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, sb.chan);
+	if (ar.IsSkip()) return;
+
+	Bit8u dma_num = 0;
+	if (ar.mode == DBPArchive::MODE_SAVE)
+		for (; dma_num != 8; dma_num++)
+			if (sb.dma.chan == GetDMAChannel(dma_num))
+				break;
+
+	ar
+		.SerializeExcept(sb, sb.dma.chan, sb.chan)
+		.Serialize(dma_num)
+		.SerializeArray(ASP_regs)
+		.Serialize(ASP_init_in_progress)
+		.Serialize(last_dma_callback);
+	
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		sb.dma.chan = GetDMAChannel(dma_num);
+	}
 }

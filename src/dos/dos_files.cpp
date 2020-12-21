@@ -572,6 +572,8 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry,bool fcb) {
 	if (exists || device ) { 
 		Files[handle]->AddRef();
 		if (!fcb) psp.SetFileHandle(*entry,handle);
+		DBP_ASSERT(Files[handle]->name && *Files[handle]->name); //make sure we have a name (needed for state serializing)
+		DBP_ASSERT(Files[handle]->GetDrive() < DOS_DRIVES || (Files[handle]->GetDrive() == 0xFF && device)); //drive 255 must be device
 		return true;
 	} else {
 		//Test if file exists, but opened in read-write mode (and writeprotected)
@@ -1328,4 +1330,79 @@ void DOS_SetupFiles (void) {
 		Drives[i]=0;
 	}
 	Drives[25]=new Virtual_Drive();
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_Files(DBPArchive& ar)
+{
+	Bit8u openFiles = 0;
+	for (Bit8u i = 0; i < DOS_FILES; i++)
+	{
+		if (!Files[i]) continue;
+		if (ar.mode != DBPArchive::MODE_LOAD)
+		{
+			if (!Files[i]->open || Files[i]->refCtr <= 0) { DBP_ASSERT(false); continue; } //file handles shouldn't hang around closed
+			if (!Files[i]->name || !*Files[i]->name) { DBP_ASSERT(false); continue; } //file handles need a name
+			openFiles++;
+		}
+		else
+		{
+			// First close all files
+			DBP_ASSERT(Files[i]->open && Files[i]->refCtr > 0); //files shouldn't hang around closed
+			while (Files[i]->refCtr > 0) { if (Files[i]->IsOpen()) Files[i]->Close(); Files[i]->RemoveRef(); }
+			delete Files[i];
+			Files[i] = NULL;
+		}
+	}
+	if (ar.mode == DBPArchive::MODE_MAXSIZE) openFiles = DOS_FILES;
+
+	ar << openFiles;
+
+	std::vector<char> buf;
+	for (Bit8u i = (Bit8u)-1; openFiles--;)
+	{
+		Bit8u drive, name_len, devnum; Bit32u flags; Bit16u attr; Bit32u refCtr, seekPos;
+		if (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE)
+		{
+			while (!Files[++i] || !Files[i]->open || Files[i]->refCtr <= 0 || !Files[i]->name || !*Files[i]->name) { }
+			drive = Files[i]->GetDrive();
+			name_len = (Bit8u)strlen(Files[i]->name);
+			flags = Files[i]->flags;
+			attr = Files[i]->attr;
+			refCtr = (Bit32u)Files[i]->refCtr;
+			Files[i]->Seek(&(seekPos = 0), DOS_SEEK_CUR);
+			if (drive >= DOS_DRIVES) devnum = (Bit8u)dynamic_cast<DOS_Device*>(Files[i])->GetDeviceNumber();
+		}
+
+		ar << i << drive << name_len << flags << attr << refCtr << seekPos;
+		if (ar.mode == DBPArchive::MODE_MAXSIZE) ar.SerializeBytes(NULL, DOS_PATHLENGTH);
+		else if (drive >= DOS_DRIVES) ar << devnum;
+		else if (ar.mode != DBPArchive::MODE_LOAD) { ar.SerializeBytes(Files[i]->name, name_len); }
+		else { buf.resize(name_len + 1); ar.SerializeBytes(&buf[0], name_len); buf[name_len] = '\0'; }
+
+		if (ar.mode == DBPArchive::MODE_LOAD)
+		{
+			if (drive >= DOS_DRIVES)
+			{
+				if (devnum > DOS_DEVICES || !Devices[devnum])
+					{ ar.warnings |= DBPArchive::WARN_WRONGDEVICES; continue; }
+				Files[i] = new DOS_Device(*Devices[devnum]);
+				DBP_ASSERT(Files[i]->GetDrive() == drive);
+			}
+			else
+			{
+				if (!Drives[drive] || (
+					!Drives[drive]->FileOpen(&Files[i], &buf[0], flags) &&
+						(!OPEN_IS_WRITING(flags) || !Drives[drive]->FileCreate(&Files[i], &buf[0], attr))))
+					{ ar.warnings |= DBPArchive::WARN_WRONGDRIVES; continue; }
+				DBP_ASSERT(Files[i]);
+				Files[i]->SetDrive(drive);
+			}
+			Files[i]->flags = flags;
+			Files[i]->attr = attr;
+			Files[i]->refCtr = (Bits)refCtr;
+			Files[i]->Seek(&seekPos, DOS_SEEK_SET);
+		}
+	}
 }

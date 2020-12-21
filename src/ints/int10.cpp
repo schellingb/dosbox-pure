@@ -767,3 +767,10 @@ void INT10_Init(Section* /*sec*/) {
 	INT10_Seg40Init();
 	INT10_SetVideoMode(0x3);
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_INT10(DBPArchive& ar)
+{
+	ar.Serialize(int10);
+}

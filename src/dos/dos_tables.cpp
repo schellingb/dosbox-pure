@@ -39,7 +39,8 @@ RealPt DOS_TableLowCase;
 
 static Bitu call_casemap;
 
-static Bit16u dos_memseg=DOS_PRIVATE_SEGMENT;
+//DBP: Removed static to access this in DBPSerialize_Memory
+Bit16u dos_memseg=DOS_PRIVATE_SEGMENT;
 
 Bit16u DOS_GetMemory(Bit16u pages) {
 	if ((Bitu)pages+(Bitu)dos_memseg>=DOS_PRIVATE_SEGMENT_END) {
@@ -176,4 +177,9 @@ void DOS_SetupTables(void) {
 	/* Add it to country structure */
 	host_writed(country_info + 0x12, CALLBACK_RealPointer(call_casemap));
 	dos.tables.country=country_info;
+}
+
+//DBP: Added shutdown for restart support
+void DOS_ShutdownTables(void) {
+	dos_memseg=DOS_PRIVATE_SEGMENT;
 }

@@ -1,0 +1,14 @@
+build/
+.vs/
+*.ncb
+*.opt
+*.plg
+*.aps
+*.ipch
+*.suo
+*.user
+*.sdf
+*.opensdf
+*.cfg
+*.dll
+*.so

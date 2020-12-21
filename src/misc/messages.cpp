@@ -55,6 +55,7 @@ void MSG_Add(const char * _name, const char* _val) {
 	Lang.push_back(MessageBlock(_name,_val));
 }
 
+#ifdef C_DBP_ENABLE_MESSAGEFILE
 void MSG_Replace(const char * _name, const char* _val) {
 	/* Find the message */
 	for(itmb tel=Lang.begin();tel!=Lang.end();tel++) {
@@ -111,6 +112,7 @@ static void LoadMessageFile(const char * fname) {
 	}
 	fclose(mfile);
 }
+#endif // C_DBP_ENABLE_MESSAGEFILE
 
 const char * MSG_Get(char const * msg) {
 	for(itmb tel=Lang.begin();tel!=Lang.end();tel++){	
@@ -123,6 +125,7 @@ const char * MSG_Get(char const * msg) {
 }
 
 
+#ifdef C_DBP_ENABLE_MESSAGEFILE
 bool MSG_Write(const char * location) {
 	FILE* out=fopen(location,"w+t");
 	if(out==NULL) return false;//maybe an error?
@@ -132,8 +135,10 @@ bool MSG_Write(const char * location) {
 	fclose(out);
 	return true;
 }
+#endif // C_DBP_ENABLE_MESSAGEFILE
 
 void MSG_Init(Section_prop * section) {
+#ifdef C_DBP_ENABLE_MESSAGEFILE
 	std::string file_name;
 	if (control->cmdline->FindString("-lang",file_name,true)) {
 		LoadMessageFile(file_name.c_str());
@@ -141,4 +146,5 @@ void MSG_Init(Section_prop * section) {
 		Prop_path* pathprop = section->Get_path("language");
 		if(pathprop) LoadMessageFile(pathprop->realpath.c_str());
 	}
+#endif // C_DBP_ENABLE_MESSAGEFILE
 }

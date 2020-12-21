@@ -189,6 +189,7 @@ ScalerSimpleBlock_t ScaleNormal1x = {
 {	Normal1x_8_8_R,		Normal1x_9_15_R ,	Normal1x_9_16_R ,	Normal1x_9_32_R }
 }};
 
+#ifdef C_DBP_ENABLE_SCALERS
 ScalerSimpleBlock_t ScaleNormalDw = {
 	"Normal",
 	GFX_CAN_8|GFX_CAN_15|GFX_CAN_16|GFX_CAN_32,
@@ -439,3 +440,4 @@ ScalerComplexBlock_t ScaleAdvInterp3x = {
 };
 
 #endif
+#endif /* C_DBP_ENABLE_SCALERS */

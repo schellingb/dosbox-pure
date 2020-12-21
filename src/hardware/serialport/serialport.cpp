@@ -202,7 +202,7 @@ void CSerial::log_ser(bool active, char const* format,...) {
 		// copied from DEBUG_SHOWMSG
 		char buf[512];
 		buf[0]=0;
-		sprintf(buf,"%12.3f [% 7u] ",PIC_FullIndex(), SDL_GetTicks());
+		sprintf(buf,"%12.3f [% 7u] ",PIC_FullIndex(), /*SDL_*/GetTicks());
 		va_list msg;
 		va_start(msg,format);
 		vsprintf(buf+strlen(buf),format,msg);
@@ -1151,6 +1151,10 @@ CSerial::~CSerial(void) {
 	DOS_DelDevice(mydosdevice);
 	for(Bitu i = 0; i <= SERIAL_BASE_EVENT_COUNT; i++)
 		removeEvent(i);
+	//DBP: memory cleanup
+	delete errorfifo;
+	delete rxfifo;
+	delete txfifo;
 };
 bool CSerial::Getchar(Bit8u* data, Bit8u* lsr, bool wait_dsr, Bitu timeout) {
 	double starttime=PIC_FullIndex();
@@ -1296,3 +1300,6 @@ void SERIAL_Init (Section * sec) {
 	testSerialPortsBaseclass = new SERIALPORTS (sec);
 	sec->AddDestroyFunction (&SERIAL_Destroy, true);
 }
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, SERIAL, Serial_EventHandler);

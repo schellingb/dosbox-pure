@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2002-2020  The DOSBox Team
+ *  Copyright (C) 2020-2020  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -113,8 +114,25 @@ DOS_Drive::DOS_Drive() {
 	info[0]=0;
 }
 
-char * DOS_Drive::GetInfo(void) {
-	return info;
+//DBP: Added these helper utility functions
+void DOS_Drive::ForceCloseAll() {
+	Bit8u i, drive = DOS_DRIVES;
+	for (i = 0; i < DOS_DRIVES; i++) {
+		if (Drives[i] == this) {
+			drive = i;
+			break;
+		}
+	}
+	if (drive != DOS_DRIVES) {
+		for (i = 0; i < DOS_FILES; i++) {
+			if (Files[i] && Files[i]->GetDrive() == drive) {
+				DBP_ASSERT(Files[i]->open && Files[i]->refCtr > 0); //files shouldn't hang around closed
+				while (Files[i]->refCtr > 0) { if (Files[i]->IsOpen()) Files[i]->Close(); Files[i]->RemoveRef(); }
+				delete Files[i];
+				Files[i] = NULL;
+			}
+		}
+	}
 }
 
 // static members variables
@@ -227,4 +245,110 @@ void DriveManager::Init(Section* /* sec */) {
 
 void DRIVES_Init(Section* sec) {
 	DriveManager::Init(sec);
+}
+
+//DBP: Added these helper utility functions
+bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
+	Bit8u i, drive = DOS_DRIVES;
+	for (i = 0; i < DOS_DRIVES; i++) {
+		if (!Drives[i]) continue;
+		if (Drives[i] == drv) {
+			drive = i;
+			break;
+		}
+		unionDrive* ud = dynamic_cast<unionDrive*>(Drives[i]);
+		if (ud && ud->IsShadowedDrive(drv)) {
+			drive = i;
+			break;
+		}
+	}
+	bool found_file = false;
+	if (drive != DOS_DRIVES) {
+		for (i = 0; i < DOS_FILES; i++) {
+			if (Files[i] && Files[i]->GetDrive() == drive && Files[i]->IsName(name)) {
+				DBP_ASSERT(Files[i]->open && Files[i]->refCtr > 0); //files shouldn't hang around closed
+				while (Files[i]->refCtr > 0) { if (Files[i]->IsOpen()) Files[i]->Close(); Files[i]->RemoveRef(); }
+				delete Files[i];
+				Files[i] = NULL;
+				found_file = true;
+			}
+		}
+	}
+	return found_file;
+}
+
+Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len)
+{
+	struct Func
+	{
+		static void AppendFiltered(char*& trg, const char* trg_end, const char* src, Bit32u len)
+		{
+			for (; trg < trg_end && len--; trg++)
+			{
+				char DOS_ToUpper(char);
+				*trg = *(src++);
+				if (*trg <= ' ' || *trg == '.') *trg = '-';
+				*trg = DOS_ToUpper(*trg);
+			}
+		}
+	};
+	const char *target_start = target, *target_end = target + target_len, *source_end = source + source_len, *sDot;
+	for (sDot = source_end - 1; *sDot != '.' && sDot >= source; sDot--);
+	Bit32u baseLen = (Bit32u)((*sDot == '.' ? sDot : source_end) - source);
+	Bit32u extLen = (Bit32u)(*sDot == '.' ? source_end - 1 - sDot : 0);
+	Bit32u baseLeft = (baseLen > 8 ? 4 : baseLen), baseRight = (baseLen > 8 ? 4 : 0);
+	Func::AppendFiltered(target, target_end, source, baseLeft);
+	Func::AppendFiltered(target, target_end, source + baseLen - baseRight, baseRight);
+	if (!baseLen && target < target_end) *(target++) = '-';
+	if (extLen && target < target_end) *(target++) = '.';
+	Func::AppendFiltered(target, target_end, sDot + 1, (extLen > 3 ? 3 : extLen));
+	return (Bit32u)(target - target_start);
+}
+
+//DBP: utility function to evaluate an entire drives filesystem
+void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
+{
+	if (!drv) return;
+	struct Iter
+	{
+		static void ParseDir(DOS_Drive* drv, std::string dir, std::vector<std::string>& dirs, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
+		{
+			size_t dirlen = dir.length();
+			if (dirlen + DOS_NAMELENGTH >= DOS_PATHLENGTH) return;
+			char full_path[DOS_PATHLENGTH+4];
+			if (dirlen)
+			{
+				memcpy(full_path, &dir[0], dirlen);
+				full_path[dirlen++] = '\\';
+			}
+			full_path[dirlen] = '\0';
+
+			RealPt save_dta = dos.dta();
+			dos.dta(dos.tables.tempdta);
+			DOS_DTA dta(dos.dta());
+			dta.SetupSearch(255, (Bit8u)(0xffff & ~DOS_ATTR_VOLUME), (char*)"*.*");
+			for (bool more = drv->FindFirst((char*)dir.c_str(), dta); more; more = drv->FindNext(dta))
+			{
+				char dta_name[DOS_NAMELENGTH_ASCII]; Bit32u dta_size; Bit16u dta_date, dta_time; Bit8u dta_attr;
+				dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
+				
+				strcpy(full_path + dirlen, dta_name);
+				bool is_dir = !!(dta_attr & DOS_ATTR_DIRECTORY);
+				//if (is_dir) printf("[%s] [%s] %s (size: %u - date: %u - time: %u - attr: %u)\n", (const char*)data, (dta_attr == 8 ? "V" : (is_dir ? "D" : "F")), full_path, dta_size, dta_date, dta_time, dta_attr);
+				if (dta_name[0] == '.' && (dta_name[1] == '\0' || (dta_name[1] == '.' && dta_name[2] == '\0'))) continue;
+				if (is_dir) dirs.push_back(full_path);
+				func(full_path, is_dir, dta_size, dta_date, dta_time, dta_attr, data);
+			}
+			dos.dta(save_dta);
+		}
+	};
+	std::vector<std::string> dirs;
+	dirs.push_back("");
+	std::string dir;
+	while (dirs.size())
+	{
+		std::swap(dirs.back(), dir);
+		dirs.pop_back();
+		Iter::ParseDir(drv, dir.c_str(), dirs, func, data);
+	}
 }

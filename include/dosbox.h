@@ -22,7 +22,10 @@
 
 #include "config.h"
 
-GCC_ATTRIBUTE(noreturn) void E_Exit(const char * message,...) GCC_ATTRIBUTE( __format__(__printf__, 1, 2));
+#ifdef C_DBP_USE_SDL
+GCC_ATTRIBUTE(noreturn) 
+#endif
+void E_Exit(const char * message,...) GCC_ATTRIBUTE( __format__(__printf__, 1, 2));
 
 void MSG_Add(const char*,const char*); //add messages to the internal languagefile
 const char* MSG_Get(char const *);     //get messages from the internal languagefile
@@ -59,7 +62,9 @@ enum SVGACards {
 
 extern SVGACards svgaCard;
 extern MachineType machine;
+#ifdef C_DBP_USE_SDL
 extern bool SDLNetInited;
+#endif
 
 #define IS_TANDY_ARCH ((machine==MCH_TANDY) || (machine==MCH_PCJR))
 #define IS_EGAVGA_ARCH ((machine==MCH_EGA) || (machine==MCH_VGA))

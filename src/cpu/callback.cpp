@@ -130,6 +130,8 @@ void CALLBACK_SIF(bool val) {
 
 void CALLBACK_SetDescription(Bitu nr, const char* descr) {
 	if (descr) {
+		//DBP: Cleanup memory
+		if (CallBack_Description[nr]) delete [] CallBack_Description[nr];
 		CallBack_Description[nr] = new char[strlen(descr)+1];
 		strcpy(CallBack_Description[nr],descr);
 	} else
@@ -617,7 +619,19 @@ void CALLBACK_HandlerObject::Set_RealVec(Bit8u vec){
 	} else E_Exit ("double usage of vector handler");
 }
 
-void CALLBACK_Init(Section* /*sec*/) {
+//DBP: memory cleanup
+#include "setup.h"
+static void CALLBACK_ShutDown(Section* /*sec*/) {
+	for (Bitu i=0;i<CB_MAX;i++) {
+		if (!CallBack_Description[i]) continue;
+		delete [] CallBack_Description[i];
+		CallBack_Description[i]=0;
+	}
+}
+
+void CALLBACK_Init(Section* sec) {
+	sec->AddDestroyFunction(&CALLBACK_ShutDown);
+
 	Bitu i;
 	for (i=0;i<CB_MAX;i++) {
 		CallBack_Handlers[i]=&illegal_handler;

@@ -52,7 +52,9 @@
 
 class Config{
 public:
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	CommandLine * cmdline;
+#endif
 private:
 	std::list<Section*> sectionlist;
 	typedef std::list<Section*>::iterator it;
@@ -63,6 +65,7 @@ private:
 	bool secure_mode; //Sandbox mode
 public:
 	bool initialised;
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	std::vector<std::string> startup_params;
 	std::vector<std::string> configfiles;
 	Config(CommandLine * cmd):cmdline(cmd),secure_mode(false) {
@@ -70,6 +73,9 @@ public:
 		cmdline->FillVector(startup_params);
 		initialised=false;
 	}
+#else
+	Config():secure_mode(false),initialised(false) {}
+#endif
 	~Config();
 
 	Section_line * AddSection_line(char const * const _name,void (*_initfunction)(Section*));

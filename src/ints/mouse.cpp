@@ -1191,3 +1191,34 @@ void MOUSE_Init(Section* /*sec*/) {
 	Mouse_Reset();
 	Mouse_SetSensitivity(50,50,50);
 }
+
+#include <dbp_serialize.h>
+
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, MOUSE, MOUSE_Limit_Events);
+
+void DBPSerialize_Mouse(DBPArchive& ar)
+{
+	Bit8u screenMask_num = (mouse.screenMask ? (mouse.screenMask == defaultScreenMask ? 1 : 2) : 0);
+	Bit8u cursorMask_num = (mouse.cursorMask ? (mouse.cursorMask == defaultCursorMask ? 1 : 2) : 0);
+
+	ar
+		.SerializeExcept(mouse, mouse.screenMask, mouse.cursorMask)
+		.Serialize(ps2cbseg)
+		.Serialize(ps2cbofs)
+		.Serialize(useps2callback)
+		.Serialize(ps2callbackinit)
+		.SerializeArray(userdefScreenMask)
+		.SerializeArray(userdefCursorMask)
+		.SerializeArray(gfxReg3CE)
+		.Serialize(index3C4)
+		.Serialize(gfxReg3C5)
+		.Serialize(screenMask_num).Serialize(cursorMask_num);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		mouse.screenMask = (screenMask_num ? (screenMask_num == 1 ? defaultScreenMask : userdefScreenMask) : NULL);
+		mouse.cursorMask = (cursorMask_num ? (cursorMask_num == 1 ? defaultCursorMask : userdefCursorMask) : NULL);
+		for (Bit8u i = 0; i != MOUSE_BUTTONS; i++)
+			Mouse_ButtonReleased(i);
+	}
+}

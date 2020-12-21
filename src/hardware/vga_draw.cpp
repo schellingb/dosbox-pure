@@ -797,6 +797,7 @@ static void VGA_DisplayStartLatch(Bitu /*val*/) {
 }
  
 static void VGA_PanningLatch(Bitu /*val*/) {
+	//VGA_DisplayStartLatch(0); //DBP: this hack would fix flickering in Alpha Waves/Continuum
 	vga.draw.panning = vga.config.pel_panning;
 }
 
@@ -1629,5 +1630,61 @@ void VGA_SetOverride(bool vga_override) {
 			vga.draw.width=0; // change it so the output window gets updated
 			VGA_SetupDrawing(0);
 		}
+	}
+}
+
+#include <dbp_serialize.h>
+#include <stdio.h>
+
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, VGA_Draw,
+	VGA_DrawSingleLine,
+	VGA_DrawEGASingleLine,
+	VGA_DrawPart,
+	VGA_VerticalTimer,
+	VGA_Other_VertInterrupt,
+	VGA_DisplayStartLatch,
+	VGA_PanningLatch,
+	VGA_VertInterrupt);
+
+void DBPSerialize_VGA_Draw(DBPArchive& ar)
+{
+	ar.SerializeExcept(vga.draw, vga.draw.linear_base, vga.draw.font, vga.draw.font_tables);
+	ar.SerializeSparse(vga.draw.font, sizeof(vga.draw.font));
+	ar.SerializeArray(TempLine);
+	ar.SerializeArray(temp);
+	ar.Serialize(FontMask[1]);
+	ar.Serialize(bg_color_index);
+
+	#ifndef VGA_KEEP_CHANGES
+	static const VGA_Line_Handler VGA_Draw_Changes_Line = NULL;
+	#endif
+	DBP_SERIALIZE_STATIC_POINTER_LIST(VGA_Line_Handler, VGA, 
+		VGA_Draw_1BPP_Line, VGA_Draw_2BPPHiRes_Line, VGA_Draw_2BPP_Line, VGA_Draw_4BPP_Line, VGA_Draw_4BPP_Line_Double, VGA_Draw_CGA16_Line,
+		VGA_Draw_LIN16_Line_HWMouse, VGA_Draw_LIN32_Line_HWMouse, VGA_Draw_Linear_Line, VGA_Draw_VGA_Line_HWMouse, VGA_Draw_Xlat16_Linear_Line,
+		VGA_TEXT_Draw_Line, VGA_TEXT_Herc_Draw_Line, VGA_TEXT_Xlat16_Draw_Line, VGA_Draw_Changes_Line);
+	ar.SerializePointers((void**)&VGA_DrawLine, 1, false, 1, DBP_SERIALIZE_GET_POINTER_LIST(VGA_Line_Handler, VGA));
+
+	Bit8u linear_base_num, font_tables_idx_0, font_tables_idx_1;
+	if (ar.mode == DBPArchive::MODE_SAVE)
+	{
+		linear_base_num = 
+			vga.draw.linear_base == NULL           ? 0 :
+			vga.draw.linear_base == vga.mem.linear ? 1 :
+			vga.draw.linear_base == vga.fastmem    ? 2 : 255;
+		DBP_ASSERT(linear_base_num != 255);
+
+		font_tables_idx_0 = (vga.draw.font_tables[0] ? (Bit8u)((vga.draw.font_tables[0] - vga.draw.font) / 1024 + 1) : 0);
+		font_tables_idx_1 = (vga.draw.font_tables[1] ? (Bit8u)((vga.draw.font_tables[1] - vga.draw.font) / 1024 + 1) : 0);
+	}
+	ar << linear_base_num << font_tables_idx_0 << font_tables_idx_1;
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		vga.draw.linear_base = 
+			linear_base_num == 0 ? NULL           :
+			linear_base_num == 1 ? vga.mem.linear :
+			linear_base_num == 2 ? vga.fastmem    : NULL;
+
+		vga.draw.font_tables[0] = (font_tables_idx_0 ? &vga.draw.font[(font_tables_idx_0 - 1) * 1024] : NULL);
+		vga.draw.font_tables[1] = (font_tables_idx_1 ? &vga.draw.font[(font_tables_idx_1 - 1) * 1024] : NULL);
 	}
 }

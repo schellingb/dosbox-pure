@@ -279,7 +279,7 @@ void sn76496_base_device::device_start()
 	{
 		// limit volume to avoid clipping
 		if (out > MAX_OUTPUT / 4) m_vol_table[i] = MAX_OUTPUT / 4;
-		else m_vol_table[i] = out;
+		else m_vol_table[i] = (int32_t)out;
 
 		out /= 1.258925412; /* = 10 ^ (2/20) = 2dB */
 	}
@@ -516,3 +516,20 @@ DEFINE_DEVICE_TYPE(PSSJ3,    pssj3_device,     "pssj3",        "PSSJ-3")
 DEFINE_DEVICE_TYPE(GAMEGEAR, gamegear_device,  "gamegear_psg", "Game Gear PSG")
 DEFINE_DEVICE_TYPE(SEGAPSG,  segapsg_device,   "segapsg",      "Sega VDP PSG")
 
+#include <dbp_serialize.h>
+
+void DBPSerialize(DBPArchive& ar, sn76496_base_device* self)
+{
+	ar 
+		.SerializeArray(self->m_vol_table)
+		.SerializeArray(self->m_register)
+		.Serialize(self->m_last_register)
+		.SerializeArray(self->m_volume)
+		.Serialize(self->m_RNG)
+		.Serialize(self->m_current_clock)
+		.Serialize(self->m_stereo_mask)
+		.SerializeArray(self->m_period)
+		.SerializeArray(self->m_count)
+		.SerializeArray(self->m_output)
+		.Serialize(self->m_cycles_to_ready);
+}

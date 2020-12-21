@@ -83,7 +83,7 @@ static void convToDirFile(char *filename, char *filearray) {
 	}
 }
 
-fatFile::fatFile(const char* /*name*/, Bit32u startCluster, Bit32u fileLen, fatDrive *useDrive) {
+fatFile::fatFile(const char* name, Bit32u startCluster, Bit32u fileLen, fatDrive *useDrive) {
 	Bit32u seekto = 0;
 	firstCluster = startCluster;
 	myDrive = useDrive;
@@ -97,10 +97,12 @@ fatFile::fatFile(const char* /*name*/, Bit32u startCluster, Bit32u fileLen, fatD
 	if(filelength > 0) {
 		Seek(&seekto, DOS_SEEK_SET);
 	}
+	//DBP: Added missing SetName (needed for state serializing)
+	SetName(name);
 }
 
 bool fatFile::Read(Bit8u * data, Bit16u *size) {
-	if ((this->flags & 0xf) == OPEN_WRITE) {	// check if file opened in write-only mode
+	if (!OPEN_IS_READING(flags)) {	// check if file opened in write-only mode
 		DOS_SetError(DOSERR_ACCESS_DENIED);
 		return false;
 	}
@@ -153,7 +155,7 @@ bool fatFile::Read(Bit8u * data, Bit16u *size) {
 }
 
 bool fatFile::Write(Bit8u * data, Bit16u *size) {
-	if ((this->flags & 0xf) == OPEN_READ) {	// check if file opened in read-only mode
+	if (!OPEN_IS_WRITING(flags)) {	// check if file opened in read-only mode
 		DOS_SetError(DOSERR_ACCESS_DENIED);
 		return false;
 	}
@@ -278,7 +280,10 @@ bool fatFile::Seek(Bit32u *pos, Bit32u type) {
 
 bool fatFile::Close() {
 	/* Flush buffer */
-	if (loadedSector) myDrive->writeSector(currentSector, sectorBuffer);
+	//DBP: Disabled this seemingly unnecessary write
+	//DBP: As every modification of sectorBuffer always automatically calls writeSector already
+	//DBP: It would cause copy-on-write drives to always copy the source on file closing
+	//if (loadedSector) myDrive->writeSector(currentSector, sectorBuffer);
 
 	return false;
 }
@@ -684,9 +689,13 @@ bool fatDrive::allocateCluster(Bit32u useCluster, Bit32u prevCluster) {
 	return true;
 }
 
-fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector, Bit32u headscyl, Bit32u cylinders, Bit32u startSector) {
+fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector, Bit32u headscyl, Bit32u cylinders, Bit32u startSector) : loadedDisk(NULL) {
 	created_successfully = true;
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	DOS_File *diskfile;
+	#else
 	FILE *diskfile;
+	#endif
 	Bit32u filesize;
 	bool is_hdd;
 	struct partTable mbrData;
@@ -697,10 +706,18 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 		imgDTA    = new DOS_DTA(imgDTAPtr);
 	}
 
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	bool writable;
+	diskfile = imageDisk::OpenDosFile(sysFilename, &filesize, &writable);
+	if(!diskfile) {created_successfully = false;return;}
+	if (cylinders == 0 && bytesector && cylsector && headscyl) cylinders = filesize / (bytesector * cylsector * headscyl);
+	filesize /= 1024;
+	#else
 	diskfile = fopen_wrap(sysFilename, "rb+");
 	if(!diskfile) {created_successfully = false;return;}
 	fseek(diskfile, 0L, SEEK_END);
 	filesize = (Bit32u)ftell(diskfile) / 1024L;
+	#endif
 	is_hdd = (filesize > 2880);
 
 	/* Load disk image */
@@ -871,6 +888,8 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 	strcpy(info, "fatDrive ");
 	strcat(info, sysFilename);
 }
+
+fatDrive::~fatDrive() { if (loadedDisk) delete loadedDisk; }
 
 bool fatDrive::AllocationInfo(Bit16u *_bytes_sector, Bit8u *_sectors_cluster, Bit16u *_total_clusters, Bit16u *_free_clusters) {
 	Bit32u hs, cy, sect,sectsize;
@@ -1131,7 +1150,7 @@ nextfile:
 	//TODO What about attrs = DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY ?
 	if (attrs == DOS_ATTR_VOLUME) {
 		if (!(sectbuf[entryoffset].attrib & DOS_ATTR_VOLUME)) goto nextfile;
-		dirCache.SetLabel(find_name, false, true);
+		label.SetLabel(find_name, false, true);
 	} else {
 		if (~attrs & sectbuf[entryoffset].attrib & (DOS_ATTR_DIRECTORY | DOS_ATTR_VOLUME | DOS_ATTR_SYSTEM | DOS_ATTR_HIDDEN) ) goto nextfile;
 	}

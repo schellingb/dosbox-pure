@@ -71,12 +71,12 @@ public:
 	virtual bool	Seek(Bit32u * pos,Bit32u type)=0;
 	virtual bool	Close()=0;
 	virtual Bit16u	GetInformation(void)=0;
-	virtual void	SetName(const char* _name)	{ if (name) delete[] name; name = new char[strlen(_name)+1]; strcpy(name,_name); }
-	virtual char*	GetName(void)				{ return name; };
-	virtual bool	IsOpen()					{ return open; };
-	virtual bool	IsName(const char* _name)	{ if (!name) return false; return strcasecmp(name,_name)==0; };
-	virtual void	AddRef()					{ refCtr++; };
-	virtual Bits	RemoveRef()					{ return --refCtr; };
+	virtual void	SetName(const char* _name)	final { if (name) delete[] name; name = new char[strlen(_name)+1]; strcpy(name,_name); }
+	virtual char*	GetName(void)				final { return name; };
+	virtual bool	IsOpen()					final { return open; };
+	virtual bool	IsName(const char* _name)	final { if (!name) return false; return strcasecmp(name,_name)==0; };
+	virtual void	AddRef()					final { refCtr++; };
+	virtual Bits	RemoveRef()					final { return --refCtr; };
 	virtual bool	UpdateDateTimeFromHost()	{ return true; }
 	void SetDrive(Bit8u drv) { hdrive=drv;}
 	Bit8u GetDrive(void) { return hdrive;}
@@ -113,6 +113,7 @@ public:
 	virtual bool	ReadFromControlChannel(PhysPt bufptr,Bit16u size,Bit16u * retcode);
 	virtual bool	WriteToControlChannel(PhysPt bufptr,Bit16u size,Bit16u * retcode);
 	void SetDeviceNumber(Bitu num) { devnum=num;}
+	Bitu GetDeviceNumber() { return devnum;}
 private:
 	Bitu devnum;
 };
@@ -134,6 +135,21 @@ private:
 	enum { NONE,READ,WRITE } last_action;
 };
 
+//DBP: Moved label out of DOS_Drive_Cache into its own class
+//DBP: Reason being DOS_Drive_Cache uses a lot of memory and is only used in a few
+//DBP: places, while DOS_Label is used in many.
+//DBP: Changed size of label from CROSS_LEN to DOS_NAMELENGTH_ASCII
+class DOS_Label {
+public:
+	DOS_Label() : updatelabel(true) { label[0] = 0; }
+	void		SetLabel			(const char* name,bool cdrom,bool allowupdate);
+	const char*	GetLabel			(void) { return label; };
+
+private:
+	char		label				[DOS_NAMELENGTH_ASCII];
+	bool		updatelabel;
+};
+
 /* The following variable can be lowered to free up some memory.
  * The negative side effect: The stored searches will be turned over faster.
  * Should not have impact on systems with few directory entries. */
@@ -143,12 +159,12 @@ private:
 class DOS_Drive_Cache {
 public:
 	DOS_Drive_Cache					(void);
-	DOS_Drive_Cache					(const char* path);
+	DOS_Drive_Cache					(const char* path, DOS_Label& label);
 	~DOS_Drive_Cache				(void);
 
 	enum TDirSort { NOSORT, ALPHABETICAL, DIRALPHABETICAL, ALPHABETICALREV, DIRALPHABETICALREV };
 
-	void		SetBaseDir			(const char* path);
+	void		SetBaseDir			(const char* path, DOS_Label& label);
 	void		SetDirSort			(TDirSort sort) { sortDirType = sort; };
 	bool		OpenDir				(const char* path, Bit16u& id);
 	bool		ReadDir				(Bit16u id, char* &result);
@@ -162,19 +178,21 @@ public:
 
 	void		CacheOut			(const char* path, bool ignoreLastDir = false);
 	void		AddEntry			(const char* path, bool checkExist = false);
+#ifdef C_DBP_NATIVE_OVERLAY
 	void		AddEntryDirOverlay			(const char* path, bool checkExist = false);
-
+#endif
 	void		DeleteEntry			(const char* path, bool ignoreLastDir = false);
 
-	void		EmptyCache			(void);
-	void		SetLabel			(const char* name,bool cdrom,bool allowupdate);
-	char*		GetLabel			(void) { return label; };
+	void		EmptyCache			(DOS_Label& label);
 
 	class CFileInfo {
 	public:
 		CFileInfo(void) {
 			orgname[0] = shortname[0] = 0;
-			isOverlayDir = isDir = false;
+			isDir = false;
+#ifdef C_DBP_NATIVE_OVERLAY
+			isOverlayDir = false;
+#endif
 			id = MAX_OPENDIRS;
 			nextEntry = shortNr = 0;
 		}
@@ -185,7 +203,9 @@ public:
 		};
 		char		orgname		[CROSS_LEN];
 		char		shortname	[DOS_NAMELENGTH_ASCII];
+#ifdef C_DBP_NATIVE_OVERLAY
 		bool		isOverlayDir;
+#endif
 		bool		isDir;
 		Bit16u		id;
 		Bitu		nextEntry;
@@ -217,7 +237,9 @@ private:
 	CFileInfo*	dirBase;
 	char		dirPath				[CROSS_LEN];
 	char		basePath			[CROSS_LEN];
+#ifdef C_DBP_NATIVE_OVERLAY
 	bool		dirFirstTime;
+#endif
 	TDirSort	sortDirType;
 	CFileInfo*	save_dir;
 	char		save_path			[CROSS_LEN];
@@ -228,15 +250,12 @@ private:
 	char		dirSearchName		[MAX_OPENDIRS];
 	CFileInfo*	dirFindFirst		[MAX_OPENDIRS];
 	Bit16u		nextFreeFindFirst;
-
-	char		label				[CROSS_LEN];
-	bool		updatelabel;
 };
 
 class DOS_Drive {
 public:
 	DOS_Drive();
-	virtual ~DOS_Drive(){};
+	virtual ~DOS_Drive(){ ForceCloseAll(); };
 	virtual bool FileOpen(DOS_File * * file,char * name,Bit32u flags)=0;
 	virtual bool FileCreate(DOS_File * * file,char * name,Bit16u attributes)=0;
 	virtual bool FileUnlink(char * _name)=0;
@@ -251,27 +270,33 @@ public:
 	virtual bool FileExists(const char* name)=0;
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block)=0;
 	virtual Bit8u GetMediaByte(void)=0;
-	virtual void SetDir(const char* path) { strcpy(curdir,path); };
-	virtual void EmptyCache(void) { dirCache.EmptyCache(); };
+	virtual void SetDir(const char* path) final { strcpy(curdir,path); };
+	virtual void EmptyCache(void) { };
 	virtual bool isRemote(void)=0;
 	virtual bool isRemovable(void)=0;
 	virtual Bits UnMount(void)=0;
 
-	char * GetInfo(void);
+	char * GetInfo(void) { return info; }
 	char curdir[DOS_PATHLENGTH];
 	char info[256];
 	/* Can be overridden for example in iso images */
-	virtual char const * GetLabel(){return dirCache.GetLabel();};
+	virtual char const * GetLabel(){return label.GetLabel();};
 
-	DOS_Drive_Cache dirCache;
+	DOS_Label label;
 
 	// disk cycling functionality (request resources)
 	virtual void Activate(void) {};
+
+protected:
+	void ForceCloseAll();
 };
 
 enum { OPEN_READ=0, OPEN_WRITE=1, OPEN_READWRITE=2, OPEN_READ_NO_MOD=4, DOS_NOT_INHERIT=128};
 enum { DOS_SEEK_SET=0,DOS_SEEK_CUR=1,DOS_SEEK_END=2};
 
+//DBP: These flag checks were inconsistent across the code, so added these macros
+#define OPEN_IS_WRITING(flags) (flags & 3)
+#define OPEN_IS_READING(flags) (!(flags & 1))
 
 /*
  A multiplex handler should read the registers to check what function is being called

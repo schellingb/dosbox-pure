@@ -22,7 +22,9 @@
 #include <string>
 #include <algorithm>
 
+#ifdef C_DBP_USE_SDL
 #include "SDL.h"
+#endif
 
 #include "dosbox.h"
 #include "midi.h"
@@ -66,8 +68,14 @@ MidiHandler::MidiHandler(){
 	handler_list = this;
 };
 
-MidiHandler Midi_none;
 
+#ifdef C_DBP_SUPPORT_MIDI_TSF
+#include "midi_tsf.h"
+#else
+MidiHandler Midi_none;
+#endif
+
+#ifdef C_DBP_NATIVE_MIDI
 /* Include different midi drivers, lowest ones get checked first for default.
    Each header provides an independent midi interface. */
 
@@ -96,13 +104,22 @@ MidiHandler Midi_none;
 #include "midi_alsa.h"
 
 #endif
+#endif /* C_DBP_NATIVE_MIDI */
+
 
 DB_Midi midi;
 
 void MIDI_RawOutByte(Bit8u data) {
 	if (midi.sysex.start) {
 		Bit32u passed_ticks = GetTicks() - midi.sysex.start;
-		if (passed_ticks < midi.sysex.delay) SDL_Delay(midi.sysex.delay - passed_ticks);
+		if (passed_ticks < midi.sysex.delay) {
+#ifdef C_DBP_USE_SDL
+			SDL_Delay(midi.sysex.delay - passed_ticks);
+#else
+			void DBP_MidiDelay(Bit32u ms);
+			DBP_MidiDelay((Bit32u)(midi.sysex.delay - passed_ticks));
+#endif
+		}
 	}
 
 	/* Test for a realtime MIDI message */
@@ -137,9 +154,11 @@ void MIDI_RawOutByte(Bit8u data) {
 			}
 
 			LOG(LOG_ALL,LOG_NORMAL)("Sysex message size %d", static_cast<int>(midi.sysex.used));
+#ifdef C_DBP_ENABLE_CAPTURE
 			if (CaptureState & CAPTURE_MIDI) {
 				CAPTURE_AddMidi( true, midi.sysex.used-1, &midi.sysex.buf[1]);
 			}
+#endif
 		}
 	}
 	if (data&0x80) {
@@ -154,9 +173,57 @@ void MIDI_RawOutByte(Bit8u data) {
 	if (midi.cmd_len) {
 		midi.cmd_buf[midi.cmd_pos++]=data;
 		if (midi.cmd_pos >= midi.cmd_len) {
+#ifdef C_DBP_ENABLE_CAPTURE
 			if (CaptureState & CAPTURE_MIDI) {
 				CAPTURE_AddMidi(false, midi.cmd_len, midi.cmd_buf);
 			}
+#endif
+			//DBP: Update MIDI cache to restore channels on deserialization
+			Bit8u channel = (midi.cmd_buf[0] & 0x0f), data1 = midi.cmd_buf[1], rpn;
+			switch (midi.cmd_buf[0] & 0xf0)
+			{
+				case 0xC0: //channel program (preset) change (special handling for 10th MIDI channel with drums)
+					midi.cache[channel].preset_bank[0] = midi.cache[channel].control[0];
+					midi.cache[channel].preset_bank[1] = midi.cache[channel].control[32];
+					midi.cache[channel].preset = 1 + data1;
+					break;
+				case 0xE0: //pitch wheel modification
+					memcpy(midi.cache[channel].pitch_tuning, midi.cache[channel].rpn_data, sizeof(midi.cache[0].pitch_tuning));
+					midi.cache[channel].pitch[0] = 1 + data1;
+					midi.cache[channel].pitch[1] = midi.cmd_buf[2];
+					break;
+				case 0xB0: //MIDI controller messages
+					if (data1 < (sizeof(midi.cache[0].control)/sizeof(midi.cache[0].control[0])))
+						midi.cache[channel].control[data1] = 1 + midi.cmd_buf[2];
+					switch (data1)
+					{
+						case 0: //bank select MSB
+							midi.cache[channel].control[32] = 0; // Bank select MSB clears LSB!
+							break;
+						case 6: case 38: // data entry MSB / LSB
+							rpn = (midi.cache[channel].rpn[0] > 1 ? 0xFF : 0) | (midi.cache[channel].rpn[1] ? (midi.cache[channel].rpn[1] - 1) : (midi.cache[channel].rpn[0] == 1 ? 0 : 0xFF));
+							if (rpn > 2) break;
+							midi.cache[channel].rpn_data[rpn][0] = midi.cache[channel].control[6];
+							midi.cache[channel].rpn_data[rpn][1] = midi.cache[channel].control[38];
+							break;
+						case 100: // registered parameter number LSB
+							midi.cache[channel].rpn[1] = 1 + midi.cmd_buf[2];
+							break;
+						case 101: // registered parameter number MSB
+							midi.cache[channel].rpn[0] = 1 + midi.cmd_buf[2];
+							break;
+						case 98: case 99: // NRPM clears RPN
+							midi.cache[channel].rpn[0] = midi.cache[channel].rpn[1] = 0;
+							break;
+						case 121: // all controls off
+							memset(midi.cache[channel].control, 0, sizeof(midi.cache[0].control));
+							memset(midi.cache[channel].rpn, 0, sizeof(midi.cache[0].rpn));
+							memset(midi.cache[channel].rpn_data, 0, sizeof(midi.cache[0].rpn_data));
+							break;
+					}
+					break;
+			}
+			if (!midi.ever_used) midi.ever_used=true; /* DBP: for serialization */
 			midi.handler->PlayMsg(midi.cmd_buf);
 			midi.cmd_pos=1;		//Use Running status
 		}
@@ -221,6 +288,8 @@ getdefault:
 		if(midi.available) midi.handler->Close();
 		midi.available = false;
 		midi.handler = 0;
+		//DBP: Added for serialization
+		midi.ever_used = false;
 	}
 };
 
@@ -232,4 +301,52 @@ void MIDI_Destroy(Section* /*sec*/){
 void MIDI_Init(Section * sec) {
 	test = new MIDI(sec);
 	sec->AddDestroyFunction(&MIDI_Destroy,true);
+}
+
+void DBP_MIDI_ReplayCache()
+{
+	struct Local
+	{
+		static void PlayControl(Bit8u ch, Bit8u ctrl, Bit8u cache_val)
+		{
+			if (!cache_val) return;
+			Bit8u cmd[3] = { (Bit8u)(0xB0 | ch), ctrl, (Bit8u)(cache_val - 1) };
+			midi.handler->PlayMsg(cmd);
+		}
+		static void PlayRPN(Bit8u ch, Bit8u cache_rpn_data[3][2])
+		{
+			for (Bit8u rpn = 0; rpn != 3; rpn++)
+			{
+				if (!cache_rpn_data[rpn][0] && !cache_rpn_data[rpn][1]) continue;
+				PlayControl(ch, 101, 1); // registered parameter number MSB
+				PlayControl(ch, 100, 1 + rpn); // registered parameter number LSB
+				PlayControl(ch,  6, cache_rpn_data[rpn][0]); // data entry MSB
+				PlayControl(ch, 38, cache_rpn_data[rpn][1]); // data entry LSB
+			}
+		}
+	};
+	for (Bit8u ch = 0; ch != 16; ch++)
+	{
+		Local::PlayControl(ch, 123, 1); // ALL_NOTES_OFF
+		Local::PlayControl(ch, 120, 1); // ALL_SOUND_OFF
+		Local::PlayControl(ch, 121, 1); // ALL_CTRL_OFF
+		if (midi.cache[ch].preset)
+		{
+			Local::PlayControl(ch,  0, midi.cache[ch].preset_bank[0]); // BANK MSB
+			Local::PlayControl(ch, 32, midi.cache[ch].preset_bank[1]); // BANK LSB
+			Bit8u cmd[2] = { (Bit8u)(0xC0 | ch), (Bit8u)(midi.cache[ch].preset - 1) };
+			midi.handler->PlayMsg(cmd);
+		}
+		if (midi.cache[ch].pitch[0])
+		{
+			Local::PlayRPN(ch, midi.cache[ch].pitch_tuning);
+			Bit8u cmd[3] = { (Bit8u)(0xE0 | ch), (Bit8u)(midi.cache[ch].pitch[0] - 1), midi.cache[ch].pitch[1] };
+			midi.handler->PlayMsg(cmd);
+		}
+		Local::PlayRPN(ch, midi.cache[ch].rpn_data);
+		Local::PlayControl(ch, 101, midi.cache[ch].rpn[0]);
+		Local::PlayControl(ch, 100, midi.cache[ch].rpn[1]);
+		for (Bit8u ctrl = 0; ctrl != (sizeof(midi.cache[0].control)/sizeof(midi.cache[0].control[0])); ctrl++)
+			Local::PlayControl(ch, ctrl, midi.cache[ch].control[ctrl]);
+	}
 }

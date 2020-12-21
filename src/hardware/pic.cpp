@@ -405,6 +405,7 @@ static float srv_lag = 0;
 
 void PIC_AddEvent(PIC_EventHandler handler,float delay,Bitu val) {
 	if (GCC_UNLIKELY(!pic_queue.free_entry)) {
+		DBP_ASSERT(false);
 		LOG(LOG_PIC,LOG_ERROR)("Event queue full");
 		return;
 	}
@@ -610,6 +611,8 @@ public:
 	}
 
 	~PIC_8259A(){
+		//DBP: memory cleanup
+		while (firstticker) TIMER_DelTickHandler(firstticker->handler);
 	}
 };
 
@@ -623,3 +626,90 @@ void PIC_Init(Section* sec) {
 	test = new PIC_8259A(sec);
 	sec->AddDestroyFunction(&PIC_Destroy);
 }
+
+#include <dbp_serialize.h>
+#include <string.h> /* memset */
+
+void DBPSerialize_PIC(DBPArchive& ar)
+{
+	DBP_ASSERT(!InEventService);
+	float pic_indices[PIC_QUEUESIZE];
+	Bitu pic_values[PIC_QUEUESIZE];
+	PIC_EventHandler pic_events[PIC_QUEUESIZE];
+	Bit16u pic_count = 0;
+	if (ar.mode == DBPArchive::MODE_MAXSIZE)
+	{
+		pic_count = PIC_QUEUESIZE;
+	}
+	else if (ar.mode != DBPArchive::MODE_LOAD)
+	{
+		for (PICEntry* it = pic_queue.next_entry; it; it = it->next)
+		{
+			pic_indices[pic_count] = it->index;
+			pic_values[pic_count] = it->value;
+			pic_events[pic_count] = it->pic_event;
+			pic_count++;
+		}
+	}
+
+	ar.SerializeArray(pics).Serialize(PIC_Ticks).Serialize(PIC_IRQCheck).Serialize(pic_count);
+	ar.SerializeBytes(pic_indices, pic_count * sizeof(*pic_indices));
+	ar.SerializeBytes(pic_values, pic_count * sizeof(*pic_values));
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, VGA);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, VGA_Draw);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, SERIAL);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, CMOS);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, DISNEY);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, GUS);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, KEYBOARD);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, MPU401);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, SBLASTER);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, TIMER);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, MOUSE);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, unionDrive);
+	ar.SerializePointers((void**)pic_events, pic_count, false, 12,
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, VGA),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, VGA_Draw),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, SERIAL),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, CMOS),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, DISNEY),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, GUS),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, KEYBOARD),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, MPU401),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, SBLASTER),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, TIMER),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, MOUSE),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, unionDrive));
+
+	if (pic_count < 16)
+	{
+		// Fill at least 16 entries to avoid save state size fluctuating too much which can be bothersome for delta encoding
+		Bit8u dummy[16 * (sizeof(*pic_indices)+sizeof(*pic_values)+1)] = { 0 };
+		ar.SerializeBytes(dummy, (16 - pic_count) * (sizeof(*pic_indices)+sizeof(*pic_values)+1));
+	}
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		for (Bit16u i = 0; i != PIC_QUEUESIZE-1; i++) pic_queue.entries[i].next = &pic_queue.entries[i+1];
+		for (Bit16u i = 0; i != pic_count; i++)
+		{
+			pic_queue.entries[i].index     = pic_indices[i];
+			pic_queue.entries[i].value     = pic_values[i];
+			pic_queue.entries[i].pic_event = pic_events[i];
+		}
+		pic_queue.entries[PIC_QUEUESIZE-1].next = NULL;
+		pic_queue.free_entry = (pic_count != PIC_QUEUESIZE ? &pic_queue.entries[pic_count] : NULL);
+		pic_queue.next_entry = (pic_count ? &pic_queue.entries[0] : NULL);
+		if (pic_count) pic_queue.entries[pic_count-1].next = NULL;
+	}
+}
+
+//void PIC_VALIDATE()
+//{
+//	int i, total = 0;
+//	PICEntry *last_entry = NULL, *last_free = NULL, *it;
+//	for (i = 0, it = pic_queue.next_entry; it; it = it->next, total++) { last_entry = it; DBP_ASSERT(i++ <= PIC_QUEUESIZE); }
+//	for (i = 0, it = pic_queue.free_entry; it; it = it->next, total++) { last_free = it; DBP_ASSERT(i++ <= PIC_QUEUESIZE); }
+//	DBP_ASSERT(total == PIC_QUEUESIZE || InEventService);
+//	DBP_ASSERT(!last_entry || !last_free || last_entry != last_free);
+//}

@@ -21,7 +21,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef C_DBP_USE_SDL //not needed anyway, included in cross.h
 #include <unistd.h>
+#endif
 #include "dosbox.h"
 #include "debug.h"
 #include "cpu.h"
@@ -72,7 +74,9 @@ void DMA_Init(Section*);
 
 void MIXER_Init(Section*);
 void MIDI_Init(Section*);
+#ifdef C_DBP_ENABLE_CAPTURE
 void HARDWARE_Init(Section*);
+#endif
 
 #if defined(PCI_FUNCTIONALITY_ENABLED)
 void PCI_Init(Section*);
@@ -120,7 +124,9 @@ void INT10_Init(Section*);
 
 static LoopHandler * loop;
 
+#ifdef C_DBP_USE_SDL
 bool SDLNetInited;
+#endif
 
 static Bit32u ticksRemain;
 static Bit32u ticksLast;
@@ -128,6 +134,7 @@ static Bit32u ticksAdded;
 Bit32s ticksDone;
 Bit32u ticksScheduled;
 bool ticksLocked;
+bool DBP_CPUOverload;
 void increaseticks();
 
 static Bitu Normal_Loop(void) {
@@ -155,7 +162,12 @@ static Bitu Normal_Loop(void) {
 }
 
 //For trying other delays
+#ifdef C_DBP_USE_SDL
 #define wrap_delay(a) SDL_Delay(a)
+#else
+extern void DBP_DelayTicks(Bit32u ms);
+#define wrap_delay(a) DBP_DelayTicks(a)
+#endif
 
 void increaseticks() { //Make it return ticksRemain and set it in the function above to remove the global variable.
 	if (GCC_UNLIKELY(ticksLocked)) { // For Fast Forward Mode
@@ -214,7 +226,8 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 	ticksRemain = ticksNew-ticksLast;
 	ticksLast = ticksNew;
 	ticksDone += ticksRemain;
-	if ( ticksRemain > 20 ) {
+	//DBP: store result of this into ticksCPUOverload to give user feedback when max cycles is too high
+	if ( DBP_CPUOverload = (ticksRemain > 20) ) {
 //		LOG(LOG_MISC,LOG_ERROR)("large remain %d",ticksRemain);
 		ticksRemain = 20;
 	}
@@ -321,6 +334,7 @@ void DOSBOX_RunMachine(void){
 	} while (!ret);
 }
 
+#ifdef C_DBP_ENABLE_MAPPER
 static void DOSBOX_UnlockSpeed( bool pressed ) {
 	static bool autoadjust = false;
 	if (pressed) {
@@ -340,7 +354,9 @@ static void DOSBOX_UnlockSpeed( bool pressed ) {
 			CPU_CycleAutoAdjust = true;
 		}
 	}
+	DBP_CPUOverload = false;
 }
+#endif
 
 static void DOSBOX_RealInit(Section * sec) {
 	Section_prop * section=static_cast<Section_prop *>(sec);
@@ -352,12 +368,16 @@ static void DOSBOX_RealInit(Section * sec) {
 	DOSBOX_SetLoop(&Normal_Loop);
 	MSG_Init(section);
 
+#ifdef C_DBP_ENABLE_MAPPER
 	MAPPER_AddHandler(DOSBOX_UnlockSpeed, MK_f12, MMOD2,"speedlock","Speedlock");
+#endif
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	std::string cmd_machine;
 	if (control->cmdline->FindString("-machine",cmd_machine,true)){
 		//update value in config (else no matching against suggested values
 		section->HandleInputline(std::string("machine=") + cmd_machine);
 	}
+#endif
 
 	std::string mtype(section->Get_string("machine"));
 	svgaCard = SVGA_None;
@@ -392,7 +412,9 @@ void DOSBOX_Init(void) {
 	Prop_multival* Pmulti;
 	Prop_multival_remain* Pmulti_remain;
 
+#ifdef C_DBP_USE_SDL
 	SDLNetInited = false;
+#endif
 
 	// Some frequently used option sets
 	const char *rates[] = {  "44100", "48000", "32000","22050", "16000", "11025", "8000", "49716", 0 };
@@ -411,15 +433,19 @@ void DOSBOX_Init(void) {
 		"vgaonly", "svga_s3", "svga_et3000", "svga_et4000",
 		"svga_paradise", "vesa_nolfb", "vesa_oldvbe", 0 };
 	secprop=control->AddSection_prop("dosbox",&DOSBOX_RealInit);
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	Pstring = secprop->Add_path("language",Property::Changeable::Always,"");
 	Pstring->Set_help("Select another language file.");
+#endif
 
 	Pstring = secprop->Add_string("machine",Property::Changeable::OnlyAtStart,"svga_s3");
 	Pstring->Set_values(machines);
 	Pstring->Set_help("The type of machine DOSBox tries to emulate.");
 
+#ifdef C_DBP_ENABLE_CAPTURE
 	Pstring = secprop->Add_path("captures",Property::Changeable::Always,"capture");
 	Pstring->Set_help("Directory where things like wave, midi, screenshot get captured.");
+#endif
 
 #if C_DEBUG
 	LOG_StartUp();
@@ -428,7 +454,9 @@ void DOSBOX_Init(void) {
 	secprop->AddInitFunction(&IO_Init);//done
 	secprop->AddInitFunction(&PAGING_Init);//done
 	secprop->AddInitFunction(&MEM_Init);//done
+#ifdef C_DBP_ENABLE_CAPTURE
 	secprop->AddInitFunction(&HARDWARE_Init);//done
+#endif
 	Pint = secprop->Add_int("memsize", Property::Changeable::WhenIdle,16);
 	Pint->SetMinMax(1,63);
 	Pint->Set_help(
@@ -450,6 +478,7 @@ void DOSBOX_Init(void) {
 	Pbool = secprop->Add_bool("aspect",Property::Changeable::Always,false);
 	Pbool->Set_help("Do aspect correction, if your output method doesn't support scaling this can slow things down!");
 
+#ifdef C_DBP_ENABLE_SCALERS
 	Pmulti = secprop->Add_multi("scaler",Property::Changeable::Always," ");
 	Pmulti->SetValue("normal2x");
 	Pmulti->Set_help("Scaler used to enlarge/enhance low resolution modes. If 'forced' is appended,\n"
@@ -472,6 +501,7 @@ void DOSBOX_Init(void) {
 	const char* force[] = { "", "forced", 0 };
 	Pstring = Pmulti->GetSection()->Add_string("force",Property::Changeable::Always,"");
 	Pstring->Set_values(force);
+#endif
 #if C_OPENGL
 	Pstring = secprop->Add_path("glshader",Property::Changeable::Always,"none");
 	Pstring->Set_help("Path to GLSL shader source to use with OpenGL output (\"none\" to disable).\n"
@@ -613,7 +643,18 @@ void DOSBOX_Init(void) {
 	Pstring->Set_values(oplmodes);
 	Pstring->Set_help("Type of OPL emulation. On 'auto' the mode is determined by sblaster type. All OPL modes are Adlib-compatible, except for 'cms'.");
 
-	const char* oplemus[]={ "default", "compat", "fast", "mame", 0};
+	const char* oplemus[]={ "default",
+#ifdef C_DBP_ENABLE_OLDOPL
+		"compat",
+#endif
+		"fast",
+#ifdef C_DBP_ENABLE_OLDOPL
+		"mame",
+#endif
+#ifdef C_DBP_ENABLE_NUKEDOPL3
+		"nuked",
+#endif
+		0};
 	Pstring = secprop->Add_string("oplemu",Property::Changeable::WhenIdle,"default");
 	Pstring->Set_values(oplemus);
 	Pstring->Set_help("Provider for the OPL emulation. compat might provide better quality (see oplrate as well).");
@@ -795,4 +836,46 @@ void DOSBOX_Init(void) {
 	MSG_Add("CONFIG_SUGGESTED_VALUES", "Possible values");
 
 	control->SetStartUp(&SHELL_Init);
+}
+
+#include "shell.h"
+void DBP_DOSBOX_ForceShutdown(const Bitu)
+{
+	/* end all execution and return to the top of the stack */
+	struct ShutdownCPU { static Bitu Loop(void) { return 1; } };
+	DOSBOX_SetLoop(ShutdownCPU::Loop);
+	ticksRemain = 0;
+	CPU_CycleLeft = CPU_Cycles = 0;
+	first_shell->exit = true;
+}
+
+void DBP_DOSBOX_ResetTickTimer()
+{
+	/* Reset any auto cycle guessing */
+	ticksLast = GetTicks();
+	ticksAdded = 0;
+	ticksDone = 0;
+	ticksScheduled = 0;
+}
+
+void DBP_DOSBOX_Unlock(bool unlock, int start_frame_skip = 0)
+{
+	ticksLocked = unlock;
+	render.frameskip.max = (unlock ? start_frame_skip : 0);
+	static Bit32s old_max;
+	static bool old_pmode;
+	if (unlock)
+	{
+		old_max = CPU_CycleMax;
+		old_pmode = cpu.pmode;
+		CPU_CycleMax = (cpu.pmode ? 30000 : 10000);
+	}
+	else if (old_max)
+	{
+		// If we switched to protected mode while locked (likely at startup) with auto adjust cycles on, choose a reasonable base rate
+		CPU_CycleMax = (old_pmode != cpu.pmode && cpu.pmode && CPU_CycleAutoAdjust ? 200000 : old_max);
+		old_max = 0;
+	}
+	CPU_CycleLeft = CPU_Cycles = 0;
+	DBP_DOSBOX_ResetTickTimer();
 }

@@ -326,5 +326,15 @@ void CMOS_Destroy(Section* sec){
 
 void CMOS_Init(Section* sec) {
 	test = new CMOS(sec);
-	sec->AddDestroyFunction(&CMOS_Destroy,true);
+	//DBP: Removed this true because CMOS_Init is not marked as can_change
+	sec->AddDestroyFunction(&CMOS_Destroy/*,true*/);
+}
+
+#include <dbp_serialize.h>
+
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, CMOS, cmos_timerevent);
+
+void DBPSerialize_CMOS(DBPArchive& ar)
+{
+	ar.Serialize(cmos);
 }

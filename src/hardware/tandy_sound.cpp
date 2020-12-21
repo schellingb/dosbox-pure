@@ -340,7 +340,10 @@ public:
 		device.convert_samplerate(sample_rate);
 
 	}
-	~TANDYSOUND(){ }
+	~TANDYSOUND(){
+		//DBP: Added cleanup for restart support
+		tandy.chan=0;
+	}
 };
 
 
@@ -354,4 +357,33 @@ void TANDYSOUND_ShutDown(Section* /*sec*/) {
 void TANDYSOUND_Init(Section* sec) {
 	test = new TANDYSOUND(sec);
 	sec->AddDestroyFunction(&TANDYSOUND_ShutDown,true);
+}
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(DMA_CallBack, Tandy, TandyDAC_DMA_CallBack);
+
+void DBPSerialize_TANDYSOUND(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, tandy.chan);
+	if (ar.IsSkip()) return;
+
+	Bit8u device_num = (activeDevice == &device_ncr8496 ? 0 : 1);
+	Bit8u dma_num = 0;
+	if (ar.mode == DBPArchive::MODE_SAVE)
+		for (; dma_num != 8; dma_num++)
+			if (tandy.dac.dma.chan == GetDMAChannel(dma_num))
+				break;
+
+	ar
+		.SerializeExcept(tandy, tandy.chan, tandy.dac.chan)
+		.Serialize(dma_num)
+		.Serialize(device_num);
+	
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		tandy.dac.dma.chan = GetDMAChannel(dma_num);
+		activeDevice = (device_num ? (sn76496_base_device*)&device_sn76496 : (sn76496_base_device*)&device_ncr8496);
+	}
+
+	DBPSerialize(ar, activeDevice);
 }

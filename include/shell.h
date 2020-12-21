@@ -70,6 +70,7 @@ private:
 public:
 
 	DOS_Shell();
+	~DOS_Shell();
 
 	void Run(void);
 	void RunInternal(void); //for command /C

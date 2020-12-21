@@ -24,18 +24,23 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#if defined(C_DBP_ENABLE_CONFIG_PROGRAM) || defined(C_DBP_ENABLE_CAPTURE) || defined(C_OPENGL)
 #ifdef WIN32
 #ifndef _WIN32_IE
 #define _WIN32_IE 0x0400
 #endif
 #include <shlobj.h>
 #endif
+#endif
 
+#ifdef C_DBP_NATIVE_HOMEDIR
 #if defined HAVE_SYS_TYPES_H && defined HAVE_PWD_H
 #include <sys/types.h>
 #include <pwd.h>
 #endif
+#endif
 
+#if defined(C_DBP_ENABLE_CONFIG_PROGRAM) || defined(C_DBP_ENABLE_CAPTURE) || defined(C_OPENGL)
 #ifdef WIN32
 static void W32_ConfDir(std::string& in,bool create) {
 	int c = create?1:0;
@@ -96,14 +101,16 @@ void Cross::CreatePlatformConfigDir(std::string& in) {
 #endif
 	in += CROSS_FILESPLIT;
 }
+#endif //defined(C_DBP_ENABLE_CONFIG_PROGRAM) || defined(C_DBP_ENABLE_CAPTURE) || defined(C_OPENGL)
 
 void Cross::ResolveHomedir(std::string & temp_line) {
+#ifdef C_DBP_NATIVE_HOMEDIR
 	if(!temp_line.size() || temp_line[0] != '~') return; //No ~
 
 	if(temp_line.size() == 1 || temp_line[1] == CROSS_FILESPLIT) { //The ~ and ~/ variant
 		char * home = getenv("HOME");
 		if(home) temp_line.replace(0,1,std::string(home));
-#if defined HAVE_SYS_TYPES_H && defined HAVE_PWD_H
+#if defined HAVE_SYS_TYPES_H && defined HAVE_PWD_H && !defined HAVE_LIBNX && !defined PSP
 	} else { // The ~username variant
 		std::string::size_type namelen = temp_line.find(CROSS_FILESPLIT);
 		if(namelen == std::string::npos) namelen = temp_line.size();
@@ -112,8 +119,10 @@ void Cross::ResolveHomedir(std::string & temp_line) {
 		if(pass) temp_line.replace(0,namelen,pass->pw_dir); //namelen -1 +1(for the ~)
 #endif // USERNAME lookup code
 	}
+#endif
 }
 
+#ifdef C_DBP_ENABLE_CAPTURE
 void Cross::CreateDir(std::string const& in) {
 #ifdef WIN32
 	mkdir(in.c_str());
@@ -121,6 +130,7 @@ void Cross::CreateDir(std::string const& in) {
 	mkdir(in.c_str(),0700);
 #endif
 }
+#endif
 
 bool Cross::IsPathAbsolute(std::string const& in) {
 	// Absolute paths
@@ -246,6 +256,7 @@ void close_directory(dir_information* dirp) {
 
 #endif
 
+#ifdef C_DBP_USE_SDL
 FILE *fopen_wrap(const char *path, const char *mode) {
 #if defined(WIN32) || defined(OS2)
 	;
@@ -300,5 +311,4 @@ FILE *fopen_wrap(const char *path, const char *mode) {
 
 	return fopen(path,mode);
 }
-
-
+#endif

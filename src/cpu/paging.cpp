@@ -134,7 +134,8 @@ static Bits PageFaultCore(void) {
 Bitu DEBUG_EnableDebugger(void);
 #endif
 
-bool first=false;
+//DBP: Removed unused global
+//bool first=false;
 
 void PAGING_PageFault(PhysPt lin_addr,Bitu page_addr,Bitu faultcode) {
 	/* Save the state of the cpu cores */
@@ -645,12 +646,11 @@ bool PAGING_ForcePageInit(Bitu lin_addr) {
 
 #if defined(USE_FULL_TLB)
 void PAGING_InitTLB(void) {
-	for (Bitu i=0;i<TLB_SIZE;i++) {
-		paging.tlb.read[i]=0;
-		paging.tlb.write[i]=0;
-		paging.tlb.readhandler[i]=&init_page_handler;
-		paging.tlb.writehandler[i]=&init_page_handler;
-	}
+	//DBP: Performance improvement
+	memset(paging.tlb.read, 0, sizeof(paging.tlb.read));
+	memset(paging.tlb.write, 0, sizeof(paging.tlb.write));
+	for (Bitu i=0;i<TLB_SIZE;i++) paging.tlb.readhandler[i]=&init_page_handler;
+	for (Bitu i=0;i<TLB_SIZE;i++) paging.tlb.writehandler[i]=&init_page_handler;
 	paging.links.used=0;
 }
 
@@ -885,6 +885,33 @@ public:
 };
 
 static PAGING* test;
+//DBP: memory cleanup
+static void PAGING_ShutDown(Section* /*sec*/) {
+	delete test;
+}
 void PAGING_Init(Section * sec) {
 	test = new PAGING(sec);
+	sec->AddDestroyFunction(&PAGING_ShutDown);
+}
+
+#include <dbp_serialize.h>
+
+typedef CPU_Decoder* CPU_DecoderPtr;
+DBP_SERIALIZE_SET_POINTER_LIST(CPU_DecoderPtr, Paging, PageFaultCore);
+
+INLINE DBPArchive& operator<<(DBPArchive& ar, PF_Entry& i) { return ar << i.cs << i.eip << i.page_addr << i.mpl; }
+
+void DBPSerialize_Paging(DBPArchive& ar)
+{
+	ar.Serialize(paging.cr3);
+	ar.Serialize(paging.cr2);
+	ar.Serialize(paging.base);
+	ar.SerializeSparse(paging.tlb.phys_page, sizeof(paging.tlb.phys_page));
+	ar.SerializeSparse(paging.links.entries, sizeof(paging.links.entries));
+	ar.SerializeArray(paging.firstmb);
+	ar.Serialize(paging.enabled);
+	ar.Serialize(pf_queue);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+		PAGING_InitTLB();
 }

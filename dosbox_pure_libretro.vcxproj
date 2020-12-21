@@ -1,0 +1,622 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" InitialTargets="DisplayText">
+  <PropertyGroup Label="UserMacros">
+    <VisualStudioYear Condition="'$(VisualStudioVersion)' == '11.0' Or '$(PlatformToolsetVersion)' == '110' Or '$(MSBuildToolsVersion)' ==  '4.0'">2012</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioVersion)' == '12.0' Or '$(PlatformToolsetVersion)' == '120' Or '$(MSBuildToolsVersion)' == '12.0'">2013</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioVersion)' == '14.0' Or '$(PlatformToolsetVersion)' == '140' Or '$(MSBuildToolsVersion)' == '14.0'">2015</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioVersion)' == '15.0' Or '$(PlatformToolsetVersion)' == '141' Or '$(MSBuildToolsVersion)' == '15.0'">2017</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioVersion)' == '16.0' Or '$(PlatformToolsetVersion)' == '142' Or '$(MSBuildToolsVersion)' == '16.0'">2019</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioYear)' == ''">20XX</VisualStudioYear>
+  </PropertyGroup>
+  <Target Name="DisplayText">
+    <Message Importance="high" Text="Building configuration $(Configuration) for platform $(Platform) with Visual Studio $(VisualStudioYear) ..." />
+  </Target>
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>dosbox_pure_libretro</ProjectName>
+    <ProjectGuid>{FFFFFFFF-FFFF-4FFF-FFFF-FFFFFFFFFFFF}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2012'">v110_xp</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2013'">v120_xp</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2015'">v140</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2017'">v141</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2019'">v142</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '20XX'">$(DefaultPlatformToolset)</PlatformToolset>
+    <UseOfMfc>false</UseOfMfc>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">true</WholeProgramOptimization>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup>
+    <OutDir Condition="'$(Platform)'=='x64'">$(ProjectDir)\build\$(Configuration)_64bit\</OutDir>
+    <OutDir Condition="'$(Platform)'=='Win32'">$(ProjectDir)\build\$(Configuration)_32bit\</OutDir>
+    <IntDir Condition="'$(Platform)'=='x64'">$(ProjectDir)\build\$(Configuration)_64bit\</IntDir>
+    <IntDir Condition="'$(Platform)'=='Win32'">$(ProjectDir)\build\$(Configuration)_32bit\</IntDir>
+    <TLogLocation>$(IntDir)</TLogLocation>
+    <IntermediateOutputPath>$(IntDir)</IntermediateOutputPath>
+    <GenerateManifest>false</GenerateManifest>
+    <LinkIncremental Condition="'$(Configuration)'=='Debug'">true</LinkIncremental>
+    <LinkIncremental Condition="'$(Configuration)'=='Release'">false</LinkIncremental>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <WarningLevel>Level3</WarningLevel>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <ExceptionHandling>false</ExceptionHandling>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PreprocessorDefinitions>__LIBRETRO__;WIN32;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_HAS_EXCEPTIONS=0;_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Platform)'=='x64'">WIN64;_WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)include</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Condition="'$(Configuration)'=='Debug'">
+      <Optimization>Disabled</Optimization>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <ClCompile Condition="'$(Configuration)'=='Release'">
+      <Optimization>Full</Optimization>
+      <StringPooling>true</StringPooling>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <OmitFramePointers>true</OmitFramePointers>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <EnableEnhancedInstructionSet Condition="'$(Platform)'=='Win32'">StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
+      <AdditionalOptions Condition="'$(VisualStudioYear)' &gt;= '2013'">/Gw %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <SubSystem>Console</SubSystem>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+    </Link>
+    <Link Condition="'$(Configuration)'=='Debug'">
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+    <Link Condition="'$(Configuration)'=='Release'">
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <IgnoreEmbeddedIDL>true</IgnoreEmbeddedIDL>
+      <GenerateWindowsMetadata>false</GenerateWindowsMetadata>
+    </Link>
+  </ItemDefinitionGroup>
+  <!--
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+    </Link>
+  </ItemDefinitionGroup>
+  -->
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup>
+    <ClCompile Include="dosbox_pure_libretro.cpp" />
+    <ClCompile Include="keyb2joypad.cpp" />
+    <ClCompile Include="src\cpu\callback.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\core_dynrec.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\core_dyn_x86.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\core_full.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\core_normal.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\core_prefetch.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\core_simple.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\cpu.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\flags.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\modrm.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\cpu\paging.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dbp_serialize.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\dosbox.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\cdrom.cpp" />
+    <ClCompile Include="src\dos\cdrom_image.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_classes.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_devices.cpp" />
+    <ClCompile Include="src\dos\dos_execute.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_files.cpp" />
+    <ClCompile Include="src\dos\dos_ioctl.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_keyboard_layout.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_memory.cpp" />
+    <ClCompile Include="src\dos\dos_misc.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_mscdex.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_programs.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\dos_tables.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\drives.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\dos\drive_cache.cpp" />
+    <ClCompile Include="src\dos\drive_fat.cpp" />
+    <ClCompile Include="src\dos\drive_iso.cpp" />
+    <ClCompile Include="src\dos\drive_local.cpp" />
+    <ClCompile Include="src\dos\drive_memory.cpp" />
+    <ClCompile Include="src\dos\drive_overlay.cpp" />
+    <ClCompile Include="src\dos\drive_union.cpp" />
+    <ClCompile Include="src\dos\drive_virtual.cpp" />
+    <ClCompile Include="src\dos\drive_zip.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\fpu\fpu.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\gui\midi.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\gui\render.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\gui\render_scalers.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\adlib.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\cmos.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\dbopl.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\disney.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\dma.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\gameblaster.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\gus.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\hardware.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\iohandler.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\joystick.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\keyboard.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\mame\saa1099.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\mame\sn76496.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\memory.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\mixer.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\mpu401.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\nukedopl3.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\pci_bus.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\pcspeaker.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\pic.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\sblaster.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\serialport\serialdummy.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\serialport\serialport.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\tandy_sound.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\timer.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_attr.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_crtc.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_dac.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_draw.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_gfx.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_memory.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_misc.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_other.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_paradise.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_s3.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_seq.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_tseng.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\hardware\vga_xga.cpp">
+      <Optimization>MaxSpeed</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\bios.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\bios_disk.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\bios_keyboard.cpp" />
+    <ClCompile Include="src\ints\ems.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_char.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_memory.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_misc.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_modes.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_pal.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_put_pixel.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_vesa.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_video_state.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\int10_vptable.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\mouse.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\ints\xms.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\misc\cross.cpp" />
+    <ClCompile Include="src\misc\messages.cpp" />
+    <ClCompile Include="src\misc\programs.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\misc\setup.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\misc\support.cpp" />
+    <ClCompile Include="src\shell\shell.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\shell\shell_batch.cpp" />
+    <ClCompile Include="src\shell\shell_cmds.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="src\shell\shell_misc.cpp">
+      <WarningLevel>Level2</WarningLevel>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="core_options.h" />
+    <ClInclude Include="include\dbp_serialize.h" />
+    <ClInclude Include="libretro-common\include\libretro.h" />
+    <ClInclude Include="include\bios.h" />
+    <ClInclude Include="include\bios_disk.h" />
+    <ClInclude Include="include\callback.h" />
+    <ClInclude Include="include\config.h" />
+    <ClInclude Include="include\control.h" />
+    <ClInclude Include="include\cpu.h" />
+    <ClInclude Include="include\cross.h" />
+    <ClInclude Include="include\debug.h" />
+    <ClInclude Include="include\dma.h" />
+    <ClInclude Include="include\dosbox.h" />
+    <ClInclude Include="include\dos_inc.h" />
+    <ClInclude Include="include\dos_system.h" />
+    <ClInclude Include="include\fpu.h" />
+    <ClInclude Include="include\hardware.h" />
+    <ClInclude Include="include\inout.h" />
+    <ClInclude Include="include\ipx.h" />
+    <ClInclude Include="include\ipxserver.h" />
+    <ClInclude Include="include\joystick.h" />
+    <ClInclude Include="include\keyboard.h" />
+    <ClInclude Include="include\logging.h" />
+    <ClInclude Include="include\mapper.h" />
+    <ClInclude Include="include\mem.h" />
+    <ClInclude Include="include\midi.h" />
+    <ClInclude Include="include\mixer.h" />
+    <ClInclude Include="include\mouse.h" />
+    <ClInclude Include="include\paging.h" />
+    <ClInclude Include="include\pci_bus.h" />
+    <ClInclude Include="include\pic.h" />
+    <ClInclude Include="include\programs.h" />
+    <ClInclude Include="include\regs.h" />
+    <ClInclude Include="include\render.h" />
+    <ClInclude Include="include\serialport.h" />
+    <ClInclude Include="include\setup.h" />
+    <ClInclude Include="include\shell.h" />
+    <ClInclude Include="include\support.h" />
+    <ClInclude Include="include\timer.h" />
+    <ClInclude Include="include\vga.h" />
+    <ClInclude Include="include\video.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\decoder.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\dyn_fpu.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\dyn_fpu_dh.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\helpers.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\risc_x64.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\risc_x86.h" />
+    <ClInclude Include="src\cpu\core_dyn_x86\string.h" />
+    <ClInclude Include="src\cpu\core_dynrec\decoder.h" />
+    <ClInclude Include="src\cpu\core_dynrec\decoder_basic.h" />
+    <ClInclude Include="src\cpu\core_dynrec\decoder_opcodes.h" />
+    <ClInclude Include="src\cpu\core_dynrec\dyn_fpu.h" />
+    <ClInclude Include="src\cpu\core_dynrec\operators.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv4le-common.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv4le-o3.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv4le-thumb-iw.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv4le-thumb-niw.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv4le-thumb.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv4le.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_armv8le.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_mipsel32.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_x64.h" />
+    <ClInclude Include="src\cpu\core_dynrec\risc_x86.h" />
+    <ClInclude Include="src\cpu\core_full\ea_lookup.h" />
+    <ClInclude Include="src\cpu\core_full\load.h" />
+    <ClInclude Include="src\cpu\core_full\loadwrite.h" />
+    <ClInclude Include="src\cpu\core_full\op.h" />
+    <ClInclude Include="src\cpu\core_full\optable.h" />
+    <ClInclude Include="src\cpu\core_full\save.h" />
+    <ClInclude Include="src\cpu\core_full\string.h" />
+    <ClInclude Include="src\cpu\core_full\support.h" />
+    <ClInclude Include="src\cpu\core_normal\helpers.h" />
+    <ClInclude Include="src\cpu\core_normal\prefix_0f.h" />
+    <ClInclude Include="src\cpu\core_normal\prefix_66.h" />
+    <ClInclude Include="src\cpu\core_normal\prefix_66_0f.h" />
+    <ClInclude Include="src\cpu\core_normal\prefix_none.h" />
+    <ClInclude Include="src\cpu\core_normal\string.h" />
+    <ClInclude Include="src\cpu\core_normal\support.h" />
+    <ClInclude Include="src\cpu\core_normal\table_ea.h" />
+    <ClInclude Include="src\cpu\dyn_cache.h" />
+    <ClInclude Include="src\cpu\instructions.h" />
+    <ClInclude Include="src\cpu\lazyflags.h" />
+    <ClInclude Include="src\cpu\modrm.h" />
+    <ClInclude Include="src\dos\cdrom.h" />
+    <ClInclude Include="src\dos\dev_con.h" />
+    <ClInclude Include="src\dos\dos_codepages.h" />
+    <ClInclude Include="src\dos\dos_keyboard_layout_data.h" />
+    <ClInclude Include="src\dos\drives.h" />
+    <ClInclude Include="src\dos\scsidefs.h" />
+    <ClInclude Include="src\dos\wnaspi32.h" />
+    <ClInclude Include="src\fpu\fpu_instructions.h" />
+    <ClInclude Include="src\fpu\fpu_instructions_x86.h" />
+    <ClInclude Include="src\gui\midi_tsf.h" />
+    <ClInclude Include="src\gui\render_glsl.h" />
+    <ClInclude Include="src\gui\render_loops.h" />
+    <ClInclude Include="src\gui\render_scalers.h" />
+    <ClInclude Include="src\gui\render_simple.h" />
+    <ClInclude Include="src\hardware\adlib.h" />
+    <ClInclude Include="src\hardware\dbopl.h" />
+    <ClInclude Include="src\hardware\mame\emu.h" />
+    <ClInclude Include="src\hardware\mame\saa1099.h" />
+    <ClInclude Include="src\hardware\mame\sn76496.h" />
+    <ClInclude Include="src\hardware\nukedopl3.h" />
+    <ClInclude Include="src\hardware\pci_devices.h" />
+    <ClInclude Include="src\hardware\serialport\serialdummy.h" />
+    <ClInclude Include="src\ints\int10.h" />
+    <ClInclude Include="src\ints\xms.h" />
+  </ItemGroup>
+</Project>

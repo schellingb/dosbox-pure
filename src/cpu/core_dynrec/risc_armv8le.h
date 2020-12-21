@@ -844,7 +844,12 @@ static void INLINE gen_fill_branch(DRC_PTR_SIZE_IM data) {
 	if (len<0) len=-len;
 	if (len>=0x00100000) LOG_MSG("Big jump %d",len);
 #endif
+#ifdef HAVE_LIBNX
+	DRC_PTR_SIZE_IM rwData = (DRC_PTR_SIZE_IM)((intptr_t)data - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	*(Bit32u*)rwData=( (*(Bit32u*)rwData) & 0xff00001f ) | ( ( ((Bit64u)cache.pos - data) << 3 ) & 0x00ffffe0 );
+#else
 	*(Bit32u*)data=( (*(Bit32u*)data) & 0xff00001f ) | ( ( ((Bit64u)cache.pos - data) << 3 ) & 0x00ffffe0 );
+#endif
 }
 
 // conditional jump if register is nonzero
@@ -871,8 +876,14 @@ static DRC_PTR_SIZE_IM gen_create_branch_long_leqzero(HostReg reg) {
 
 // calculate long relative offset and fill it into the location pointed to by data
 static void INLINE gen_fill_branch_long(DRC_PTR_SIZE_IM data) {
+#ifdef HAVE_LIBNX
+	DRC_PTR_SIZE_IM rwdata = (DRC_PTR_SIZE_IM)((intptr_t)data - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	// optimize for shorter branches ?
+	*(Bit32u*)rwdata=((*(Bit32u*)rwdata) & 0xfc000000 ) | ( ( ((Bit64u)cache.pos - data) >> 2 ) & 0x03ffffff );
+#else
 	// optimize for shorter branches ?
 	*(Bit32u*)data=( (*(Bit32u*)data) & 0xfc000000 ) | ( ( ((Bit64u)cache.pos - data) >> 2 ) & 0x03ffffff );
+#endif
 }
 
 static void gen_run_code(void) {
@@ -890,6 +901,13 @@ static void gen_run_code(void) {
 	pos3 = cache.pos;
 	cache_addd( 0 );
 
+#ifdef HAVE_LIBNX
+	Bit8u *pos1_rw, *pos2_rw, *pos3_rw;
+	pos1_rw = (Bit8u*)((intptr_t)pos1 - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	pos2_rw = (Bit8u*)((intptr_t)pos2 - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	pos3_rw = (Bit8u*)((intptr_t)pos3 - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+
+#endif
 	cache_addd( BR(HOST_x0) );			// br x0
 
 	// align cache.pos to 32 bytes
@@ -897,13 +915,25 @@ static void gen_run_code(void) {
 		cache.pos = cache.pos + (32 - (((Bitu)cache.pos) & 0x1f));
 	}
 
+#ifdef HAVE_LIBNX
+	*(Bit32u *)pos1_rw = LDR64_PC(FC_SEGS_ADDR, cache.pos - pos1);   // ldr FC_SEGS_ADDR, [pc, #(&Segs)]
+#else
 	*(Bit32u *)pos1 = LDR64_PC(FC_SEGS_ADDR, cache.pos - pos1);   // ldr FC_SEGS_ADDR, [pc, #(&Segs)]
+#endif
 	cache_addq((Bit64u)&Segs);                      // address of "Segs"
 
+#ifdef HAVE_LIBNX
+	*(Bit32u *)pos2_rw = LDR64_PC(FC_REGS_ADDR, cache.pos - pos2);   // ldr FC_REGS_ADDR, [pc, #(&cpu_regs)]
+#else
 	*(Bit32u *)pos2 = LDR64_PC(FC_REGS_ADDR, cache.pos - pos2);   // ldr FC_REGS_ADDR, [pc, #(&cpu_regs)]
+#endif
 	cache_addq((Bit64u)&cpu_regs);                  // address of "cpu_regs"
 
+#ifdef HAVE_LIBNX
+	*(Bit32u *)pos3_rw = LDR64_PC(readdata_addr, cache.pos - pos3);  // ldr readdata_addr, [pc, #(&core_dynrec.readdata)]
+#else
 	*(Bit32u *)pos3 = LDR64_PC(readdata_addr, cache.pos - pos3);  // ldr readdata_addr, [pc, #(&core_dynrec.readdata)]
+#endif
 	cache_addq((Bit64u)&core_dynrec.readdata);      // address of "core_dynrec.readdata"
 
 	// align cache.pos to 32 bytes
@@ -925,6 +955,10 @@ static void gen_return_function(void) {
 // called when a call to a function can be replaced by a
 // call to a simpler function
 static void gen_fill_function_ptr(Bit8u * pos,void* fct_ptr,Bitu flags_type) {
+#ifdef HAVE_LIBNX
+	pos = (Bit8u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+#endif
+
 #ifdef DRC_FLAGS_INVALIDATION_DCODE
 	// try to avoid function calls but rather directly fill in code
 	switch (flags_type) {
@@ -1136,9 +1170,43 @@ static void gen_fill_function_ptr(Bit8u * pos,void* fct_ptr,Bitu flags_type) {
 }
 #endif
 
+
+static void cache_flush(char* start, char* end)
+{
+    // Don't rely on GCC's __clear_cache implementation, as it caches
+    // icache/dcache cache line sizes, that can vary between cores on
+    // big.LITTLE architectures.
+    uint64_t addr, ctr_el0;
+    static size_t icache_line_size = 0xffff, dcache_line_size = 0xffff;
+    size_t isize, dsize;
+
+    __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr_el0));
+    isize = 4 << ((ctr_el0 >> 0) & 0xf);
+    dsize = 4 << ((ctr_el0 >> 16) & 0xf);
+
+    // use the global minimum cache line size
+    icache_line_size = isize = icache_line_size < isize ? icache_line_size : isize;
+    dcache_line_size = dsize = dcache_line_size < dsize ? dcache_line_size : dsize;
+
+    addr = (uint64_t)start & ~(uint64_t)(dsize - 1);
+    for (; addr < (uint64_t)end; addr += dsize)
+        // use "civac" instead of "cvau", as this is the suggested workaround for
+        // Cortex-A53 errata 819472, 826319, 827319 and 824069.
+            __asm__ volatile("dc civac, %0" : : "r"(addr) : "memory");
+    __asm__ volatile("dsb ish" : : : "memory");
+
+    addr = (uint64_t)start & ~(uint64_t)(isize - 1);
+    for (; addr < (uint64_t)end; addr += isize)
+            __asm__ volatile("ic ivau, %0" : : "r"(addr) : "memory");
+
+    __asm__ volatile("dsb ish" : : : "memory");
+    __asm__ volatile("isb" : : : "memory");
+}
+
+
 static void cache_block_closing(Bit8u* block_start,Bitu block_size) {
-	//flush cache - GCC/LLVM builtin
-	__builtin___clear_cache((char *)block_start, (char *)(block_start+block_size));
+	//flush cache
+	cache_flush((char *)block_start, (char *)(block_start+block_size));
 }
 
 static void cache_block_before_close(void) { }

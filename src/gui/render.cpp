@@ -187,9 +187,11 @@ bool RENDER_StartUpdate(void) {
 			render.fullFrame = true;
 		} else {
 			RENDER_DrawLine = RENDER_StartLineHandler;
+#ifdef C_DBP_ENABLE_CAPTURE
 			if (GCC_UNLIKELY(CaptureState & (CAPTURE_IMAGE|CAPTURE_VIDEO))) 
 				render.fullFrame = true;
 			else
+#endif
 				render.fullFrame = false;
 		}
 	}
@@ -209,6 +211,7 @@ void RENDER_EndUpdate( bool abort ) {
 	if (GCC_UNLIKELY(!render.updating))
 		return;
 	RENDER_DrawLine = RENDER_EmptyLineHandler;
+#ifdef C_DBP_ENABLE_CAPTURE
 	if (GCC_UNLIKELY(CaptureState & (CAPTURE_IMAGE|CAPTURE_VIDEO))) {
 		Bitu pitch, flags;
 		flags = 0;
@@ -224,6 +227,7 @@ void RENDER_EndUpdate( bool abort ) {
 		CAPTURE_AddImage( render.src.width, render.src.height, render.src.bpp, pitch,
 			flags, fps, (Bit8u *)&scalerSourceCache, (Bit8u*)&render.pal.rgb );
 	}
+#endif
 	if ( render.scale.outWrite ) {
 		GFX_EndUpdate( abort? NULL : Scaler_ChangedLines );
 		render.frameskip.hadSkip[render.frameskip.index] = 0;
@@ -289,6 +293,7 @@ static void RENDER_Reset( void ) {
 		gfx_scaleh = 1;
 	}
 
+#ifdef C_DBP_ENABLE_SCALERS
 	/* Don't do software scaler sizes larger than 4k */
 	Bitu maxsize_current_input = SCALER_MAXLINE_WIDTH/width;
 	if (render.scale.size > maxsize_current_input) render.scale.size = maxsize_current_input;
@@ -390,6 +395,14 @@ forcenormal:
 		yscale = simpleBlock->yscale;
 //		LOG_MSG("Scaler:%s",simpleBlock->name);
 	}
+#else // C_DBP_ENABLE_SCALERS
+forcenormal:
+	complexBlock = 0;
+	simpleBlock = &ScaleNormal1x;
+	gfx_flags = simpleBlock->gfxFlags;
+	xscale = simpleBlock->xscale;	
+	yscale = simpleBlock->yscale;
+#endif // C_DBP_ENABLE_SCALERS
 	switch (render.src.bpp) {
 	case 8:
 			render.src.start = ( render.src.width * 1) / sizeof(Bitu);
@@ -424,14 +437,14 @@ forcenormal:
 	width *= xscale;
 	Bitu skip = complexBlock ? 1 : 0;
 	if (gfx_flags & GFX_SCALING) {
-		height = MakeAspectTable(skip, render.src.height, yscale, yscale );
+		height = MakeAspectTable(skip, render.src.height, (double)yscale, yscale );
 	} else {
 		if ((gfx_flags & GFX_CAN_RANDOM) && gfx_scaleh > 1) {
 			gfx_scaleh *= yscale;
 			height = MakeAspectTable( skip, render.src.height, gfx_scaleh, yscale );
 		} else {
 			gfx_flags &= ~GFX_CAN_RANDOM;		//Hardware surface when possible
-			height = MakeAspectTable( skip, render.src.height, yscale, yscale);
+			height = MakeAspectTable( skip, render.src.height, (double)yscale, yscale);
 		}
 	}
 /* Setup the scaler variables */
@@ -663,6 +676,7 @@ void RENDER_Init(Section * sec) {
 	render.aspect=section->Get_bool("aspect");
 	render.frameskip.max=section->Get_int("frameskip");
 	render.frameskip.count=0;
+#ifdef C_DBP_ENABLE_SCALERS
 	std::string cline;
 	std::string scaler;
 	//Check for commandline paramters and parse them through the configclass so they get checked against allowed values
@@ -700,7 +714,10 @@ void RENDER_Init(Section * sec) {
 	else if (scaler == "scan2x"){ render.scale.op = scalerOpScan;render.scale.size = 2; }
 	else if (scaler == "scan3x"){ render.scale.op = scalerOpScan;render.scale.size = 3; }
 #endif
-
+#else // C_DBP_ENABLE_SCALERS
+	render.scale.op = scalerOpNormal;
+	render.scale.size = 1;
+#endif
 #if C_OPENGL
 	char* shader_src = render.shader_src;
 	Prop_path *sh = section->Get_path("glshader");
@@ -731,8 +748,43 @@ void RENDER_Init(Section * sec) {
 	if(!running) render.updating=true;
 	running = true;
 
+#ifdef C_DBP_ENABLE_MAPPER
 	MAPPER_AddHandler(DecreaseFrameSkip,MK_f7,MMOD1,"decfskip","Dec Fskip");
 	MAPPER_AddHandler(IncreaseFrameSkip,MK_f8,MMOD1,"incfskip","Inc Fskip");
+#endif
 	GFX_SetTitle(-1,render.frameskip.max,false);
 }
 
+#include <dbp_serialize.h>
+
+void DBPSerialize_Render(DBPArchive& ar)
+{
+	Bit8u* current_pixels = NULL;
+	Bitu current_pitch = 0;
+	GFX_StartUpdate(current_pixels, current_pitch);
+	Bit32u render_offset = (current_pixels && render.scale.outWrite ? render.scale.outWrite - current_pixels : 0);
+	Bit8u loaded_src[sizeof(render.src)];
+
+	ar
+		.SerializeBytes((ar.mode == DBPArchive::MODE_LOAD ? loaded_src : (Bit8u*)&render.src), sizeof(render.src))
+		.Serialize(render.pal)
+		.Serialize(render.updating)
+		.Serialize(render.active)
+		.Serialize(render.scale.inLine).Serialize(render.scale.outLine)
+		.Serialize(Scaler_ChangedLineIndex)
+		.Serialize(render_offset);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		if (memcmp(&render.src, loaded_src, sizeof(render.src)))
+		{
+			memcpy(&render.src, loaded_src, sizeof(render.src));
+			RENDER_Reset();
+		}
+		else if (current_pixels)
+		{
+			render.scale.outWrite = current_pixels + render_offset;
+		}
+		render.scale.clearCache = true;
+	}
+}

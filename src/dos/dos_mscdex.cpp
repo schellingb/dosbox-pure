@@ -48,8 +48,12 @@
 #define	REQUEST_STATUS_ERROR	0x8000
 
 // Use cdrom Interface
+#ifdef C_DBP_NATIVE_CDROM
 int useCdromInterface	= CDROM_USE_SDL;
 int forceCD				= -1;
+#else
+#define forceCD (-1)
+#endif
 
 static Bitu MSCDEX_Strategy_Handler(void); 
 static Bitu MSCDEX_Interrupt_Handler(void);
@@ -254,6 +258,10 @@ int CMscdex::AddDrive(Bit16u _drive, char* physicalPath, Bit8u& subUnit)
 	// Get Mounttype and init needed cdrom interface
 	switch (CDROM_GetMountType(physicalPath,forceCD)) {
 	case 0x00: {	
+#ifndef C_DBP_NATIVE_CDROM
+		LOG(LOG_MISC,LOG_NORMAL)("MSCDEX: Mounting physical cdrom not supported");
+		return 2; //MSCDEX_ERROR_NOT_SUPPORTED
+#else
 		LOG(LOG_MISC,LOG_NORMAL)("MSCDEX: Mounting physical cdrom: %s"	,physicalPath);
 #if defined (WIN32)
 		// Check OS
@@ -294,6 +302,7 @@ int CMscdex::AddDrive(Bit16u _drive, char* physicalPath, Bit8u& subUnit)
 		cdrom[numDrives] = new CDROM_Interface_SDL();
 		LOG(LOG_MISC,LOG_NORMAL)("MSCDEX: SDL Interface.");
 #endif
+#endif /* C_DBP_NATIVE_CDROM */
 		} break;
 	case 0x01:	// iso cdrom interface	
 		LOG(LOG_MISC,LOG_NORMAL)("MSCDEX: Mounting iso file as cdrom: %s", physicalPath);
@@ -1307,34 +1316,37 @@ bool MSCDEX_GetVolumeName(Bit8u subUnit, char* name)
 	return mscdex->GetVolumeName(subUnit,name);
 }
 
+//DBP: moved this to global so it can be cleared for restart
+static TMSF gleadOut[MSCDEX_MAX_DRIVES];
+
 bool MSCDEX_HasMediaChanged(Bit8u subUnit)
 {
-	static TMSF leadOut[MSCDEX_MAX_DRIVES];
-
 	TMSF leadnew;
 	Bit8u tr1,tr2;
 	if (mscdex->GetCDInfo(subUnit,tr1,tr2,leadnew)) {
-		bool changed = (leadOut[subUnit].min!=leadnew.min) || (leadOut[subUnit].sec!=leadnew.sec) || (leadOut[subUnit].fr!=leadnew.fr);
+		bool changed = (gleadOut[subUnit].min!=leadnew.min) || (gleadOut[subUnit].sec!=leadnew.sec) || (gleadOut[subUnit].fr!=leadnew.fr);
 		if (changed) {
-			leadOut[subUnit].min = leadnew.min;
-			leadOut[subUnit].sec = leadnew.sec;
-			leadOut[subUnit].fr	 = leadnew.fr;
+			gleadOut[subUnit].min = leadnew.min;
+			gleadOut[subUnit].sec = leadnew.sec;
+			gleadOut[subUnit].fr	 = leadnew.fr;
 			mscdex->InitNewMedia(subUnit);
 		}
 		return changed;
 	};
 	if (subUnit<MSCDEX_MAX_DRIVES) {
-		leadOut[subUnit].min = 0;
-		leadOut[subUnit].sec = 0;
-		leadOut[subUnit].fr	 = 0;
+		gleadOut[subUnit].min = 0;
+		gleadOut[subUnit].sec = 0;
+		gleadOut[subUnit].fr	 = 0;
 	}
 	return true;
 }
 
+#ifdef C_DBP_NATIVE_CDROM
 void MSCDEX_SetCDInterface(int intNr, int numCD) {
 	useCdromInterface = intNr;
 	forceCD	= numCD;
 }
+#endif
 
 void MSCDEX_ShutDown(Section* /*sec*/) {
 	delete mscdex;
@@ -1353,4 +1365,6 @@ void MSCDEX_Init(Section* sec) {
 	DOS_AddMultiplexHandler(MSCDEX_Handler);
 	/* Create MSCDEX */
 	mscdex = new CMscdex;
+	//DBP: for restart
+	memset(gleadOut, 0, sizeof(gleadOut));
 }

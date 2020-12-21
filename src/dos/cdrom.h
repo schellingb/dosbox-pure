@@ -31,8 +31,21 @@
 #include "dosbox.h"
 #include "mem.h"
 #include "mixer.h"
+#ifdef C_DBP_USE_SDL
 #include "SDL.h"
 #include "SDL_thread.h"
+#else
+#define CD_FPS	75
+#define FRAMES_TO_MSF(f, M,S,F)	{					\
+	int value = f;							\
+	*(F) = value%CD_FPS;						\
+	value /= CD_FPS;						\
+	*(S) = value%60;						\
+	value /= 60;							\
+	*(M) = value;							\
+}
+#define MSF_TO_FRAMES(M, S, F)	((M)*60*CD_FPS+(S)*CD_FPS+(F))
+#endif
 
 #if defined(C_SDL_SOUND)
 #include "SDL_sound.h"
@@ -41,7 +54,9 @@
 #define RAW_SECTOR_SIZE		2352
 #define COOKED_SECTOR_SIZE	2048
 
+#ifdef C_DBP_NATIVE_CDROM
 enum { CDROM_USE_SDL, CDROM_USE_ASPI, CDROM_USE_IOCTL_DIO, CDROM_USE_IOCTL_DX, CDROM_USE_IOCTL_MCI };
+#endif
 
 typedef struct SMSF {
 	unsigned char min;
@@ -84,6 +99,7 @@ public:
 	virtual void	InitNewMedia		(void) {};
 };	
 
+#ifdef C_DBP_NATIVE_CDROM
 class CDROM_Interface_SDL : public CDROM_Interface
 {
 public:
@@ -112,6 +128,7 @@ private:
 	int		driveID;
 	Uint32	oldLeadOut;
 };
+#endif /* C_DBP_NATIVE_CDROM */
 
 class CDROM_Interface_Fake : public CDROM_Interface
 {
@@ -149,7 +166,12 @@ private:
 		int getLength();
 	private:
 		BinaryFile();
+		#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+		class DOS_File* dos_file;
+		Bit32u dos_ofs, dos_size;
+		#else
 		std::ifstream *file;
+		#endif
 	};
 	
 	#if defined(C_SDL_SOUND)
@@ -208,7 +230,9 @@ static	void	CDAudioCallBack(Bitu len);
 static  struct imagePlayer {
 		CDROM_Interface_Image *cd;
 		MixerChannel   *channel;
+#ifdef C_DBP_USE_SDL
 		SDL_mutex 	*mutex;
+#endif
 		Bit8u   buffer[8192];
 		int     bufLen;
 		int     currFrame;	
@@ -237,6 +261,7 @@ typedef	std::vector<Track>::iterator	track_it;
 	Bit8u	subUnit;
 };
 
+#ifdef C_DBP_NATIVE_CDROM
 #if defined (WIN32)	/* Win 32 */
 
 #define WIN32_LEAN_AND_MEAN		// Exclude rarely-used stuff from Windows headers
@@ -393,5 +418,6 @@ private:
 };
 
 #endif /* LINUX */
+#endif /* C_DBP_NATIVE_CDROM */
 
 #endif /* __CDROM_INTERFACE__ */

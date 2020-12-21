@@ -386,6 +386,8 @@ public:
 		DISNEY_disable(0);
 		if (disney.mo)
 			delete disney.mo;
+		//DBP: Added cleanup for restart support
+		disney.chan=0;
 	}
 };
 
@@ -398,4 +400,20 @@ static void DISNEY_ShutDown(Section* sec){
 void DISNEY_Init(Section* sec) {
 	test = new DISNEY(sec);
 	sec->AddDestroyFunction(&DISNEY_ShutDown,true);
+}
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, DISNEY, DISNEY_disable);
+
+void DBPSerialize_DISNEY(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, disney.chan);
+	if (ar.IsSkip()) return;
+
+	Bit8u leader_idx = (disney.leader == &disney.da[0] ? 0 : (disney.leader == &disney.da[1] ? 1 : 0xff));
+	ar.SerializeExcept(disney, disney.mo, disney.chan, disney.leader);
+	ar.Serialize(leader_idx);
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+		disney.leader = (leader_idx < 2 ? &disney.da[leader_idx] : NULL);
 }

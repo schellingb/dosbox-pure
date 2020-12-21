@@ -60,6 +60,15 @@ struct DB_Midi {
 	} sysex;
 	bool available;
 	MidiHandler * handler;
+
+	//DBP: Added used flag and cache for serialization
+	bool ever_used;
+	struct {
+		Bit8u preset_bank[2], preset;
+		Bit8u pitch_tuning[3][2], pitch[2];
+		Bit8u control[96];
+		Bit8u rpn[2], rpn_data[3][2];
+	} cache[16];
 };
 
 extern DB_Midi midi;

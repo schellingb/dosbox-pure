@@ -1364,7 +1364,12 @@ private:
 	static Bit16u ems_baseseg;
 	RealPt old4b_pointer,old67_pointer;
 	CALLBACK_HandlerObject call_vdma,call_vcpi,call_v86mon;
+	//DBP: Changed int67 to use a CALLBACK_HandlerObject so it doesn't leak callback allocations
+	#if 0
 	Bitu call_int67;
+	#else
+	CALLBACK_HandlerObject call_int67;
+	#endif
 
 public:
 	EMS(Section* configuration):Module_base(configuration) {
@@ -1395,8 +1400,13 @@ public:
 		char const* emsname="EMMXXXX0";
 		MEM_BlockWrite(PhysMake(ems_baseseg,0xa),emsname,(Bitu)(strlen(emsname)+1));
 
+		//DBP: Changed int67 to use a CALLBACK_HandlerObject so it doesn't leak callback allocations
+		#if 0
 		call_int67=CALLBACK_Allocate();
 		CALLBACK_Setup(call_int67,&INT67_Handler,CB_IRET,PhysMake(ems_baseseg,4),"Int 67 ems");
+		#else
+		call_int67.Install(&INT67_Handler,CB_IRET,PhysMake(ems_baseseg,4),"Int 67 ems");
+		#endif
 		RealSetVec(0x67,RealMake(ems_baseseg,4),old67_pointer);
 
 		/* Register the ems device */
@@ -1508,6 +1518,10 @@ public:
 			CPU_LIDT(0x3ff, 0);
 			cpu.cpl=0;
 		}
+
+		//DBP: Added cleanup for restart support
+		bool DBP_IsShuttingDown();
+		if (DBP_IsShuttingDown()) ems_baseseg=0;
 	}
 };
 
@@ -1524,3 +1538,17 @@ void EMS_Init(Section* sec) {
 
 //Initialize static members
 Bit16u EMS::ems_baseseg = 0;
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_EMS(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, test, (ems_type != 0));
+	if (ar.IsSkip()) return;
+	ar.Serialize(ems_type);
+	ar.SerializeArray(emm_handles);
+	ar.SerializeArray(emm_mappings);
+	ar.SerializeArray(emm_segmentmappings);
+	ar.Serialize(GEMMIS_seg);
+	ar.Serialize(vcpi);
+}

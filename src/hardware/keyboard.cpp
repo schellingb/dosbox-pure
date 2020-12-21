@@ -50,6 +50,7 @@ static struct {
 	bool active;
 	bool scanning;
 	bool scheduled;
+	Bit8u down[(KBD_LAST+7)/8];
 } keyb;
 
 static void KEYBOARD_SetPort60(Bit8u val) {
@@ -226,6 +227,7 @@ static Bitu read_p64(Bitu port,Bitu iolen) {
 }
 
 void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
+	if (pressed == !!(keyb.down[keytype>>3] & (1<<(keytype&7)))) return;
 	Bit8u ret=0;bool extend=false;
 	switch (keytype) {
 	case KBD_esc:ret=1;break;
@@ -361,6 +363,7 @@ void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
 		if (keyb.repeat.key == keytype) keyb.repeat.wait = keyb.repeat.rate;		
 		else keyb.repeat.wait = keyb.repeat.pause;
 		keyb.repeat.key = keytype;
+		keyb.down[keytype>>3] |= (Bit8u)(1<<(keytype&7));
 	} else {
 		if (keyb.repeat.key == keytype) {
 			/* repeated key being released */
@@ -368,6 +371,7 @@ void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
 			keyb.repeat.wait = 0;
 		}
 		ret += 128;
+		keyb.down[keytype>>3] &= (Bit8u)~(1<<(keytype&7));
 	}
 	if (extend) KEYBOARD_AddBuffer(0xe0);
 	KEYBOARD_AddBuffer(ret);
@@ -400,4 +404,36 @@ void KEYBOARD_Init(Section* sec) {
 	keyb.repeat.rate=33;
 	keyb.repeat.wait=0;
 	KEYBOARD_ClrBuffer();
+}
+
+void DBP_KEYBOARD_ReleaseKeys() {
+	for (Bit8u k = (KBD_NONE + 1); k != KBD_LAST; k++)
+		if (keyb.down[k>>3] & (1<<(k&7)))
+			KEYBOARD_AddKey((KBD_KEYS)k, false);
+}
+
+#include <dbp_serialize.h>
+
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, KEYBOARD, KEYBOARD_TransferBuffer);
+
+void DBPSerialize_Keyboard(DBPArchive& ar)
+{
+	// no need to serialize keyb.buffer, keyb.used, keyb.pos, keyb.scheduled, as it is reset in KEYBOARD_ClrBuffer
+	ar
+		.SerializeArray(keyb.down)
+		.Serialize(keyb.repeat)
+		.Serialize(keyb.command)
+		.Serialize(keyb.p60data)
+		.Serialize(keyb.p60changed)
+		.Serialize(keyb.active)
+		.Serialize(keyb.scanning) 
+		.Serialize(port_61_data);
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		KEYBOARD_ClrBuffer();
+		bool DBP_IsKeyDown(KBD_KEYS key);
+		for (Bit8u k = (KBD_NONE + 1); k != KBD_LAST; k++)
+			if (keyb.down[k>>3] & (1<<(k&7)) && !DBP_IsKeyDown((KBD_KEYS)k))
+				KEYBOARD_AddKey((KBD_KEYS)k, false);
+	}
 }

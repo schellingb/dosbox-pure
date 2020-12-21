@@ -32,21 +32,35 @@
 #include <limits.h>
 
 using namespace std;
+#ifdef C_DBP_NATIVE_CONFIGFILE
 static std::string current_config_dir; // Set by parseconfigfile so Prop_path can use it to construct the realpath
-void Value::destroy() throw(){
+#endif
+void Value::destroy()
+#ifdef C_DBP_ENABLE_EXCEPTIONS
+	throw()
+#endif
+{
 	if (type == V_STRING) delete _string;
 }
 
 Value& Value::copy(Value const& in) {
 	if (this != &in) { //Selfassigment!
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 		if(type != V_NONE && type != in.type) throw WrongType();
+#else
+		DBP_ASSERT(type == V_NONE || type == in.type);
+#endif
 		destroy();
 		plaincopy(in);
 	}
 	return *this;
 }
 
-void Value::plaincopy(Value const& in) throw(){
+void Value::plaincopy(Value const& in)
+#ifdef C_DBP_ENABLE_EXCEPTIONS
+	throw()
+#endif
+{
 	type = in.type;
 	_int = in._int;
 	_double = in._double;
@@ -56,27 +70,47 @@ void Value::plaincopy(Value const& in) throw(){
 }
 
 Value::operator bool () const {
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(type != V_BOOL) throw WrongType();
+#else
+	if(type != V_BOOL) { DBP_ASSERT(false); return false; }
+#endif
 	return _bool;
 }
 
 Value::operator Hex () const {
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(type != V_HEX) throw WrongType();
+#else
+	if(type != V_HEX) { DBP_ASSERT(false); return Hex(); }
+#endif
 	return _hex;
 }
 
 Value::operator int () const {
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(type != V_INT) throw WrongType();
+#else
+	if(type != V_INT) { DBP_ASSERT(false); return 0; }
+#endif
 	return _int;
 }
 
 Value::operator double () const {
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(type != V_DOUBLE) throw WrongType();
+#else
+	if(type != V_DOUBLE) { DBP_ASSERT(false); return 0; }
+#endif
 	return _double;
 }
 
 Value::operator char const* () const {
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(type != V_STRING) throw WrongType();
+#else
+	if(type != V_STRING) { DBP_ASSERT(false); return NULL; }
+#endif
 	return _string->c_str();
 }
 
@@ -109,9 +143,17 @@ bool Value::SetValue(string const& in,Etype _type) {
 	/* Throw exception if the current type isn't the wanted type 
 	 * Unless the wanted type is current.
 	 */
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(_type == V_CURRENT && type == V_NONE) throw WrongType();
+#else
+	if(_type == V_CURRENT && type == V_NONE) { DBP_ASSERT(false); return false; }
+#endif
 	if(_type != V_CURRENT) { 
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 		if(type != V_NONE && type != _type) throw WrongType();
+#else
+		if(type != V_NONE && type != _type) { DBP_ASSERT(false); return false; }
+#endif
 		type = _type;
 	}
 	bool retval = true;
@@ -136,7 +178,10 @@ bool Value::SetValue(string const& in,Etype _type) {
 		case V_CURRENT:
 		default:
 			/* Shouldn't happen!/Unhandled */
+			DBP_ASSERT(false);
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 			throw WrongType();
+#endif
 			break;
 	}
 	return retval;
@@ -333,6 +378,7 @@ bool Prop_string::CheckValue(Value const& in, bool warn) {
 	return false;
 }
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 bool Prop_path::SetValue(std::string const& input) {
 	//Special version to merge realpath with it
 
@@ -352,6 +398,7 @@ bool Prop_path::SetValue(std::string const& input) {
 	if (Cross::IsPathAbsolute(workcopy)) realpath = workcopy;
 	return retval;
 }
+#endif
 
 bool Prop_bool::SetValue(std::string const& input) {
 	return value.SetValue(input,Value::V_BOOL);
@@ -520,11 +567,13 @@ Prop_string* Section_prop::Add_string(string const& _propname, Property::Changea
 	return test;
 }
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 Prop_path* Section_prop::Add_path(string const& _propname, Property::Changeable::Value when, char const * const _value) {
 	Prop_path* test=new Prop_path(_propname,when,_value);
 	properties.push_back(test);
 	return test;
 }
+#endif
 
 Prop_bool* Section_prop::Add_bool(string const& _propname, Property::Changeable::Value when, bool _value) {
 	Prop_bool* test=new Prop_bool(_propname,when,_value);
@@ -577,6 +626,7 @@ double Section_prop::Get_double(string const& _propname) const {
 	return 0.0;
 }
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 Prop_path* Section_prop::Get_path(string const& _propname) const {
 	for(const_it tel = properties.begin();tel != properties.end();++tel){
 		if ((*tel)->propname == _propname){
@@ -586,6 +636,7 @@ Prop_path* Section_prop::Get_path(string const& _propname) const {
 	}
 	return NULL;
 }
+#endif
 
 Prop_multival* Section_prop::Get_multival(string const& _propname) const {
 	for(const_it tel = properties.begin();tel != properties.end();++tel){
@@ -693,6 +744,7 @@ string Section_line::GetPropValue(string const& /* _property*/) const {
 	return NO_SUCH_PROPERTY;
 }
 
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 bool Config::PrintConfig(char const * const configfilename) const {
 	char temp[50];char helpline[256];
 	FILE* outfile = fopen(configfilename,"w+t");
@@ -767,6 +819,7 @@ bool Config::PrintConfig(char const * const configfilename) const {
 	fclose(outfile);
 	return true;
 }
+#endif
 
 
 Section_prop* Config::AddSection_prop(char const * const _name,void (*_initfunction)(Section*),bool canchange) {
@@ -854,6 +907,7 @@ Section* Config::GetSectionFromProperty(char const * const prop) const {
 	return NULL;
 }
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 bool Config::ParseConfigFile(char const * const configfilename) {
 	//static bool first_configfile = true;
 	ifstream in(configfilename);
@@ -898,18 +952,23 @@ bool Config::ParseConfigFile(char const * const configfilename) {
 		}
 			break;
 		default:
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 			try {
+#endif
 				if(currentsection) currentsection->HandleInputline(gegevens);
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 			} catch(const char* message) {
 				message=0;
 				//EXIT with message
 			}
+#endif
 			break;
 		}
 	}
 	current_config_dir.clear();//So internal changes don't use the path information
 	return true;
 }
+#endif
 
 /*const char* Config::GetPrimaryConfigFile() {
 	return configfile.c_str();
@@ -1075,13 +1134,17 @@ void CommandLine::FillVector(std::vector<std::string> & vector) {
 	for(cmd_it it = cmds.begin(); it != cmds.end(); ++it) {
 		vector.push_back((*it));
 	}
-#ifdef WIN32
+#ifdef C_DBP_USE_SDL
+#if defined(WIN32)
 	// add back the \" if the parameter contained a space
 	for(Bitu i = 0; i < vector.size(); i++) {
 		if(vector[i].find(' ') != std::string::npos) {
 			vector[i] = "\""+vector[i]+"\"";
 		}
 	}
+#endif
+#else
+	// command line is not from native process, no conversion needed
 #endif
 }
 

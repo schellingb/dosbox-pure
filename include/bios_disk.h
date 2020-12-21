@@ -54,12 +54,23 @@ public:
 	void Get_Geometry(Bit32u * getHeads, Bit32u *getCyl, Bit32u *getSect, Bit32u *getSectSize);
 	Bit8u GetBiosType(void);
 	Bit32u getSectSize(void);
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	static class DOS_File *OpenDosFile(char const * filename, Bit32u *bsize = NULL, bool* writable = NULL, char const * relative_to = NULL);
+	imageDisk(class DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk);
+	~imageDisk();
+	Bit32u Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len);
+	#else
 	imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk);
 	~imageDisk() { if(diskimg != NULL) { fclose(diskimg); }	};
+	#endif
 
 	bool hardDrive;
 	bool active;
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	class DOS_File* dos_file;
+	#else
 	FILE *diskimg;
+	#endif
 	char diskname[512];
 	Bit8u floppytype;
 

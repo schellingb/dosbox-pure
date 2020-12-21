@@ -261,3 +261,42 @@ void SVGA_Setup_Driver(void) {
 		break;
 	}
 }
+
+#include <dbp_serialize.h>
+#include <mem.h>
+
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, VGA, VGA_SetupDrawing);
+
+void DBPSerialize_VGA(DBPArchive& ar)
+{
+	ar
+		.Serialize(vga.mode)
+		.Serialize(vga.misc_output)
+		.Serialize(vga.config)
+		.Serialize(vga.internal)
+		.Serialize(vga.seq)
+		.Serialize(vga.attr)
+		.Serialize(vga.crtc)
+		.Serialize(vga.gfx)
+		.Serialize(vga.dac)
+		.Serialize(vga.latch)
+		.Serialize(vga.s3)
+		.Serialize(vga.svga)
+		.Serialize(vga.herc)
+		.SerializeExcept(vga.tandy, vga.tandy.draw_base, vga.tandy.mem_base)
+		.Serialize(vga.other)
+		<< vga.lfb.page << vga.lfb.addr << vga.lfb.mask;
+
+	Bit32u tandy_drawbase_idx, tandy_membase_idx;
+	if (ar.mode == DBPArchive::MODE_SAVE)
+	{
+		tandy_drawbase_idx = (vga.tandy.draw_base == vga.mem.linear ? 0xffffffff : (Bit32u)(vga.tandy.draw_base - MemBase));
+		tandy_membase_idx  = (vga.tandy.mem_base  == vga.mem.linear ? 0xffffffff : (Bit32u)(vga.tandy.mem_base  - MemBase));
+	}
+	ar << tandy_drawbase_idx << tandy_membase_idx;
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		vga.tandy.draw_base = (tandy_drawbase_idx == 0xffffffff ? vga.mem.linear : MemBase + tandy_drawbase_idx);
+		vga.tandy.mem_base  = (tandy_membase_idx  == 0xffffffff ? vga.mem.linear : MemBase + tandy_membase_idx );
+	}
+}

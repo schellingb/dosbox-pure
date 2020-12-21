@@ -1233,27 +1233,40 @@ static void gen_return_fast(BlockReturn retcode,bool ret_exception=false) {
 	opcode(4).setea(4,-1,0,CALLSTACK-8).Emit8(0xFF); // jmp [rsp+CALLSTACK]
 }
 
-static void gen_init(void) {
-	x64gen.regs[X64_REG_RAX]=new GenReg(0);
-	x64gen.regs[X64_REG_RCX]=new GenReg(1);
-	x64gen.regs[X64_REG_RDX]=new GenReg(2);
-	x64gen.regs[X64_REG_RBX]=new GenReg(3);
-	x64gen.regs[X64_REG_RSI]=new GenReg(6);
-	x64gen.regs[X64_REG_RDI]=new GenReg(7);
-	x64gen.regs[X64_REG_R8]=new GenReg(8);
-	x64gen.regs[X64_REG_R9]=new GenReg(9);
-	x64gen.regs[X64_REG_R10]=new GenReg(10);
-	x64gen.regs[X64_REG_R11]=new GenReg(11);
-	x64gen.regs[X64_REG_R12]=new GenReg(12);
-	x64gen.regs[X64_REG_R13]=new GenReg(13);
-	x64gen.regs[X64_REG_R14]=new GenReg(14);
-	x64gen.regs[X64_REG_R15]=new GenReg(15);
-}
-
+//DBP: Added reinitialization for restart support and avoid memory leaking of GenReg
 #if defined(X86_DYNFPU_DH_ENABLED)
 static void gen_dh_fpu_saveInit(void);
 static void (*gen_dh_fpu_save)(void)  = gen_dh_fpu_saveInit;
+#endif
 
+#include <new>
+static void gen_init(void) {
+	static char regbuf[sizeof(GenReg) * 16];
+	memset(regbuf, 0, sizeof(regbuf));
+	x64gen.regs[X64_REG_RAX]=new (&((GenReg*)regbuf)[ 0]) GenReg( 0);
+	x64gen.regs[X64_REG_RCX]=new (&((GenReg*)regbuf)[ 1]) GenReg( 1);
+	x64gen.regs[X64_REG_RDX]=new (&((GenReg*)regbuf)[ 2]) GenReg( 2);
+	x64gen.regs[X64_REG_RBX]=new (&((GenReg*)regbuf)[ 3]) GenReg( 3);
+	x64gen.regs[X64_REG_RSI]=new (&((GenReg*)regbuf)[ 6]) GenReg( 6);
+	x64gen.regs[X64_REG_RDI]=new (&((GenReg*)regbuf)[ 7]) GenReg( 7);
+	x64gen.regs[X64_REG_R8] =new (&((GenReg*)regbuf)[ 8]) GenReg( 8);
+	x64gen.regs[X64_REG_R9] =new (&((GenReg*)regbuf)[ 9]) GenReg( 9);
+	x64gen.regs[X64_REG_R10]=new (&((GenReg*)regbuf)[10]) GenReg(10);
+	x64gen.regs[X64_REG_R11]=new (&((GenReg*)regbuf)[11]) GenReg(11);
+	x64gen.regs[X64_REG_R12]=new (&((GenReg*)regbuf)[12]) GenReg(12);
+	x64gen.regs[X64_REG_R13]=new (&((GenReg*)regbuf)[13]) GenReg(13);
+	x64gen.regs[X64_REG_R14]=new (&((GenReg*)regbuf)[14]) GenReg(14);
+	x64gen.regs[X64_REG_R15]=new (&((GenReg*)regbuf)[15]) GenReg(15);
+	x64gen.flagsactive=false;
+	x64gen.last_used=0;
+	skip_flags=false;
+	gen_runcode = gen_runcodeInit;
+	#if defined(X86_DYNFPU_DH_ENABLED)
+	gen_dh_fpu_save = gen_dh_fpu_saveInit;
+	#endif
+}
+
+#if defined(X86_DYNFPU_DH_ENABLED)
 // DO NOT USE opcode::setabsaddr IN THIS FUNCTION (RBP unavailable at execution time)
 static void gen_dh_fpu_saveInit(void) {
 	Bit8u* oldpos = cache.pos;

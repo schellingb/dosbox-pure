@@ -23,7 +23,11 @@
 // 1: complex scalers off, scaler cache off, all simple scalers on
 // 2: complex scalers off, scaler cache on
 // 3: complex scalers on
+#ifdef C_DBP_ENABLE_SCALERS
 #define RENDER_USE_ADVANCED_SCALERS 3
+#else
+#define RENDER_USE_ADVANCED_SCALERS 0
+#endif
 
 #include "../src/gui/render_scalers.h"
 

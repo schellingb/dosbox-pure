@@ -134,7 +134,9 @@ struct JoyStick {
 
 };
 
+#ifdef C_DBP_USE_SDL
 JoystickType joytype;
+#endif
 static JoyStick stick[2];
 
 static Bitu last_write = 0;
@@ -142,7 +144,9 @@ static bool write_active = false;
 static bool swap34 = false;
 bool button_wrapping_enabled = true;
 
+#ifdef C_DBP_USE_SDL
 extern bool autofire; //sdl_mapper.cpp
+#endif
 
 static Bitu read_p201(Bitu port,Bitu iolen) {
 	/* Reset Joystick to 0 after TIMEOUT ms */
@@ -291,6 +295,7 @@ private:
 public:
 	JOYSTICK(Section* configuration):Module_base(configuration){
 		Section_prop * section = static_cast<Section_prop *>(configuration);
+#ifdef C_DBP_USE_SDL
 		const char * type = section->Get_string("joysticktype");
 		if (!strcasecmp(type,"none"))         joytype = JOY_NONE;
 		else if (!strcasecmp(type,"false"))   joytype = JOY_NONE;
@@ -301,6 +306,7 @@ public:
 		else if (!strcasecmp(type,"fcs"))     joytype = JOY_FCS;
 		else if (!strcasecmp(type,"ch"))      joytype = JOY_CH;
 		else joytype = JOY_AUTO;
+#endif
 
 		bool timed = section->Get_bool("timed");
 		if (timed) {
@@ -310,7 +316,9 @@ public:
 			ReadHandler.Install(0x201,read_p201,IO_MB);
 			WriteHandler.Install(0x201,write_p201,IO_MB);
 		}
+#ifdef C_DBP_USE_SDL
 		autofire = section->Get_bool("autofire");
+#endif
 		swap34 = section->Get_bool("swap34");
 		button_wrapping_enabled = section->Get_bool("buttonwrap");
 		stick[0].xtick = stick[0].ytick = stick[1].xtick =
@@ -334,4 +342,25 @@ void JOYSTICK_Destroy(Section* sec) {
 void JOYSTICK_Init(Section* sec) {
 	test = new JOYSTICK(sec);
 	sec->AddDestroyFunction(&JOYSTICK_Destroy,true); 
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_Joystick(DBPArchive& ar)
+{
+	ar.SerializeArray(stick);
+	ar.Serialize(last_write);
+	ar.Serialize(write_active);
+	ar.Serialize(swap34);
+	ar.Serialize(button_wrapping_enabled);
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		for (Bitu i = 0; i != 2; i++)
+		{
+			if (JOYSTICK_GetMove_X(i)) JOYSTICK_Move_X(i, 0);
+			if (JOYSTICK_GetMove_Y(i)) JOYSTICK_Move_Y(i, 0);
+			if (JOYSTICK_GetButton(i, 0)) JOYSTICK_Button(i, 0, false);
+			if (JOYSTICK_GetButton(i, 1)) JOYSTICK_Button(i, 1, false);
+		}
+	}
 }

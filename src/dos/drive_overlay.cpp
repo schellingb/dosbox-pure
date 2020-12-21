@@ -17,6 +17,7 @@
  */
 
 #include "dosbox.h"
+#ifdef C_DBP_NATIVE_OVERLAY
 #include "dos_inc.h"
 #include "drives.h"
 #include "support.h"
@@ -867,17 +868,7 @@ bool Overlay_Drive::FileUnlink(char * name) {
 		//File exists and can technically be deleted, nevertheless it failed.
 		//This means that the file is probably open by some process.
 		//See if We have it open.
-		bool found_file = false;
-		for(Bitu i = 0;i < DOS_FILES;i++){
-			if(Files[i] && Files[i]->IsName(name)) {
-				Bitu max = DOS_FILES;
-				while(Files[i]->IsOpen() && max--) {
-					Files[i]->Close();
-					if (Files[i]->RemoveRef()<=0) break;
-				}
-				found_file=true;
-			}
-		}
+		bool found_file = ForceCloseFile(name);
 		if(!found_file) {
 			DOS_SetError(DOSERR_ACCESS_DENIED);
 			return false;
@@ -1205,3 +1196,4 @@ void Overlay_Drive::EmptyCache(void){
 	update_cache(true);//lets rebuild it.
 }
 
+#endif /* C_DBP_NATIVE_OVERLAY */

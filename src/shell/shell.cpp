@@ -165,6 +165,11 @@ DOS_Shell::DOS_Shell():Program(){
 	completion_start = NULL;
 }
 
+//DBP: memory cleanup
+DOS_Shell::~DOS_Shell(){
+	if (bf) delete bf;
+}
+
 Bitu DOS_Shell::GetRedirection(char *s, char **ifn, char **ofn,bool * append) {
 
 	char * lr=s;
@@ -360,7 +365,7 @@ void DOS_Shell::Run(void) {
 			ParseLine(input_line);
 			if (echo && !bf) WriteOut_NoParsing("\n");
 		}
-	} while (!exit);
+	} while (!exit && !first_shell->exit);
 }
 
 void DOS_Shell::SyntaxError(void) {
@@ -377,12 +382,17 @@ public:
 		std::string line;
 		Section_line * section=static_cast<Section_line *>(configuration);
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 		/* Check -securemode switch to disable mount/imgmount/boot after running autoexec.bat */
 		bool secure = control->cmdline->FindExist("-securemode",true);
 
 		/* add stuff from the configfile unless -noautexec or -securemode is specified. */
 		char * extra = const_cast<char*>(section->data.c_str());
 		if (extra && !secure && !control->cmdline->FindExist("-noautoexec",true)) {
+#else
+		char * extra = const_cast<char*>(section->data.c_str());
+		if (extra) {
+#endif
 			/* detect if "echo off" is the first line */
 			size_t firstline_length = strcspn(extra,"\r\n");
 			bool echo_off  = !strncasecmp(extra,"echo off",8);
@@ -405,14 +415,19 @@ public:
 			if (*extra) autoexec[0].Install(std::string(extra));
 		}
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 		/* Check to see for extra command line options to be added (before the command specified on commandline) */
 		/* Maximum of extra commands: 10 */
 		Bitu i = 1;
 		while (control->cmdline->FindString("-c",line,true) && (i <= 11)) {
+#ifdef C_DBP_USE_SDL
 #if defined (WIN32) || defined (OS2)
 			//replace single with double quotes so that mount commands can contain spaces
 			for(Bitu temp = 0;temp < line.size();++temp) if(line[temp] == '\'') line[temp]='\"';
 #endif //Linux users can simply use \" in their shell
+#else
+			// command line is not from native process, no conversion needed
+#endif
 			autoexec[i++].Install(line);
 		}
 
@@ -490,14 +505,21 @@ public:
 		if ( !command_found ) {
 			if ( secure ) autoexec[12].Install("z:\\config.com -securemode");
 		}
+#endif
 		VFILE_Register("AUTOEXEC.BAT",(Bit8u *)autoexec_data,(Bit32u)strlen(autoexec_data));
 	}
 };
 
 static AUTOEXEC* test;
 
+//DBP: memory cleanup
+static void AUTOEXEC_ShutDown(Section* /*sec*/) {
+	delete test;
+}
+
 void AUTOEXEC_Init(Section * sec) {
 	test = new AUTOEXEC(sec);
+	sec->AddDestroyFunction(&AUTOEXEC_ShutDown);
 }
 
 static Bitu INT2E_Handler(void) {
@@ -585,7 +607,11 @@ void SHELL_Init() {
 	MSG_Add("SHELL_CMD_DIR_INTRO","Directory of %s.\n");
 	MSG_Add("SHELL_CMD_DIR_BYTES_USED","%5d File(s) %17s Bytes.\n");
 	MSG_Add("SHELL_CMD_DIR_BYTES_FREE","%5d Dir(s)  %17s Bytes free.\n");
+#ifdef C_DBP_ENABLE_INTROPROGRAM
 	MSG_Add("SHELL_EXECUTE_DRIVE_NOT_FOUND","Drive %c does not exist!\nYou must \033[31mmount\033[0m it first. Type \033[1;33mintro\033[0m or \033[1;33mintro mount\033[0m for more information.\n");
+#else
+	MSG_Add("SHELL_EXECUTE_DRIVE_NOT_FOUND","Drive %c does not exist!\nYou must \033[31mmount\033[0m it first.\n");
+#endif
 	MSG_Add("SHELL_EXECUTE_ILLEGAL_COMMAND","Illegal command: %s.\n");
 	MSG_Add("SHELL_CMD_PAUSE","Press any key to continue.\n");
 	MSG_Add("SHELL_CMD_PAUSE_HELP","Waits for 1 keystroke to continue.\n");
@@ -598,29 +624,49 @@ void SHELL_Init() {
 		"\033[44;1m\xC9\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD"
 		"\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD"
 		"\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xCD\xBB\n"
+#ifdef C_DBP_LIBRETRO
+		"\xBA \033[32mWelcome to DOSBox Pure\033[37m                                             \xBA\n"
+#else
 		"\xBA \033[32mWelcome to DOSBox %-8s\033[37m                                         \xBA\n"
+#endif
 		"\xBA                                                                    \xBA\n"
 //		"\xBA DOSBox runs real and protected mode games.                         \xBA\n"
+#ifdef C_DBP_ENABLE_INTROPROGRAM
 		"\xBA For a short introduction for new users type: \033[33mINTRO\033[37m                 \xBA\n"
+#endif
 		"\xBA For supported shell commands type: \033[33mHELP\033[37m                            \xBA\n"
 		"\xBA                                                                    \xBA\n"
+#ifdef C_DBP_LIBRETRO
+		"\xBA To adjust options use the frontend options menu.                   \xBA\n"
+#else
 		"\xBA To adjust the emulated CPU speed, use \033[31mctrl-F11\033[37m and \033[31mctrl-F12\033[37m.       \xBA\n"
 		"\xBA To activate the keymapper \033[31mctrl-F1\033[37m.                                 \xBA\n"
 		"\xBA For more information read the \033[36mREADME\033[37m file in the DOSBox directory. \xBA\n"
+#endif
 		"\xBA                                                                    \xBA\n"
 	);
 	MSG_Add("SHELL_STARTUP_CGA","\xBA DOSBox supports Composite CGA mode.                                \xBA\n"
+#ifdef C_DBP_LIBRETRO
+	        "\xBA Use \033[31moptions menu\033[37m to set composite output and CGA model            .\xBA\n"
+#else
 	        "\xBA Use \033[31mF12\033[37m to set composite output ON, OFF, or AUTO (default).        \xBA\n"
 	        "\xBA \033[31m(Alt-)F11\033[37m changes hue; \033[31mctrl-alt-F11\033[37m selects early/late CGA model.  \xBA\n"
+#endif
 	        "\xBA                                                                    \xBA\n"
 	);
+#ifdef C_DBP_LIBRETRO
+	MSG_Add("SHELL_STARTUP_HERC","\xBA Use \033[31moptions menu\033[37m to select hercules palette.                       \xBA\n"
+#else
 	MSG_Add("SHELL_STARTUP_HERC","\xBA Use \033[31mF11\033[37m to cycle through white, amber, and green monochrome color. \xBA\n"
+#endif
 	        "\xBA                                                                    \xBA\n"
 	);
+#if C_DEBUG
 	MSG_Add("SHELL_STARTUP_DEBUG",
 	        "\xBA Press \033[31malt-Pause\033[37m to enter the debugger or start the exe with \033[33mDEBUG\033[37m. \xBA\n"
 	        "\xBA                                                                    \xBA\n"
 	);
+#endif
 	MSG_Add("SHELL_STARTUP_END",
 	        "\xBA \033[32mHAVE FUN!\033[37m                                                          \xBA\n"
 	        "\xBA \033[32mThe DOSBox Team \033[33mhttp://www.dosbox.com\033[37m                              \xBA\n"

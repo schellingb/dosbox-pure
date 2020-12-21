@@ -26,6 +26,8 @@ class Section;
 enum OPL_Mode {
 	OPL_none,OPL_cms,OPL_opl2,OPL_dualopl2,OPL_opl3,OPL_opl3gold
 };
+
+#ifdef C_DBP_ENABLE_CAPTURE
 #define CAPTURE_WAVE	0x01
 #define CAPTURE_OPL		0x02
 #define CAPTURE_MIDI	0x04
@@ -33,6 +35,7 @@ enum OPL_Mode {
 #define CAPTURE_VIDEO	0x10
 
 extern Bitu CaptureState;
+#endif
 
 void OPL_Init(Section* sec,OPL_Mode mode);
 void CMS_Init(Section* sec);
@@ -43,6 +46,8 @@ bool SB_Get_Address(Bitu& sbaddr, Bitu& sbirq, Bitu& sbdma);
 bool TS_Get_Address(Bitu& tsaddr, Bitu& tsirq, Bitu& tsdma);
 
 extern Bit8u adlib_commandreg;
+
+#ifdef C_DBP_ENABLE_CAPTURE
 FILE * OpenCaptureFile(const char * type,const char * ext);
 
 void CAPTURE_AddWave(Bit32u freq, Bitu len, Bit16s * data);
@@ -51,5 +56,6 @@ void CAPTURE_AddWave(Bit32u freq, Bitu len, Bit16s * data);
 #define CAPTURE_FLAG_DUPLICATE	0x4
 void CAPTURE_AddImage(Bitu width, Bitu height, Bitu bpp, Bitu pitch, Bitu flags, float fps, const Bit8u * data, const Bit8u * pal);
 void CAPTURE_AddMidi(bool sysex, Bitu len, Bit8u * data);
+#endif
 
 #endif

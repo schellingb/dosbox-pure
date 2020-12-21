@@ -43,6 +43,60 @@ using namespace std;
 #define MAX_LINE_LENGTH 512
 #define MAX_FILENAME_LENGTH 256
 
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+CDROM_Interface_Image::BinaryFile::BinaryFile(const char *filename, bool &error) : dos_file(NULL), dos_size(0), dos_ofs(0)
+{
+	if (filename[0] == '$')
+	{
+		DOS_Drive* drive = Drives[filename[1] - 'A'];
+		if (!drive->FileOpen(&dos_file, (char*)filename + 4, 0)) { error = true; return; }
+	}
+	else
+	{
+		FILE* raw_file_h = fopen_wrap(filename, "rb");
+		if (!raw_file_h) { error = true; return; }
+		dos_file = new rawFile(raw_file_h, false);
+	}
+	dos_file->AddRef();
+	bool can_seek = dos_file->Seek(&dos_size, DOS_SEEK_END);
+	dos_ofs = dos_size;
+	DBP_ASSERT(can_seek);
+	error = false;
+}
+	
+CDROM_Interface_Image::BinaryFile::~BinaryFile()
+{
+	if (!dos_file) return;
+	if (dos_file->IsOpen()) dos_file->Close();
+	if (dos_file->RemoveRef() <= 0) delete dos_file;
+}
+
+bool CDROM_Interface_Image::BinaryFile::read(Bit8u *buffer, int seek, int count)
+{
+	int wanted_count = count;
+	if ((Bit32u)seek >= dos_size) count = 0;
+	else if (dos_size - (Bit32u)seek < (Bit32u)count) count = (int)(dos_size - (Bit32u)seek);
+	if ((Bit32u)seek != dos_ofs)
+	{
+		dos_ofs = (Bit32u)seek;
+		dos_file->Seek(&dos_ofs, DOS_SEEK_SET);
+	}
+	for (Bit32u remain = (Bit32u)count; remain;)
+	{
+		Bit16u sz = (remain > 0xFFFF ? 0xFFFF : (Bit16u)remain);
+		if (!dos_file->Read(buffer, &sz) || !sz) { count -= (int)remain; break; }
+		remain -= sz;
+		buffer += sz;
+	}
+	dos_ofs += (Bit32u)count;
+	return (wanted_count == count);
+}
+
+int CDROM_Interface_Image::BinaryFile::getLength()
+{
+	return (int)dos_size;
+}
+#else
 CDROM_Interface_Image::BinaryFile::BinaryFile(const char *filename, bool &error)
 {
 	file = new ifstream(filename, ios::in | ios::binary);
@@ -69,6 +123,7 @@ int CDROM_Interface_Image::BinaryFile::getLength()
 	if (file->fail()) return -1;
 	return length;
 }
+#endif /* C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE */
 
 #if defined(C_SDL_SOUND)
 CDROM_Interface_Image::AudioFile::AudioFile(const char *filename, bool &error)
@@ -131,7 +186,11 @@ int CDROM_Interface_Image::AudioFile::getLength()
 int CDROM_Interface_Image::refCount = 0;
 CDROM_Interface_Image* CDROM_Interface_Image::images[26] = {};
 CDROM_Interface_Image::imagePlayer CDROM_Interface_Image::player = {
-	NULL, NULL, NULL, {0}, 0, 0, 0, false, false, false, {0} };
+	NULL, NULL,
+#ifdef C_DBP_USE_SDL
+	NULL, //mutex
+#endif
+	{0}, 0, 0, 0, false, false, false, {0} };
 
 	
 CDROM_Interface_Image::CDROM_Interface_Image(Bit8u subUnit)
@@ -139,7 +198,9 @@ CDROM_Interface_Image::CDROM_Interface_Image(Bit8u subUnit)
 {
 	images[subUnit] = this;
 	if (refCount == 0) {
+#ifdef C_DBP_USE_SDL
 		player.mutex = SDL_CreateMutex();
+#endif
 		if (!player.channel) {
 			player.channel = MIXER_AddChannel(&CDAudioCallBack, 44100, "CDAUDIO");
 		}
@@ -154,7 +215,9 @@ CDROM_Interface_Image::~CDROM_Interface_Image()
 	if (player.cd == this) player.cd = NULL;
 	ClearTracks();
 	if (refCount == 0) {
+#ifdef C_DBP_USE_SDL
 		SDL_DestroyMutex(player.mutex);
+#endif
 		player.channel->Enable(false);
 	}
 }
@@ -229,7 +292,9 @@ bool CDROM_Interface_Image::GetMediaTrayStatus(bool& mediaPresent, bool& mediaCh
 bool CDROM_Interface_Image::PlayAudioSector(unsigned long start,unsigned long len)
 {
 	// We might want to do some more checks. E.g valid start and length
+#ifdef C_DBP_USE_SDL
 	SDL_mutexP(player.mutex);
+#endif
 	player.cd = this;
 	player.bufLen = 0;
 	player.currFrame = start;
@@ -243,7 +308,9 @@ bool CDROM_Interface_Image::PlayAudioSector(unsigned long start,unsigned long le
 		//Real drives either fail or succeed as well
 	} else player.isPlaying = true;
 	player.isPaused = false;
+#ifdef C_DBP_USE_SDL
 	SDL_mutexV(player.mutex);
+#endif
 	return true;
 }
 
@@ -326,7 +393,9 @@ void CDROM_Interface_Image::CDAudioCallBack(Bitu len)
 		return;
 	}
 	
+#ifdef C_DBP_USE_SDL
 	SDL_mutexP(player.mutex);
+#endif
 	while (player.bufLen < (Bits)len) {
 		bool success;
 		if (player.targetFrame > player.currFrame)
@@ -365,7 +434,9 @@ void CDROM_Interface_Image::CDAudioCallBack(Bitu len)
 #endif
 	memmove(player.buffer, &player.buffer[len], player.bufLen - len);
 	player.bufLen -= len;
+#ifdef C_DBP_USE_SDL
 	SDL_mutexV(player.mutex);
+#endif
 }
 
 bool CDROM_Interface_Image::LoadIsoFile(char* filename)
@@ -397,7 +468,11 @@ bool CDROM_Interface_Image::LoadIsoFile(char* filename)
 	} else if (CanReadPVD(track.file, RAW_SECTOR_SIZE, true)) {
 		track.sectorSize = RAW_SECTOR_SIZE;
 		track.mode2 = true;		
-	} else return false;
+	} else {
+		//DBP: Added cleanup
+		delete track.file;
+		return false;
+	}
 	
 	track.length = track.file->getLength() / track.sectorSize;
 	tracks.push_back(track);
@@ -425,8 +500,8 @@ bool CDROM_Interface_Image::CanReadPVD(TrackFile *file, int sectorSize, bool mod
 			(pvd[8] == 1 && !strncmp((char*)(&pvd[9]), "CDROM", 5) && pvd[14] == 1));
 }
 
-#if defined(WIN32)
-static string dirname(char * file) {
+#if defined(WIN32) || defined(HAVE_LIBNX) || defined(WIIU) || defined (GEKKO) || defined (_CTR) || defined(_3DS) || defined(VITA) || defined(PSP)
+static string FAKEdirname(char * file) {
 	char * sep = strrchr(file, '\\');
 	if (sep == NULL)
 		sep = strrchr(file, '/');
@@ -439,6 +514,7 @@ static string dirname(char * file) {
 		return tmp;
 	}
 }
+#define dirname FAKEdirname
 #endif
 
 bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
@@ -454,8 +530,41 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	char tmp[MAX_FILENAME_LENGTH];	// dirname can change its argument
 	safe_strncpy(tmp, cuefile, MAX_FILENAME_LENGTH);
 	string pathname(dirname(tmp));
+
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+	ifstream inFile;
+	istringstream inString;
+	if (cuefile[0] == '$')
+	{
+		DOS_Drive* drive = Drives[cuefile[1] - 'A'];
+		DOS_File* df;
+		FileStat_Block stat;
+		if (!drive->FileStat(cuefile + 4, &stat) || !stat.size || stat.size > 1024*1024 || !drive->FileOpen(&df, cuefile + 4, 0))
+			return false;
+		df->AddRef();
+
+		std::string dosfilebuf;
+		dosfilebuf.resize(stat.size + 1);
+		dosfilebuf[stat.size] = '\0';
+		Bit8u* buf = (Bit8u*)&dosfilebuf[0];
+		for (Bit16u read; stat.size; stat.size -= read, buf += read)
+		{
+			read = (Bit16u)(stat.size > 0xFFFF ? 0xFFFF : stat.size);
+			if (!df->Read(buf, &read)) { DBP_ASSERT(0); }
+		}
+		df->Close();
+		delete df;
+		inString = istringstream(dosfilebuf);
+	}
+	else
+	{
+		inFile.open(cuefile, ios::in);
+	}
+	istream& in = (cuefile[0] == '$' ? (istream&)inString : (istream&)inFile);
+#else
 	ifstream in;
 	in.open(cuefile, ios::in);
+#endif
 	if (in.fail()) return false;
 	
 	while(!in.eof()) {
@@ -639,6 +748,33 @@ bool CDROM_Interface_Image::HasDataTrack(void)
 
 bool CDROM_Interface_Image::GetRealFileName(string &filename, string &pathname)
 {
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+	const char *p_path = pathname.c_str();
+	if (p_path[0] == '$' && p_path[1] && p_path[2] == ':' && p_path[3] == '\\' && pathname.length() - 4 < DOS_PATHLENGTH - 1)
+	{
+		char dos_path[4 + DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + 4 + DOS_PATHLENGTH;
+		memcpy(p_dos, p_path, pathname.length());
+		p_dos += pathname.length();
+		*(p_dos++) = '\\';
+		for (const char *n = filename.c_str(), *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; n++)
+		{
+			if (*n != '/' && *n != '\\' && n != nEnd) continue;
+			if (n == nDir) { nDir++; continue; }
+
+			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
+			p_dos += DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, (Bit32u)(n - nDir));
+			*(p_dos++) = (n == nEnd ? '\0' : '\\');
+			nDir = n + 1;
+		}
+		FileStat_Block block;
+		if (Drives[dos_path[1] - 'A']->FileStat(dos_path + 4, &block) && !(block.attr & DOS_ATTR_DIRECTORY))
+		{
+			filename = dos_path;
+			return true;
+		}
+	}
+#endif
+
 	// check if file exists
 	struct stat test;
 	if (stat(filename.c_str(), &test) == 0) return true;

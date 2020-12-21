@@ -58,6 +58,11 @@ void DOS_Shell::InputCommand(char * line) {
 			DOS_OpenFile("con",2,&dummy);
 			LOG(LOG_MISC,LOG_ERROR)("Reopening the input handle. This is a bug!");
 		}
+		//DBP: Added this abort to support restart
+		if (first_shell->exit) {
+			line[0] = '\0'; // abort
+			return;
+		}
 		if (!n) {
 			size=0;			//Kill the while loop
 			continue;

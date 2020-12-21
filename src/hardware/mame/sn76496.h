@@ -98,6 +98,8 @@ private:
 	//Sample rate conversion
 	int32_t			  rate_add;
 	int32_t			  rate_counter;
+
+	friend void DBPSerialize(struct DBPArchive& ar, sn76496_base_device* self);
 };
 
 // SN76496: Whitenoise verified, phase verified, periodic verified (by Michael Zapf)

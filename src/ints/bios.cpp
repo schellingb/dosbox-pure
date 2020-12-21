@@ -33,8 +33,32 @@
 #include "serialport.h"
 #include <time.h>
 
-#if defined(DB_HAVE_CLOCK_GETTIME) && ! defined(WIN32)
-//time.h is already included
+//DBP: Emulate ftime on non-windows platforms
+#if defined(ANDROID) || defined(HAVE_LIBNX) || defined(WIIU) || defined (GEKKO) || defined (_3DS) || defined(PSP) || defined(__linux__) || defined(__unix__) || defined(__MACH__)
+#if defined(__linux__) || defined(__unix__) || defined(__MACH__)
+#include <sys/time.h>
+#endif
+struct FAKEtimeb
+{
+	time_t time;
+	unsigned millitm;
+};
+
+void FAKEftime(struct FAKEtimeb* tb)
+{
+	time(&tb->time);
+
+	#if defined(__linux__) || defined(__unix__) || defined(__MACH__)
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	tb->millitm = tv.tv_usec/1000;
+	#else
+	tb->millitm = 0;
+	#endif
+}
+
+#define ftime FAKEftime
+#define timeb FAKEtimeb
 #else
 #include <sys/timeb.h>
 #endif
@@ -42,8 +66,9 @@
 /* if mem_systems 0 then size_extended is reported as the real size else 
  * zero is reported. ems and xms can increase or decrease the other_memsystems
  * counter using the BIOS_ZeroExtendedSize call */
-static Bit16u size_extended;
-static Bits other_memsystems=0;
+//DBP: Removed static to access this in DBPSerialize_Memory
+Bit16u size_extended;
+Bits other_memsystems=0;
 void CMOS_SetRegister(Bitu regNr, Bit8u val); //For setting equipment word
 
 static Bitu INT70_Handler(void) {
@@ -717,8 +742,10 @@ static Bitu INT14_Handler(void) {
 	return CBRET_NONE;
 }
 
+//DBP: Moved out of the function, added reinit to zero
+Bit16u biosConfigSeg=0;
+
 static Bitu INT15_Handler(void) {
-	static Bit16u biosConfigSeg=0;
 	switch (reg_ah) {
 	case 0xC0:	/* Get Configuration*/
 		{
@@ -999,6 +1026,7 @@ static Bitu Default_IRQ_Handler(void) {
 }
 
 static Bitu Reboot_Handler(void) {
+#ifdef C_DBP_USE_SDL
 	// switch to text mode, notify user (let's hope INT10 still works)
 	const char* const text = "\n\n   Reboot requested, quitting now.";
 	reg_ax = 0;
@@ -1013,6 +1041,10 @@ static Bitu Reboot_Handler(void) {
 	double start = PIC_FullIndex();
 	while((PIC_FullIndex()-start)<3000) CALLBACK_Idle();
 	throw 1;
+#else
+	void DBP_Crash(const char* msg);
+	DBP_Crash("BIOS Reboot");
+#endif
 	return CBRET_NONE;
 }
 
@@ -1334,6 +1366,8 @@ public:
 			delete tandy_DAC_callback[1];
 			tandy_DAC_callback[0]=NULL;
 			tandy_DAC_callback[1]=NULL;
+			//DBP: Moved out of the function, added reinit to zero
+			biosConfigSeg=0;
 		}
 	}
 };

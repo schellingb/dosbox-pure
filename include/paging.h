@@ -280,7 +280,7 @@ static INLINE Bit32u mem_readd_inline(PhysPt address) {
 	if ((address & 0xfff)<0xffd) {
 		HostPt tlb_addr=get_tlb_read(address);
 		if (tlb_addr) return host_readd(tlb_addr+address);
-		else return (get_tlb_readhandler(address))->readd(address);
+		else return (Bit32u)(get_tlb_readhandler(address))->readd(address);
 	} else return mem_unalignedreadd(address);
 }
 

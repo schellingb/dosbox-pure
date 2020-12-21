@@ -344,8 +344,10 @@ public:
 		spkr.chan=MixerChan.Install(&PCSPEAKER_CallBack,spkr.rate,"SPKR");
 	}
 	~PCSPEAKER(){
-		Section_prop * section=static_cast<Section_prop *>(m_configuration);
-		if(!section->Get_bool("pcspeaker")) return;
+		//DBP: Added cleanup for restart support, removed unnecessary section lookup
+		spkr.chan=0;
+		//Section_prop * section=static_cast<Section_prop *>(m_configuration);
+		//if(!section->Get_bool("pcspeaker")) return;
 	}
 };
 static PCSPEAKER* test;
@@ -357,4 +359,25 @@ void PCSPEAKER_ShutDown(Section* sec){
 void PCSPEAKER_Init(Section* sec) {
 	test = new PCSPEAKER(sec);
 	sec->AddDestroyFunction(&PCSPEAKER_ShutDown,true);
+}
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_PCSPEAKER(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, spkr.chan);
+	if (ar.IsSkip()) return;
+
+	ar
+		.Serialize(spkr.mode)
+		.Serialize(spkr.pit_mode)
+		.Serialize(spkr.pit_last)
+		.Serialize(spkr.pit_new_max).Serialize(spkr.pit_new_half)
+		.Serialize(spkr.pit_max).Serialize(spkr.pit_half)
+		.Serialize(spkr.pit_index)
+		.Serialize(spkr.volwant).Serialize(spkr.volcur)
+		.Serialize(spkr.last_ticks)
+		.Serialize(spkr.last_index)
+		.Serialize(spkr.used);
+	ar.SerializeBytes(spkr.entries, sizeof(spkr.entries[0]) * (ar.mode == DBPArchive::MODE_MAXSIZE ? SPKR_ENTRIES : spkr.used));
 }

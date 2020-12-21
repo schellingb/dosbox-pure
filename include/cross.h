@@ -47,7 +47,13 @@
 #if defined (WIN32) || defined (OS2)				/* Win 32 & OS/2*/
 #define CROSS_FILENAME(blah) 
 #define CROSS_FILESPLIT '\\'
+#ifdef C_DBP_USE_SDL
 #define F_OK 0
+#else
+#ifndef F_OK
+#define F_OK 0
+#endif
+#endif
 #else
 #define	CROSS_FILENAME(blah) strreplace(blah,'\\','/')
 #define CROSS_FILESPLIT '/'
@@ -66,13 +72,30 @@
 static inline float powf (float x, float y) { return (float) pow (x,y); }
 #endif
 
+#ifdef GEKKO
+/* With Wii the file/dir is considered always accessible if it exists */
+static int wii_access (const char *pathname, int mode)
+{
+	struct stat st;
+
+	if (stat(pathname, &st) < 0)
+		return -1;
+	return 0;
+}
+#define access wii_access
+#endif
+
 class Cross {
 public:
+#if defined(C_DBP_ENABLE_CONFIG_PROGRAM) || defined(C_DBP_ENABLE_CAPTURE) || defined(C_OPENGL)
 	static void GetPlatformConfigDir(std::string& in);
 	static void GetPlatformConfigName(std::string& in);
 	static void CreatePlatformConfigDir(std::string& in);
+#endif
 	static void ResolveHomedir(std::string & temp_line);
+#ifdef C_DBP_ENABLE_CAPTURE
 	static void CreateDir(std::string const& temp);
+#endif
 	static bool IsPathAbsolute(std::string const& in);
 };
 

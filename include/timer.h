@@ -20,11 +20,18 @@
 #define DOSBOX_TIMER_H
 
 /* underlying clock rate in HZ */
+#ifdef C_DBP_USE_SDL
 #include <SDL.h>
+#endif
 
 #define PIT_TICK_RATE 1193182
 
+#ifdef C_DBP_USE_SDL
 #define GetTicks() SDL_GetTicks()
+#else
+#define GetTicks() DBP_GetTicks()
+extern Bit32u DBP_GetTicks();
+#endif
 
 typedef void (*TIMER_TickHandler)(void);
 

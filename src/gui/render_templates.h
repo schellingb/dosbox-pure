@@ -254,6 +254,7 @@ static void conc3d(Cache,SBPP,DBPP) (const void * s) {
 #undef SCALERHEIGHT
 #undef SCALERFUNC
 
+#ifdef C_DBT_ENABLE_SCALERS
 #define SCALERNAME		Normal2x
 #define SCALERWIDTH		2
 #define SCALERHEIGHT	2
@@ -589,6 +590,7 @@ static void conc3d(Cache,SBPP,DBPP) (const void * s) {
 #endif // (SBPP == DBPP) && !defined (CACHEWITHPAL)
 
 #endif // #if RENDER_USE_ADVANCED_SCALERS>2
+#endif // C_DBT_ENABLE_SCALERS
 
 #undef PSIZE
 #undef PTYPE

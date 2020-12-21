@@ -680,3 +680,30 @@ void MPU401_Init(Section* sec) {
 	test = new MPU401(sec);
 	sec->AddDestroyFunction(&MPU401_Destroy,true);
 }
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, MPU401, MPU401_Event, MPU401_ResetDone, MPU401_EOIHandler);
+
+#include <midi.h>
+void DBPSerialize_MPU401(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, test, midi.ever_used);
+	if (ar.IsSkip()) return;
+	ar.Serialize(mpu);
+	ar.Serialize(midi.status);
+	ar.Serialize(midi.cmd_len);
+	ar.Serialize(midi.cmd_pos);
+	ar.SerializeArray(midi.cmd_buf);
+	ar.SerializeArray(midi.rt_buf);
+	ar.SerializeSparse(midi.sysex.buf, sizeof(midi.sysex.buf));
+	ar.Serialize(midi.sysex.used);
+	ar.Serialize(midi.sysex.delay);
+	ar.Serialize(midi.sysex.start);
+	ar.SerializeSparse(midi.cache, sizeof(midi.cache));
+	if (ar.mode == DBPArchive::MODE_LOAD && !ar.IsDiscard())
+	{
+		midi.ever_used = true;
+		void DBP_MIDI_ReplayCache();
+		DBP_MIDI_ReplayCache();
+	}
+}

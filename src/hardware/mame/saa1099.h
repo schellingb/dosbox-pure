@@ -113,6 +113,8 @@ private:
 	saa1099_noise m_noise[2];         /* noise generators */
 	double m_sample_rate;
 	int m_master_clock;
+
+	friend void DBPSerialize(struct DBPArchive& ar, saa1099_device* self);
 };
 
 DECLARE_DEVICE_TYPE(SAA1099, saa1099_device)

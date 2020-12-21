@@ -297,9 +297,9 @@ public:
 	void	SetParent			(Bit16u parent)			{ sSave(sPSP,psp_parent,parent);	};
 	Bit16u	GetParent			(void)					{ return (Bit16u)sGet(sPSP,psp_parent);		};
 	void	SetStack			(RealPt stackpt)		{ sSave(sPSP,stack,stackpt);		};
-	RealPt	GetStack			(void)					{ return sGet(sPSP,stack);			};
+	RealPt	GetStack			(void)					{ return (RealPt)sGet(sPSP,stack);			};
 	void	SetInt22			(RealPt int22pt)		{ sSave(sPSP,int_22,int22pt);		};
-	RealPt	GetInt22			(void)					{ return sGet(sPSP,int_22);			};
+	RealPt	GetInt22			(void)					{ return (RealPt)sGet(sPSP,int_22);			};
 	void	SetFCB1				(RealPt src);
 	void	SetFCB2				(RealPt src);
 	void	SetCommandTail		(RealPt src);	

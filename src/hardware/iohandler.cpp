@@ -527,3 +527,13 @@ void IO_Init(Section * sect) {
 	test = new IO(sect);
 	sect->AddDestroyFunction(&IO_Destroy);
 }
+
+#include <dbp_serialize.h>
+
+typedef CPU_Decoder* CPU_DecoderPtr;
+DBP_SERIALIZE_SET_POINTER_LIST(CPU_DecoderPtr, IO, &IOFaultCore);
+
+void DBPSerialize_IO(DBPArchive& ar)
+{
+	ar.Serialize(iof_queue);
+}

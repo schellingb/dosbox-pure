@@ -171,3 +171,15 @@ void CMS_Init(Section* sec) {
 void CMS_ShutDown(Section* sec) {
 	delete test;	       
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_CMS(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, cms_chan);
+	if (ar.IsSkip()) return;
+	ar.Serialize(lastWriteTicks);
+	ar.Serialize(cms_detect_register);
+	DBPSerialize(ar, device[0]);
+	DBPSerialize(ar, device[1]);
+}

@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <math.h>
 
+#ifdef C_DBP_NATIVE_MIDI
 #if defined (WIN32)
 //Midi listing
 #ifndef WIN32_LEAN_AND_MEAN
@@ -34,8 +35,11 @@
 #include <windows.h>
 #include <mmsystem.h>
 #endif
+#endif /* C_DBP_NATIVE_MIDI */
 
+#ifdef C_DBP_USE_SDL
 #include "SDL.h"
+#endif
 #include "mem.h"
 #include "pic.h"
 #include "dosbox.h"
@@ -63,6 +67,14 @@
 #define TICK_SHIFT 14
 #define TICK_NEXT ( 1 << TICK_SHIFT)
 #define TICK_MASK (TICK_NEXT -1)
+
+#ifndef C_DBP_USE_SDL
+void DBP_LockAudio();
+void DBP_UnlockAudio();
+#define SDL_LockAudio() DBP_LockAudio();
+#define SDL_UnlockAudio() DBP_UnlockAudio();
+#define SDL_PauseAudio(a)
+#endif
 
 
 static INLINE Bit16s MIXER_CLIP(Bits SAMP) {
@@ -98,6 +110,7 @@ MixerChannel * MIXER_AddChannel(MIXER_Handler handler,Bitu freq,const char * nam
 	chan->next=mixer.channels;
 	chan->SetVolume(1,1);
 	chan->enabled=false;
+	chan->ever_enabled=false; //DBP: added for serialization
 	chan->interpolate = false;
 	chan->SetFreq(freq); //Sets interpolate as well.
 	chan->last_samples_were_silence = true;
@@ -151,6 +164,7 @@ void MixerChannel::Enable(bool _yesno) {
 	if (_yesno==enabled) return;
 	enabled=_yesno;
 	if (enabled) {
+		ever_enabled = true; //DBP: added for serialization
 		freq_counter = 0;
 		SDL_LockAudio();
 		if (done<mixer.done) done=mixer.done;
@@ -174,6 +188,7 @@ void MixerChannel::Mix(Bitu _needed) {
 		Bitu left = (needed - done);
 		left *= freq_add;
 		left  = (left >> FREQ_SHIFT) + ((left & FREQ_MASK)!=0);
+		DBP_ASSERT(left <= MIXER_BUFSIZE);
 		handler(left);
 	}
 }
@@ -459,9 +474,13 @@ void MixerChannel::FillUp(void) {
 
 extern bool ticksLocked;
 static inline bool Mixer_irq_important(void) {
+#ifdef C_DBP_ENABLE_CAPTURE
 	/* In some states correct timing of the irqs is more important then
 	 * non stuttering audo */
 	return (ticksLocked || (CaptureState & (CAPTURE_WAVE|CAPTURE_VIDEO)));
+#else
+	return ticksLocked;
+#endif
 }
 
 static Bit32u calc_tickadd(Bit32u freq) {
@@ -482,6 +501,7 @@ static void MIXER_MixData(Bitu needed) {
 		chan->Mix(needed);
 		chan=chan->next;
 	}
+#ifdef C_DBP_ENABLE_CAPTURE
 	if (CaptureState & (CAPTURE_WAVE|CAPTURE_VIDEO)) {
 		Bit16s convert[1024][2];
 		Bitu added=needed-mixer.done;
@@ -497,6 +517,7 @@ static void MIXER_MixData(Bitu needed) {
 		}
 		CAPTURE_AddWave( mixer.freq, added, (Bit16s*)convert );
 	}
+#endif
 	//Reset the the tick_add for constant speed
 	if( Mixer_irq_important() )
 		mixer.tick_add = calc_tickadd(mixer.freq);
@@ -532,7 +553,12 @@ static void MIXER_Mix_NoSound(void) {
 	mixer.done=0;
 }
 
-static void SDLCALL MIXER_CallBack(void * userdata, Uint8 *stream, int len) {
+#ifdef C_DBP_USE_SDL
+static void SDLCALL
+#else
+void
+#endif
+MIXER_CallBack(void * userdata, Bit8u *stream, int len) {
 	Bitu need=(Bitu)len/MIXER_SSIZE;
 	Bit16s * output=(Bit16s *)stream;
 	Bitu reduce;
@@ -744,6 +770,7 @@ void MIXER_Init(Section* sec) {
 	mixer.mastervol[0]=1.0f;
 	mixer.mastervol[1]=1.0f;
 
+#ifdef C_DBP_USE_SDL
 	/* Start the Mixer using SDL Sound at 22 khz */
 	SDL_AudioSpec spec;
 	SDL_AudioSpec obtained;
@@ -754,22 +781,27 @@ void MIXER_Init(Section* sec) {
 	spec.callback=MIXER_CallBack;
 	spec.userdata=NULL;
 	spec.samples=(Uint16)mixer.blocksize;
+#endif
 
 	mixer.tick_counter=0;
 	if (mixer.nosound) {
 		LOG_MSG("MIXER: No Sound Mode Selected.");
 		mixer.tick_add=calc_tickadd(mixer.freq);
 		TIMER_AddTickHandler(MIXER_Mix_NoSound);
+#ifdef C_DBP_USE_SDL
 	} else if (SDL_OpenAudio(&spec, &obtained) <0 ) {
 		mixer.nosound = true;
 		LOG_MSG("MIXER: Can't open audio: %s , running in nosound mode.",SDL_GetError());
 		mixer.tick_add=calc_tickadd(mixer.freq);
 		TIMER_AddTickHandler(MIXER_Mix_NoSound);
+#endif
 	} else {
+#ifdef C_DBP_USE_SDL
 		if((mixer.freq != obtained.freq) || (mixer.blocksize != obtained.samples))
 			LOG_MSG("MIXER: Got different values from SDL: freq %d, blocksize %d",obtained.freq,obtained.samples);
 		mixer.freq=obtained.freq;
 		mixer.blocksize=obtained.samples;
+#endif
 		mixer.tick_add=calc_tickadd(mixer.freq);
 		TIMER_AddTickHandler(MIXER_Mix);
 		SDL_PauseAudio(0);
@@ -780,4 +812,56 @@ void MIXER_Init(Section* sec) {
 	mixer.max_needed=mixer.blocksize * 2 + 2*mixer.min_needed;
 	mixer.needed=mixer.min_needed+1;
 	PROGRAMS_MakeFile("MIXER.COM",MIXER_ProgramStart);
+}
+
+Bit32u DBP_MIXER_GetFrequency()
+{
+	return mixer.freq;
+}
+
+Bit32u DBP_MIXER_DoneSamplesCount()
+{
+	return mixer.done;
+}
+
+#include <dbp_serialize.h>
+
+DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar_outer, MixerChannel* chan) : DBPArchiveOptional(ar_outer, chan, (chan && chan->ever_enabled))
+{
+	if (IsSkip()) return;
+	DBP_ASSERT(mode != DBPArchive::MODE_ZERO); // when restarting (zeroing) all channels should have been set to NULL
+
+	MixerChannel dummy;
+	if (!chan) chan = &dummy;
+	Bit32u freq_add = (Bit32u)chan->freq_add;
+	Serialize(chan->enabled).Serialize(freq_add);
+
+	// OPTIONAL_ZERO expects us to reset things to an initial state which we can't do for volume (and freq), so just leave as is
+	MixerChannel* overwrite_volume = (optionality == OPTIONAL_ZERO ? &dummy : chan);
+	SerializeArray(overwrite_volume->volmain).Serialize(overwrite_volume->scale);
+
+	if (mode != DBPArchive::MODE_LOAD) return;
+	if (optionality == OPTIONAL_SERIALIZE)
+	{
+		if (freq_add && freq_add != chan->freq_add)
+		{
+			Bitu freq = (freq_add*mixer.freq)>>FREQ_SHIFT;
+			Bitu freq_diff = (mixer.freq > freq ? mixer.freq - freq : freq - mixer.freq);
+			chan->interpolate = (freq_diff > 10);
+			chan->freq_add = freq_add;
+		}
+		chan->ever_enabled = true;
+		chan->UpdateVolume();
+	}
+	if (optionality == OPTIONAL_ZERO)
+	{
+		chan->ever_enabled = false;
+	}
+	if (optionality != OPTIONAL_DISCARD)
+	{
+		chan->done = chan->needed = 0;
+		mixer.pos = 0;
+		mixer.done = 0;
+		mixer.needed = mixer.min_needed+1;
+	}
 }
