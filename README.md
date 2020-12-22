@@ -29,6 +29,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Mount ZIP as A or D drive](#mount-zip-as-a-or-d-drive)
     * [Change disk label with label command](#change-disk-label-with-label-command)
     * [Keyboard layout defaults to US](#keyboard-layout-defaults-to-us)
+    * [Save file handling](#save-file-handling)
 * [Features not yet implemented](#features-not-yet-implemented)
     * [Load dosbox.conf](#load-dosboxconf)
     * [Store ZIP seek index into save file](#store-zip-seek-index-into-save-file)
@@ -174,6 +175,15 @@ You can run the `MOUNT` command to check all mounted disks and their disk label.
 ### Keyboard layout defaults to US
 The keyboard layout defaults to the US Layout (QWERTY).  
 If you need a different layout, you can change the core option `Input > Advanced > Keyboard Layout`.
+
+### Save file handling
+When modifications to the file system loaded from a ZIP file happens, modifications are written into
+a separate save file. You can find these save files inside the data directory of your libretro frontend
+usually in a sub-directory called saves.  
+Save files get re-written to disk a short while after a modification happens in the file system.  
+The bigger the save, the less often it will be written out.  
+Up to 1MB of total save data, it will be written out 2 seconds after the last file modification.
+Then gradually until at max 59MB and more, it will be written out 60 seconds after the last file modification.
 
 ## Features not yet implemented
 
