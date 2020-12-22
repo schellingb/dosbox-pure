@@ -29,17 +29,20 @@ SOURCES := \
 SOURCES_EXCLUDE := \
 	src/hardware/opl.cpp
 
+CXX := g++
+
 ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
   CPUFLAGS := -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
+  ifneq ($(findstring version 10,$(shell g++ -v 2>&1)),)
+    # Switch to gcc 9 to avoid buggy assembly genetation of gcc 10
+    # On armv7l, gcc 10.2 with -O2 on the file core_dynrec.cpp generates assembly that wrongfully passes NULL to the runcode function
+    # resulting in a segfault crash. It can be observed by writing block->cache.start to stdout twice where it is NULL at first
+    # and then the actual value thereafter. This affects upstream SVN DOSBox as well as this core.
+    CXX := g++-9
+  endif
 else
   CPUFLAGS :=
 endif
-
-# Explicitly use gcc 9 to avoid buggy assembly genetation of gcc 10
-# On armv7l, gcc 10.2 on the file core_dynrec.cpp generates assembly that wrongfully passes NULL to the runcode function
-# resulting in a segfault crash. It can be observed by writing block->cache.start to stdout twice where it is NULL at first
-# and then the actual value thereafter. This affects upstream SVN DOSBox as well as this core.
-CXX := g++-9
 
 OUTNAME := dosbox_pure_libretro.so
 
