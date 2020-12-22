@@ -1069,7 +1069,7 @@ static void gen_return_fast(BlockReturn retcode,bool ret_exception=false) {
 //DBP: Added reinitialization for restart support and avoid memory leaking of GenReg
 #include <new>
 static void gen_init(void) {
-	static char regbuf[sizeof(GenReg) * 16];
+	static Bitu regbuf[sizeof(GenReg) * 8 / sizeof(Bitu)];
 	memset(regbuf, 0, sizeof(regbuf));
 	x86gen.regs[X86_REG_EAX]=new (&((GenReg*)regbuf)[0]) GenReg(0);
 	x86gen.regs[X86_REG_ECX]=new (&((GenReg*)regbuf)[1]) GenReg(1);

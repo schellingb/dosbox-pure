@@ -1241,7 +1241,7 @@ static void (*gen_dh_fpu_save)(void)  = gen_dh_fpu_saveInit;
 
 #include <new>
 static void gen_init(void) {
-	static char regbuf[sizeof(GenReg) * 16];
+	static Bitu regbuf[sizeof(GenReg) * 16 / sizeof(Bitu)];
 	memset(regbuf, 0, sizeof(regbuf));
 	x64gen.regs[X64_REG_RAX]=new (&((GenReg*)regbuf)[ 0]) GenReg( 0);
 	x64gen.regs[X64_REG_RCX]=new (&((GenReg*)regbuf)[ 1]) GenReg( 1);
