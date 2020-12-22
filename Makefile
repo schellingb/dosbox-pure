@@ -26,9 +26,6 @@ SOURCES := \
 	src/*/*.cpp \
 	src/*/*/*.cpp
 
-SOURCES_EXCLUDE := \
-	src/hardware/opl.cpp
-
 CXX := g++
 
 ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
@@ -80,7 +77,7 @@ LDFLAGS += $(CPUFLAGS) -lpthread -Wl,--gc-sections -shared
 all: $(OUTNAME)
 
 $(info Building $(OUTNAME) with $(BUILD) configuration (obj files stored in build/$(BUILDDIR)) ...)
-SOURCES := $(filter-out $(SOURCES_EXCLUDE), $(wildcard $(SOURCES)))
+SOURCES := $(wildcard $(SOURCES))
 $(if $(findstring ~,$(SOURCES)),$(error SOURCES contains a filename with a ~ character in it - Unable to continue))
 $(if $(wildcard build),,$(shell mkdir "build"))
 $(if $(wildcard build/$(BUILDDIR)),,$(shell mkdir "build/$(BUILDDIR)"))

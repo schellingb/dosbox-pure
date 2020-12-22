@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" InitialTargets="DisplayText">
   <PropertyGroup Label="UserMacros">
     <VisualStudioYear Condition="'$(VisualStudioVersion)' == '11.0' Or '$(PlatformToolsetVersion)' == '110' Or '$(MSBuildToolsVersion)' ==  '4.0'">2012</VisualStudioYear>
