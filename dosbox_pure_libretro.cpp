@@ -2323,7 +2323,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 			static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
 			{
 				if (is_dir || dbp_auto_mapping) return;
-				const char* lastslash = strchr(path, '\\');
+				const char* lastslash = strrchr(path, '\\');
 
 				Bit32u hash = 0x811c9dc5;
 				for (const char* p = (lastslash ? lastslash + 1 : path); *p; p++)
