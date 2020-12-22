@@ -321,7 +321,7 @@ struct unionDriveImpl
 
 				if (!is_dir && size)
 				{
-					fseek(s.f, 30 + pathLen, SEEK_CUR);
+					fseek_wrap(s.f, 30 + pathLen, SEEK_CUR);
 					if (s.mods.size())
 					{
 						crc32 = UpdateCRC32(crc32, (Bit8u*)&s.mods[0], size);
@@ -345,7 +345,7 @@ struct unionDriveImpl
 						delete df;
 						s.save_size += size;
 					}
-					fseek(s.f, s.local_file_offset, SEEK_SET);
+					fseek_wrap(s.f, s.local_file_offset, SEEK_SET);
 				}
 
 				ZIP_WRITE_LE32(buf+ 0, 0x04034b50); // Local file header signature
@@ -367,7 +367,7 @@ struct unionDriveImpl
 					buf[30 + pathLen - 1] = '/';
 
 				s.failed |= !fwrite(buf, 30 + pathLen, 1, s.f);
-				if (size) { fseek(s.f, size, SEEK_CUR); }
+				if (size) { fseek_wrap(s.f, size, SEEK_CUR); }
 
 				size_t centralDirPos = s.central_dir.size();
 				s.central_dir.resize(centralDirPos + 46 + pathLen);

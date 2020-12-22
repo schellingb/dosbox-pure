@@ -601,7 +601,7 @@ struct rawFile : public DOS_File
 	virtual bool Close() { if (refCtr == 1) open = false; return true; }
 	virtual bool Read(Bit8u* data, Bit16u* size) { *size = (Bit16u)fread(data, 1, *size, f); return open; }
 	virtual bool Write(Bit8u* data, Bit16u* size) { if (!OPEN_IS_WRITING(flags)) return false; *size = (Bit16u)fwrite(data, 1, *size, f); return (*size && open); }
-	virtual bool Seek(Bit32u* pos, Bit32u type) { fseek(f, *pos, type); *pos = ftell(f); return open; }
+	virtual bool Seek(Bit32u* pos, Bit32u type) { fseek_wrap(f, *pos, type); *pos = (Bit32u)ftell_wrap(f); return open; }
 	Bit16u GetInformation(void) { return 0; }
 };
 

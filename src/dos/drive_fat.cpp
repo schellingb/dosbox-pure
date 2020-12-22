@@ -716,7 +716,7 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 	diskfile = fopen_wrap(sysFilename, "rb+");
 	if(!diskfile) {created_successfully = false;return;}
 	fseek(diskfile, 0L, SEEK_END);
-	filesize = (Bit32u)ftell(diskfile) / 1024L;
+	filesize = (Bit32u)(ftell_wrap(diskfile) / 1024);
 	#endif
 	is_hdd = (filesize > 2880);
 

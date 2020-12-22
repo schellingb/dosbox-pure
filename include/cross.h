@@ -129,4 +129,17 @@ bool read_directory_next(dir_information* dirp, char* entry_name, bool& is_direc
 void close_directory(dir_information* dirp);
 
 FILE *fopen_wrap(const char *path, const char *mode);
+
+//DBP: Use 64-bit fseek and ftell (based on libretro-common/vfs/vfs_implementation.c)
+#if defined(_MSC_VER) && _MSC_VER >= 1400 // VC2005 and up have a special 64-bit fseek
+#define fseek_wrap(fp, offset, whence) _fseeki64(fp, (__int64)offset, whence)
+#define ftell_wrap(fp) _ftelli64(fp)
+#elif defined(HAVE_64BIT_OFFSETS) || (defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE - 0) >= 200112) || (defined(__POSIX_VISIBLE) && __POSIX_VISIBLE >= 200112) || (defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112) || __USE_LARGEFILE || (defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS == 64)
+#define fseek_wrap(fp, offset, whence) fseeko(fp, (off_t)offset, whence)
+#define ftell_wrap(fp) ftello(fp)
+#else
+#define fseek_wrap(fp, offset, whence) fseek(fp, (long)offset, whence)
+#define ftell_wrap(fp) ftell(fp)
+#endif
+
 #endif
