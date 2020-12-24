@@ -88,6 +88,7 @@ static retro_time_t dbp_boot_time;
 static Bit32u dbp_lastmenuticks;
 static Bit32u dbp_retro_activity;
 static Bit32u dbp_wait_activity;
+static Bit32u dbp_overload_count;
 static DBP_State dbp_state;
 static DBP_SerializeMode dbp_serializemode;
 static char dbp_menu_time;
@@ -2796,14 +2797,14 @@ void retro_run(void)
 	extern bool DBP_CPUOverload;
 	if (DBP_CPUOverload)
 	{
-		static uint32_t first_overload, overload_count;
-		if (!first_overload) { first_overload = DBP_GetTicks(); overload_count = 0; }
-		if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_fast_forward) overload_count = 0;
-		else if (overload_count++ >= 200)
+		static uint32_t first_overload;
+		if (!dbp_overload_count) first_overload = DBP_GetTicks();
+		if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_fast_forward) dbp_overload_count = 0;
+		else if (dbp_overload_count++ >= 200)
 		{
 			if ((DBP_GetTicks() - first_overload) < 10000)
 				retro_notify(RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
-			first_overload = 0;
+			dbp_overload_count = 0;
 		}
 	}
 
@@ -3011,6 +3012,7 @@ bool retro_serialize(void *data, size_t size)
 
 bool retro_unserialize(const void *data, size_t size)
 {
+	dbp_overload_count = 0; // don't show overload warning immediately after loading
 	DBPArchiveReader ar(data, size);
 	return retro_serialize_all(ar, true);
 }
