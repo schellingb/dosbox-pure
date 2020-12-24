@@ -1069,15 +1069,15 @@ static void gen_return_fast(BlockReturn retcode,bool ret_exception=false) {
 //DBP: Added reinitialization for restart support and avoid memory leaking of GenReg
 #include <new>
 static void gen_init(void) {
-	static Bitu regbuf[sizeof(GenReg) * 8 / sizeof(Bitu)];
+	static Bitu regbuf[8][(sizeof(GenReg) + sizeof(Bitu) - 1) / sizeof(Bitu)];
 	memset(regbuf, 0, sizeof(regbuf));
-	x86gen.regs[X86_REG_EAX]=new (&((GenReg*)regbuf)[0]) GenReg(0);
-	x86gen.regs[X86_REG_ECX]=new (&((GenReg*)regbuf)[1]) GenReg(1);
-	x86gen.regs[X86_REG_EDX]=new (&((GenReg*)regbuf)[2]) GenReg(2);
-	x86gen.regs[X86_REG_EBX]=new (&((GenReg*)regbuf)[3]) GenReg(3);
-	x86gen.regs[X86_REG_EBP]=new (&((GenReg*)regbuf)[5]) GenReg(5);
-	x86gen.regs[X86_REG_ESI]=new (&((GenReg*)regbuf)[6]) GenReg(6);
-	x86gen.regs[X86_REG_EDI]=new (&((GenReg*)regbuf)[7]) GenReg(7);
+	x86gen.regs[X86_REG_EAX]=new (regbuf[0]) GenReg(0);
+	x86gen.regs[X86_REG_ECX]=new (regbuf[1]) GenReg(1);
+	x86gen.regs[X86_REG_EDX]=new (regbuf[2]) GenReg(2);
+	x86gen.regs[X86_REG_EBX]=new (regbuf[3]) GenReg(3);
+	x86gen.regs[X86_REG_EBP]=new (regbuf[5]) GenReg(5);
+	x86gen.regs[X86_REG_ESI]=new (regbuf[6]) GenReg(6);
+	x86gen.regs[X86_REG_EDI]=new (regbuf[7]) GenReg(7);
 	x86gen.flagsactive=false;
 	x86gen.last_used=0;
 	skip_flags=false;

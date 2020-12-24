@@ -1241,22 +1241,22 @@ static void (*gen_dh_fpu_save)(void)  = gen_dh_fpu_saveInit;
 
 #include <new>
 static void gen_init(void) {
-	static Bitu regbuf[sizeof(GenReg) * 16 / sizeof(Bitu)];
+	static Bitu regbuf[16][(sizeof(GenReg) + sizeof(Bitu) - 1) / sizeof(Bitu)];
 	memset(regbuf, 0, sizeof(regbuf));
-	x64gen.regs[X64_REG_RAX]=new (&((GenReg*)regbuf)[ 0]) GenReg( 0);
-	x64gen.regs[X64_REG_RCX]=new (&((GenReg*)regbuf)[ 1]) GenReg( 1);
-	x64gen.regs[X64_REG_RDX]=new (&((GenReg*)regbuf)[ 2]) GenReg( 2);
-	x64gen.regs[X64_REG_RBX]=new (&((GenReg*)regbuf)[ 3]) GenReg( 3);
-	x64gen.regs[X64_REG_RSI]=new (&((GenReg*)regbuf)[ 6]) GenReg( 6);
-	x64gen.regs[X64_REG_RDI]=new (&((GenReg*)regbuf)[ 7]) GenReg( 7);
-	x64gen.regs[X64_REG_R8] =new (&((GenReg*)regbuf)[ 8]) GenReg( 8);
-	x64gen.regs[X64_REG_R9] =new (&((GenReg*)regbuf)[ 9]) GenReg( 9);
-	x64gen.regs[X64_REG_R10]=new (&((GenReg*)regbuf)[10]) GenReg(10);
-	x64gen.regs[X64_REG_R11]=new (&((GenReg*)regbuf)[11]) GenReg(11);
-	x64gen.regs[X64_REG_R12]=new (&((GenReg*)regbuf)[12]) GenReg(12);
-	x64gen.regs[X64_REG_R13]=new (&((GenReg*)regbuf)[13]) GenReg(13);
-	x64gen.regs[X64_REG_R14]=new (&((GenReg*)regbuf)[14]) GenReg(14);
-	x64gen.regs[X64_REG_R15]=new (&((GenReg*)regbuf)[15]) GenReg(15);
+	x64gen.regs[X64_REG_RAX]=new (regbuf[ 0]) GenReg( 0);
+	x64gen.regs[X64_REG_RCX]=new (regbuf[ 1]) GenReg( 1);
+	x64gen.regs[X64_REG_RDX]=new (regbuf[ 2]) GenReg( 2);
+	x64gen.regs[X64_REG_RBX]=new (regbuf[ 3]) GenReg( 3);
+	x64gen.regs[X64_REG_RSI]=new (regbuf[ 6]) GenReg( 6);
+	x64gen.regs[X64_REG_RDI]=new (regbuf[ 7]) GenReg( 7);
+	x64gen.regs[X64_REG_R8] =new (regbuf[ 8]) GenReg( 8);
+	x64gen.regs[X64_REG_R9] =new (regbuf[ 9]) GenReg( 9);
+	x64gen.regs[X64_REG_R10]=new (regbuf[10]) GenReg(10);
+	x64gen.regs[X64_REG_R11]=new (regbuf[11]) GenReg(11);
+	x64gen.regs[X64_REG_R12]=new (regbuf[12]) GenReg(12);
+	x64gen.regs[X64_REG_R13]=new (regbuf[13]) GenReg(13);
+	x64gen.regs[X64_REG_R14]=new (regbuf[14]) GenReg(14);
+	x64gen.regs[X64_REG_R15]=new (regbuf[15]) GenReg(15);
 	x64gen.flagsactive=false;
 	x64gen.last_used=0;
 	skip_flags=false;
