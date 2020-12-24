@@ -1,7 +1,7 @@
 # Software Information
 display_name = "DOS (DOSBox-Pure)"
 authors = "DOSBox Team|Psyraven"
-supported_extensions = "zip|dosz|exe|com|bat|cue|iso|img|ima|vhd|m3u|m3u8"
+supported_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8"
 corename = "DOSBox"
 categories = "Emulator"
 license = "GPLv2"

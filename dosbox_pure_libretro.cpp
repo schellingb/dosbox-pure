@@ -464,7 +464,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		res_media_byte = (is_hdd ? 0xF8 : 0xF0);
 		res = fat;
 	}
-	else if (!strcasecmp(ext, ".cue") || !strcasecmp(ext, ".iso"))
+	else if (!strcasecmp(ext, ".iso") || !strcasecmp(ext, ".cue") || !strcasecmp(ext, ".ins"))
 	{
 		MOUNT_ISO:
 		int error = -1;
@@ -974,24 +974,19 @@ static void DBP_PureMenuProgram(Program** make)
 			{
 				for (int i = 0; i != fs_count; i++)
 				{
-					const std::string& entry = list[i];
-					const char *pEntry = entry.c_str(), *pExt = strrchr(pEntry, '.');
-					if (strcasecmp(pExt, ".cue"))
+					// Filter image files that have the same name as a cue file
+					const char *pEntry = list[i].c_str(), *pExt = strrchr(pEntry, '.');
+					if (!pExt || (strcasecmp(pExt, ".cue") && strcasecmp(pExt, ".ins"))) continue;
+					for (int j = fs_count; j--;)
 					{
-						// Remove file system images that already have a matching .cue file in the list
-						bool have_matching_cue = false;
-						for (int j = 0; j != fs_count; j++)
-							if (!strncasecmp(list[j].c_str(), pEntry, pExt - pEntry + 1) && !strcasecmp(list[j].c_str() + (pExt - pEntry), ".cue"))
-								{ have_matching_cue = true; break; }
-						if (have_matching_cue)
-						{
-							list.erase(list.begin() + i--);
-							fs_count--;
-							continue;
-						}
+						if (i == j || strncasecmp(list[j].c_str(), pEntry, pExt - pEntry + 1)) continue;
+						list.erase(list.begin() + j);
+						if (i > j) i--;
+						fs_count--;
 					}
-					DBP_AppendImage(entry.c_str(), true);
 				}
+				for (int i = 0; i != fs_count; i++)
+					DBP_AppendImage(list[i].c_str(), true);
 			}
 			if (initial_scan && !old_images_size && dbp_images.size())
 			{
@@ -1047,7 +1042,7 @@ static void DBP_PureMenuProgram(Program** make)
 			const char* fext = strrchr(path, '.');
 			if (!fext) return;
 			bool isEXE = (!strcasecmp(fext, ".exe") || !strcasecmp(fext, ".com") || !strcasecmp(fext, ".bat"));
-			bool isFS = (!isEXE && m->sel == ('C'-'A') && (!strcasecmp(fext, ".cue") || !strcasecmp(fext, ".iso") || !strcasecmp(fext, ".img") || !strcasecmp(fext, ".ima") || !strcasecmp(fext, ".vhd")));
+			bool isFS = (!isEXE && m->sel == ('C'-'A') && (!strcasecmp(fext, ".iso") || !strcasecmp(fext, ".cue") || !strcasecmp(fext, ".ins") || !strcasecmp(fext, ".img") || !strcasecmp(fext, ".ima") || !strcasecmp(fext, ".vhd")));
 			if (!isEXE && !isFS) return;
 			if (isFS && !strncasecmp(fext + 1, "im", 2) && (size < 163840 || (size <= 2949120 && (size % 20480)))) return; //validate floppy images
 			(isEXE ? m->exe_count : m->fs_count)++;
@@ -1743,7 +1738,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 	info->library_version  = "0.2";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
-	info->valid_extensions = "zip|dosz|exe|com|bat|cue|iso|img|m3u|m3u8";
+	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
 }
 
 void retro_set_environment(retro_environment_t cb) //#2
