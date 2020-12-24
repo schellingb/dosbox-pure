@@ -2003,7 +2003,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "On Screen Keyboard", DBPET_ONSCREENKEYBOARD });
 		}
 
-		if (port == 0 && dbp_auto_mapping && dbp_port_devices[port] != DBP_DEVICE_Port1ForceGravisGamepad)
+		if (port == 0 && dbp_auto_mapping && dbp_port_devices[port] == DBP_DEVICE_Port1Default)
 			continue;
 
 		if (!dbp_bind_unused && dbp_port_devices[port] != DBP_DEVICE_BindGenericKeyboard)
