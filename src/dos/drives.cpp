@@ -305,6 +305,87 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 	return (Bit32u)(target - target_start);
 }
 
+DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable, char const* relative_to)
+{
+	if (!filename || !*filename) return NULL;
+	if (relative_to && *relative_to)
+	{
+		const char *lastfs = strrchr(relative_to, '/'), *lastbs = strrchr(relative_to, '\\');
+		const char *delim = (lastfs > lastbs ? lastfs : lastbs);
+		if (!delim && relative_to[1] == ':') delim = relative_to + 1;
+		if (delim)
+		{
+			std::string merge;
+			merge.append(relative_to, delim + 1 - relative_to).append(filename);
+			DOS_File *merge_file = FindAndOpenDosFile(merge.c_str(), bsize, writable);
+			if (merge_file) return merge_file;
+		}
+	}
+
+	bool force_mounted = (filename[0] == '$');
+	if (force_mounted) filename++;
+
+	DOS_File *dos_file;
+	Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : DOS_GetDefaultDrive());
+	if (drive < DOS_DRIVES && Drives[drive])
+	{
+		char dos_path[DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
+		const char* n = filename + (filename[1] == ':' ? 2 : 0);
+		if (*n == '\\' || *n == '/') n++; // absolute path
+		else // relative path
+		{
+			strcpy(p_dos, Drives[drive]->curdir);
+			p_dos += strlen(p_dos);
+			*(p_dos++) = '\\';
+		}
+		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; nDir = ++n)
+		{
+			while (*n != '/' && *n != '\\' && n != nEnd) n++;
+			if (n == nDir) continue;
+
+			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
+			p_dos += DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, (Bit32u)(n - nDir));
+			*(p_dos++) = (n == nEnd ? '\0' : '\\');
+		}
+		if (writable && Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
+			goto get_file_size;
+		if (Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READ))
+			goto get_file_size_write_protected;
+	}
+
+	if (!force_mounted) {
+		//File not found on mounted filesystem. Try regular filesystem
+		std::string filename_s(filename);
+		Cross::ResolveHomedir(filename_s);
+		#ifdef C_DBP_HAVE_FPATH_NOCASE
+		if (!fpath_nocase(&filename_s[0])) return NULL;
+		#endif
+		FILE* raw_file_h;
+		if (writable && (raw_file_h = fopen_wrap(filename_s.c_str(), "rb+")) != NULL) {
+			dos_file = new rawFile(raw_file_h, true);
+			goto get_file_size;
+		}
+		if ((raw_file_h = fopen_wrap(filename_s.c_str(), "rb")) != NULL) {
+			dos_file = new rawFile(raw_file_h, false);
+			goto get_file_size_write_protected;
+		}
+	}
+	return NULL;
+
+	get_file_size_write_protected:
+	if (writable) { *writable = false; writable = NULL; }
+	get_file_size:
+	if (writable) *writable = true;
+	dos_file->AddRef();
+	if (bsize) {
+		bool can_seek = dos_file->Seek(&(*bsize = 0), DOS_SEEK_END);
+		DBP_ASSERT(can_seek);
+		Bit32u seekzero = 0;
+		dos_file->Seek(&seekzero, DOS_SEEK_SET);
+	}
+	return dos_file;
+}
+
 //DBP: utility function to evaluate an entire drives filesystem
 void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
 {

@@ -44,26 +44,16 @@ using namespace std;
 #define MAX_FILENAME_LENGTH 256
 
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-CDROM_Interface_Image::BinaryFile::BinaryFile(const char *filename, bool &error) : dos_file(NULL), dos_size(0), dos_ofs(0)
+CDROM_Interface_Image::BinaryFile::BinaryFile(const char *filename, bool &error, const char *relative_to) : dos_file(NULL), dos_size(0), dos_ofs(0)
 {
-	if (filename[0] == '$')
-	{
-		DOS_Drive* drive = Drives[filename[1] - 'A'];
-		if (!drive->FileOpen(&dos_file, (char*)filename + 4, 0)) { error = true; return; }
-	}
-	else
-	{
-		FILE* raw_file_h = fopen_wrap(filename, "rb");
-		if (!raw_file_h) { error = true; return; }
-		dos_file = new rawFile(raw_file_h, false);
-	}
-	dos_file->AddRef();
+	dos_file = FindAndOpenDosFile(filename, NULL, NULL, relative_to);
+	if (!dos_file) { error = true; return; }
 	bool can_seek = dos_file->Seek(&dos_size, DOS_SEEK_END);
 	dos_ofs = dos_size;
 	DBP_ASSERT(can_seek);
 	error = false;
 }
-	
+
 CDROM_Interface_Image::BinaryFile::~BinaryFile()
 {
 	if (!dos_file) return;
@@ -527,41 +517,30 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	int prestart = 0;
 	bool success;
 	bool canAddTrack = false;
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+	Bit32u cuefilesize;
+	DOS_File* df = FindAndOpenDosFile(cuefile, &cuefilesize);
+	if (!df) return false;
+	if (!cuefilesize || cuefilesize > 1024*1024) { df->Close(); delete df; return false; }
+
+	std::string dosfilebuf;
+	dosfilebuf.resize(cuefilesize + 1);
+	dosfilebuf[cuefilesize] = '\0';
+	Bit8u* buf = (Bit8u*)&dosfilebuf[0];
+	for (Bit16u read; cuefilesize; cuefilesize -= read, buf += read)
+	{
+		read = (Bit16u)(cuefilesize > 0xFFFF ? 0xFFFF : cuefilesize);
+		if (!df->Read(buf, &read)) { DBP_ASSERT(0); }
+	}
+	df->Close();
+	delete df;
+	istringstream inString = istringstream(dosfilebuf);
+	istream& in = (istream&)inString;
+#else
 	char tmp[MAX_FILENAME_LENGTH];	// dirname can change its argument
 	safe_strncpy(tmp, cuefile, MAX_FILENAME_LENGTH);
 	string pathname(dirname(tmp));
 
-#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-	ifstream inFile;
-	istringstream inString;
-	if (cuefile[0] == '$')
-	{
-		DOS_Drive* drive = Drives[cuefile[1] - 'A'];
-		DOS_File* df;
-		FileStat_Block stat;
-		if (!drive->FileStat(cuefile + 4, &stat) || !stat.size || stat.size > 1024*1024 || !drive->FileOpen(&df, cuefile + 4, 0))
-			return false;
-		df->AddRef();
-
-		std::string dosfilebuf;
-		dosfilebuf.resize(stat.size + 1);
-		dosfilebuf[stat.size] = '\0';
-		Bit8u* buf = (Bit8u*)&dosfilebuf[0];
-		for (Bit16u read; stat.size; stat.size -= read, buf += read)
-		{
-			read = (Bit16u)(stat.size > 0xFFFF ? 0xFFFF : stat.size);
-			if (!df->Read(buf, &read)) { DBP_ASSERT(0); }
-		}
-		df->Close();
-		delete df;
-		inString = istringstream(dosfilebuf);
-	}
-	else
-	{
-		inFile.open(cuefile, ios::in);
-	}
-	istream& in = (cuefile[0] == '$' ? (istream&)inString : (istream&)inFile);
-#else
 	ifstream in;
 	in.open(cuefile, ios::in);
 #endif
@@ -631,16 +610,25 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 			
 			string filename;
 			GetCueString(filename, line);
+#ifndef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 			GetRealFileName(filename, pathname);
+#endif
 			string type;
 			GetCueKeyword(type, line);
 
 			track.file = NULL;
 			bool error = true;
 			if (type == "BINARY") {
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+				track.file = new BinaryFile(filename.c_str(), error, cuefile);
+#else
 				track.file = new BinaryFile(filename.c_str(), error);
+#endif
 			}
 #if defined(C_SDL_SOUND)
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+#error TODO: Support loading audio files through DOS_File
+#endif
 			//The next if has been surpassed by the else, but leaving it in as not 
 			//to break existing cue sheets that depend on this.(mine with OGG tracks specifying MP3 as type)
 			else if (type == "WAVE" || type == "AIFF" || type == "MP3") {
@@ -745,38 +733,12 @@ bool CDROM_Interface_Image::HasDataTrack(void)
 	return false;
 }
 
-
+#ifndef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 bool CDROM_Interface_Image::GetRealFileName(string &filename, string &pathname)
 {
-#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-	const char *p_path = pathname.c_str();
-	if (p_path[0] == '$' && p_path[1] && p_path[2] == ':' && p_path[3] == '\\' && pathname.length() - 4 < DOS_PATHLENGTH - 1)
-	{
-		char dos_path[4 + DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + 4 + DOS_PATHLENGTH;
-		memcpy(p_dos, p_path, pathname.length());
-		p_dos += pathname.length();
-		*(p_dos++) = '\\';
-		for (const char *n = filename.c_str(), *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; n++)
-		{
-			if (*n != '/' && *n != '\\' && n != nEnd) continue;
-			if (n == nDir) { nDir++; continue; }
-
-			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
-			p_dos += DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, (Bit32u)(n - nDir));
-			*(p_dos++) = (n == nEnd ? '\0' : '\\');
-			nDir = n + 1;
-		}
-		FileStat_Block block;
-		if (Drives[dos_path[1] - 'A']->FileStat(dos_path + 4, &block) && !(block.attr & DOS_ATTR_DIRECTORY))
-		{
-			filename = dos_path;
-			return true;
-		}
-	}
-#endif
-
 	// check if file exists
 	struct stat test;
+#ifndef C_DBP_HAVE_FPATH_NOCASE
 	if (stat(filename.c_str(), &test) == 0) return true;
 	
 	// check if file with path relative to cue file exists
@@ -785,6 +747,16 @@ bool CDROM_Interface_Image::GetRealFileName(string &filename, string &pathname)
 		filename = tmpstr;
 		return true;
 	}
+#else
+	if (filename.empty()) return false;
+	if (fpath_nocase(&filename[0])) return true;
+	if (!pathname.empty() && fpath_nocase(&filename[0], pathname.c_str()))
+	{
+		filename = std::string(pathname + '/' + filename);
+		return true;
+	}
+#endif
+
 	// finally check if file is in a dosbox local drive
 	char fullname[CROSS_LEN];
 	char tmp[CROSS_LEN];
@@ -826,6 +798,7 @@ bool CDROM_Interface_Image::GetRealFileName(string &filename, string &pathname)
 #endif
 	return false;
 }
+#endif
 
 bool CDROM_Interface_Image::GetCueKeyword(string &keyword, istream &in)
 {

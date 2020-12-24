@@ -16,7 +16,7 @@
  *  Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  */
 
-#if defined(__WIN32__) || defined(WIN32) || defined(_MSC_VER)
+#if defined(__WIN32__) || defined(WIN32) || defined(_WIN32) || defined(_MSC_VER)
 # ifdef WIN32
 # undef WIN32
 # endif
@@ -70,6 +70,7 @@
 
 // ----- Enabled new features
 #define C_DBP_LIBRETRO
+#define C_DBP_HAVE_FPATH_NOCASE
 #define C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 #define C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 #define C_DBP_SUPPORT_MIDI_TSF

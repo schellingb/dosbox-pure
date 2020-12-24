@@ -55,7 +55,6 @@ public:
 	Bit8u GetBiosType(void);
 	Bit32u getSectSize(void);
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	static class DOS_File *OpenDosFile(char const * filename, Bit32u *bsize = NULL, bool* writable = NULL, char const * relative_to = NULL);
 	imageDisk(class DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk);
 	~imageDisk();
 	Bit32u Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len);

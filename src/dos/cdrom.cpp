@@ -35,8 +35,7 @@
 #include "cdrom.h"
 
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-#include "dos_system.h"
-#include "dos_inc.h"
+#include "drives.h"
 #endif
 
 #ifdef C_DBP_USE_SDL
@@ -161,7 +160,7 @@ int CDROM_GetMountType(char* path, int forceCD) {
 	// 1. Smells like a real cdrom 
 	// if ((strlen(path)<=3) && (path[2]=='\\') && (strchr(path,'\\')==strrchr(path,'\\')) && 	(GetDriveType(path)==DRIVE_CDROM)) return 0;
 
-#ifdef C_DBP_USE_SDL
+#if defined(C_DBP_NATIVE_CDROM) && defined(C_DBP_USE_SDL)
 	const char* cdName;
 	char buffer[512];
 	strcpy(buffer,path);
@@ -181,20 +180,17 @@ int CDROM_GetMountType(char* path, int forceCD) {
 		cdName = SDL_CDName(i);
 		if (strcmp(buffer,cdName)==0) return 0;
 	};
-#endif /* C_DBP_USE_SDL */
-
-#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-	if (path[0] == '$')
-	{
-		DOS_Drive* drive = Drives[path[1] - 'A'];
-		FileStat_Block block;
-		return (drive->FileStat(path+4, &block) && block.size ? 1 : -1);
-	}
-#endif /* C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE */
+#endif /* defined(C_DBP_NATIVE_CDROM) && defined(C_DBP_USE_SDL) */
 
 	// Detect ISO
+#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+	DOS_File* file = FindAndOpenDosFile(path);
+	if (file) { file->Close(); delete file; return 1; }
+	if (path[0] == '$') return -1;
+#else
 	struct stat file_stat;
 	if ((stat(path, &file_stat) == 0) && (file_stat.st_mode & S_IFREG)) return 1; 
+#endif /* C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE */
 	return 2;
 }
 

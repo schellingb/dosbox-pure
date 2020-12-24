@@ -160,7 +160,11 @@ private:
 	
 	class BinaryFile : public TrackFile {
 	public:
+		#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+		BinaryFile(const char *filename, bool &error, const char *relative_to = NULL);
+		#else
 		BinaryFile(const char *filename, bool &error);
+		#endif
 		~BinaryFile();
 		bool read(Bit8u *buffer, int seek, int count);
 		int getLength();

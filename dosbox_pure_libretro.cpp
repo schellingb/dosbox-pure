@@ -46,7 +46,7 @@
 #include <string>
 
 #ifndef DBP_THREADS_CLASSES
-#ifdef _WIN32
+#ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #define THREAD_CC WINAPI
@@ -3031,3 +3031,58 @@ FILE *fopen_wrap(const char *path, const char *mode) { return (FILE*)fopen_utf8(
 #include "libretro-common/compat/fopen_utf8.c"
 #include "libretro-common/compat/compat_strl.c"
 #include "libretro-common/encodings/encoding_utf.c"
+
+bool fpath_nocase(char* path, const char* base_dir)
+{
+	if (!path || !*path) return false;
+
+	// Because we have no idea what the current directory of the frontend is, refuse relative paths
+	const char* test = (base_dir && *base_dir ? base_dir : path);
+	#ifdef WIN32
+	if (test[0] < 'A' || test[0] > 'z' || test[1] != ':' || (test[2] && test[2] != '/' && test[2] != '\\')) return false;
+	enum { PATH_ROOTLEN = 2 };
+	#else
+	if (*test != '/') return false;
+	enum { PATH_ROOTLEN = 1 };
+	#endif
+
+	std::string subdir;
+	if (!base_dir || !*base_dir)
+	{
+		if (!path[PATH_ROOTLEN]) return false;
+		base_dir = subdir.append(path, PATH_ROOTLEN).c_str();
+		path += PATH_ROOTLEN;
+	}
+	struct retro_vfs_interface_info vfs = { 3, NULL };
+	if (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) || vfs.required_interface_version < 3 || !vfs.iface)
+	{
+		struct stat test;
+		if (subdir.empty() && base_dir) subdir = base_dir;
+		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\' && *path != '/' && *path != '\\') subdir += '/';
+		return (stat(subdir.append(path).c_str(), &test) == 0);
+	}
+	for (char* psubdir;; *psubdir = '/', path = psubdir + 1)
+	{
+		char *next_slash = strchr(path, '/'), *next_bslash = strchr(path, '\\');
+		psubdir = (next_slash && (!next_bslash || next_slash < next_bslash) ? next_slash : next_bslash);
+		if (psubdir == path) continue;
+		if (psubdir) *psubdir = '\0';
+
+		bool found = false;
+		struct retro_vfs_dir_handle *dir = vfs.iface->opendir(base_dir, true);
+		while (dir && vfs.iface->readdir(dir))
+		{
+			const char* entry_name = vfs.iface->dirent_get_name(dir);
+			if (strcasecmp(entry_name, path)) continue;
+			memcpy(path, entry_name, strlen(entry_name));
+			found = true;
+			break;
+		}
+		vfs.iface->closedir(dir);
+		if (!found || !psubdir) { if (psubdir) *psubdir = '/'; return found; }
+
+		if (subdir.empty()) subdir = base_dir;
+		if (subdir.back() != '/') subdir += '/';
+		base_dir = subdir.append(path).c_str();
+	}
+}

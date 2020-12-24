@@ -212,59 +212,6 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 }
 
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-DOS_File *imageDisk::OpenDosFile(char const * filename, Bit32u *bsize, bool* writable, char const * relative_to) {
-	if (relative_to && *relative_to) {
-		std::string merge = relative_to;
-		size_t lastfs = merge.rfind('/'), lastbs = merge.rfind('\\');
-		size_t lasts = (lastfs != std::string::npos && lastfs > lastbs ? lastfs : lastbs);
-		if (lasts == std::string::npos) merge.clear();
-		else merge.erase(lasts + 1, merge.length() - lasts - 1);
-		merge += filename;
-		DOS_File *merge_file = OpenDosFile(merge.c_str(), bsize);
-		if (merge_file) return merge_file;
-	}
-
-	bool force_mounted = (filename[0] == '$');
-	if (force_mounted) filename++;
-
-	Bit8u drive;
-	char fullname[DOS_PATHLENGTH];
-	DOS_File *dos_file;
-	if (DOS_MakeName(const_cast<char*>(filename),fullname,&drive)) {
-		if (writable && Drives[drive]->FileOpen(&dos_file, fullname, OPEN_READWRITE))
-			goto get_file_size;
-		if (Drives[drive]->FileOpen(&dos_file, fullname, OPEN_READ))
-			goto get_file_size_write_protected;
-	}
-	if (!force_mounted) {
-		//File not found on mounted filesystem. Try regular filesystem
-		std::string filename_s(filename);
-		Cross::ResolveHomedir(filename_s);
-		FILE* raw_file_h;
-		if (writable && (raw_file_h = fopen_wrap(filename_s.c_str(), "rb+")) != NULL) {
-			dos_file = new rawFile(raw_file_h, true);
-			goto get_file_size;
-		}
-		if ((raw_file_h = fopen_wrap(filename_s.c_str(), "rb")) != NULL) {
-			dos_file = new rawFile(raw_file_h, false);
-			goto get_file_size_write_protected;
-		}
-	}
-	return NULL;
-
-	get_file_size_write_protected:
-	if (writable) { *writable = false; writable = NULL; }
-	get_file_size:
-	if (writable) *writable = true;
-	dos_file->AddRef();
-	Bit32u seek;
-	bool can_seek = dos_file->Seek(&(seek = 0), DOS_SEEK_END);
-	DBP_ASSERT(can_seek);
-	if (bsize) *bsize = seek;
-	dos_file->Seek(&(seek = 0), DOS_SEEK_SET);
-	return dos_file;
-}
-
 Bit32u imageDisk::Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len)
 {
 	if ((Bit32u)seek != current_fpos)

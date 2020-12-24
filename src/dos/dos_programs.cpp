@@ -610,7 +610,7 @@ private:
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	DOS_File *getFSFile(char const * filename, Bit32u *ksize, Bit32u *bsize,bool tryload=false) {
 		bool writable;
-		DOS_File *f = imageDisk::OpenDosFile(filename, bsize, &writable);
+		DOS_File *f = FindAndOpenDosFile(filename, bsize, &writable);
 		if (!f)
 		{
 			WriteOut(MSG_Get("PROGRAM_BOOT_NOT_EXIST"));
@@ -921,7 +921,7 @@ public:
 				if (usefile_1==NULL) return;
 
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-				DOS_File* tfile = imageDisk::OpenDosFile("system.rom", NULL, NULL, first_img_path.c_str());
+				DOS_File* tfile = FindAndOpenDosFile("system.rom", NULL, NULL, first_img_path.c_str());
 				if (tfile!=NULL) {
 					Bit32u seek;
 					tfile->Seek(&(seek = 0x3000), DOS_SEEK_SET);
@@ -1451,7 +1451,7 @@ public:
 		// find all file parameters, assuming that all option parameters have been removed
 		while(cmd->FindCommand((unsigned int)(paths.size() + 2), temp_line) && temp_line.size()) {
 #if defined(C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE) && defined(C_DBP_SUPPORT_DISK_MOUNT_DOSFILE)
-			DOS_File *test = imageDisk::OpenDosFile(temp_line.c_str());
+			DOS_File *test = FindAndOpenDosFile(temp_line.c_str());
 			if (test==NULL) {
 				WriteOut(MSG_Get("PROGRAM_IMGMOUNT_FILE_NOT_FOUND"));
 				return;
@@ -1511,7 +1511,7 @@ public:
 			if (imgsizedetect) {
 #if defined(C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE) && defined(C_DBP_SUPPORT_DISK_MOUNT_DOSFILE)
 				Bit32u disksize;
-				DOS_File *diskfile = imageDisk::OpenDosFile(temp_line.c_str(), &disksize);
+				DOS_File *diskfile = FindAndOpenDosFile(temp_line.c_str(), &disksize);
 				if (!diskfile) {
 					WriteOut(MSG_Get("PROGRAM_IMGMOUNT_INVALID_IMAGE"));
 					return;
@@ -1681,7 +1681,7 @@ public:
 		} else if (fstype == "none") {
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 			Bit32u imagesize;
-			DOS_File *newDisk = imageDisk::OpenDosFile(temp_line.c_str(), &imagesize);
+			DOS_File *newDisk = FindAndOpenDosFile(temp_line.c_str(), &imagesize);
 			if (!newDisk) {
 				WriteOut(MSG_Get("PROGRAM_IMGMOUNT_INVALID_IMAGE"));
 				return;

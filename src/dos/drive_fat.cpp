@@ -708,7 +708,7 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	bool writable;
-	diskfile = imageDisk::OpenDosFile(sysFilename, &filesize, &writable);
+	diskfile = FindAndOpenDosFile(sysFilename, &filesize, &writable);
 	if(!diskfile) {created_successfully = false;return;}
 	if (cylinders == 0 && bytesector && cylsector && headscyl) cylinders = filesize / (bytesector * cylsector * headscyl);
 	filesize /= 1024;
