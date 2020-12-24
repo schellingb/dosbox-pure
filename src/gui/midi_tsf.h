@@ -36,11 +36,10 @@ struct MidiHandler_tsf : public MidiHandler
 
 	bool Open(const char * conf)
 	{
-		// Always return true as this is the only MIDI handler and a sound font can always be loaded later through MIDI_TSF_SwitchSF2
-		if (!conf || !*conf) return true;
+		if (!conf || !*conf) return false;
 
 		f = fopen_wrap(conf, "rb");
-		if (!f) return true;
+		if (!f) return false;
 
 		if (!chan)
 		{
