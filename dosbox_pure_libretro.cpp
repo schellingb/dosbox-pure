@@ -2852,7 +2852,10 @@ void retro_run(void)
 			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
 		binds = intercept_binds;
-		binds_end = &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)];
+		binds_end = &intercept_binds[
+			(dbp_port_devices[0] == DBP_DEVICE_Disabled || dbp_port_devices[0] == DBP_DEVICE_BindCustomKeyboard) ? 
+				5 : // Only use mouse (and keyboard) if port 0 has been disabled or uses custom keyboard mapping
+				sizeof(intercept_binds)/sizeof(*intercept_binds)];
 	}
 
 	// forward input state changes to thread
