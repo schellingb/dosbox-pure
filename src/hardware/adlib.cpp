@@ -920,27 +920,31 @@ void OPL_ShutDown(Section* sec){
 
 #include <dbp_serialize.h>
 
-void DBPSerialize(DBPArchive& ar, Adlib::Module* self)
+void DBPSerialize_OPL(DBPArchive& ar_outer)
 {
+	DBPArchiveOptional ar(ar_outer, (module ? module->mixerChan : NULL));
+	if (ar.IsSkip()) return;
+
 	ar
-		.Serialize(self->reg)
-		.Serialize(self->ctrl)
-		.Serialize(self->oplmode)
-		.Serialize(self->lastUsed)
-		.SerializeArray(self->chip)
+		.Serialize(module->reg)
+		.Serialize(module->ctrl);
+	if (ar.version == 1) ar.Discard(sizeof(OPL_Mode));
+	ar.Serialize(module->lastUsed)
+		.SerializeArray(module->chip)
 		.SerializeArray(Adlib::cache);
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
 		// Reset registers to their latest values
 		for (Bit32u i = 0; i != 512; i++)
-			self->handler->WriteReg(i, Adlib::cache[i]);
+			module->handler->WriteReg(i, Adlib::cache[i]);
 	}
-}
-
-void DBPSerialize_OPL(DBPArchive& ar_outer)
-{
-	DBPArchiveOptional ar(ar_outer, (module ? module->mixerChan : NULL));
-	if (ar.IsSkip()) return;
-	DBPSerialize(ar, module);
+	if (ar.IsReset())
+	{
+		// Reset values back to their initial state
+		module->ctrl.lvol = 0xff;
+		module->ctrl.rvol = 0xff;
+		module->chip[0] = Adlib::Chip();
+		module->chip[1] = Adlib::Chip();
+	}
 }

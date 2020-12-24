@@ -27,8 +27,7 @@
 #include "pic.h"
 #include "hardware.h"
 
-namespace Adlib { class Module; }
-void DBPSerialize(struct DBPArchive& ar, Adlib::Module* self);
+void DBPSerialize_OPL(struct DBPArchive& ar_outer);
 
 namespace Adlib {
 
@@ -194,7 +193,7 @@ public:
 	Module( Section* configuration); 
 	~Module();
 
-	friend void ::DBPSerialize(struct ::DBPArchive& ar, Module* self);
+	friend void ::DBPSerialize_OPL(DBPArchive& ar_outer);
 };
 
 

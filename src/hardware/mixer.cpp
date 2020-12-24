@@ -836,8 +836,8 @@ DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar_outer, MixerChannel* chan)
 	Bit32u freq_add = (Bit32u)chan->freq_add;
 	Serialize(chan->enabled).Serialize(freq_add);
 
-	// OPTIONAL_ZERO expects us to reset things to an initial state which we can't do for volume (and freq), so just leave as is
-	MixerChannel* overwrite_volume = (optionality == OPTIONAL_ZERO ? &dummy : chan);
+	// OPTIONAL_RESET expects us to reset things to an initial state which we can't do for volume (and freq), so just leave as is
+	MixerChannel* overwrite_volume = (optionality == OPTIONAL_RESET ? &dummy : chan);
 	SerializeArray(overwrite_volume->volmain).Serialize(overwrite_volume->scale);
 
 	if (mode != DBPArchive::MODE_LOAD) return;
@@ -853,7 +853,7 @@ DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar_outer, MixerChannel* chan)
 		chan->ever_enabled = true;
 		chan->UpdateVolume();
 	}
-	if (optionality == OPTIONAL_ZERO)
+	if (optionality == OPTIONAL_RESET)
 	{
 		chan->ever_enabled = false;
 	}

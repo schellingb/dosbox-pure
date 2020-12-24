@@ -774,6 +774,10 @@ void DBPSerialize_Render(DBPArchive& ar)
 		.Serialize(Scaler_ChangedLineIndex)
 		.Serialize(render_offset);
 
+	Bit32u cache_offset = (render.scale.cacheRead - (Bit8u*)&scalerSourceCache);
+	if (ar.version >= 2) ar.Serialize(cache_offset);
+	else cache_offset = 0;
+
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
 		if (memcmp(&render.src, loaded_src, sizeof(render.src)))
@@ -786,5 +790,6 @@ void DBPSerialize_Render(DBPArchive& ar)
 			render.scale.outWrite = current_pixels + render_offset;
 		}
 		render.scale.clearCache = true;
+		render.scale.cacheRead = (Bit8u*)&scalerSourceCache + cache_offset;
 	}
 }

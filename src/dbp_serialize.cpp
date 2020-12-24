@@ -22,7 +22,7 @@
 #include <stdarg.h> /* va_list */
 
 // Discard should only be called for MODE_LOAD archives which need to override this function
-DBPArchive& DBPArchive::Discard(void* p, size_t sz) { DBP_ASSERT(0); return *this; }
+DBPArchive& DBPArchive::Discard(size_t sz) { DBP_ASSERT(0); return *this; }
 
 void DBPArchive::SerializePointers(void** ptrs, size_t num_ptrs, bool ignore_unknown, size_t num_luts, ...)
 {
@@ -192,12 +192,12 @@ void DBPArchive::SerializeSparse(void* ptr, size_t sz)
 
 DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar, void* objptr, bool active) : DBPArchive((DBPArchive::EMode)ar.mode), outer(&ar)
 {
-	had_error = ar.had_error, warnings = ar.warnings;
+	version = ar.version, had_error = ar.had_error, warnings = ar.warnings;
 	bool state = (objptr && active);
 	ar.Serialize(state);
 	if (mode == MODE_MAXSIZE) optionality = OPTIONAL_SERIALIZE;
 	else if (state) optionality = (objptr ? OPTIONAL_SERIALIZE : OPTIONAL_DISCARD);
-	else optionality = ((!objptr || !active) ? OPTIONAL_SKIP : OPTIONAL_ZERO);
+	else optionality = ((!objptr || !active) ? OPTIONAL_SKIP : OPTIONAL_RESET);
 }
 
 DBPArchiveOptional::~DBPArchiveOptional()
@@ -210,8 +210,8 @@ DBPArchive& DBPArchiveOptional::SerializeBytes(void* p, size_t sz)
 	switch (optionality)
 	{
 		case OPTIONAL_SERIALIZE: outer->SerializeBytes(p, sz); break;
-		case OPTIONAL_ZERO:      memset(p, 0, sz);             break;
-		case OPTIONAL_DISCARD:   outer->Discard(p, sz);        break;
+		case OPTIONAL_RESET:     memset(p, 0, sz);             break;
+		case OPTIONAL_DISCARD:   outer->Discard(sz);           break;
 		case OPTIONAL_SKIP:      DBP_ASSERT(0);                break;
 	}
 	return *this;
@@ -222,8 +222,8 @@ DBPArchive& DBPArchiveOptional::SerializeByte(void* p)
 	switch (optionality)
 	{
 		case OPTIONAL_SERIALIZE: outer->SerializeByte(p); break;
-		case OPTIONAL_ZERO:      *(Bit8u*)p = 0;          break;
-		case OPTIONAL_DISCARD:   outer->Discard(p, 1);    break;
+		case OPTIONAL_RESET:     *(Bit8u*)p = 0;          break;
+		case OPTIONAL_DISCARD:   outer->Discard(1);       break;
 		case OPTIONAL_SKIP:      DBP_ASSERT(0);           break;
 	}
 	return *this;
@@ -270,19 +270,18 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 	#endif
 
 	Bit32u magic;
-	Bit8u version;
 	bool serialized_invalid_state;
 	if (ar.mode == DBPArchive::MODE_SAVE)
 	{
 		magic = 0xD05B5747;
-		version = 1;
+		ar.version = 2;
 		serialized_invalid_state = invalid_state;
 	}
-	ar << magic << version << serialized_invalid_state;
+	ar << magic << ar.version << serialized_invalid_state;
 	if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
 	{
 		if (magic != 0xD05B5747) { ar.had_error = DBPArchive::ERR_LAYOUT; return; }
-		if (version != 1) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; ar.error_info = version; return; }
+		if (ar.version < 1 || ar.version > 2) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
 		if (serialized_invalid_state || invalid_state) { ar.had_error = DBPArchive::ERR_INVALIDSTATE; return; }
 	}
 
@@ -301,6 +300,7 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 	// Small things that have an easily varying size should be put at the end to simplify a delta encoded rewind buffer
 	void (*func)(DBPArchive& ar); //const char* func_name;
 	#define DBPSERIALIZE_GET_FUNC(FUNC) void FUNC(DBPArchive& ar); func = FUNC; //func_name = #FUNC
+	#define DBPSERIALIZE_GET_FVER(FUNC,VER_CHECK) if (!(ar.version VER_CHECK)) continue; DBPSERIALIZE_GET_FUNC(FUNC)
 	for (unsigned ln = __LINE__;; ln++)
 	{
 		switch (ln)
@@ -315,7 +315,7 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_FPU         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_INT10       ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_IO          ); break;
-			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_Mouse       ); break;
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Mouse,   ==1); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_Joystick    ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_VGA         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_VGA_Paradise); break;
@@ -333,6 +333,7 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_VGA_Memory  ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_PIC         ); break; // must be before Keyboard
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_Keyboard    ); break; // must be after PIC
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Mouse,   >=2); break; // must be after PIC
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_Files       ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_GUS         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_MPU401      ); break;

@@ -2968,7 +2968,7 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 				retro_notify(RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
 				break;
 			case DBPArchive::ERR_VERSION:
-				retro_notify(RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.error_info);
+				retro_notify(RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
 			case DBPArchive::ERR_INVALIDSTATE:
 				retro_notify(RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Save state was made during start menu or while system was crashed");

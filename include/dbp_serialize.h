@@ -40,7 +40,7 @@ struct DBPArchive
 	DBPArchive(EMode _mode) : mode(_mode), had_error(ERR_NONE), warnings(WARN_NONE) {}
 	virtual DBPArchive& SerializeByte(void* p) = 0;
 	virtual DBPArchive& SerializeBytes(void* p, size_t sz) = 0;
-	virtual DBPArchive& Discard(void* p, size_t sz);
+	virtual DBPArchive& Discard(size_t sz);
 	virtual size_t GetOffset() = 0;
 	template <typename T> DBPArchive& Serialize(T* v); // undefined, can't serialize pointer
 	template <typename T> INLINE DBPArchive& Serialize(T& v) { return SerializeBytes(&v, sizeof(v)); }
@@ -70,7 +70,7 @@ struct DBPArchive
 		WARN_WRONGPROGRAM = 1<<2,
 	};
 
-	Bit8u mode, had_error, warnings, error_info;
+	Bit8u mode, version, had_error, warnings, error_info;
 
 	// If this is set to true, the serializer will attempt have the same
 	// output size and data layout on successively stored states.
@@ -107,8 +107,9 @@ struct DBPArchiveOptional : public DBPArchive
 	virtual DBPArchive& SerializeBytes(void* p, size_t sz);
 	virtual size_t GetOffset();
 	INLINE bool IsSkip() { return optionality == OPTIONAL_SKIP; }
+	INLINE bool IsReset() { return optionality == OPTIONAL_RESET; }
 	INLINE bool IsDiscard() { return optionality == OPTIONAL_DISCARD; }
-	private: DBPArchive* outer; enum { OPTIONAL_SERIALIZE, OPTIONAL_ZERO, OPTIONAL_DISCARD, OPTIONAL_SKIP } optionality;
+	private: DBPArchive* outer; enum { OPTIONAL_SERIALIZE, OPTIONAL_RESET, OPTIONAL_DISCARD, OPTIONAL_SKIP } optionality;
 };
 
 struct DBPArchiveReader : DBPArchive
@@ -116,7 +117,7 @@ struct DBPArchiveReader : DBPArchive
 	DBPArchiveReader(const void* _ptr, size_t _sz) : DBPArchive(DBPArchive::MODE_LOAD), start((const Bit8u*)_ptr), end(start+_sz), ptr(start) {}
 	virtual DBPArchive& SerializeByte(void* p) { if (ptr < end) *(Bit8u*)p = *(ptr++); else had_error |= ERR_LAYOUT; return *this; }
 	virtual DBPArchive& SerializeBytes(void* p, size_t sz);
-	virtual DBPArchive& Discard(void* p, size_t sz) { if (ptr + sz > end) had_error |= ERR_LAYOUT; ptr += sz; return *this; }
+	virtual DBPArchive& Discard(size_t sz) { if (ptr + sz > end) had_error |= ERR_LAYOUT; ptr += sz; return *this; }
 	virtual size_t GetOffset() { return (ptr - start); }
 	const Bit8u *start, *end, *ptr;
 };
