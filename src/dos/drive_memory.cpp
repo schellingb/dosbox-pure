@@ -217,14 +217,16 @@ memoryDrive::~memoryDrive()
 
 bool memoryDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 {
+	DOSPATH_REMOVE_ENDINGDOTS_KEEP(name);
 	Memory_Entry* e = impl->Get(name);
 	if (!e || e->IsDirectory()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
-	*file = new Memory_Handle(e->AsFile(), flags, name);
+	*file = new Memory_Handle(e->AsFile(), flags, name_org);
 	return true;
 }
 
 bool memoryDrive::FileCreate(DOS_File * * file, char * path, Bit16u attributes)
 {
+	DOSPATH_REMOVE_ENDINGDOTS_KEEP(path);
 	if ((attributes & DOS_ATTR_DIRECTORY) || !*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
 	Memory_Directory* dir;
 	const char* filename;
@@ -234,12 +236,14 @@ bool memoryDrive::FileCreate(DOS_File * * file, char * path, Bit16u attributes)
 	Memory_File* f = (e ? e->AsFile() : new Memory_File(attributes, filename));
 	f->mem_data.clear();
 	dir->entries.Put(filename, f);
-	*file = new Memory_Handle(f, OPEN_READWRITE, path);
+	*file = new Memory_Handle(f, OPEN_READWRITE, path_org);
 	return true;
 }
 
 bool memoryDrive::Rename(char * oldpath, char * newpath)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(oldpath);
+	DOSPATH_REMOVE_ENDINGDOTS(newpath);
 	Memory_Directory *old_dir, *new_dir;
 	const char *old_filename, *new_filename;
 	Memory_Entry* e = impl->Get(oldpath, &old_dir, &old_filename);
@@ -264,6 +268,7 @@ bool memoryDrive::Rename(char * oldpath, char * newpath)
 
 bool memoryDrive::FileUnlink(char * path)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(path);
 	Memory_Directory *dir;
 	const char *filename;
 	Memory_Entry* e = impl->Get(path, &dir, &filename);
@@ -280,12 +285,14 @@ bool memoryDrive::FileUnlink(char * path)
 
 bool memoryDrive::FileExists(const char* name)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Memory_Entry* p = impl->Get(name);
 	return (p && p->IsFile());
 }
 
 bool memoryDrive::RemoveDir(char* dir_path)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	Memory_Directory* dir = impl->directories.Get(dir_path);
 	if (!dir) return FALSE_SET_DOSERR(PATH_NOT_FOUND);
 	if (dir->entries.Len()) return FALSE_SET_DOSERR(ACCESS_DENIED); // not empty
@@ -298,6 +305,7 @@ bool memoryDrive::RemoveDir(char* dir_path)
 
 bool memoryDrive::MakeDir(char* dir_path)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	Memory_Directory *parent;
 	const char *dirname;
 	if (impl->Get(dir_path, &parent, &dirname)) return FALSE_SET_DOSERR(FILE_ALREADY_EXISTS);
@@ -310,11 +318,13 @@ bool memoryDrive::MakeDir(char* dir_path)
 
 bool memoryDrive::TestDir(char* dir_path)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	return (!dir_path[0] || impl->directories.Get(dir_path));
 }
 
 bool memoryDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	Memory_Directory* dir = (!dir_path[0] ? &impl->root : impl->directories.Get(dir_path));
 	if (!dir) return FALSE_SET_DOSERR(PATH_NOT_FOUND);
 
@@ -377,6 +387,7 @@ bool memoryDrive::FindNext(DOS_DTA & dta)
 
 bool memoryDrive::FileStat(const char* name, FileStat_Block * const stat_block)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Memory_Entry* p = impl->Get(name);
 	if (!p) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	stat_block->attr = p->attr;
@@ -388,6 +399,7 @@ bool memoryDrive::FileStat(const char* name, FileStat_Block * const stat_block)
 
 bool memoryDrive::GetFileAttr(char * name, Bit16u * attr)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Memory_Entry* p = impl->Get(name);
 	if (!p) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	*attr = p->attr;
@@ -411,6 +423,7 @@ Bits memoryDrive::UnMount(void) { delete this; return 0;  }
 
 bool memoryDrive::CloneEntry(DOS_Drive* src_drv, const char* src_path)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(src_path);
 	FileStat_Block stat;
 	if (!src_drv->FileStat(src_path, &stat)) return false;
 

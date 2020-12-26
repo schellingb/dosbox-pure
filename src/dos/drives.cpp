@@ -248,6 +248,41 @@ void DRIVES_Init(Section* sec) {
 }
 
 //DBP: Added these helper utility functions
+void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH])
+{
+	// Remove trailing dots that aren't at the start or in a series of dots
+	// I.e "aaa.\bbb.\.\..\ccc." becomes "aaa\bbb\.\..\ccc"
+	const char* dot = *path - 2;
+	if (!dot[2] || !dot[3]) return;
+	while ((dot = strchr(dot + 3, '.')) != NULL)
+	{
+		if (dot[1] != '\\' && dot[1] != '\0') continue;
+		if (dot[-1] == '\\' || dot[-1] == '.') { dot--; continue; }
+		const char* last = *path;
+		for (char* out = path_buf;;)
+		{
+			if (dot - *path >= DOS_PATHLENGTH) return;
+			memcpy(out, last, dot - last);
+			out += (dot - last);
+			if (!dot[0] || !dot[1])
+			{
+				*out = '\0';
+				*path = path_buf;
+				return;
+			}
+			last = dot + 1;
+			for (;;)
+			{
+				dot = strchr(dot + 3, '.');
+				if (!dot) dot = last + strlen(last);
+				else if (dot[1] != '\\' && dot[1] != '\0') continue;
+				else if (dot[-1] == '\\' || dot[-1] == '.') { dot--; continue; }
+				break;
+			}
+		}
+	}
+}
+
 bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
 	Bit8u i, drive = DOS_DRIVES;
 	for (i = 0; i < DOS_DRIVES; i++) {
@@ -262,16 +297,20 @@ bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
 			break;
 		}
 	}
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	bool found_file = false;
 	if (drive != DOS_DRIVES) {
 		for (i = 0; i < DOS_FILES; i++) {
-			if (Files[i] && Files[i]->GetDrive() == drive && Files[i]->IsName(name)) {
-				DBP_ASSERT(Files[i]->open && Files[i]->refCtr > 0); //files shouldn't hang around closed
-				while (Files[i]->refCtr > 0) { if (Files[i]->IsOpen()) Files[i]->Close(); Files[i]->RemoveRef(); }
-				delete Files[i];
-				Files[i] = NULL;
-				found_file = true;
-			}
+			DOS_File *f = Files[i];
+			if (!f || f->GetDrive() != drive || !f->name) continue;
+			const char* fname = f->name;
+			DOSPATH_REMOVE_ENDINGDOTS(fname);
+			if (strcasecmp(name, fname)) continue;
+			DBP_ASSERT(f->open && f->refCtr > 0); //files shouldn't hang around closed
+			while (f->refCtr > 0) { if (f->IsOpen()) f->Close(); f->RemoveRef(); }
+			delete f;
+			Files[i] = NULL;
+			found_file = true;
 		}
 	}
 	return found_file;

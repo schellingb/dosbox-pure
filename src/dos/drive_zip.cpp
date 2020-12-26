@@ -1612,6 +1612,7 @@ bool zipDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 {
 	if (OPEN_IS_WRITING(flags)) return FALSE_SET_DOSERR(ACCESS_DENIED);
 
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Zip_Entry* e = impl->Get(name);
 	if (!e || e->IsDirectory()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 
@@ -1639,6 +1640,7 @@ bool zipDrive::FileUnlink(char * path)
 
 bool zipDrive::FileExists(const char* name)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Zip_Entry* p = impl->Get(name);
 	return (p && p->IsFile());
 }
@@ -1655,11 +1657,13 @@ bool zipDrive::MakeDir(char* dir_path)
 
 bool zipDrive::TestDir(char* dir_path)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	return (!dir_path[0] || impl->directories.Get(dir_path));
 }
 
 bool zipDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	Zip_Directory* dir = (!dir_path[0] ? &impl->root : impl->directories.Get(dir_path));
 	if (!dir) return FALSE_SET_DOSERR(PATH_NOT_FOUND);
 
@@ -1722,6 +1726,7 @@ bool zipDrive::FindNext(DOS_DTA & dta)
 
 bool zipDrive::FileStat(const char* name, FileStat_Block * const stat_block)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Zip_Entry* p = impl->Get(name);
 	if (!p) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	stat_block->attr = p->attr;
@@ -1733,6 +1738,7 @@ bool zipDrive::FileStat(const char* name, FileStat_Block * const stat_block)
 
 bool zipDrive::GetFileAttr(char * name, Bit16u * attr)
 {
+	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Zip_Entry* p = impl->Get(name);
 	if (!p) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	*attr = p->attr;
