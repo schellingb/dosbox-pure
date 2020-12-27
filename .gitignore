@@ -12,3 +12,4 @@ build/
 *.cfg
 *.dll
 *.so
+*.dylib

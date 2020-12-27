@@ -473,7 +473,7 @@ public:
 			if(!xms_handles[i].free) XMS_FreeMemory(i);
 
 		//DBP: Added cleanup for restart support
-		bool DBP_IsShuttingDown();
+		extern bool DBP_IsShuttingDown();
 		if (DBP_IsShuttingDown()) xms_callback=0;
 	}
 

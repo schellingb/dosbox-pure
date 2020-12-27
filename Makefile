@@ -17,6 +17,7 @@
 #
 
 ISWIN      := $(findstring :,$(firstword $(subst \, ,$(subst /, ,$(abspath .)))))
+ISMAC      := $(wildcard /Applications)
 PIPETONULL := $(if $(ISWIN),>nul 2>nul,>/dev/null 2>/dev/null)
 PROCCPU    := $(shell $(if $(ISWIN),GenuineIntel Intel sse sse2,cat /proc/cpuinfo))
 
@@ -26,7 +27,19 @@ SOURCES := \
 	src/*/*.cpp \
 	src/*/*/*.cpp
 
-CXX := g++
+ifneq ($(ISWIN),)
+  OUTNAME := dosbox_pure_libretro.dll
+  CXX     := g++
+  LDFLAGS :=  -Wl,--gc-sections
+else ifneq ($(ISMAC),)
+  OUTNAME := dosbox_pure_libretro.dylib
+  CXX     := clang++
+  LDFLAGS :=  -Wl,-dead_strip
+else
+  OUTNAME := dosbox_pure_libretro.so
+  CXX     := g++
+  LDFLAGS :=  -Wl,--gc-sections
+endif
 
 ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
   CPUFLAGS := -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
@@ -41,36 +54,32 @@ else
   CPUFLAGS :=
 endif
 
-OUTNAME := dosbox_pure_libretro.so
-
 ifeq ($(BUILD),DEBUG)
   BUILDDIR := debug
   CFLAGS   := -DDEBUG -D_DEBUG -g -O0
-  LDFLAGS  :=
 else ifeq ($(BUILD),PROFILE)
   BUILDDIR := profile
   CFLAGS   := -DNDEBUG -O2
-  LDFLAGS  := 
 else ifeq ($(BUILD),RELEASEDBG)
   BUILDDIR := releasedbg
   CFLAGS   := -DNDEBUG -ggdb -O2
-  LDFLAGS  := -ggdb -O2
+  LDFLAGS  += -ggdb -O2
 else ifeq ($(BUILD),ASAN)
   BUILDDIR := asan
   CFLAGS   := -DDEBUG -D_DEBUG -g -O0 -fsanitize=address -fno-omit-frame-pointer
-  LDFLAGS  := -fsanitize=address -g -O0
+  LDFLAGS  += -fsanitize=address -g -O0
 else
   BUILD    := RELEASE
   BUILDDIR := release
-  CFLAGS   := -DNDEBUG -O2 -s -fno-ident
-  LDFLAGS  := -O2 -s -Wl,--strip-all -fno-ident
+  CFLAGS   := -DNDEBUG -O2 -fno-ident
+  LDFLAGS  += -O2 -fno-ident
 endif
 
-CFLAGS  += $(CPUFLAGS) -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-psabi -Wno-address-of-packed-member -Wno-format
+CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
 CFLAGS  += -fvisibility=hidden -ffunction-sections -fdata-sections
 CFLAGS  += -pthread -D__LIBRETRO__ -Iinclude
 
-LDFLAGS += $(CPUFLAGS) -lpthread -Wl,--gc-sections -shared
+LDFLAGS += $(CPUFLAGS) -lpthread -shared
 #LDFLAGS += -static-libstdc++ -static-libgcc #adds 1MB to output
 
 .PHONY: all clean
@@ -91,7 +100,9 @@ clean:
 
 $(OUTNAME) : $(OBJS)
 	$(info Linking $@ ...)
-	@$(CXX) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LDFLAGS) -o $@ $^
+	@-strip --strip-all $@ $(PIPETONULL);true #others
+	@-strip -xS $@ $(PIPETONULL);true #mac
 
 define COMPILE
 	$(info Compiling $2 ...)

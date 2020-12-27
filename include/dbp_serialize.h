@@ -88,10 +88,12 @@ INLINE DBPArchive& operator<<(DBPArchive& ar, double& i) { return ar.SerializeBy
 INLINE DBPArchive& operator<<(DBPArchive& ar, float&  i) { return ar.SerializeBytes(&i, sizeof(i)); }
 INLINE DBPArchive& operator<<(DBPArchive& ar, Bit16u& i) { return ar.SerializeBytes(&i, sizeof(i)); }
 INLINE DBPArchive& operator<<(DBPArchive& ar, Bit16s& i) { return ar.SerializeBytes(&i, sizeof(i)); }
-INLINE DBPArchive& operator<<(DBPArchive& ar, Bit32u& i) { return ar.SerializeBytes(&i, sizeof(i)); }
-INLINE DBPArchive& operator<<(DBPArchive& ar, Bit32s& i) { return ar.SerializeBytes(&i, sizeof(i)); }
-INLINE DBPArchive& operator<<(DBPArchive& ar, Bit64u& i) { return ar.SerializeBytes(&i, sizeof(i)); }
-INLINE DBPArchive& operator<<(DBPArchive& ar, Bit64s& i) { return ar.SerializeBytes(&i, sizeof(i)); }
+INLINE DBPArchive& operator<<(DBPArchive& ar,   signed       int& i) { return ar.SerializeBytes(&i, sizeof(i)); }
+INLINE DBPArchive& operator<<(DBPArchive& ar, unsigned       int& i) { return ar.SerializeBytes(&i, sizeof(i)); }
+INLINE DBPArchive& operator<<(DBPArchive& ar,   signed      long& i) { return ar.SerializeBytes(&i, sizeof(i)); }
+INLINE DBPArchive& operator<<(DBPArchive& ar, unsigned      long& i) { return ar.SerializeBytes(&i, sizeof(i)); }
+INLINE DBPArchive& operator<<(DBPArchive& ar,   signed long long& i) { return ar.SerializeBytes(&i, sizeof(i)); }
+INLINE DBPArchive& operator<<(DBPArchive& ar, unsigned long long& i) { return ar.SerializeBytes(&i, sizeof(i)); }
 
 #define DBP_SERIALIZE_SET_POINTER_LIST(TYPE, MODULE, ...) TYPE DBPSerialize##TYPE##MODULE##Ptrs[] = { __VA_ARGS__, (TYPE)0 }
 #define DBP_SERIALIZE_GET_POINTER_LIST(TYPE, MODULE) DBPSerialize##TYPE##MODULE##Ptrs

@@ -2393,7 +2393,7 @@ public:
 	}
 	~CPU(){
 		//DBP: Added cleanup on core restart
-		bool DBP_IsShuttingDown();
+		extern bool DBP_IsShuttingDown();
 		if (DBP_IsShuttingDown()) inited = false;
 	};
 };

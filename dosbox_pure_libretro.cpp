@@ -945,6 +945,8 @@ static void DBP_PureMenuProgram(Program** make)
 		Menu() : result(0), sel(0), exe_count(0), fs_count(0), scroll(0), mousex(0), mousey(0), joyx(0), joyy(0), init_autosel(0), init_autoskip(0), autoskip(0),
 			have_autoboot(false), use_autoboot(false), multidrive(false), open_ticks(DBP_GetTicks()) { }
 
+		~Menu() {}
+
 		int result, sel, exe_count, fs_count, scroll, mousex, mousey, joyx, joyy, init_autosel, init_autoskip, autoskip;
 		bool have_autoboot, use_autoboot, multidrive;
 		Bit32u open_ticks;
@@ -1525,12 +1527,12 @@ static void DBP_StartOnScreenKeyboard()
 			osk.dx = osk.dy = osk.jx = osk.jy = osk.kx = osk.ky = 0;
 			osk.mspeed = 2.f;
 			osk.hovered_key = osk.pressed_key = KBD_NONE;
-			osk.toggled_keys[KBD_leftalt-KBD_leftalt   ] = !!dbp_keys_down[KBD_leftalt   ];
-			osk.toggled_keys[KBD_leftalt-KBD_rightalt  ] = !!dbp_keys_down[KBD_rightalt  ];
-			osk.toggled_keys[KBD_leftalt-KBD_leftctrl  ] = !!dbp_keys_down[KBD_leftctrl  ];
-			osk.toggled_keys[KBD_leftalt-KBD_rightctrl ] = !!dbp_keys_down[KBD_rightctrl ];
-			osk.toggled_keys[KBD_leftalt-KBD_leftshift ] = !!dbp_keys_down[KBD_leftshift ];
-			osk.toggled_keys[KBD_leftalt-KBD_rightshift] = !!dbp_keys_down[KBD_rightshift];
+			osk.toggled_keys[KBD_leftalt   -KBD_leftalt] = !!dbp_keys_down[KBD_leftalt   ];
+			osk.toggled_keys[KBD_rightalt  -KBD_leftalt] = !!dbp_keys_down[KBD_rightalt  ];
+			osk.toggled_keys[KBD_leftctrl  -KBD_leftalt] = !!dbp_keys_down[KBD_leftctrl  ];
+			osk.toggled_keys[KBD_rightctrl -KBD_leftalt] = !!dbp_keys_down[KBD_rightctrl ];
+			osk.toggled_keys[KBD_leftshift -KBD_leftalt] = !!dbp_keys_down[KBD_leftshift ];
+			osk.toggled_keys[KBD_rightshift-KBD_leftalt] = !!dbp_keys_down[KBD_rightshift];
 		}
 		enum { KWR = 10, KWTAB = 15, KWCAPS = 20, KWLS = 17, KWRSHIFT = 33, KWCTRL = 16, KWZERO = 22, KWBS = 28, KWSPACEBAR = 88, KWENTR = 18, KWPLUS };
 		enum { KXX = 100+KWR+2, SPACEFF = 109, KSPLIT = 255, KSPLIT1 = 192, KSPLIT2 = 234, KWIDTH = KSPLIT2 + KWR*4 + 2*3 };

@@ -1520,7 +1520,7 @@ public:
 		}
 
 		//DBP: Added cleanup for restart support
-		bool DBP_IsShuttingDown();
+		extern bool DBP_IsShuttingDown();
 		if (DBP_IsShuttingDown()) ems_baseseg=0;
 	}
 };
