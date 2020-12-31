@@ -7,6 +7,7 @@
 # Core definitions
 .core-defs:
   variables:
+    JNI_PATH: .
     CORENAME: dosbox_pure
 
 # Inclusion templates, required for the build to work
@@ -15,6 +16,11 @@ include:
   # Windows 64-bit
   - project: 'libretro-infrastructure/ci-templates'
     file: '/windows-x64-mingw.yml'
+    
+  ################################## CELLULAR ################################
+  # Android
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/android-jni.yml'
 
 # Stages for building
 stages:
@@ -33,3 +39,28 @@ libretro-build-windows-x64:
     - .core-defs
   variables:
     ISWIN: 1
+
+################################### CELLULAR #################################
+# Android ARMv7a
+android-armeabi-v7a:
+  extends:
+    - .libretro-android-jni-armeabi-v7a
+    - .core-defs
+
+# Android ARMv8a
+android-arm64-v8a:
+  extends:
+    - .libretro-android-jni-arm64-v8a
+    - .core-defs
+
+# Android 64-bit x86
+android-x86_64:
+  extends:
+    - .libretro-android-jni-x86_64
+    - .core-defs
+
+# Android 32-bit x86
+android-x86:
+  extends:
+    - .libretro-android-jni-x86
+    - .core-defs
