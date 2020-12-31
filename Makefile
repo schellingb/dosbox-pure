@@ -16,8 +16,14 @@
 #  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 
+ifeq ($(ISWIN),)
 ISWIN      := $(findstring :,$(firstword $(subst \, ,$(subst /, ,$(abspath .)))))
+endif
+
+ifeq ($(ISMAC),)
 ISMAC      := $(wildcard /Applications)
+endif
+
 PIPETONULL := $(if $(ISWIN),>nul 2>nul,>/dev/null 2>/dev/null)
 PROCCPU    := $(shell $(if $(ISWIN),GenuineIntel Intel sse sse2,cat /proc/cpuinfo))
 
@@ -29,15 +35,15 @@ SOURCES := \
 
 ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
-  CXX     := g++
+  CXX     ?= g++
   LDFLAGS :=  -Wl,--gc-sections
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
-  CXX     := clang++
+  CXX     ?= clang++
   LDFLAGS :=  -Wl,-dead_strip
 else
   OUTNAME := dosbox_pure_libretro.so
-  CXX     := g++
+  CXX     ?= g++
   LDFLAGS :=  -Wl,--gc-sections
 endif
 
