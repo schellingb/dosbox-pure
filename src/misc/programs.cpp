@@ -34,10 +34,6 @@
 
 Bitu call_program;
 
-#ifdef ANDROID
-#include "nonlibc.h"
-#endif
-
 /* This registers a file on the virtual drive and creates the correct structure for it*/
 
 static Bit8u exe_block[]={
@@ -143,11 +139,7 @@ void Program::WriteOut(const char * format,...) {
 	va_list msg;
 	
 	va_start(msg,format);
-#ifdef ANDROID
-	portable_vsnprintf(buf,2047,format,msg);
-#else
 	vsnprintf(buf,2047,format,msg);
-#endif
 	va_end(msg);
 
 	Bit16u size = (Bit16u)strlen(buf);
