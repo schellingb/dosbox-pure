@@ -307,7 +307,7 @@ static Bit32u dbp_lastfpstick, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fp
 #define DBP_FPSCOUNT(DBP_FPSCOUNT_VARNAME)
 #endif
 
-static void retro_notify(retro_log_level lvl, char const* format,...)
+static void retro_notify(unsigned duration, retro_log_level lvl, char const* format,...)
 {
 	static char buf[1024];
 	va_list ap;
@@ -316,7 +316,7 @@ static void retro_notify(retro_log_level lvl, char const* format,...)
 	va_end(ap);
 	retro_message_ext msg;
 	msg.msg = buf;
-	msg.duration = 4000;
+	msg.duration = (duration ? duration : 4000);
 	msg.priority = 0;
 	msg.level = lvl;
 	msg.target = RETRO_MESSAGE_TARGET_ALL;
@@ -411,7 +411,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		if (!zip_file_h)
 		{
 			if (!is_boot) dbp_disk_eject_state = true;
-			retro_notify(RETRO_LOG_ERROR, "Unable to open %s file: %s", "ZIP", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "ZIP", path);
 			return NULL;
 		}
 		res = new zipDrive(new rawFile(zip_file_h, false), true);
@@ -475,7 +475,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		{
 			delete res;
 			if (!is_boot) dbp_disk_eject_state = true;
-			retro_notify(RETRO_LOG_ERROR, "Unable to open %s file: %s", "image", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "image", path);
 			return NULL;
 		}
 	}
@@ -491,7 +491,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		FILE* m3u_file_h = fopen_wrap(path, "rb");
 		if (!m3u_file_h)
 		{
-			retro_notify(RETRO_LOG_ERROR, "Unable to open %s file: %s", "M3U", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "M3U", path);
 			return NULL;
 		}
 		fseek(m3u_file_h, 0, SEEK_END);
@@ -540,7 +540,7 @@ static void DBP_Shutdown()
 	}
 	if (!dbp_crash_message.empty())
 	{
-		retro_notify(RETRO_LOG_ERROR, "DOS crashed: %s", dbp_crash_message.c_str());
+		retro_notify(0, RETRO_LOG_ERROR, "DOS crashed: %s", dbp_crash_message.c_str());
 		dbp_crash_message.clear();
 	}
 	if (control)
@@ -712,6 +712,13 @@ void GFX_Events()
 	for (;dbp_event_queue_read_cursor != dbp_event_queue_write_cursor; dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE))
 	{
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
+		#if 0
+		static const char* DBP_Event_Type_Names[] = { "SET_VARIABLE", "MOUNT", "EXT_MAX", "UNMOUNT", "SET_FASTFORWARD", "LOCKTHREAD", "SHUTDOWN", "INPUT_FIRST",
+			"JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "JOY_AXIS_MAX",
+			"MOUSEXY", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP",
+			"ONSCREENKEYBOARD", "AXIS_TO_KEY", "MAX" };
+		log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [@%6d] %s %08x%s\n", DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_input_intercept && e.type >= _DBPET_INPUT_FIRST ? " [INTERCEPTED]" : ""));
+		#endif
 		if (dbp_input_intercept && e.type >= _DBPET_INPUT_FIRST)
 		{
 			dbp_input_intercept(e);
@@ -1286,23 +1293,13 @@ static void DBP_PureMenuProgram(Program** make)
 				case DBPET_MOUSEDOWN:
 				case DBPET_JOY1DOWN:
 				case DBPET_JOY2DOWN:
-					if ((DBP_GetTicks() - dbp_lastmenuticks) > 500) menu->result = 1;
+					if ((DBP_GetTicks() - dbp_lastmenuticks) > 300) menu->result = 1;
 					break;
 			}
 		}
 
-		static Bit32u ButtonDownCount()
-		{
-			return (Bit32u)dbp_keys_down_count + (dbp_keys_down[KBD_LAST] ? 1 : 0);
-		}
-
 		bool IdleLoop(void(*input_intercept)(DBP_Event&), Bit32u tick_limit = 0)
 		{
-			for (Bit32u count = ButtonDownCount(); (dbp_event_queue_read_cursor != dbp_event_queue_write_cursor || (count && count == ButtonDownCount())) && !first_shell->exit;)
-			{
-				CALLBACK_Idle(); // wait until all keys are up and no events are queued
-				if (tick_limit && DBP_GetTicks() >= tick_limit) first_shell->exit = true;
-			}
 			DBP_KEYBOARD_ReleaseKeys(); // any unintercepted CALLBACK_* can set a key down
 			dbp_gfx_intercept = NULL;
 			dbp_input_intercept = input_intercept;
@@ -1332,31 +1329,17 @@ static void DBP_PureMenuProgram(Program** make)
 
 			if (on_finish && !always_show_menu && ((exe_count == 1 && fs_count <= 1) || use_autoboot))
 			{
-				if (ButtonDownCount())
-				{
-					// Wait for approximately 100ms to see if any button is still pressed, if so, force the menu to show
-					for (int i = 0; i != 100 && ButtonDownCount(); i++)
-					{
-						CALLBACK_Idle();
-						sleep_ms(1);
-						if (first_shell->exit) return;
-					}
-					if (ButtonDownCount()) always_show_menu = true;
-				}
-				if (!always_show_menu)
-				{
-					if (dbp_menu_time == 0) { first_shell->exit = true; return; }
-					char secs[] = { (char)('0' + dbp_menu_time), '\0' };
-					always_show_menu = true;
-					dbp_gfx_intercept = NULL;
-					dbp_input_intercept = NULL;
-					INT10_SetCursorShape(0, 0);
-					INT10_SetCursorPos((Bit8u)CurMode->twidth, (Bit8u)CurMode->theight, 0);
-					DrawText((Bit16u)(CurMode->twidth / 2 - 33), (Bit16u)(CurMode->theight - 2), "* GAME ENDED - EXITTING IN   SECONDS - PRESS ANY KEY TO CONTINUE *", ATTR_HIGHLIGHT);
-					DrawText((Bit16u)(CurMode->twidth / 2 - 33) + 27, (Bit16u)(CurMode->theight - 2), secs, ATTR_HIGHLIGHT);
-					if (!IdleLoop(CheckAnyPress, DBP_GetTicks() + (dbp_menu_time * 1000))) return;
-					result = 0;
-				}
+				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
+				char secs[] = { (char)('0' + dbp_menu_time), '\0' };
+				always_show_menu = true;
+				dbp_gfx_intercept = NULL;
+				dbp_input_intercept = NULL;
+				INT10_SetCursorShape(0, 0);
+				INT10_SetCursorPos((Bit8u)CurMode->twidth, (Bit8u)CurMode->theight, 0);
+				DrawText((Bit16u)(CurMode->twidth / 2 - 33), (Bit16u)(CurMode->theight - 2), "* GAME ENDED - EXITTING IN   SECONDS - PRESS ANY KEY TO CONTINUE *", ATTR_HIGHLIGHT);
+				DrawText((Bit16u)(CurMode->twidth / 2 - 33) + 27, (Bit16u)(CurMode->theight - 2), secs, ATTR_HIGHLIGHT);
+				if (!IdleLoop(CheckAnyPress, DBP_GetTicks() + (dbp_menu_time * 1000))) return;
+				result = 0;
 			}
 			if (on_finish)
 			{
@@ -2099,7 +2082,7 @@ static void check_variables()
 
 			if (disallow_in_game && dbp_game_running)
 			{
-				retro_notify(RETRO_LOG_ERROR, "Unable to change value while game is running");
+				retro_notify(0, RETRO_LOG_ERROR, "Unable to change value while game is running");
 				return;
 			}
 
@@ -2359,7 +2342,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 					dbp_auto_mapping_names = (char*)buf + mappings_bk.mappings_action_offset;
 
 					if (dbp_auto_mapping_mode == 'n') //notify
-						retro_notify(RETRO_LOG_INFO, dbp_auto_mapping_title);
+						retro_notify(0, RETRO_LOG_INFO, dbp_auto_mapping_title);
 					return;
 				}
 			}
@@ -2588,7 +2571,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_format))
 	{
-		retro_notify(RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
+		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
 		return false;
 	}
 
@@ -2596,7 +2579,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	time_cb = (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) ? perf.get_time_usec : NULL);
 	if (!time_cb)
 	{
-		retro_notify(RETRO_LOG_ERROR, "Frontend does not supply proper PERF_INTERFACE.\n");
+		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not supply proper PERF_INTERFACE.\n");
 		return false;
 	}
 
@@ -2805,7 +2788,7 @@ void retro_run(void)
 		else if (dbp_overload_count++ >= 200)
 		{
 			if ((DBP_GetTicks() - first_overload) < 10000)
-				retro_notify(RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
+				retro_notify(0, RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
 			dbp_overload_count = 0;
 		}
 	}
@@ -2850,10 +2833,34 @@ void retro_run(void)
 			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
 		binds = intercept_binds;
-		binds_end = &intercept_binds[
-			(dbp_port_devices[0] == DBP_DEVICE_Disabled || dbp_port_devices[0] == DBP_DEVICE_BindCustomKeyboard) ? 
-				5 : // Only use mouse (and keyboard) if port 0 has been disabled or uses custom keyboard mapping
-				sizeof(intercept_binds)/sizeof(*intercept_binds)];
+		binds_end = &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)];
+
+		if (!dbp_gfx_intercept)
+		{
+			input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_SPACE); // this gets latest keyboard callbacks
+			for (Bit8u i = KBD_NONE + 1; dbp_keys_down_count && i != KBD_LAST; i++)
+			{
+				if (!(dbp_keys_down[i] & DBP_DOWN_BY_KEYBOARD)) continue;
+
+				static bool warned_game_focus;
+				if (!warned_game_focus && dbp_port_devices[0] != DBP_DEVICE_BindCustomKeyboard)
+				{
+					for (DBP_InputBind *b = binds + 5; b != binds_end; b++)
+					{
+						int16_t val = input_state_cb(b->port, b->device, b->index, b->id);
+						if (val / (b->device == RETRO_DEVICE_ANALOG ? 12000 : 1) == 0) continue;
+						retro_notify(10000, RETRO_LOG_WARN,
+							"Detected keyboard and joypad being pressed at the same time.\n"
+							"To freely use the keyboard without hotkeys enable 'Game Focus' (Scroll Lock key by default) if available.");
+						warned_game_focus = true;
+						break;
+					}
+				}
+
+				// Only query mouse bindings while a key is down to avoid the keyboard additionally hitting joypad buttons in the start menu
+				binds_end = binds + 5;
+			}
+		}
 	}
 
 	// forward input state changes to thread
@@ -2954,8 +2961,8 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 	if (dbp_serializemode == DBPSERIALIZE_STATES || ar.mode == DBPArchive::MODE_SIZE)
 	{
 		if (ar.mode == DBPArchive::MODE_MAXSIZE) return false; // measure max size for rewind buffers is ignored with DBPSERIALIZE_STATES
-		if (!dbp_game_running) { retro_notify(RETRO_LOG_WARN, "Unable to save/load state while start menu is open"); return false; }
-		if (dbp_state != DBPSTATE_RUNNING) { retro_notify(RETRO_LOG_WARN, "Unable to save/load state while DOS is not running"); return false; }
+		if (!dbp_game_running) { retro_notify(0, RETRO_LOG_WARN, "Unable to save/load state while start menu is open"); return false; }
+		if (dbp_state != DBPSTATE_RUNNING) { retro_notify(0, RETRO_LOG_WARN, "Unable to save/load state while DOS is not running"); return false; }
 	}
 	DBP_LockThread(true);
 	DBPSerialize_All(ar, (!dbp_game_running || (dbp_state != DBPSTATE_RUNNING)));
@@ -2967,33 +2974,33 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 		switch (ar.had_error)
 		{
 			case DBPArchive::ERR_LAYOUT:
-				retro_notify(RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
+				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
 				break;
 			case DBPArchive::ERR_VERSION:
-				retro_notify(RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
+				retro_notify(0, RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
 			case DBPArchive::ERR_INVALIDSTATE:
-				retro_notify(RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Save state was made during start menu or while system was crashed");
+				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Save state was made during start menu or while system was crashed");
 				break;
 			case DBPArchive::ERR_WRONGMACHINECONFIG:
-				retro_notify(RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
+				retro_notify(0, RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
 					(machine <= MCH_VGA ? machine_names[machine] : "UNKNOWN"), (ar.error_info <= MCH_VGA ? machine_names[ar.error_info] : "UNKNOWN"));
 				break;
 			case DBPArchive::ERR_WRONGMEMORYCONFIG:
-				retro_notify(RETRO_LOG_ERROR, "%sWrong memory size configuration (%d MB instead of %d MB)", "Load State Error: ",
+				retro_notify(0, RETRO_LOG_ERROR, "%sWrong memory size configuration (%d MB instead of %d MB)", "Load State Error: ",
 					(Bit8u)(MEM_TotalPages() / 256), ar.error_info);
 				break;
 			case DBPArchive::ERR_WRONGVGAMEMCONFIG:
-				retro_notify(RETRO_LOG_ERROR, "%sWrong SVGA mode configuration (%d KB VGA RAM instead of %D KB)", "Load State Error: ",
+				retro_notify(0, RETRO_LOG_ERROR, "%sWrong SVGA mode configuration (%d KB VGA RAM instead of %D KB)", "Load State Error: ",
 					(Bit8u)(vga.vmemsize / 1024), ar.error_info * 128);
 				break;
 		}
 	}
 	else if (ar.warnings && ar.mode == DBPArchive::MODE_LOAD)
 	{
-		if (ar.warnings & DBPArchive::WARN_WRONGDRIVES)  retro_notify(RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent file system state or wrong disks mounted");
-		if (ar.warnings & DBPArchive::WARN_WRONGDEVICES) retro_notify(RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent device handlers");
-		if (ar.warnings & DBPArchive::WARN_WRONGPROGRAM) retro_notify(RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Loaded into different program type, risk of system crash");
+		if (ar.warnings & DBPArchive::WARN_WRONGDRIVES)  retro_notify(0, RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent file system state or wrong disks mounted");
+		if (ar.warnings & DBPArchive::WARN_WRONGDEVICES) retro_notify(0, RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent device handlers");
+		if (ar.warnings & DBPArchive::WARN_WRONGPROGRAM) retro_notify(0, RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Loaded into different program type, risk of system crash");
 	}
 	return !ar.had_error;
 }
