@@ -340,7 +340,7 @@ static retro_core_option_definition option_defs[] =
 			{ "16000", NULL },
 			{ "11025", NULL },
 			{  "8000", NULL },
-			//{ "49716", NULL }, //max for GUS
+			{ "49716", NULL }, //for perfect OPL emulation
 		},
 		DBP_DEFAULT_SAMPLERATE_STRING
 	},
