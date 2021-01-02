@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" InitialTargets="DisplayText">
   <PropertyGroup Label="UserMacros">
     <VisualStudioYear Condition="'$(VisualStudioVersion)' == '11.0' Or '$(PlatformToolsetVersion)' == '110' Or '$(MSBuildToolsVersion)' ==  '4.0'">2012</VisualStudioYear>
@@ -603,6 +603,7 @@
     <ClInclude Include="src\dos\wnaspi32.h" />
     <ClInclude Include="src\fpu\fpu_instructions.h" />
     <ClInclude Include="src\fpu\fpu_instructions_x86.h" />
+    <ClInclude Include="src\gui\midi_retro.h" />
     <ClInclude Include="src\gui\midi_tsf.h" />
     <ClInclude Include="src\gui\render_glsl.h" />
     <ClInclude Include="src\gui\render_loops.h" />

@@ -110,7 +110,6 @@ static void(*dbp_gfx_intercept)(Bit8u* buf);
 // DOSBOX AUDIO
 static uint8_t audioData[4096 * 4]; // mixer blocksize * 2 (96khz @ 30 fps max)
 static retro_usec_t dbp_frame_time;
-static std::vector<std::string> dbp_soundfonts;
 
 // DOSBOX DISC MANAGEMENT
 static std::vector<std::string> dbp_images;
@@ -340,6 +339,8 @@ void MIXER_CallBack(void *userdata, uint8_t *stream, int len);
 bool MSCDEX_HasDrive(char driveLetter);
 int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
 int MSCDEX_RemoveDrive(char driveLetter);
+bool MIDI_TSF_SwitchSF2(const char*);
+bool MIDI_Retro_IsActiveHandler();
 
 void DBP_Crash(const char* msg)
 {
@@ -588,6 +589,7 @@ void DBP_DelayTicks(Bit32u ms)
 
 void DBP_MidiDelay(Bit32u ms)
 {
+	if (dbp_fast_forward) return;
 	sleep_ms(ms);
 }
 
@@ -609,6 +611,11 @@ bool DBP_IsKeyDown(KBD_KEYS key)
 bool DBP_IsShuttingDown()
 {
 	return (!first_shell || first_shell->exit);
+}
+
+void DBP_GetRetroMidiInterface(retro_midi_interface* res)
+{
+	if(environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res);
 }
 
 Bitu GFX_GetBestMode(Bitu flags)
@@ -727,7 +734,6 @@ void GFX_Events()
 		switch (e.type)
 		{
 			case DBPET_SET_VARIABLE:
-				bool MIDI_TSF_SwitchSF2(const char*);
 				if (!memcmp(e.ext->cmd.c_str(), "midiconfig=", 11) && MIDI_TSF_SwitchSF2(e.ext->cmd.c_str() + 11))
 				{
 					// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
@@ -1738,44 +1744,6 @@ void retro_set_environment(retro_environment_t cb) //#2
 
 	bool allow_no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &allow_no_game);
-
-	const char *system_dir = NULL;
-	struct retro_vfs_interface_info vfs = { 3, NULL };
-	if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
-	{
-		dbp_soundfonts.clear();
-		std::vector<std::string> subdirs;
-		subdirs.push_back(std::string());
-		while (subdirs.size())
-		{
-			std::string subdirstr;
-			std::swap(subdirstr, subdirs.back());
-			subdirs.pop_back();
-			const char *subdir = (subdirstr.length() ? subdirstr.c_str() : "");
-			char path[1024];
-			snprintf(path, sizeof(path), (*subdir ? "%s/%s" : "%s%s"), system_dir, subdir);
-			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path, false);
-			if (!dir) continue;
-			while (vfs.iface->readdir(dir))
-			{
-				const char* entry_name = vfs.iface->dirent_get_name(dir);
-				if (vfs.iface->dirent_is_dir(dir))
-				{
-					if (entry_name[0] == '.' && (!entry_name[1] || (entry_name[1] == '.' && !entry_name[2]))) continue;
-					snprintf(path, sizeof(path), (*subdir ? "%s/%s" : "%s%s"), subdir, entry_name);
-					subdirs.push_back(path);
-					continue;
-				}
-				size_t entry_len = strlen(entry_name);
-				if (!strcasecmp(entry_name + entry_len - 4, ".sf2"))
-				{
-					snprintf(path, sizeof(path), (*subdir ? "%s/%s" : "%s%s"), subdir, entry_name);
-					dbp_soundfonts.push_back(path);
-				}
-			}
-			vfs.iface->closedir(dir);
-		}
-	}
 }
 
 static void refresh_input_binds(unsigned refresh_min_port = 0)
@@ -2217,17 +2185,17 @@ static void check_variables()
 		Variables::DosBoxSet("sblaster", sb_props[i], buf);
 	}
 
-	if (dbp_soundfonts.size())
+	std::string soundfontpath;
+	const char* midi = Variables::RetroGet("dosbox_pure_midi", "");
+	if (!*midi) midi = Variables::RetroGet("dosbox_pure_soundfont", ""); // old option name
+	if (!strcasecmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
+	else if (*midi && strcasecmp(midi, "frontend"))
 	{
 		const char *system_dir = NULL;
 		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir);
-		std::string soundfontpath;
-		const char* soundfont = Variables::RetroGet("dosbox_pure_soundfont", "none");
-		if (!memcmp(soundfont, "disabled", sizeof("disabled"))) soundfont = "";
-		else if (!memcmp(soundfont, "none", sizeof("none"))) soundfont = "";
-		else if (*soundfont) soundfont = (soundfontpath = std::string(system_dir) + '/' + soundfont).c_str();
-		Variables::DosBoxSet("midi", "midiconfig", soundfont);
+		midi = soundfontpath.assign(system_dir).append("/").append(midi).c_str();
 	}
+	Variables::DosBoxSet("midi", "midiconfig", midi);
 
 	Variables::DosBoxSet("sblaster", "sbtype", Variables::RetroGet("dosbox_pure_sblaster_type", "sb16"));
 	Variables::DosBoxSet("sblaster", "oplmode", Variables::RetroGet("dosbox_pure_sblaster_adlib_mode", "auto"));
@@ -2551,14 +2519,42 @@ void retro_init(void) //#3
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
 
+	static std::vector<std::string> sf2files;
+	const char *system_dir = NULL;
+	struct retro_vfs_interface_info vfs = { 3, NULL };
+	if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
+	{
+		std::string path, subdir;
+		std::vector<std::string> subdirs;
+		subdirs.push_back(std::string());
+		while (subdirs.size())
+		{
+			std::swap(subdir, subdirs.back());
+			subdirs.pop_back();
+			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
+			if (!dir) continue;
+			while (vfs.iface->readdir(dir))
+			{
+				const char* entry_name = vfs.iface->dirent_get_name(dir);
+				size_t entry_len = strlen(entry_name);
+				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
+					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				else if (entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
+					sf2files.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+			}
+			vfs.iface->closedir(dir);
+		}
+	}
+
 	#include "core_options.h"
 	for (retro_core_option_definition& def : option_defs)
 	{
-		if (!def.key || strcmp(def.key, "dosbox_pure_soundfont")) continue;
+		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
 		int i;
-		for (i = 0; i != RETRO_NUM_CORE_OPTION_VALUES_MAX-1 && i != dbp_soundfonts.size(); i++)
-			def.values[i] = { dbp_soundfonts[i].c_str(), dbp_soundfonts[i].c_str() };
-		def.values[i] = { "disabled", "Disabled" };
+		for (i = 0; i != RETRO_NUM_CORE_OPTION_VALUES_MAX-2 && i != sf2files.size(); i++)
+			def.values[i] = { sf2files[i].c_str(), sf2files[i].c_str() };
+		def.values[i  ] = { "disabled", "Disabled" };
+		def.values[i+1] = { "frontend", "Frontend MIDI driver" };
 		def.default_value = def.values[0].value;
 		break;
 	}
@@ -2758,6 +2754,20 @@ void retro_run(void)
 				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, 0);
 
 			return;
+		}
+
+		retro_variable var = { "dosbox_pure_midi", NULL };
+		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcasecmp(var.value, "frontend") && !MIDI_Retro_IsActiveHandler())
+		{
+			retro_midi_interface midi = {0};
+			bool have_midi = (environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, &midi) && midi.output_enabled && midi.output_enabled());
+			if (have_midi)
+			{
+				// Reset MIDI section to restart the midi_retro handler now that the frontend MIDI driver has fully started up
+				std::string str = "midiconfig"; str += '='; str += "frontend";
+				DBP_QueueEvent(DBPET_SET_VARIABLE, str, control->GetSection("midi"));
+			}
+			else retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
 		}
 
 		// first frame

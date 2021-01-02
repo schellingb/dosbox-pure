@@ -71,7 +71,13 @@ MidiHandler::MidiHandler(){
 
 #ifdef C_DBP_SUPPORT_MIDI_TSF
 #include "midi_tsf.h"
-#else
+#endif
+
+#ifdef C_DBP_SUPPORT_MIDI_RETRO
+#include "midi_retro.h"
+#endif
+
+#if !defined(C_DBP_SUPPORT_MIDI_TSF) && !defined(C_DBP_SUPPORT_MIDI_RETRO)
 MidiHandler Midi_none;
 #endif
 
@@ -289,7 +295,8 @@ getdefault:
 		midi.available = false;
 		midi.handler = 0;
 		//DBP: Added for serialization
-		midi.ever_used = false;
+		extern bool DBP_IsShuttingDown();
+		if (DBP_IsShuttingDown()) midi.ever_used = false;
 	}
 };
 
@@ -301,10 +308,16 @@ void MIDI_Destroy(Section* /*sec*/){
 void MIDI_Init(Section * sec) {
 	test = new MIDI(sec);
 	sec->AddDestroyFunction(&MIDI_Destroy,true);
+	//DBP: Added support for switching MIDI at runtime
+	if (midi.ever_used) {
+		extern void DBP_MIDI_ReplayCache();
+		DBP_MIDI_ReplayCache();
+	}
 }
 
 void DBP_MIDI_ReplayCache()
 {
+	if (!midi.handler) return;
 	struct Local
 	{
 		static void PlayControl(Bit8u ch, Bit8u ctrl, Bit8u cache_val)

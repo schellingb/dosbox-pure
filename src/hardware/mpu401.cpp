@@ -650,6 +650,11 @@ public:
 		ReadHandler[0].Install(0x330,&MPU401_ReadData,IO_MB);
 		ReadHandler[1].Install(0x331,&MPU401_ReadStatus,IO_MB);
 
+		//DBP: Added support for switching MIDI at runtime
+		if (mpu.irq){
+			PIC_SetIRQMask(mpu.irq,false);
+			return;
+		}
 		mpu.queue_used=0;
 		mpu.queue_pos=0;
 		mpu.mode=M_UART;
@@ -667,6 +672,9 @@ public:
 		Section_prop * section=static_cast<Section_prop *>(m_configuration);
 		if(strcasecmp(section->Get_string("mpu401"),"intelligent")) return;
 		PIC_SetIRQMask(mpu.irq,true);
+		//DBP: Added support for switching MIDI at runtime
+		extern bool DBP_IsShuttingDown();
+		if (DBP_IsShuttingDown()) mpu.irq=0;
 		}
 };
 

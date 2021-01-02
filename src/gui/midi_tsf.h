@@ -131,7 +131,7 @@ bool MIDI_TSF_SwitchSF2(const char* path)
 	if (midi.handler != &Midi_tsf) return false;
 
 	Midi_tsf.Close();
-	Midi_tsf.Open(path);
+	if (!Midi_tsf.Open(path)) return false;
 
 	void DBP_MIDI_ReplayCache();
 	DBP_MIDI_ReplayCache();
