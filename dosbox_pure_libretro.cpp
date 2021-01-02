@@ -1687,8 +1687,8 @@ static void DBP_StartOnScreenKeyboard()
 						case KBD_enter: case KBD_kpenter: case KBD_space: goto case_ADDKEYUP;
 						case KBD_esc: goto case_CLOSEOSK;
 					}
-				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = (e.val/32768.f); break;
-				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = (e.val/32768.f); break;
+				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
+				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
 				case DBPET_MOUSESETSPEED: osk.mspeed = (e.val > 0 ? 4.f : 1.f); break;
 				case DBPET_MOUSERESETSPEED: osk.mspeed = 2.f; break;
 				case DBPET_ONSCREENKEYBOARD: case_CLOSEOSK:
@@ -1806,7 +1806,6 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 		switch (dbp_port_devices[port])
 		{
 			case DBP_DEVICE_Disabled:
-			case DBP_DEVICE_BindCustomKeyboard:
 				continue;
 			case DBP_DEVICE_MouseLeftAnalog:
 				dbp_input_binds.push_back({ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Mouse Horizontal", DBPET_JOYMX } );
@@ -1974,6 +1973,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 3", DBPET_JOY2DOWN, 0 });
 				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 });
 				break;
+			case DBP_DEVICE_BindCustomKeyboard:
 			case DBP_DEVICE_BindGenericKeyboard:
 			default:
 				break;
@@ -1984,7 +1984,10 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "On Screen Keyboard", DBPET_ONSCREENKEYBOARD });
 		}
 
-		if (port == 0 && dbp_auto_mapping && dbp_port_devices[port] == DBP_DEVICE_Port1Default)
+		if (dbp_port_devices[port] == DBP_DEVICE_BindCustomKeyboard)
+			continue;
+
+		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_Port1Default)
 			continue;
 
 		if (!dbp_bind_unused && dbp_port_devices[port] != DBP_DEVICE_BindGenericKeyboard)
