@@ -1727,7 +1727,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.4";
+	info->library_version  = "0.5";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
@@ -2760,8 +2760,7 @@ void retro_run(void)
 		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcasecmp(var.value, "frontend") && !MIDI_Retro_IsActiveHandler())
 		{
 			retro_midi_interface midi = {0};
-			bool have_midi = (environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, &midi) && midi.output_enabled && midi.output_enabled());
-			if (have_midi)
+			if (environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, &midi) && midi.output_enabled && midi.output_enabled())
 			{
 				// Reset MIDI section to restart the midi_retro handler now that the frontend MIDI driver has fully started up
 				std::string str = "midiconfig"; str += '='; str += "frontend";
