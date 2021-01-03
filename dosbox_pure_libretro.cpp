@@ -2102,8 +2102,6 @@ static void check_variables()
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{
-		Variables::DosBoxSet("dosbox", "memsize", Variables::RetroGet("dosbox_pure_memory_size", "16"));
-
 		const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
 		if (!strcmp(machine, "svga"))
 			machine = Variables::RetroGet("dosbox_pure_svga", "svga_s3");
@@ -2123,6 +2121,12 @@ static void check_variables()
 		Variables::DosBoxSet("mixer", "prebuffer", "0");
 		Variables::DosBoxSet("mixer", "blocksize", "2048");
 	}
+
+	const char* mem = Variables::RetroGet("dosbox_pure_memory_size", "16");
+	bool mem_use_extended = (atoi(mem) > 0);
+	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
+	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
+	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "4"), true);
 
 	// handle setting strings like on/yes/true/savestate or rewind
 	const char* savestate = Variables::RetroGet("dosbox_pure_savestate", "false");

@@ -259,8 +259,9 @@ static retro_core_option_definition option_defs[] =
 	{
 		"dosbox_pure_memory_size",
 		"System > Memory Size (restart required)",
-		"The amount of (high) memory that the emulated machine has.",
+		"The amount of (high) memory that the emulated machine has. You can also disable extended memory (EMS/XMS).",
 		{
+			{ "none", "Disable extended memory (no EMS/XMS)" },
 			{ "4",  "4 MB" },
 			{ "8",  "8 MB" },
 			{ "16", "16 MB (default)" },
