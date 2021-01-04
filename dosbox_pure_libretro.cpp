@@ -149,10 +149,13 @@ static const char* DBP_KBDNAMES[] =
 };
 static std::vector<DBP_InputBind> dbp_input_binds;
 static DBP_Port_Device dbp_port_devices[DBP_MAX_PORTS];
-static bool dbp_bind_unused, dbp_on_screen_keyboard;
-static int16_t dbp_bind_mousewheel;
-static float dbp_mouse_speed = 1, dbp_mouse_speed_x = 1;
+static bool dbp_bind_unused;
+static bool dbp_on_screen_keyboard;
+static bool dbp_mouse_input;
 static char dbp_auto_mapping_mode;
+static int16_t dbp_bind_mousewheel;
+static float dbp_mouse_speed = 1;
+static float dbp_mouse_speed_x = 1;
 static Bit8u* dbp_auto_mapping;
 static const char* dbp_auto_mapping_names;
 static const char* dbp_auto_mapping_title;
@@ -1751,13 +1754,16 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 	if (refresh_min_port < 2)
 	{
 		dbp_input_binds.clear();
-		dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   NULL, DBPET_MOUSEDOWN, 0 });
-		dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  NULL, DBPET_MOUSEDOWN, 1 });
-		dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, NULL, DBPET_MOUSEDOWN, 2 });
-		if (dbp_bind_mousewheel)
+		if (dbp_mouse_input)
 		{
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET(-1, dbp_bind_mousewheel) });
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET( 1, dbp_bind_mousewheel) });
+			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   NULL, DBPET_MOUSEDOWN, 0 });
+			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  NULL, DBPET_MOUSEDOWN, 1 });
+			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, NULL, DBPET_MOUSEDOWN, 2 });
+			if (dbp_bind_mousewheel)
+			{
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET(-1, dbp_bind_mousewheel) });
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET( 1, dbp_bind_mousewheel) });
+			}
 		}
 		refresh_min_port  = 0;
 	}
@@ -2089,16 +2095,21 @@ static void check_variables()
 	char buf[16];
 	bool show_advanced = (Variables::RetroGet("dosbox_pure_advanced", "false")[0] != 'f');
 
-	Variables::RetroVisibility("dosbox_pure_mouse_speed_factor_x", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_auto_mapping", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_joystick_timed", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_keyboard_layout", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_cpu_core", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_menu_time", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_sblaster_type", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_sblaster_adlib_mode", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_sblaster_adlib_emu", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_gus", show_advanced);
+	static const char* advanced_options[] =
+	{
+		"dosbox_pure_mouse_speed_factor_x",
+		"dosbox_pure_mouse_input",
+		"dosbox_pure_auto_mapping",
+		"dosbox_pure_joystick_timed",
+		"dosbox_pure_keyboard_layout",
+		"dosbox_pure_cpu_core",
+		"dosbox_pure_menu_time",
+		"dosbox_pure_sblaster_type",
+		"dosbox_pure_sblaster_adlib_mode",
+		"dosbox_pure_sblaster_adlib_emu",
+		"dosbox_pure_gus",
+	};
+	for (const char* i : advanced_options) Variables::RetroVisibility(i, show_advanced);
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{
@@ -2219,10 +2230,12 @@ static void check_variables()
 
 	bool bind_unused = (Variables::RetroGet("dosbox_pure_bind_unused", "true")[0] != 'f');
 	bool on_screen_keyboard = (Variables::RetroGet("dosbox_pure_on_screen_keyboard", "true")[0] != 'f');
-	if (bind_unused != dbp_bind_unused || on_screen_keyboard != dbp_on_screen_keyboard || dbp_bind_mousewheel != bind_mousewheel)
+	bool mouse_input = (Variables::RetroGet("dosbox_pure_mouse_input", "true")[0] != 'f');
+	if (bind_unused != dbp_bind_unused || on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 	{
 		dbp_bind_unused = bind_unused;
 		dbp_on_screen_keyboard = on_screen_keyboard;
+		dbp_mouse_input = mouse_input;
 		dbp_bind_mousewheel = bind_mousewheel;
 		if (dbp_state > DBPSTATE_SHUTDOWN) refresh_input_binds();
 	}
@@ -2848,7 +2861,7 @@ void retro_run(void)
 		if (toggled_intercept)
 			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
-		binds = intercept_binds;
+		binds = intercept_binds + (dbp_mouse_input ? 0 : 5);
 		binds_end = &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)];
 
 		if (!dbp_gfx_intercept)
@@ -2861,7 +2874,7 @@ void retro_run(void)
 				static bool warned_game_focus;
 				if (!warned_game_focus && dbp_port_devices[0] != DBP_DEVICE_BindCustomKeyboard)
 				{
-					for (DBP_InputBind *b = binds + 5; b != binds_end; b++)
+					for (DBP_InputBind *b = intercept_binds + 5; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 					{
 						int16_t val = input_state_cb(b->port, b->device, b->index, b->id);
 						if (val / (b->device == RETRO_DEVICE_ANALOG ? 12000 : 1) == 0) continue;
@@ -2874,7 +2887,7 @@ void retro_run(void)
 				}
 
 				// Only query mouse bindings while a key is down to avoid the keyboard additionally hitting joypad buttons in the start menu
-				binds_end = binds + 5;
+				binds_end = intercept_binds + 5;
 			}
 		}
 	}
@@ -2912,7 +2925,7 @@ void retro_run(void)
 	}
 	int16_t mousex = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
 	int16_t mousey = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-	if (mousex || mousey)
+	if ((mousex || mousey) && dbp_mouse_input)
 	{
 		DBP_QueueEvent(DBPET_MOUSEXY, mousex, mousey);
 	}

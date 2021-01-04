@@ -107,6 +107,13 @@ static retro_core_option_definition option_defs[] =
 		"1.0"
 	},
 	{
+		"dosbox_pure_mouse_input",
+		"Input > Advanced > Use Mouse Input",
+		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work).",
+		{ { "true", "On (default)" }, { "false", "Off" } },
+		"true"
+	},
+	{
 		"dosbox_pure_auto_mapping",
 		"Input > Advanced > Automatic Game Pad Mappings",
 		"DOSBox Pure can automatically apply a gamepad control mapping scheme when it detects a game." "\n"
