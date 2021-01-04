@@ -571,50 +571,63 @@ static void cache_closeblock(void) {
 
 
 // place an 8bit value into the cache
-static INLINE void cache_addb(Bit8u val) {
+static INLINE void cache_addb(Bit8u val,Bit8u *pos) {
 #ifdef HAVE_LIBNX
-	Bit8u* rwPos = (Bit8u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	Bit8u* rwPos = (Bit8u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
-	cache.pos++;
 #else
-	*cache.pos++=val;
+	*pos=val;
 #endif
+}
+static INLINE void cache_addb(Bit8u val) {
+	Bit8u *pos=cache.pos+1;
+	cache_addb(val,cache.pos);
+	cache.pos=pos;
 }
 
 // place a 16bit value into the cache
-static INLINE void cache_addw(Bit16u val) {
+static INLINE void cache_addw(Bit16u val,Bit8u *pos) {
 #ifdef HAVE_LIBNX
-	Bit16u* rwPos = (Bit16u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	Bit16u* rwPos = (Bit16u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
-	cache.pos+=2;
 #else
-	*(Bit16u*)cache.pos=val;
-	cache.pos+=2;
+	*(Bit16u*)pos=val;
 #endif
+}
+static INLINE void cache_addw(Bit16u val) {
+	Bit8u *pos=cache.pos+2;
+	cache_addw(val,cache.pos);
+	cache.pos=pos;
 }
 
 // place a 32bit value into the cache
-static INLINE void cache_addd(Bit32u val) {
+static INLINE void cache_addd(Bit32u val,Bit8u *pos) {
 #ifdef HAVE_LIBNX
-	Bit32u* rwPos = (Bit32u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	Bit32u* rwPos = (Bit32u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
-	cache.pos+=4;
 #else
-	*(Bit32u*)cache.pos=val;
-	cache.pos+=4;
+	*(Bit32u*)pos=val;
 #endif
+}
+static INLINE void cache_addd(Bit32u val) {
+	Bit8u *pos=cache.pos+4;
+	cache_addd(val,cache.pos);
+	cache.pos=pos;
 }
 
 // place a 64bit value into the cache
-static INLINE void cache_addq(Bit64u val) {
+static INLINE void cache_addq(Bit64u val,Bit8u *pos) {
 #ifdef HAVE_LIBNX
-	Bit64u* rwPos = (Bit64u*)((intptr_t)cache.pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
+	Bit64u* rwPos = (Bit64u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
-	cache.pos+=8;
 #else
-	*(Bit64u*)cache.pos=val;
-	cache.pos+=8;
+	*(Bit64u*)pos=val;
 #endif
+}
+static INLINE void cache_addq(Bit64u val) {
+	Bit8u *pos=cache.pos+8;
+	cache_addq(val,cache.pos);
+	cache.pos=pos;
 }
 
 
