@@ -472,3 +472,38 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 		Iter::ParseDir(drv, dir.c_str(), dirs, func, data);
 	}
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_Drives(DBPArchive& ar)
+{
+	Bit8u drive_count = 0;
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i])
+			drive_count++;
+
+	Bit8u current_drive_count = drive_count;
+	ar << drive_count;
+	if (ar.mode == DBPArchive::MODE_MAXSIZE) drive_count = DOS_DRIVES;
+	if (ar.mode == DBPArchive::MODE_LOAD && current_drive_count != drive_count)
+		ar.warnings |= DBPArchive::WARN_WRONGDRIVES;
+
+	for (Bit8u i = (Bit8u)-1; drive_count--;)
+	{
+		Bit8u curdir_len;
+		if (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE)
+		{
+			while (!Drives[++i]) { }
+			curdir_len = (Bit8u)strlen(Drives[i]->curdir);
+		}
+		ar << i << curdir_len;
+		if (ar.mode == DBPArchive::MODE_MAXSIZE) ar.SerializeBytes(NULL, sizeof(Drives[i]->curdir));
+		else if (ar.mode != DBPArchive::MODE_LOAD) ar.SerializeBytes(Drives[i]->curdir, curdir_len);
+		else
+		{
+			if (!Drives[i]) { ar.Discard(curdir_len); ar.warnings |= DBPArchive::WARN_WRONGDRIVES; continue; }
+			ar.SerializeBytes(Drives[i]->curdir, curdir_len);
+			Drives[i]->curdir[curdir_len] = '\0';
+		}
+	}
+}
