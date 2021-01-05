@@ -44,7 +44,7 @@ struct MidiHandler_tsf : public MidiHandler
 		if (!chan)
 		{
 			mo = new MixerObject;
-			Bit32u DBP_MIXER_GetFrequency();
+			extern Bit32u DBP_MIXER_GetFrequency();
 			chan = mo->Install(&MIDI_TSF_CallBack, DBP_MIXER_GetFrequency(), "TSF");
 		}
 
@@ -70,7 +70,7 @@ struct MidiHandler_tsf : public MidiHandler
 		f = NULL;
 		if (!sf) return false;
 
-		Bit32u DBP_MIXER_GetFrequency();
+		extern Bit32u DBP_MIXER_GetFrequency();
 		tsf_set_output(sf, TSF_STEREO_INTERLEAVED, (int)DBP_MIXER_GetFrequency(), 0.0);
 		chan->Enable(true);
 		buf = new Bit16s[1024*2];

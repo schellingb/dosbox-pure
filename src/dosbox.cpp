@@ -227,7 +227,7 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 	ticksLast = ticksNew;
 	ticksDone += ticksRemain;
 	//DBP: store result of this into ticksCPUOverload to give user feedback when max cycles is too high
-	if ( DBP_CPUOverload = (ticksRemain > 20) ) {
+	if ( (DBP_CPUOverload = (ticksRemain > 20)) ) {
 //		LOG(LOG_MISC,LOG_ERROR)("large remain %d",ticksRemain);
 		ticksRemain = 20;
 	}
