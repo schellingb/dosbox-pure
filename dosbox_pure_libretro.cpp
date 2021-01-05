@@ -1079,6 +1079,20 @@ static void DBP_PureMenuProgram(Program** make)
 			bool isFS = (!isEXE && m->sel == ('C'-'A') && (!strcasecmp(fext, ".iso") || !strcasecmp(fext, ".cue") || !strcasecmp(fext, ".ins") || !strcasecmp(fext, ".img") || !strcasecmp(fext, ".ima") || !strcasecmp(fext, ".vhd")));
 			if (!isEXE && !isFS) return;
 			if (isFS && !strncasecmp(fext + 1, "im", 2) && (size < 163840 || (size <= 2949120 && (size % 20480)))) return; //validate floppy images
+			if (isFS && !strcasecmp(fext, ".ins"))
+			{
+				// Make sure this is an actual CUE file with an INS extension
+				if (size >= 16384) return;
+				Bit8u cmd[6];
+				Bit16u cmdlen = (Bit16u)sizeof(cmd);
+				DOS_File *insfile = nullptr;
+				Drives['C'-'A']->FileOpen(&insfile, (char*)path, OPEN_READ);
+				insfile->AddRef();
+				insfile->Read(cmd, &cmdlen);
+				insfile->Close();
+				delete insfile;
+				if (cmdlen != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) return;
+			}
 			(isEXE ? m->exe_count : m->fs_count)++;
 
 			int insert_index;
@@ -1208,7 +1222,7 @@ static void DBP_PureMenuProgram(Program** make)
 			{
 				char skiptext[38];
 				if (autoskip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", autoskip);
-				else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/L3 + Restart to come back");
+				else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/R2 + Restart to come back");
 				DrawText((int)1, (Bit16u)CurMode->theight-1, skiptext, ATTR_HEADER);
 			}
 		}
