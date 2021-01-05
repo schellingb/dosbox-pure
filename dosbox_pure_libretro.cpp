@@ -691,22 +691,19 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	// When pausing the frontend we need to make sure CycleAutoAdjust is only re-activated after normal rendering has resumed
 	extern bool CPU_SkipCycleAutoAdjust;
-	static bool reset_skip_cycle_auto_adjust;
-	static Bit32u last_retro_activity = (Bit32u)-1, repeat_frames;
-	if (dbp_timing_tamper && dbp_retro_activity == last_retro_activity)
-	{
-		repeat_frames = 0;
-		CPU_SkipCycleAutoAdjust = reset_skip_cycle_auto_adjust = true;
-		if (last_retro_activity == dbp_retro_activity && dbp_state == DBPSTATE_RUNNING && !first_shell->exit)
-			dbp_wait_activity = last_retro_activity;
-	}
-	else
+	static Bit8u stall_frames, resume_frames;
+	static Bit32u last_retro_activity;
+	if (dbp_retro_activity != last_retro_activity)
 	{
 		last_retro_activity = dbp_retro_activity;
-		if (reset_skip_cycle_auto_adjust && repeat_frames++ > 3) 
-		{
-			CPU_SkipCycleAutoAdjust = reset_skip_cycle_auto_adjust = false;
-		}
+		if (stall_frames) stall_frames = 0;
+		if (resume_frames && resume_frames++ > 4) { CPU_SkipCycleAutoAdjust = false; resume_frames = 0; }
+	}
+	else if ((dbp_timing_tamper || stall_frames++ > 4) && dbp_state == DBPSTATE_RUNNING && !first_shell->exit)
+	{
+		stall_frames = resume_frames = 1;
+		CPU_SkipCycleAutoAdjust = true;
+		dbp_wait_activity = last_retro_activity;
 	}
 }
 
