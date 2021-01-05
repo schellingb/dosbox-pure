@@ -380,10 +380,17 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 	const char *ext = strrchr(path_file, '.');
 	if (!ext) return NULL;
 
+	const char *fragment = strrchr(path_file, '#');
+	if (fragment && ext > fragment) // check if 'FOO.ZIP#BAR.EXE'
+	{
+		const char* real_ext = fragment - (fragment - 3 > path_file && fragment[-3] == '.' ? 3 : 4);
+		if (real_ext > path_file && *real_ext == '.') ext = real_ext;
+		else fragment = NULL;
+	}
+
 	// A drive letter can be specified either by naming the mount file '.<letter>.<extension>' or by loading a path with an added '#<letter>' suffix.
 	char letter = 0;
-	const char *fragment = strrchr(ext, '#');
-	const char *p_fra_drive = (fragment && fragment[1] ? fragment + 1 : NULL);
+	const char *p_fra_drive = (fragment && fragment[1] && !fragment[2] ? fragment + 1 : NULL);
 	const char *p_dot_drive = (ext - path > 2 && ext[-2] == '.' ? ext - 1 : NULL);
 	if      (p_fra_drive && (*p_fra_drive >= 'A' && *p_fra_drive <= 'Z')) letter = *p_fra_drive;
 	else if (p_fra_drive && (*p_fra_drive >= 'a' && *p_fra_drive <= 'z')) letter = *p_fra_drive - 0x20;
@@ -1020,9 +1027,10 @@ static void DBP_PureMenuProgram(Program** make)
 				multidrive = true;
 			}
 			sel = (list.empty() ? 2 : old_sel);
-			if (initial_scan && have_autoboot)
+			if (!initial_scan) return;
+			char autostr[DOS_PATHLENGTH + 32] = {0,1};
+			if (have_autoboot)
 			{
-				char autostr[DOS_PATHLENGTH + 32];
 				Bit16u autostrlen = (Bit16u)(sizeof(autostr) - 1);
 				DOS_File *autobootfile = nullptr;
 				Drives['C'-'A']->FileOpen(&autobootfile, (char*)"AUTOBOOT.DBP", OPEN_READ);
@@ -1035,18 +1043,25 @@ static void DBP_PureMenuProgram(Program** make)
 				while (nameend > autostr && *nameend <= ' ') nameend--;
 				while (skip && *skip && *skip <= ' ') skip++;
 				if (nameend) nameend[1] = '\0';
-
+				if (skip) init_autoskip = autoskip = atoi(skip);
+			}
+			else if (strrchr(dbp_content_path.c_str(), '#'))
+			{
+				memcpy(autostr, "C:\\", 3);
+				safe_strncpy(autostr + 3, strrchr(dbp_content_path.c_str(), '#') + 1, DOS_PATHLENGTH + 16);
+			}
+			if (autostr[0])
+			{
 				for (std::string& name : list)
 				{
 					if (name != autostr) continue;
-					use_autoboot = true;
+					use_autoboot = have_autoboot = true;
 					init_autosel = sel = (int)(&name - &list[0]);
-					break;
+					return;
 				}
-
-				if (skip && use_autoboot) init_autoskip = autoskip = atoi(skip);
+				init_autoskip = autoskip = 0;
 			}
-			if (initial_scan && !use_autoboot) sel = fs_count;
+			sel = fs_count;
 		}
 
 		static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
@@ -1119,9 +1134,9 @@ static void DBP_PureMenuProgram(Program** make)
 			DrawText((int)CurMode->twidth - 1, 2, "\xBC", ATTR_HEADER);
 
 			// Footer
-			DrawText((int)CurMode->twidth - 39, (Bit16u)CurMode->theight-1, "\xB3 \x18\x19 Scroll \xB3 \x1A\x1B Set Auto Boot \xB3 \x7 Run", ATTR_HEADER);
-			DrawText((int)CurMode->twidth - 39, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
-			DrawText((int)CurMode->twidth - 27, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
+			DrawText((int)CurMode->twidth - 40, (Bit16u)CurMode->theight-1, "\xB3 \x18\x19 Scroll \xB3 \x1A\x1B Set Auto Start \xB3 \x7 Run", ATTR_HEADER);
+			DrawText((int)CurMode->twidth - 40, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
+			DrawText((int)CurMode->twidth - 28, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
 			DrawText((int)CurMode->twidth -  8, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
 
 			//// Test all font characters
@@ -1147,6 +1162,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 			if (count == 3) DrawText(mid - 12, starty - 1, "No executable file found", ATTR_HEADER);
 
+			bool autostart_info = false;
 			for (int i = scroll; i != count && i != (scroll + maxy); i++)
 			{
 				int y = starty + i - scroll;
@@ -1172,7 +1188,8 @@ static void DBP_PureMenuProgram(Program** make)
 					DrawText(mid - len / 2,       y, line + off, (i == sel ? ATTR_HIGHLIGHT : ATTR_NORMAL));
 					if (i != sel) continue;
 					DrawText(mid - len / 2 - 2,   y, "*", ATTR_WHITE);
-					DrawText(mid - len / 2 + len + 1, y, (use_autoboot ? "* [SET AUTO BOOT]" : "*"), ATTR_WHITE);
+					DrawText(mid - len / 2 + len + 1, y, (use_autoboot ? "* [SET AUTO START]" : "*"), ATTR_WHITE);
+					autostart_info = use_autoboot;
 				}
 			}
 			if (scroll)
@@ -1186,11 +1203,12 @@ static void DBP_PureMenuProgram(Program** make)
 				for (Bit16u x = 0; x != CurMode->twidth; x++) DrawText(x, y, (x >= from && x <= to ? "\x1F" : " "), ATTR_NORMAL);
 			}
 
-			for (Bit16u x = 0; x != 34; x++) DrawText(x, (Bit16u)CurMode->theight-1, " ", 0);
-			if (use_autoboot && autoskip)
+			for (Bit16u x = 0; x != 38; x++) DrawText(x, (Bit16u)CurMode->theight-1, " ", 0);
+			if (autostart_info)
 			{
-				char skiptext[32];
-				snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", autoskip);
+				char skiptext[38];
+				if (autoskip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", autoskip);
+				else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/L3 + Restart to come back");
 				DrawText((int)1, (Bit16u)CurMode->theight-1, skiptext, ATTR_HEADER);
 			}
 		}
