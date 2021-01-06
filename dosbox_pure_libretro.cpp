@@ -89,6 +89,8 @@ static Bit32u dbp_lastmenuticks;
 static Bit32u dbp_retro_activity;
 static Bit32u dbp_wait_activity;
 static Bit32u dbp_overload_count;
+static Bit32u dbp_last_run;
+static Bit32u dbp_min_sleep;
 static DBP_State dbp_state;
 static DBP_SerializeMode dbp_serializemode;
 static char dbp_menu_time;
@@ -96,6 +98,7 @@ static bool dbp_timing_tamper;
 static bool dbp_fast_forward;
 static bool dbp_game_running;
 static bool dbp_lockthreadstate;
+static void dbp_calculate_min_sleep() { dbp_min_sleep = 1 + (uint32_t)(700 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
 
 // DOSBOX GFX
 enum { DBP_BUFFER_COUNT = 2 };
@@ -642,6 +645,7 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 {
 	// Make sure DOSbox is not using any scalers that would waste performance
 	DBP_ASSERT(render.src.width == width && render.src.height == height);
+	if (width > SCALER_MAXWIDTH || height > SCALER_MAXHEIGHT) { DBP_ASSERT(false); return 0; }
 
 	memset(dosbox_buffers, 0, sizeof(dosbox_buffers));
 	RDOSGFXwidth = (Bit32u)width;
@@ -651,12 +655,11 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 	if (RDOSGFXratio < 1) RDOSGFXratio *= 2; //because render.src.dblw is not reliable
 	if (RDOSGFXratio > 2) RDOSGFXratio /= 2; //because render.src.dblh is not reliable
 
-	if (RDOSGFXwidth > SCALER_MAXWIDTH || RDOSGFXheight > SCALER_MAXHEIGHT) { DBP_ASSERT(false); return 0; }
-
 	//const char* VGAModeNames[] { "M_CGA2","M_CGA4","M_EGA","M_VGA","M_LIN4","M_LIN8","M_LIN15","M_LIN16","M_LIN32","M_TEXT","M_HERC_GFX","M_HERC_TEXT","M_CGA16","M_TANDY2","M_TANDY4","M_TANDY16","M_TANDY_TEXT","M_ERROR"};
 	//log_cb(RETRO_LOG_INFO, "[DOSBOX SIZE] Width: %u - Height: %u - Ratio: %f (%f) - DBLH: %d - DBLW: %d - BPP: %u - Mode: %s (%d)\n",
 	//	RDOSGFXwidth, RDOSGFXheight, RDOSGFXratio, render.src.ratio, render.src.dblh, render.src.dblw, render.src.bpp, VGAModeNames[vga.mode], vga.mode);
 
+	dbp_calculate_min_sleep();
 	return GFX_GetBestMode(0);
 }
 
@@ -1384,7 +1387,7 @@ static void DBP_PureMenuProgram(Program** make)
 				// ran without auto start or only for a very short time (maybe crash), wait for user confirmation
 				INT10_SetCursorShape(0, 0);
 				INT10_SetCursorPos((Bit8u)CurMode->twidth, (Bit8u)CurMode->theight, 0);
-				DrawText((Bit16u)(CurMode->twidth / 2 - 32), (Bit16u)(CurMode->theight - 2), "           * PRESS ANY KEY TO RETURN TO START MENU *           ", ATTR_HIGHLIGHT);
+				DrawText((Bit16u)(CurMode->twidth / 2 - 33), (Bit16u)(CurMode->theight - 2), "            * PRESS ANY KEY TO RETURN TO START MENU *             ", ATTR_HIGHLIGHT);
 				if (!IdleLoop(CheckAnyPress)) return;
 				result = 0;
 			}
@@ -2392,6 +2395,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 	}
 	dbp_state = DBPSTATE_WAIT_FIRST_FRAME;
 	dbp_retro_activity = 1;
+	dbp_last_run = DBP_GetTicks();
 	dbp_menu_time = org_menu_time;
 	return true;
 }
@@ -2715,22 +2719,21 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 {
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
-	info->geometry.base_width = 320;
-	info->geometry.base_height = 200;
-	info->geometry.max_width = SCALER_MAXWIDTH;
-	info->geometry.max_height = SCALER_MAXHEIGHT;
-	info->geometry.aspect_ratio = 4.0f / 3.0f;
-	info->timing.fps = DBP_DEFAULT_FPS;
-	info->timing.sample_rate = DBP_MIXER_GetFrequency();
+	av_info.geometry.base_width = 320;
+	av_info.geometry.base_height = 200;
+	av_info.geometry.max_width = SCALER_MAXWIDTH;
+	av_info.geometry.max_height = SCALER_MAXHEIGHT;
+	av_info.geometry.aspect_ratio = 4.0f / 3.0f;
+	av_info.timing.fps = DBP_DEFAULT_FPS;
+	av_info.timing.sample_rate = DBP_MIXER_GetFrequency();
 	if (environ_cb)
 	{
 		float refresh_rate = (float)DBP_DEFAULT_FPS;
 		if (environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &refresh_rate))
-			info->timing.fps = refresh_rate;
-
-		//info->timing.fps *= 4; //Get updated as fast as possible, DOSbox drives FPS
+			av_info.timing.fps = refresh_rate;
 	}
-	av_info = *info;
+	dbp_calculate_min_sleep();
+	*info = av_info;
 }
 
 void retro_unload_game(void)
@@ -2802,6 +2805,14 @@ void retro_run(void)
 			return;
 		}
 
+		float refresh_rate = (float)av_info.timing.fps;
+		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &refresh_rate) && refresh_rate != (float)av_info.timing.fps)
+		{
+			av_info.timing.fps = refresh_rate;
+			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
+			dbp_calculate_min_sleep();
+		}
+
 		retro_variable var = { "dosbox_pure_midi", NULL };
 		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcasecmp(var.value, "frontend") && !MIDI_Retro_IsActiveHandler())
 		{
@@ -2828,14 +2839,6 @@ void retro_run(void)
 	bool new_fast_forward = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &new_fast_forward) && new_fast_forward != dbp_fast_forward)
 		DBP_QueueEvent(DBPET_SET_FASTFORWARD, (int)(dbp_fast_forward = new_fast_forward));
-	if (new_fast_forward)
-	{
-		// keep frontend UI thread from running at 100% cpu
-		static uint32_t last_run;
-		uint32_t this_run = DBP_GetTicks(), min_sleep = 1 + (uint32_t)(700 / render.src.fps);
-		if (this_run - last_run < min_sleep) sleep_ms(min_sleep - (this_run - last_run));
-		last_run = this_run;
-	}
 
 	extern bool DBP_CPUOverload;
 	if (DBP_CPUOverload)
@@ -3011,6 +3014,11 @@ void retro_run(void)
 		dbp_audiomutex.Unlock();
 		audio_batch_cb((int16_t*)audioData, mix_samples);
 	}
+
+	// keep frontend UI thread from running at 100% cpu
+	uint32_t this_run = DBP_GetTicks();
+	if (this_run - dbp_last_run < dbp_min_sleep) sleep_ms(dbp_min_sleep - (this_run - dbp_last_run));
+	dbp_last_run = this_run;
 }
 
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
