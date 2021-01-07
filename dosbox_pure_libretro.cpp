@@ -89,6 +89,8 @@ static Bit32u dbp_lastmenuticks;
 static Bit32u dbp_retro_activity;
 static Bit32u dbp_wait_activity;
 static Bit32u dbp_overload_count;
+static Bit32u dbp_last_run;
+static Bit32u dbp_min_sleep;
 static DBP_State dbp_state;
 static DBP_SerializeMode dbp_serializemode;
 static char dbp_menu_time;
@@ -96,6 +98,7 @@ static bool dbp_timing_tamper;
 static bool dbp_fast_forward;
 static bool dbp_game_running;
 static bool dbp_lockthreadstate;
+static void dbp_calculate_min_sleep() { dbp_min_sleep = 1 + (uint32_t)(700 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
 
 // DOSBOX GFX
 enum { DBP_BUFFER_COUNT = 2 };
@@ -110,7 +113,6 @@ static void(*dbp_gfx_intercept)(Bit8u* buf);
 // DOSBOX AUDIO
 static uint8_t audioData[4096 * 4]; // mixer blocksize * 2 (96khz @ 30 fps max)
 static retro_usec_t dbp_frame_time;
-static std::vector<std::string> dbp_soundfonts;
 
 // DOSBOX DISC MANAGEMENT
 static std::vector<std::string> dbp_images;
@@ -150,10 +152,13 @@ static const char* DBP_KBDNAMES[] =
 };
 static std::vector<DBP_InputBind> dbp_input_binds;
 static DBP_Port_Device dbp_port_devices[DBP_MAX_PORTS];
-static bool dbp_bind_unused, dbp_on_screen_keyboard;
-static int16_t dbp_bind_mousewheel;
-static float dbp_mouse_speed = 1, dbp_mouse_speed_x = 1;
+static bool dbp_bind_unused;
+static bool dbp_on_screen_keyboard;
+static bool dbp_mouse_input;
 static char dbp_auto_mapping_mode;
+static int16_t dbp_bind_mousewheel;
+static float dbp_mouse_speed = 1;
+static float dbp_mouse_speed_x = 1;
 static Bit8u* dbp_auto_mapping;
 static const char* dbp_auto_mapping_names;
 static const char* dbp_auto_mapping_title;
@@ -307,7 +312,7 @@ static Bit32u dbp_lastfpstick, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fp
 #define DBP_FPSCOUNT(DBP_FPSCOUNT_VARNAME)
 #endif
 
-static void retro_notify(retro_log_level lvl, char const* format,...)
+static void retro_notify(unsigned duration, retro_log_level lvl, char const* format,...)
 {
 	static char buf[1024];
 	va_list ap;
@@ -316,7 +321,7 @@ static void retro_notify(retro_log_level lvl, char const* format,...)
 	va_end(ap);
 	retro_message_ext msg;
 	msg.msg = buf;
-	msg.duration = 4000;
+	msg.duration = (duration ? duration : 4000);
 	msg.priority = 0;
 	msg.level = lvl;
 	msg.target = RETRO_MESSAGE_TARGET_ALL;
@@ -340,6 +345,8 @@ void MIXER_CallBack(void *userdata, uint8_t *stream, int len);
 bool MSCDEX_HasDrive(char driveLetter);
 int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
 int MSCDEX_RemoveDrive(char driveLetter);
+bool MIDI_TSF_SwitchSF2(const char*);
+bool MIDI_Retro_IsActiveHandler();
 
 void DBP_Crash(const char* msg)
 {
@@ -376,10 +383,17 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 	const char *ext = strrchr(path_file, '.');
 	if (!ext) return NULL;
 
+	const char *fragment = strrchr(path_file, '#');
+	if (fragment && ext > fragment) // check if 'FOO.ZIP#BAR.EXE'
+	{
+		const char* real_ext = fragment - (fragment - 3 > path_file && fragment[-3] == '.' ? 3 : 4);
+		if (real_ext > path_file && *real_ext == '.') ext = real_ext;
+		else fragment = NULL;
+	}
+
 	// A drive letter can be specified either by naming the mount file '.<letter>.<extension>' or by loading a path with an added '#<letter>' suffix.
 	char letter = 0;
-	const char *fragment = strrchr(ext, '#');
-	const char *p_fra_drive = (fragment && fragment[1] ? fragment + 1 : NULL);
+	const char *p_fra_drive = (fragment && fragment[1] && !fragment[2] ? fragment + 1 : NULL);
 	const char *p_dot_drive = (ext - path > 2 && ext[-2] == '.' ? ext - 1 : NULL);
 	if      (p_fra_drive && (*p_fra_drive >= 'A' && *p_fra_drive <= 'Z')) letter = *p_fra_drive;
 	else if (p_fra_drive && (*p_fra_drive >= 'a' && *p_fra_drive <= 'z')) letter = *p_fra_drive - 0x20;
@@ -411,7 +425,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		if (!zip_file_h)
 		{
 			if (!is_boot) dbp_disk_eject_state = true;
-			retro_notify(RETRO_LOG_ERROR, "Unable to open %s file: %s", "ZIP", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "ZIP", path);
 			return NULL;
 		}
 		res = new zipDrive(new rawFile(zip_file_h, false), true);
@@ -475,7 +489,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		{
 			delete res;
 			if (!is_boot) dbp_disk_eject_state = true;
-			retro_notify(RETRO_LOG_ERROR, "Unable to open %s file: %s", "image", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "image", path);
 			return NULL;
 		}
 	}
@@ -491,7 +505,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 		FILE* m3u_file_h = fopen_wrap(path, "rb");
 		if (!m3u_file_h)
 		{
-			retro_notify(RETRO_LOG_ERROR, "Unable to open %s file: %s", "M3U", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "M3U", path);
 			return NULL;
 		}
 		fseek(m3u_file_h, 0, SEEK_END);
@@ -540,7 +554,7 @@ static void DBP_Shutdown()
 	}
 	if (!dbp_crash_message.empty())
 	{
-		retro_notify(RETRO_LOG_ERROR, "DOS crashed: %s", dbp_crash_message.c_str());
+		retro_notify(0, RETRO_LOG_ERROR, "DOS crashed: %s", dbp_crash_message.c_str());
 		dbp_crash_message.clear();
 	}
 	if (control)
@@ -588,6 +602,7 @@ void DBP_DelayTicks(Bit32u ms)
 
 void DBP_MidiDelay(Bit32u ms)
 {
+	if (dbp_fast_forward) return;
 	sleep_ms(ms);
 }
 
@@ -611,6 +626,11 @@ bool DBP_IsShuttingDown()
 	return (!first_shell || first_shell->exit);
 }
 
+void DBP_GetRetroMidiInterface(retro_midi_interface* res)
+{
+	if(environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res);
+}
+
 Bitu GFX_GetBestMode(Bitu flags)
 {
 	return GFX_CAN_32 | GFX_RGBONLY | GFX_SCALING | GFX_HARDWARE;
@@ -625,6 +645,7 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 {
 	// Make sure DOSbox is not using any scalers that would waste performance
 	DBP_ASSERT(render.src.width == width && render.src.height == height);
+	if (width > SCALER_MAXWIDTH || height > SCALER_MAXHEIGHT) { DBP_ASSERT(false); return 0; }
 
 	memset(dosbox_buffers, 0, sizeof(dosbox_buffers));
 	RDOSGFXwidth = (Bit32u)width;
@@ -634,12 +655,11 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 	if (RDOSGFXratio < 1) RDOSGFXratio *= 2; //because render.src.dblw is not reliable
 	if (RDOSGFXratio > 2) RDOSGFXratio /= 2; //because render.src.dblh is not reliable
 
-	if (RDOSGFXwidth > SCALER_MAXWIDTH || RDOSGFXheight > SCALER_MAXHEIGHT) { DBP_ASSERT(false); return 0; }
-
 	//const char* VGAModeNames[] { "M_CGA2","M_CGA4","M_EGA","M_VGA","M_LIN4","M_LIN8","M_LIN15","M_LIN16","M_LIN32","M_TEXT","M_HERC_GFX","M_HERC_TEXT","M_CGA16","M_TANDY2","M_TANDY4","M_TANDY16","M_TANDY_TEXT","M_ERROR"};
 	//log_cb(RETRO_LOG_INFO, "[DOSBOX SIZE] Width: %u - Height: %u - Ratio: %f (%f) - DBLH: %d - DBLW: %d - BPP: %u - Mode: %s (%d)\n",
 	//	RDOSGFXwidth, RDOSGFXheight, RDOSGFXratio, render.src.ratio, render.src.dblh, render.src.dblw, render.src.bpp, VGAModeNames[vga.mode], vga.mode);
 
+	dbp_calculate_min_sleep();
 	return GFX_GetBestMode(0);
 }
 
@@ -674,22 +694,19 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	// When pausing the frontend we need to make sure CycleAutoAdjust is only re-activated after normal rendering has resumed
 	extern bool CPU_SkipCycleAutoAdjust;
-	static bool reset_skip_cycle_auto_adjust;
-	static Bit32u last_retro_activity = (Bit32u)-1, repeat_frames;
-	if (dbp_timing_tamper && dbp_retro_activity == last_retro_activity)
-	{
-		repeat_frames = 0;
-		CPU_SkipCycleAutoAdjust = reset_skip_cycle_auto_adjust = true;
-		if (last_retro_activity == dbp_retro_activity && dbp_state == DBPSTATE_RUNNING && !first_shell->exit)
-			dbp_wait_activity = last_retro_activity;
-	}
-	else
+	static Bit8u stall_frames, resume_frames;
+	static Bit32u last_retro_activity;
+	if (dbp_retro_activity != last_retro_activity)
 	{
 		last_retro_activity = dbp_retro_activity;
-		if (reset_skip_cycle_auto_adjust && repeat_frames++ > 3) 
-		{
-			CPU_SkipCycleAutoAdjust = reset_skip_cycle_auto_adjust = false;
-		}
+		if (stall_frames) stall_frames = 0;
+		if (resume_frames && resume_frames++ > 4) { CPU_SkipCycleAutoAdjust = false; resume_frames = 0; }
+	}
+	else if ((dbp_timing_tamper || stall_frames++ > 4) && dbp_state == DBPSTATE_RUNNING && !first_shell->exit)
+	{
+		stall_frames = resume_frames = 1;
+		CPU_SkipCycleAutoAdjust = true;
+		dbp_wait_activity = last_retro_activity;
 	}
 }
 
@@ -712,6 +729,13 @@ void GFX_Events()
 	for (;dbp_event_queue_read_cursor != dbp_event_queue_write_cursor; dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE))
 	{
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
+		#if 0
+		static const char* DBP_Event_Type_Names[] = { "SET_VARIABLE", "MOUNT", "EXT_MAX", "UNMOUNT", "SET_FASTFORWARD", "LOCKTHREAD", "SHUTDOWN", "INPUT_FIRST",
+			"JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "JOY_AXIS_MAX",
+			"MOUSEXY", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP",
+			"ONSCREENKEYBOARD", "AXIS_TO_KEY", "MAX" };
+		log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [@%6d] %s %08x%s\n", DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_input_intercept && e.type >= _DBPET_INPUT_FIRST ? " [INTERCEPTED]" : ""));
+		#endif
 		if (dbp_input_intercept && e.type >= _DBPET_INPUT_FIRST)
 		{
 			dbp_input_intercept(e);
@@ -720,7 +744,6 @@ void GFX_Events()
 		switch (e.type)
 		{
 			case DBPET_SET_VARIABLE:
-				bool MIDI_TSF_SwitchSF2(const char*);
 				if (!memcmp(e.ext->cmd.c_str(), "midiconfig=", 11) && MIDI_TSF_SwitchSF2(e.ext->cmd.c_str() + 11))
 				{
 					// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
@@ -1004,9 +1027,10 @@ static void DBP_PureMenuProgram(Program** make)
 				multidrive = true;
 			}
 			sel = (list.empty() ? 2 : old_sel);
-			if (initial_scan && have_autoboot)
+			if (!initial_scan) return;
+			char autostr[DOS_PATHLENGTH + 32] = {0,1};
+			if (have_autoboot)
 			{
-				char autostr[DOS_PATHLENGTH + 32];
 				Bit16u autostrlen = (Bit16u)(sizeof(autostr) - 1);
 				DOS_File *autobootfile = nullptr;
 				Drives['C'-'A']->FileOpen(&autobootfile, (char*)"AUTOBOOT.DBP", OPEN_READ);
@@ -1019,18 +1043,25 @@ static void DBP_PureMenuProgram(Program** make)
 				while (nameend > autostr && *nameend <= ' ') nameend--;
 				while (skip && *skip && *skip <= ' ') skip++;
 				if (nameend) nameend[1] = '\0';
-
+				if (skip) init_autoskip = autoskip = atoi(skip);
+			}
+			else if (strrchr(dbp_content_path.c_str(), '#'))
+			{
+				memcpy(autostr, "C:\\", 3);
+				safe_strncpy(autostr + 3, strrchr(dbp_content_path.c_str(), '#') + 1, DOS_PATHLENGTH + 16);
+			}
+			if (autostr[0])
+			{
 				for (std::string& name : list)
 				{
 					if (name != autostr) continue;
-					use_autoboot = true;
+					use_autoboot = have_autoboot = true;
 					init_autosel = sel = (int)(&name - &list[0]);
-					break;
+					return;
 				}
-
-				if (skip && use_autoboot) init_autoskip = autoskip = atoi(skip);
+				init_autoskip = autoskip = 0;
 			}
-			if (initial_scan && !use_autoboot) sel = fs_count;
+			sel = fs_count;
 		}
 
 		static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
@@ -1048,6 +1079,20 @@ static void DBP_PureMenuProgram(Program** make)
 			bool isFS = (!isEXE && m->sel == ('C'-'A') && (!strcasecmp(fext, ".iso") || !strcasecmp(fext, ".cue") || !strcasecmp(fext, ".ins") || !strcasecmp(fext, ".img") || !strcasecmp(fext, ".ima") || !strcasecmp(fext, ".vhd")));
 			if (!isEXE && !isFS) return;
 			if (isFS && !strncasecmp(fext + 1, "im", 2) && (size < 163840 || (size <= 2949120 && (size % 20480)))) return; //validate floppy images
+			if (isFS && !strcasecmp(fext, ".ins"))
+			{
+				// Make sure this is an actual CUE file with an INS extension
+				if (size >= 16384) return;
+				Bit8u cmd[6];
+				Bit16u cmdlen = (Bit16u)sizeof(cmd);
+				DOS_File *insfile = nullptr;
+				Drives['C'-'A']->FileOpen(&insfile, (char*)path, OPEN_READ);
+				insfile->AddRef();
+				insfile->Read(cmd, &cmdlen);
+				insfile->Close();
+				delete insfile;
+				if (cmdlen != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) return;
+			}
 			(isEXE ? m->exe_count : m->fs_count)++;
 
 			int insert_index;
@@ -1103,9 +1148,9 @@ static void DBP_PureMenuProgram(Program** make)
 			DrawText((int)CurMode->twidth - 1, 2, "\xBC", ATTR_HEADER);
 
 			// Footer
-			DrawText((int)CurMode->twidth - 39, (Bit16u)CurMode->theight-1, "\xB3 \x18\x19 Scroll \xB3 \x1A\x1B Set Auto Boot \xB3 \x7 Run", ATTR_HEADER);
-			DrawText((int)CurMode->twidth - 39, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
-			DrawText((int)CurMode->twidth - 27, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
+			DrawText((int)CurMode->twidth - 40, (Bit16u)CurMode->theight-1, "\xB3 \x18\x19 Scroll \xB3 \x1A\x1B Set Auto Start \xB3 \x7 Run", ATTR_HEADER);
+			DrawText((int)CurMode->twidth - 40, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
+			DrawText((int)CurMode->twidth - 28, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
 			DrawText((int)CurMode->twidth -  8, (Bit16u)CurMode->theight-2, "\xD1", ATTR_HEADER);
 
 			//// Test all font characters
@@ -1131,6 +1176,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 			if (count == 3) DrawText(mid - 12, starty - 1, "No executable file found", ATTR_HEADER);
 
+			bool autostart_info = false;
 			for (int i = scroll; i != count && i != (scroll + maxy); i++)
 			{
 				int y = starty + i - scroll;
@@ -1156,7 +1202,8 @@ static void DBP_PureMenuProgram(Program** make)
 					DrawText(mid - len / 2,       y, line + off, (i == sel ? ATTR_HIGHLIGHT : ATTR_NORMAL));
 					if (i != sel) continue;
 					DrawText(mid - len / 2 - 2,   y, "*", ATTR_WHITE);
-					DrawText(mid - len / 2 + len + 1, y, (use_autoboot ? "* [SET AUTO BOOT]" : "*"), ATTR_WHITE);
+					DrawText(mid - len / 2 + len + 1, y, (use_autoboot ? "* [SET AUTO START]" : "*"), ATTR_WHITE);
+					autostart_info = use_autoboot;
 				}
 			}
 			if (scroll)
@@ -1170,11 +1217,12 @@ static void DBP_PureMenuProgram(Program** make)
 				for (Bit16u x = 0; x != CurMode->twidth; x++) DrawText(x, y, (x >= from && x <= to ? "\x1F" : " "), ATTR_NORMAL);
 			}
 
-			for (Bit16u x = 0; x != 34; x++) DrawText(x, (Bit16u)CurMode->theight-1, " ", 0);
-			if (use_autoboot && autoskip)
+			for (Bit16u x = 0; x != 38; x++) DrawText(x, (Bit16u)CurMode->theight-1, " ", 0);
+			if (autostart_info)
 			{
-				char skiptext[32];
-				snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", autoskip);
+				char skiptext[38];
+				if (autoskip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", autoskip);
+				else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/R2 + Restart to come back");
 				DrawText((int)1, (Bit16u)CurMode->theight-1, skiptext, ATTR_HEADER);
 			}
 		}
@@ -1286,23 +1334,13 @@ static void DBP_PureMenuProgram(Program** make)
 				case DBPET_MOUSEDOWN:
 				case DBPET_JOY1DOWN:
 				case DBPET_JOY2DOWN:
-					if ((DBP_GetTicks() - dbp_lastmenuticks) > 500) menu->result = 1;
+					if ((DBP_GetTicks() - dbp_lastmenuticks) > 300) menu->result = 1;
 					break;
 			}
 		}
 
-		static Bit32u ButtonDownCount()
-		{
-			return (Bit32u)dbp_keys_down_count + (dbp_keys_down[KBD_LAST] ? 1 : 0);
-		}
-
 		bool IdleLoop(void(*input_intercept)(DBP_Event&), Bit32u tick_limit = 0)
 		{
-			for (Bit32u count = ButtonDownCount(); (dbp_event_queue_read_cursor != dbp_event_queue_write_cursor || (count && count == ButtonDownCount())) && !first_shell->exit;)
-			{
-				CALLBACK_Idle(); // wait until all keys are up and no events are queued
-				if (tick_limit && DBP_GetTicks() >= tick_limit) first_shell->exit = true;
-			}
 			DBP_KEYBOARD_ReleaseKeys(); // any unintercepted CALLBACK_* can set a key down
 			dbp_gfx_intercept = NULL;
 			dbp_input_intercept = input_intercept;
@@ -1332,38 +1370,24 @@ static void DBP_PureMenuProgram(Program** make)
 
 			if (on_finish && !always_show_menu && ((exe_count == 1 && fs_count <= 1) || use_autoboot))
 			{
-				if (ButtonDownCount())
-				{
-					// Wait for approximately 100ms to see if any button is still pressed, if so, force the menu to show
-					for (int i = 0; i != 100 && ButtonDownCount(); i++)
-					{
-						CALLBACK_Idle();
-						sleep_ms(1);
-						if (first_shell->exit) return;
-					}
-					if (ButtonDownCount()) always_show_menu = true;
-				}
-				if (!always_show_menu)
-				{
-					if (dbp_menu_time == 0) { first_shell->exit = true; return; }
-					char secs[] = { (char)('0' + dbp_menu_time), '\0' };
-					always_show_menu = true;
-					dbp_gfx_intercept = NULL;
-					dbp_input_intercept = NULL;
-					INT10_SetCursorShape(0, 0);
-					INT10_SetCursorPos((Bit8u)CurMode->twidth, (Bit8u)CurMode->theight, 0);
-					DrawText((Bit16u)(CurMode->twidth / 2 - 33), (Bit16u)(CurMode->theight - 2), "* GAME ENDED - EXITTING IN   SECONDS - PRESS ANY KEY TO CONTINUE *", ATTR_HIGHLIGHT);
-					DrawText((Bit16u)(CurMode->twidth / 2 - 33) + 27, (Bit16u)(CurMode->theight - 2), secs, ATTR_HIGHLIGHT);
-					if (!IdleLoop(CheckAnyPress, DBP_GetTicks() + (dbp_menu_time * 1000))) return;
-					result = 0;
-				}
+				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
+				char secs[] = { (char)('0' + dbp_menu_time), '\0' };
+				always_show_menu = true;
+				dbp_gfx_intercept = NULL;
+				dbp_input_intercept = NULL;
+				INT10_SetCursorShape(0, 0);
+				INT10_SetCursorPos((Bit8u)CurMode->twidth, (Bit8u)CurMode->theight, 0);
+				DrawText((Bit16u)(CurMode->twidth / 2 - 33), (Bit16u)(CurMode->theight - 2), "* GAME ENDED - EXITTING IN   SECONDS - PRESS ANY KEY TO CONTINUE *", ATTR_HIGHLIGHT);
+				DrawText((Bit16u)(CurMode->twidth / 2 - 33) + 27, (Bit16u)(CurMode->theight - 2), secs, ATTR_HIGHLIGHT);
+				if (!IdleLoop(CheckAnyPress, DBP_GetTicks() + (dbp_menu_time * 1000))) return;
+				result = 0;
 			}
 			if (on_finish)
 			{
 				// ran without auto start or only for a very short time (maybe crash), wait for user confirmation
 				INT10_SetCursorShape(0, 0);
 				INT10_SetCursorPos((Bit8u)CurMode->twidth, (Bit8u)CurMode->theight, 0);
-				DrawText((Bit16u)(CurMode->twidth / 2 - 32), (Bit16u)(CurMode->theight - 2), "           * PRESS ANY KEY TO RETURN TO START MENU *           ", ATTR_HIGHLIGHT);
+				DrawText((Bit16u)(CurMode->twidth / 2 - 33), (Bit16u)(CurMode->theight - 2), "            * PRESS ANY KEY TO RETURN TO START MENU *             ", ATTR_HIGHLIGHT);
 				if (!IdleLoop(CheckAnyPress)) return;
 				result = 0;
 			}
@@ -1704,8 +1728,8 @@ static void DBP_StartOnScreenKeyboard()
 						case KBD_enter: case KBD_kpenter: case KBD_space: goto case_ADDKEYUP;
 						case KBD_esc: goto case_CLOSEOSK;
 					}
-				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = (e.val/32768.f); break;
-				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = (e.val/32768.f); break;
+				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
+				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
 				case DBPET_MOUSESETSPEED: osk.mspeed = (e.val > 0 ? 4.f : 1.f); break;
 				case DBPET_MOUSERESETSPEED: osk.mspeed = 2.f; break;
 				case DBPET_ONSCREENKEYBOARD: case_CLOSEOSK:
@@ -1738,7 +1762,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.4";
+	info->library_version  = "0.7";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
@@ -1755,44 +1779,6 @@ void retro_set_environment(retro_environment_t cb) //#2
 
 	bool allow_no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &allow_no_game);
-
-	const char *system_dir = NULL;
-	struct retro_vfs_interface_info vfs = { 3, NULL };
-	if (cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
-	{
-		dbp_soundfonts.clear();
-		std::vector<std::string> subdirs;
-		subdirs.push_back(std::string());
-		while (subdirs.size())
-		{
-			std::string subdirstr;
-			std::swap(subdirstr, subdirs.back());
-			subdirs.pop_back();
-			const char *subdir = (subdirstr.length() ? subdirstr.c_str() : "");
-			char path[1024];
-			snprintf(path, sizeof(path), (*subdir ? "%s/%s" : "%s%s"), system_dir, subdir);
-			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path, false);
-			if (!dir) continue;
-			while (vfs.iface->readdir(dir))
-			{
-				const char* entry_name = vfs.iface->dirent_get_name(dir);
-				if (vfs.iface->dirent_is_dir(dir))
-				{
-					if (entry_name[0] == '.' && (!entry_name[1] || (entry_name[1] == '.' && !entry_name[2]))) continue;
-					snprintf(path, sizeof(path), (*subdir ? "%s/%s" : "%s%s"), subdir, entry_name);
-					subdirs.push_back(path);
-					continue;
-				}
-				size_t entry_len = strlen(entry_name);
-				if (!strcasecmp(entry_name + entry_len - 4, ".sf2"))
-				{
-					snprintf(path, sizeof(path), (*subdir ? "%s/%s" : "%s%s"), subdir, entry_name);
-					dbp_soundfonts.push_back(path);
-				}
-			}
-			vfs.iface->closedir(dir);
-		}
-	}
 }
 
 static void refresh_input_binds(unsigned refresh_min_port = 0)
@@ -1800,13 +1786,16 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 	if (refresh_min_port < 2)
 	{
 		dbp_input_binds.clear();
-		dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   NULL, DBPET_MOUSEDOWN, 0 });
-		dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  NULL, DBPET_MOUSEDOWN, 1 });
-		dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, NULL, DBPET_MOUSEDOWN, 2 });
-		if (dbp_bind_mousewheel)
+		if (dbp_mouse_input)
 		{
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET(-1, dbp_bind_mousewheel) });
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET( 1, dbp_bind_mousewheel) });
+			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   NULL, DBPET_MOUSEDOWN, 0 });
+			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  NULL, DBPET_MOUSEDOWN, 1 });
+			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, NULL, DBPET_MOUSEDOWN, 2 });
+			if (dbp_bind_mousewheel)
+			{
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET(-1, dbp_bind_mousewheel) });
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, NULL, DBPET_KEYDOWN, DBP_KEYAXIS_GET( 1, dbp_bind_mousewheel) });
+			}
 		}
 		refresh_min_port  = 0;
 	}
@@ -1823,7 +1812,6 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 		switch (dbp_port_devices[port])
 		{
 			case DBP_DEVICE_Disabled:
-			case DBP_DEVICE_BindCustomKeyboard:
 				continue;
 			case DBP_DEVICE_MouseLeftAnalog:
 				dbp_input_binds.push_back({ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Mouse Horizontal", DBPET_JOYMX } );
@@ -1991,6 +1979,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 3", DBPET_JOY2DOWN, 0 });
 				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 });
 				break;
+			case DBP_DEVICE_BindCustomKeyboard:
 			case DBP_DEVICE_BindGenericKeyboard:
 			default:
 				break;
@@ -2001,7 +1990,10 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "On Screen Keyboard", DBPET_ONSCREENKEYBOARD });
 		}
 
-		if (port == 0 && dbp_auto_mapping && dbp_port_devices[port] == DBP_DEVICE_Port1Default)
+		if (dbp_port_devices[port] == DBP_DEVICE_BindCustomKeyboard)
+			continue;
+
+		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_Port1Default)
 			continue;
 
 		if (!dbp_bind_unused && dbp_port_devices[port] != DBP_DEVICE_BindGenericKeyboard)
@@ -2099,7 +2091,7 @@ static void check_variables()
 
 			if (disallow_in_game && dbp_game_running)
 			{
-				retro_notify(RETRO_LOG_ERROR, "Unable to change value while game is running");
+				retro_notify(0, RETRO_LOG_ERROR, "Unable to change value while game is running");
 				return;
 			}
 
@@ -2135,21 +2127,24 @@ static void check_variables()
 	char buf[16];
 	bool show_advanced = (Variables::RetroGet("dosbox_pure_advanced", "false")[0] != 'f');
 
-	Variables::RetroVisibility("dosbox_pure_mouse_speed_factor_x", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_auto_mapping", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_joystick_timed", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_keyboard_layout", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_cpu_core", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_menu_time", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_sblaster_type", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_sblaster_adlib_mode", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_sblaster_adlib_emu", show_advanced);
-	Variables::RetroVisibility("dosbox_pure_gus", show_advanced);
+	static const char* advanced_options[] =
+	{
+		"dosbox_pure_mouse_speed_factor_x",
+		"dosbox_pure_mouse_input",
+		"dosbox_pure_auto_mapping",
+		"dosbox_pure_joystick_timed",
+		"dosbox_pure_keyboard_layout",
+		"dosbox_pure_cpu_core",
+		"dosbox_pure_menu_time",
+		"dosbox_pure_sblaster_type",
+		"dosbox_pure_sblaster_adlib_mode",
+		"dosbox_pure_sblaster_adlib_emu",
+		"dosbox_pure_gus",
+	};
+	for (const char* i : advanced_options) Variables::RetroVisibility(i, show_advanced);
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{
-		Variables::DosBoxSet("dosbox", "memsize", Variables::RetroGet("dosbox_pure_memory_size", "16"));
-
 		const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
 		if (!strcmp(machine, "svga"))
 			machine = Variables::RetroGet("dosbox_pure_svga", "svga_s3");
@@ -2169,6 +2164,12 @@ static void check_variables()
 		Variables::DosBoxSet("mixer", "prebuffer", "0");
 		Variables::DosBoxSet("mixer", "blocksize", "2048");
 	}
+
+	const char* mem = Variables::RetroGet("dosbox_pure_memory_size", "16");
+	bool mem_use_extended = (atoi(mem) > 0);
+	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
+	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
+	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "4"), true);
 
 	// handle setting strings like on/yes/true/savestate or rewind
 	const char* savestate = Variables::RetroGet("dosbox_pure_savestate", "false");
@@ -2231,17 +2232,17 @@ static void check_variables()
 		Variables::DosBoxSet("sblaster", sb_props[i], buf);
 	}
 
-	if (dbp_soundfonts.size())
+	std::string soundfontpath;
+	const char* midi = Variables::RetroGet("dosbox_pure_midi", "");
+	if (!*midi) midi = Variables::RetroGet("dosbox_pure_soundfont", ""); // old option name
+	if (!strcasecmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
+	else if (*midi && strcasecmp(midi, "frontend"))
 	{
 		const char *system_dir = NULL;
 		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir);
-		std::string soundfontpath;
-		const char* soundfont = Variables::RetroGet("dosbox_pure_soundfont", "none");
-		if (!memcmp(soundfont, "disabled", sizeof("disabled"))) soundfont = "";
-		else if (!memcmp(soundfont, "none", sizeof("none"))) soundfont = "";
-		else if (*soundfont) soundfont = (soundfontpath = std::string(system_dir) + '/' + soundfont).c_str();
-		Variables::DosBoxSet("midi", "midiconfig", soundfont);
+		midi = soundfontpath.assign(system_dir).append("/").append(midi).c_str();
 	}
+	Variables::DosBoxSet("midi", "midiconfig", midi);
 
 	Variables::DosBoxSet("sblaster", "sbtype", Variables::RetroGet("dosbox_pure_sblaster_type", "sb16"));
 	Variables::DosBoxSet("sblaster", "oplmode", Variables::RetroGet("dosbox_pure_sblaster_adlib_mode", "auto"));
@@ -2261,10 +2262,12 @@ static void check_variables()
 
 	bool bind_unused = (Variables::RetroGet("dosbox_pure_bind_unused", "true")[0] != 'f');
 	bool on_screen_keyboard = (Variables::RetroGet("dosbox_pure_on_screen_keyboard", "true")[0] != 'f');
-	if (bind_unused != dbp_bind_unused || on_screen_keyboard != dbp_on_screen_keyboard || dbp_bind_mousewheel != bind_mousewheel)
+	bool mouse_input = (Variables::RetroGet("dosbox_pure_mouse_input", "true")[0] != 'f');
+	if (bind_unused != dbp_bind_unused || on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 	{
 		dbp_bind_unused = bind_unused;
 		dbp_on_screen_keyboard = on_screen_keyboard;
+		dbp_mouse_input = mouse_input;
 		dbp_bind_mousewheel = bind_mousewheel;
 		if (dbp_state > DBPSTATE_SHUTDOWN) refresh_input_binds();
 	}
@@ -2359,7 +2362,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 					dbp_auto_mapping_names = (char*)buf + mappings_bk.mappings_action_offset;
 
 					if (dbp_auto_mapping_mode == 'n') //notify
-						retro_notify(RETRO_LOG_INFO, dbp_auto_mapping_title);
+						retro_notify(0, RETRO_LOG_INFO, dbp_auto_mapping_title);
 					return;
 				}
 			}
@@ -2392,6 +2395,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 	}
 	dbp_state = DBPSTATE_WAIT_FIRST_FRAME;
 	dbp_retro_activity = 1;
+	dbp_last_run = DBP_GetTicks();
 	dbp_menu_time = org_menu_time;
 	return true;
 }
@@ -2565,14 +2569,42 @@ void retro_init(void) //#3
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
 
+	static std::vector<std::string> sf2files;
+	const char *system_dir = NULL;
+	struct retro_vfs_interface_info vfs = { 3, NULL };
+	if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
+	{
+		std::string path, subdir;
+		std::vector<std::string> subdirs;
+		subdirs.push_back(std::string());
+		while (subdirs.size())
+		{
+			std::swap(subdir, subdirs.back());
+			subdirs.pop_back();
+			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
+			if (!dir) continue;
+			while (vfs.iface->readdir(dir))
+			{
+				const char* entry_name = vfs.iface->dirent_get_name(dir);
+				size_t entry_len = strlen(entry_name);
+				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
+					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				else if (entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
+					sf2files.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+			}
+			vfs.iface->closedir(dir);
+		}
+	}
+
 	#include "core_options.h"
 	for (retro_core_option_definition& def : option_defs)
 	{
-		if (!def.key || strcmp(def.key, "dosbox_pure_soundfont")) continue;
+		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
 		int i;
-		for (i = 0; i != RETRO_NUM_CORE_OPTION_VALUES_MAX-1 && i != dbp_soundfonts.size(); i++)
-			def.values[i] = { dbp_soundfonts[i].c_str(), dbp_soundfonts[i].c_str() };
-		def.values[i] = { "disabled", "Disabled" };
+		for (i = 0; i != RETRO_NUM_CORE_OPTION_VALUES_MAX-2 && i != sf2files.size(); i++)
+			def.values[i] = { sf2files[i].c_str(), sf2files[i].c_str() };
+		def.values[i  ] = { "disabled", "Disabled" };
+		def.values[i+1] = { "frontend", "Frontend MIDI driver" };
 		def.default_value = def.values[0].value;
 		break;
 	}
@@ -2588,7 +2620,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_format))
 	{
-		retro_notify(RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
+		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
 		return false;
 	}
 
@@ -2596,7 +2628,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	time_cb = (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) ? perf.get_time_usec : NULL);
 	if (!time_cb)
 	{
-		retro_notify(RETRO_LOG_ERROR, "Frontend does not supply proper PERF_INTERFACE.\n");
+		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not supply proper PERF_INTERFACE.\n");
 		return false;
 	}
 
@@ -2687,22 +2719,21 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 {
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
-	info->geometry.base_width = 320;
-	info->geometry.base_height = 200;
-	info->geometry.max_width = SCALER_MAXWIDTH;
-	info->geometry.max_height = SCALER_MAXHEIGHT;
-	info->geometry.aspect_ratio = 4.0f / 3.0f;
-	info->timing.fps = DBP_DEFAULT_FPS;
-	info->timing.sample_rate = DBP_MIXER_GetFrequency();
+	av_info.geometry.base_width = 320;
+	av_info.geometry.base_height = 200;
+	av_info.geometry.max_width = SCALER_MAXWIDTH;
+	av_info.geometry.max_height = SCALER_MAXHEIGHT;
+	av_info.geometry.aspect_ratio = 4.0f / 3.0f;
+	av_info.timing.fps = DBP_DEFAULT_FPS;
+	av_info.timing.sample_rate = DBP_MIXER_GetFrequency();
 	if (environ_cb)
 	{
 		float refresh_rate = (float)DBP_DEFAULT_FPS;
 		if (environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &refresh_rate))
-			info->timing.fps = refresh_rate;
-
-		//info->timing.fps *= 4; //Get updated as fast as possible, DOSbox drives FPS
+			av_info.timing.fps = refresh_rate;
 	}
-	av_info = *info;
+	dbp_calculate_min_sleep();
+	*info = av_info;
 }
 
 void retro_unload_game(void)
@@ -2774,6 +2805,27 @@ void retro_run(void)
 			return;
 		}
 
+		float refresh_rate = (float)av_info.timing.fps;
+		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &refresh_rate) && refresh_rate != (float)av_info.timing.fps)
+		{
+			av_info.timing.fps = refresh_rate;
+			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
+			dbp_calculate_min_sleep();
+		}
+
+		retro_variable var = { "dosbox_pure_midi", NULL };
+		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcasecmp(var.value, "frontend") && !MIDI_Retro_IsActiveHandler())
+		{
+			retro_midi_interface midi = {0};
+			if (environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, &midi) && midi.output_enabled && midi.output_enabled())
+			{
+				// Reset MIDI section to restart the midi_retro handler now that the frontend MIDI driver has fully started up
+				std::string str = "midiconfig"; str += '='; str += "frontend";
+				DBP_QueueEvent(DBPET_SET_VARIABLE, str, control->GetSection("midi"));
+			}
+			else retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
+		}
+
 		// first frame
 		DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
 		for (int n = 0; n++ != 5000 && dbp_state != DBPSTATE_WAIT_FIRST_RUN;) sleep_ms(1);
@@ -2787,14 +2839,6 @@ void retro_run(void)
 	bool new_fast_forward = false;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_FASTFORWARDING, &new_fast_forward) && new_fast_forward != dbp_fast_forward)
 		DBP_QueueEvent(DBPET_SET_FASTFORWARD, (int)(dbp_fast_forward = new_fast_forward));
-	if (new_fast_forward)
-	{
-		// keep frontend UI thread from running at 100% cpu
-		static uint32_t last_run;
-		uint32_t this_run = DBP_GetTicks(), min_sleep = 1 + (uint32_t)(700 / render.src.fps);
-		if (this_run - last_run < min_sleep) sleep_ms(min_sleep - (this_run - last_run));
-		last_run = this_run;
-	}
 
 	extern bool DBP_CPUOverload;
 	if (DBP_CPUOverload)
@@ -2805,7 +2849,7 @@ void retro_run(void)
 		else if (dbp_overload_count++ >= 200)
 		{
 			if ((DBP_GetTicks() - first_overload) < 10000)
-				retro_notify(RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
+				retro_notify(0, RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
 			dbp_overload_count = 0;
 		}
 	}
@@ -2849,11 +2893,35 @@ void retro_run(void)
 		if (toggled_intercept)
 			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
-		binds = intercept_binds;
-		binds_end = &intercept_binds[
-			(dbp_port_devices[0] == DBP_DEVICE_Disabled || dbp_port_devices[0] == DBP_DEVICE_BindCustomKeyboard) ? 
-				5 : // Only use mouse (and keyboard) if port 0 has been disabled or uses custom keyboard mapping
-				sizeof(intercept_binds)/sizeof(*intercept_binds)];
+		binds = intercept_binds + (dbp_mouse_input ? 0 : 5);
+		binds_end = &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)];
+
+		if (!dbp_gfx_intercept)
+		{
+			input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_SPACE); // this gets latest keyboard callbacks
+			for (Bit8u i = KBD_NONE + 1; dbp_keys_down_count && i != KBD_LAST; i++)
+			{
+				if (!(dbp_keys_down[i] & DBP_DOWN_BY_KEYBOARD)) continue;
+
+				static bool warned_game_focus;
+				if (!warned_game_focus && dbp_port_devices[0] != DBP_DEVICE_BindCustomKeyboard)
+				{
+					for (DBP_InputBind *b = intercept_binds + 5; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
+					{
+						int16_t val = input_state_cb(b->port, b->device, b->index, b->id);
+						if (val / (b->device == RETRO_DEVICE_ANALOG ? 12000 : 1) == 0) continue;
+						retro_notify(10000, RETRO_LOG_WARN,
+							"Detected keyboard and joypad being pressed at the same time.\n"
+							"To freely use the keyboard without hotkeys enable 'Game Focus' (Scroll Lock key by default) if available.");
+						warned_game_focus = true;
+						break;
+					}
+				}
+
+				// Only query mouse bindings while a key is down to avoid the keyboard additionally hitting joypad buttons in the start menu
+				binds_end = intercept_binds + 5;
+			}
+		}
 	}
 
 	// forward input state changes to thread
@@ -2889,7 +2957,7 @@ void retro_run(void)
 	}
 	int16_t mousex = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
 	int16_t mousey = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-	if (mousex || mousey)
+	if ((mousex || mousey) && dbp_mouse_input)
 	{
 		DBP_QueueEvent(DBPET_MOUSEXY, mousex, mousey);
 	}
@@ -2946,6 +3014,11 @@ void retro_run(void)
 		dbp_audiomutex.Unlock();
 		audio_batch_cb((int16_t*)audioData, mix_samples);
 	}
+
+	// keep frontend UI thread from running at 100% cpu
+	uint32_t this_run = DBP_GetTicks();
+	if (this_run - dbp_last_run < dbp_min_sleep) sleep_ms(dbp_min_sleep - (this_run - dbp_last_run));
+	dbp_last_run = this_run;
 }
 
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
@@ -2954,8 +3027,8 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 	if (dbp_serializemode == DBPSERIALIZE_STATES || ar.mode == DBPArchive::MODE_SIZE)
 	{
 		if (ar.mode == DBPArchive::MODE_MAXSIZE) return false; // measure max size for rewind buffers is ignored with DBPSERIALIZE_STATES
-		if (!dbp_game_running) { retro_notify(RETRO_LOG_WARN, "Unable to save/load state while start menu is open"); return false; }
-		if (dbp_state != DBPSTATE_RUNNING) { retro_notify(RETRO_LOG_WARN, "Unable to save/load state while DOS is not running"); return false; }
+		if (!dbp_game_running) { retro_notify(0, RETRO_LOG_WARN, "Unable to save/load state while start menu is open"); return false; }
+		if (dbp_state != DBPSTATE_RUNNING) { retro_notify(0, RETRO_LOG_WARN, "Unable to save/load state while DOS is not running"); return false; }
 	}
 	DBP_LockThread(true);
 	DBPSerialize_All(ar, (!dbp_game_running || (dbp_state != DBPSTATE_RUNNING)));
@@ -2967,33 +3040,33 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 		switch (ar.had_error)
 		{
 			case DBPArchive::ERR_LAYOUT:
-				retro_notify(RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
+				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
 				break;
 			case DBPArchive::ERR_VERSION:
-				retro_notify(RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
+				retro_notify(0, RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
 			case DBPArchive::ERR_INVALIDSTATE:
-				retro_notify(RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Save state was made during start menu or while system was crashed");
+				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Save state was made during start menu or while system was crashed");
 				break;
 			case DBPArchive::ERR_WRONGMACHINECONFIG:
-				retro_notify(RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
+				retro_notify(0, RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
 					(machine <= MCH_VGA ? machine_names[machine] : "UNKNOWN"), (ar.error_info <= MCH_VGA ? machine_names[ar.error_info] : "UNKNOWN"));
 				break;
 			case DBPArchive::ERR_WRONGMEMORYCONFIG:
-				retro_notify(RETRO_LOG_ERROR, "%sWrong memory size configuration (%d MB instead of %d MB)", "Load State Error: ",
+				retro_notify(0, RETRO_LOG_ERROR, "%sWrong memory size configuration (%d MB instead of %d MB)", "Load State Error: ",
 					(Bit8u)(MEM_TotalPages() / 256), ar.error_info);
 				break;
 			case DBPArchive::ERR_WRONGVGAMEMCONFIG:
-				retro_notify(RETRO_LOG_ERROR, "%sWrong SVGA mode configuration (%d KB VGA RAM instead of %D KB)", "Load State Error: ",
+				retro_notify(0, RETRO_LOG_ERROR, "%sWrong SVGA mode configuration (%d KB VGA RAM instead of %D KB)", "Load State Error: ",
 					(Bit8u)(vga.vmemsize / 1024), ar.error_info * 128);
 				break;
 		}
 	}
 	else if (ar.warnings && ar.mode == DBPArchive::MODE_LOAD)
 	{
-		if (ar.warnings & DBPArchive::WARN_WRONGDRIVES)  retro_notify(RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent file system state or wrong disks mounted");
-		if (ar.warnings & DBPArchive::WARN_WRONGDEVICES) retro_notify(RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent device handlers");
-		if (ar.warnings & DBPArchive::WARN_WRONGPROGRAM) retro_notify(RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Loaded into different program type, risk of system crash");
+		if (ar.warnings & DBPArchive::WARN_WRONGDRIVES)  retro_notify(0, RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent file system state or wrong disks mounted");
+		if (ar.warnings & DBPArchive::WARN_WRONGDEVICES) retro_notify(0, RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Inconsistent device handlers");
+		if (ar.warnings & DBPArchive::WARN_WRONGPROGRAM) retro_notify(0, RETRO_LOG_WARN, "%s%s", "Serialize Warning: ", "Loaded into different program type, risk of system crash");
 	}
 	return !ar.had_error;
 }

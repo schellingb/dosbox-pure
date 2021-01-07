@@ -107,6 +107,13 @@ static retro_core_option_definition option_defs[] =
 		"1.0"
 	},
 	{
+		"dosbox_pure_mouse_input",
+		"Input > Advanced > Use Mouse Input",
+		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work).",
+		{ { "true", "On (default)" }, { "false", "Off" } },
+		"true"
+	},
+	{
 		"dosbox_pure_auto_mapping",
 		"Input > Advanced > Automatic Game Pad Mappings",
 		"DOSBox Pure can automatically apply a gamepad control mapping scheme when it detects a game." "\n"
@@ -259,8 +266,9 @@ static retro_core_option_definition option_defs[] =
 	{
 		"dosbox_pure_memory_size",
 		"System > Memory Size (restart required)",
-		"The amount of (high) memory that the emulated machine has.",
+		"The amount of (high) memory that the emulated machine has. You can also disable extended memory (EMS/XMS).",
 		{
+			{ "none", "Disable extended memory (no EMS/XMS)" },
 			{ "4",  "4 MB" },
 			{ "8",  "8 MB" },
 			{ "16", "16 MB (default)" },
@@ -340,7 +348,7 @@ static retro_core_option_definition option_defs[] =
 			{ "16000", NULL },
 			{ "11025", NULL },
 			{  "8000", NULL },
-			//{ "49716", NULL }, //max for GUS
+			{ "49716", NULL }, //for perfect OPL emulation
 		},
 		DBP_DEFAULT_SAMPLERATE_STRING
 	},
@@ -364,12 +372,13 @@ static retro_core_option_definition option_defs[] =
 		"A220 I7 D1 H5"
 	},
 	{
-		"dosbox_pure_soundfont",
-		"Audio > MIDI SoundFont",
-		"Select the .SF2 SoundFont file used for MIDI output." "\n"
-		"To add SoundFonts, copy them into the 'system' directory of the frontend." "\n\n", //end of Audio section
+		"dosbox_pure_midi",
+		"Audio > MIDI Output",
+		"Select the .SF2 SoundFont file or interface used for MIDI output." "\n"
+		"To add SoundFonts, copy them into the 'system' directory of the frontend." "\n"
+		"To use the frontend MIDI driver, make sure it's set up correctly." "\n\n", //end of Audio section
 		{
-			{ "none", "<No SF2 file found>" },
+			// dynamically filled in retro_init
 		},
 		"none"
 	},

@@ -25,7 +25,7 @@ ISMAC      := $(wildcard /Applications)
 endif
 
 PIPETONULL := $(if $(ISWIN),>nul 2>nul,>/dev/null 2>/dev/null)
-PROCCPU    := $(shell $(if $(ISWIN),GenuineIntel Intel sse sse2,cat /proc/cpuinfo))
+PROCCPU    := $(if $(ISWIN),GenuineIntel Intel sse sse2,$(if $(ISMAC),Unknown,$(shell cat /proc/cpuinfo)))
 
 SOURCES := \
 	*.cpp       \
@@ -36,15 +36,15 @@ SOURCES := \
 ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
-  LDFLAGS :=  -Wl,--gc-sections
+  LDFLAGS := -Wl,--gc-sections -fno-ident
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= clang++
-  LDFLAGS :=  -Wl,-dead_strip
+  LDFLAGS := -Wl,-dead_strip
 else
   OUTNAME := dosbox_pure_libretro.so
   CXX     ?= g++
-  LDFLAGS :=  -Wl,--gc-sections
+  LDFLAGS := -Wl,--gc-sections -fno-ident
 endif
 
 ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
@@ -78,7 +78,7 @@ else
   BUILD    := RELEASE
   BUILDDIR := release
   CFLAGS   := -DNDEBUG -O2 -fno-ident
-  LDFLAGS  += -O2 -fno-ident
+  LDFLAGS  += -O2
 endif
 
 CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch

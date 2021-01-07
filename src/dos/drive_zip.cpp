@@ -1227,7 +1227,6 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 
 			if (!read_buf_avail)
 			{
-				DBP_ASSERT(comp_remaining);
 				read_buf_avail = (comp_remaining < READ_BLOCK ? comp_remaining : READ_BLOCK);
 				if (archive.Read(ofs, read_buf, read_buf_avail) != read_buf_avail)
 					break;

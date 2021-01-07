@@ -380,7 +380,10 @@ void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
 static void KEYBOARD_TickHandler(void) {
 	if (keyb.repeat.wait) {
 		keyb.repeat.wait--;
-		if (!keyb.repeat.wait) KEYBOARD_AddKey(keyb.repeat.key,true);
+		if (!keyb.repeat.wait) {
+			keyb.down[keyb.repeat.key>>3] &= (Bit8u)~(1<<(keyb.repeat.key&7));
+			KEYBOARD_AddKey(keyb.repeat.key,true);
+		}
 	}
 }
 

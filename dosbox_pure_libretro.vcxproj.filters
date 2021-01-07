@@ -590,6 +590,9 @@
     <ClInclude Include="src\fpu\fpu_instructions_x86.h">
       <Filter>src\fpu</Filter>
     </ClInclude>
+    <ClInclude Include="src\gui\midi_retro.h">
+      <Filter>src\gui</Filter>
+    </ClInclude>
     <ClInclude Include="src\gui\midi_tsf.h">
       <Filter>src\gui</Filter>
     </ClInclude>

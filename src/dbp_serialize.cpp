@@ -274,14 +274,14 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 	if (ar.mode == DBPArchive::MODE_SAVE)
 	{
 		magic = 0xD05B5747;
-		ar.version = 2;
+		ar.version = 3;
 		serialized_invalid_state = invalid_state;
 	}
 	ar << magic << ar.version << serialized_invalid_state;
 	if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
 	{
 		if (magic != 0xD05B5747) { ar.had_error = DBPArchive::ERR_LAYOUT; return; }
-		if (ar.version < 1 || ar.version > 2) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
+		if (ar.version < 1 || ar.version > 3) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
 		if (serialized_invalid_state || invalid_state) { ar.had_error = DBPArchive::ERR_INVALIDSTATE; return; }
 	}
 
@@ -334,6 +334,7 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_PIC         ); break; // must be before Keyboard
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_Keyboard    ); break; // must be after PIC
 			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Mouse,   >=2); break; // must be after PIC
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Drives,  >=3); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_Files       ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_GUS         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_MPU401      ); break;
