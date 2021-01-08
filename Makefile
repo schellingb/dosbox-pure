@@ -82,11 +82,12 @@ else
 endif
 
 CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
-CFLAGS  += -fvisibility=hidden -ffunction-sections -fdata-sections
+CFLAGS  += -fvisibility=hidden -ffunction-sections
 CFLAGS  += -pthread -D__LIBRETRO__ -Iinclude
+#CFLAGS  += -fdata-sections #saves around 32 bytes on most platforms but wrongfully adds up to 60MB on msys2
 
 LDFLAGS += $(CPUFLAGS) -lpthread -shared
-#LDFLAGS += -static-libstdc++ -static-libgcc #adds 1MB to output
+#LDFLAGS += -static-libstdc++ -static-libgcc #adds 1MB to output and still dynamically links against libc and libm
 
 .PHONY: all clean
 all: $(OUTNAME)
