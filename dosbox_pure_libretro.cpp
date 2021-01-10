@@ -129,17 +129,17 @@ struct DBP_InputBind
  };
 enum DBP_Port_Device
 {
-	DBP_DEVICE_Disabled                     = RETRO_DEVICE_NONE,
-	DBP_DEVICE_BindGenericKeyboard          = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,0),
-	DBP_DEVICE_MouseLeftAnalog              = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,1),
-	DBP_DEVICE_MouseRightAnalog             = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,2),
-	DBP_DEVICE_Port1Default                 = RETRO_DEVICE_JOYPAD,
-	DBP_DEVICE_Port1BasicJoystick           = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,4),
-	DBP_DEVICE_Port2BasicJoystick           = RETRO_DEVICE_JOYPAD,
-	DBP_DEVICE_Port1ThrustMasterFlightStick = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,5),
-	DBP_DEVICE_Port1BothDOSJoysticks        = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,6),
-	DBP_DEVICE_BindCustomKeyboard           = RETRO_DEVICE_KEYBOARD,
-	DBP_DEVICE_Port1ForceGravisGamepad      = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD,7),
+	DBP_DEVICE_Disabled                = RETRO_DEVICE_NONE,
+	DBP_DEVICE_DefaultJoypad           = RETRO_DEVICE_JOYPAD,
+	DBP_DEVICE_BindGenericKeyboard     = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 0),
+	DBP_DEVICE_MouseLeftAnalog         = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 1),
+	DBP_DEVICE_MouseRightAnalog        = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 2),
+	DBP_DEVICE_GravisGamepad           = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 3),
+	DBP_DEVICE_BasicJoystick1          = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 4),
+	DBP_DEVICE_BasicJoystick2          = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 5),
+	DBP_DEVICE_ThrustMasterFlightStick = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 6),
+	DBP_DEVICE_BothDOSJoysticks        = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 7),
+	DBP_DEVICE_BindCustomKeyboard      = RETRO_DEVICE_KEYBOARD,
 };
 enum { DBP_MAX_PORTS = 8 };
 static const char* DBP_KBDNAMES[] =
@@ -1806,36 +1806,102 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 		if (i < dbp_input_binds.size()) dbp_input_binds.erase(dbp_input_binds.begin() + i, dbp_input_binds.end());
 	}
 
+	static const DBP_InputBind BindsMouseLeftAnalog[] = {
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Mouse Horizontal", DBPET_JOYMX },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Mouse Vertical",   DBPET_JOYMY },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Left Mouse Button",   DBPET_MOUSEDOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Right Mouse Button",  DBPET_MOUSEDOWN, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Middle Mouse Button", DBPET_MOUSEDOWN, 2 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Speed Up Mouse",     DBPET_MOUSESETSPEED,  1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Slow Down Mouse",    DBPET_MOUSESETSPEED, -1 },
+		{ 0 }};
+	static const DBP_InputBind BindsMouseRightAnalog[] = {
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Mouse Horizontal", DBPET_JOYMX },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Mouse Vertical",   DBPET_JOYMY },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,  "Left Mouse Button",   DBPET_MOUSEDOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,  "Right Mouse Button",  DBPET_MOUSEDOWN, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,  "Middle Mouse Button", DBPET_MOUSEDOWN, 2 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Speed Up Mouse",      DBPET_MOUSESETSPEED,  1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Slow Down Mouse",     DBPET_MOUSESETSPEED, -1 },
+		{ 0 }};
+	static const DBP_InputBind BindsGravisGamepad[] = {
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOY1Y, -1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOY1Y,  1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOY1X, -1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOY1X,  1 },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Axis Horizontal", DBPET_JOY1X },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Axis Vertical",   DBPET_JOY1Y },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Red Button (1)",    DBPET_JOY1DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Blue Button (2)",   DBPET_JOY1DOWN, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Yellow Button (3)", DBPET_JOY2DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Green Button (4)",  DBPET_JOY2DOWN, 1 },
+		{ 0 }};
+	static const DBP_InputBind BindsBasicJoystick1[] = {
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOY1Y, -1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOY1Y,  1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOY1X, -1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOY1X,  1 },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick Horizontal", DBPET_JOY1X },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick Vertical",   DBPET_JOY1Y },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY1DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY1DOWN, 1 },
+		{ 0 }};
+	static const DBP_InputBind BindsBasicJoystick2[] = {
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOY2Y, -1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOY2Y,  1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOY2X, -1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOY2X,  1 },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick Horizontal", DBPET_JOY2X },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick Vertical",   DBPET_JOY2Y },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY2DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY2DOWN, 1 },
+		{ 0 }};
+	static const DBP_InputBind BindsThrustMasterFlightStick[] = {
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOYHATSETBIT, 8 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOYHATSETBIT, 2 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOYHATSETBIT, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOYHATSETBIT, 4 },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick Horizontal", DBPET_JOY1X },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick Vertical",   DBPET_JOY1Y },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Rudder",           DBPET_JOY2X },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY1DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY1DOWN, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 3", DBPET_JOY2DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 },
+		{ 0 }};
+	static const DBP_InputBind BindsBothDOSJoysticks[] = {
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOYHATSETBIT, 8 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOYHATSETBIT, 2 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOYHATSETBIT, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOYHATSETBIT, 4 },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick 1 Horizontal", DBPET_JOY1X },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick 1 Vertical",   DBPET_JOY1Y },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Stick 2 Horizontal", DBPET_JOY2X },
+		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Stick 2 Vertical",   DBPET_JOY2Y },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY1DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY1DOWN, 1 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 3", DBPET_JOY2DOWN, 0 },
+		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 },
+		{ 0 }};
+
 	for (uint8_t port = refresh_min_port; port != DBP_MAX_PORTS; port++)
 	{
+		const DBP_InputBind* binds = NULL;
 		size_t port_bind_begin = dbp_input_binds.size();
 		switch (dbp_port_devices[port])
 		{
 			case DBP_DEVICE_Disabled:
 				continue;
 			case DBP_DEVICE_MouseLeftAnalog:
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Mouse Horizontal", DBPET_JOYMX } );
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Mouse Vertical",   DBPET_JOYMY } );
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Left Mouse Button",   DBPET_MOUSEDOWN, 0 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Right Mouse Button",  DBPET_MOUSEDOWN, 1 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Middle Mouse Button", DBPET_MOUSEDOWN, 2 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Speed Up Mouse",     DBPET_MOUSESETSPEED,  1 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Slow Down Mouse",    DBPET_MOUSESETSPEED, -1 });
+				binds = BindsMouseLeftAnalog;
 				break;
 			case DBP_DEVICE_MouseRightAnalog:
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Mouse Horizontal", DBPET_JOYMX } );
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Mouse Vertical",   DBPET_JOYMY } );
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,  "Left Mouse Button",   DBPET_MOUSEDOWN, 0 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,  "Right Mouse Button",  DBPET_MOUSEDOWN, 1 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,  "Middle Mouse Button", DBPET_MOUSEDOWN, 2 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, "Speed Up Mouse",      DBPET_MOUSESETSPEED,  1 });
-				dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, "Slow Down Mouse",     DBPET_MOUSESETSPEED, -1 });
+				binds = BindsMouseRightAnalog;
 				break;
-			case DBP_DEVICE_Port1ForceGravisGamepad:
-			case DBP_DEVICE_Port1Default: //case DBP_DEVICE_Port2BasicJoystick: //same
+			case DBP_DEVICE_DefaultJoypad:
 				if (port == 0)
 				{
-					if (dbp_auto_mapping && dbp_port_devices[port] != DBP_DEVICE_Port1ForceGravisGamepad)
+					if (dbp_auto_mapping)
 					{
 						const Bit8u count = *dbp_auto_mapping, *p = dbp_auto_mapping + 1;
 						static std::vector<std::string> name_buffers;
@@ -1913,76 +1979,38 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 						}
 					}
 					else
-					{
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOY1Y,   -1 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOY1Y,    1 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOY1X,   -1 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOY1X,    1 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Axis Horizontal", DBPET_JOY1X });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Axis Vertical",   DBPET_JOY1Y });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Red Button (1)",    DBPET_JOY1DOWN, 0 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Blue Button (2)",   DBPET_JOY1DOWN, 1 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Yellow Button (3)", DBPET_JOY2DOWN, 0 });
-						dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Green Button (4)",  DBPET_JOY2DOWN, 1 });
-					}
+						binds = BindsGravisGamepad;
 				}
-				else if (port == 1) //DBP_DEVICE_Port2BasicJoystick
-				{
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOY2Y,   -1 });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOY2Y,    1 });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOY2X,   -1 });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOY2X,    1 });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick Horizontal", DBPET_JOY2X });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick Vertical",   DBPET_JOY2Y });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY2DOWN, 0 });
-					dbp_input_binds.push_back({ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY2DOWN, 1 });
-				}
-				else continue;
+				else if (port == 1)
+					binds = BindsBasicJoystick2;
+				else
+					continue;
 				break;
-			case DBP_DEVICE_Port1BasicJoystick:
-				if (port != 0) continue;
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOY1Y,   -1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOY1Y,    1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOY1X,   -1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOY1X,    1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick Horizontal", DBPET_JOY1X });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick Vertical",   DBPET_JOY1Y });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY1DOWN, 0 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY1DOWN, 1 });
+			case DBP_DEVICE_GravisGamepad:
+				binds = BindsGravisGamepad;
 				break;
-			case DBP_DEVICE_Port1ThrustMasterFlightStick:
-				if (port != 0) continue;
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOYHATSETBIT, 8 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOYHATSETBIT, 2 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOYHATSETBIT, 1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOYHATSETBIT, 4 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick Horizontal", DBPET_JOY1X });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick Vertical",   DBPET_JOY1Y });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Rudder",           DBPET_JOY2X });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY1DOWN, 0 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY1DOWN, 1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 3", DBPET_JOY2DOWN, 0 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 });
+			case DBP_DEVICE_BasicJoystick1:
+				binds = BindsBasicJoystick1;
 				break;
-			case DBP_DEVICE_Port1BothDOSJoysticks:
-				if (port != 0) continue;
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOYHATSETBIT, 8 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOYHATSETBIT, 2 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOYHATSETBIT, 1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOYHATSETBIT, 4 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick 1 Horizontal", DBPET_JOY1X });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick 1 Vertical",   DBPET_JOY1Y });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Stick 2 Horizontal", DBPET_JOY2X });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, "Stick 2 Vertical",   DBPET_JOY2Y });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, "Button 1", DBPET_JOY1DOWN, 0 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, "Button 2", DBPET_JOY1DOWN, 1 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, "Button 3", DBPET_JOY2DOWN, 0 });
-				dbp_input_binds.push_back({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 });
+			case DBP_DEVICE_BasicJoystick2:
+				binds = BindsBasicJoystick2;
+				break;
+			case DBP_DEVICE_ThrustMasterFlightStick:
+				binds = BindsThrustMasterFlightStick;
+				break;
+			case DBP_DEVICE_BothDOSJoysticks:
+				binds = BindsBothDOSJoysticks;
 				break;
 			case DBP_DEVICE_BindCustomKeyboard:
 			case DBP_DEVICE_BindGenericKeyboard:
 			default:
 				break;
+		}
+
+		for (; binds && binds->port; binds++)
+		{
+			dbp_input_binds.push_back(*binds);
+			dbp_input_binds.back().port = port;
 		}
 
 		if (dbp_on_screen_keyboard && port == 0)
@@ -1993,7 +2021,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 		if (dbp_port_devices[port] == DBP_DEVICE_BindCustomKeyboard)
 			continue;
 
-		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_Port1Default)
+		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_DefaultJoypad)
 			continue;
 
 		if (!dbp_bind_unused && dbp_port_devices[port] != DBP_DEVICE_BindGenericKeyboard)
@@ -2611,8 +2639,8 @@ void retro_init(void) //#3
 	environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, (void*)&option_defs);
 
 	// Set default ports
-	dbp_port_devices[0] = (DBP_Port_Device)RETRO_DEVICE_JOYPAD;
-	dbp_port_devices[1] = (DBP_Port_Device)RETRO_DEVICE_JOYPAD;
+	dbp_port_devices[0] = (DBP_Port_Device)DBP_DEVICE_DefaultJoypad;
+	dbp_port_devices[1] = (DBP_Port_Device)DBP_DEVICE_DefaultJoypad;
 }
 
 bool retro_load_game(const struct retro_game_info *info) //#4
@@ -2687,24 +2715,21 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	controller_descriptions.clear();
 	for (port = 0; port != 3; port++)
 	{
+		const DBP_Port_Device gravis_device = (port != 0 || dbp_auto_mapping ? DBP_DEVICE_GravisGamepad : DBP_DEVICE_DefaultJoypad);
+		const DBP_Port_Device secondjoystick_device = (port != 1 ? DBP_DEVICE_BasicJoystick2 : DBP_DEVICE_DefaultJoypad);
 		port_first_cd[port] = (unsigned)controller_descriptions.size();
-		controller_descriptions.push_back(    { "Disabled",                                             DBP_DEVICE_Disabled                     });
+		controller_descriptions.push_back({ "Disabled",                                             DBP_DEVICE_Disabled                });
 		if (port == 0 && dbp_auto_mapping)
-			controller_descriptions.push_back({ dbp_auto_mapping_title,                                 DBP_DEVICE_Port1Default                 });
-		controller_descriptions.push_back(    { "Generic Keyboard Bindings",                            DBP_DEVICE_BindGenericKeyboard          });
-		controller_descriptions.push_back(    { "Mouse with Left Analog Stick",                         DBP_DEVICE_MouseLeftAnalog              });
-		controller_descriptions.push_back(    { "Mouse with Right Analog Stick",                        DBP_DEVICE_MouseRightAnalog             });
-		if (port == 0)
-		{
-			const DBP_Port_Device gravis_device = (dbp_auto_mapping ? DBP_DEVICE_Port1ForceGravisGamepad : DBP_DEVICE_Port1Default);
-			controller_descriptions.push_back({ "Gravis GamePad (1 D-Pad, 4 Buttons)",                  gravis_device                           });
-			controller_descriptions.push_back({ "Basic joystick (2 Axes, 2 Buttons)",                   DBP_DEVICE_Port1BasicJoystick           });
-			controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", DBP_DEVICE_Port1ThrustMasterFlightStick });
-			controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       DBP_DEVICE_Port1BothDOSJoysticks        });
-		}
-		if (port == 1)
-			controller_descriptions.push_back({ "Basic joystick (2 Axes, 2 Buttons)",                   DBP_DEVICE_Port2BasicJoystick           });
-		controller_descriptions.push_back(    { "Custom Keyboard Bindings",                             DBP_DEVICE_BindCustomKeyboard           });
+			controller_descriptions.push_back({ dbp_auto_mapping_title,                             DBP_DEVICE_DefaultJoypad           });
+		controller_descriptions.push_back({ "Generic Keyboard Bindings",                            DBP_DEVICE_BindGenericKeyboard     });
+		controller_descriptions.push_back({ "Mouse with Left Analog Stick",                         DBP_DEVICE_MouseLeftAnalog         });
+		controller_descriptions.push_back({ "Mouse with Right Analog Stick",                        DBP_DEVICE_MouseRightAnalog        });
+		controller_descriptions.push_back({ "Gravis GamePad (1 D-Pad, 4 Buttons)",                  gravis_device                      });
+		controller_descriptions.push_back({ "First DOS joystick (2 Axes, 2 Buttons)",               DBP_DEVICE_BasicJoystick1          });
+		controller_descriptions.push_back({ "Second DOS joystick (2 Axes, 2 Buttons)",              secondjoystick_device              });
+		controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", DBP_DEVICE_ThrustMasterFlightStick });
+		controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       DBP_DEVICE_BothDOSJoysticks        });
+		controller_descriptions.push_back({ "Custom Keyboard Bindings",                             DBP_DEVICE_BindCustomKeyboard      });
 		ports[port].num_types = (unsigned)controller_descriptions.size() - port_first_cd[port];
 	}
 	for (port = 0; port != 3; port++) ports[port].types = &controller_descriptions[port_first_cd[port]];
