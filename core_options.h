@@ -374,8 +374,8 @@ static retro_core_option_definition option_defs[] =
 	{
 		"dosbox_pure_midi",
 		"Audio > MIDI Output",
-		"Select the .SF2 SoundFont file or interface used for MIDI output." "\n"
-		"To add SoundFonts, copy them into the 'system' directory of the frontend." "\n"
+		"Select the .SF2 SoundFont file, .ROM file or interface used for MIDI output." "\n"
+		"To add SoundFonts or ROM files, copy them into the 'system' directory of the frontend." "\n"
 		"To use the frontend MIDI driver, make sure it's set up correctly." "\n\n", //end of Audio section
 		{
 			// dynamically filled in retro_init

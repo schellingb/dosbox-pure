@@ -25,28 +25,28 @@ static void MIDI_TSF_CallBack(Bitu len);
 
 struct MidiHandler_tsf : public MidiHandler
 {
-	MidiHandler_tsf() : MidiHandler(), chan(NULL), mo(NULL), f(NULL), sf(NULL), buf(NULL) {}
+	MidiHandler_tsf() : MidiHandler(), chan(NULL), mo(NULL), f(NULL), sf(NULL) {}
 	MixerChannel* chan;
 	MixerObject*  mo;
 	FILE*         f;
 	tsf*          sf;
-	Bit16s*       buf;
 
 	const char * GetName(void) { return "tsf"; };
 
 	bool Open(const char * conf)
 	{
 		if (!conf || !*conf) return false;
+		size_t conf_len = strlen(conf);
+		if (conf_len <= 4 || strcasecmp(conf + conf_len - 4, ".sf2")) return false;
 
+		DBP_ASSERT(!f);
 		f = fopen_wrap(conf, "rb");
 		if (!f) return false;
 
-		if (!chan)
-		{
-			mo = new MixerObject;
-			extern Bit32u DBP_MIXER_GetFrequency();
-			chan = mo->Install(&MIDI_TSF_CallBack, DBP_MIXER_GetFrequency(), "TSF");
-		}
+		DBP_ASSERT(!chan);
+		mo = new MixerObject;
+		extern Bit32u DBP_MIXER_GetFrequency();
+		chan = mo->Install(&MIDI_TSF_CallBack, DBP_MIXER_GetFrequency(), "TSF");
 
 		return true;
 	};
@@ -57,7 +57,6 @@ struct MidiHandler_tsf : public MidiHandler
 		if (sf)     { tsf_close(sf);       sf     = NULL; }
 		if (chan)   { chan->Enable(false); chan   = NULL; }
 		if (mo)     { delete mo;           mo     = NULL; } // also deletes chan!
-		if (buf)    { delete[] buf;        buf    = NULL; }
 	};
 
 	bool LoadFont()
@@ -73,7 +72,6 @@ struct MidiHandler_tsf : public MidiHandler
 		extern Bit32u DBP_MIXER_GetFrequency();
 		tsf_set_output(sf, TSF_STEREO_INTERLEAVED, (int)DBP_MIXER_GetFrequency(), 0.0);
 		chan->Enable(true);
-		buf = new Bit16s[1024*2];
 		return true;
 	}
 
@@ -120,10 +118,10 @@ static MidiHandler_tsf Midi_tsf;
 
 static void MIDI_TSF_CallBack(Bitu len)
 {
-	DBP_ASSERT(len <= 1024);
-	if (len > 1024) len = 1024;
-	tsf_render_short(Midi_tsf.sf, Midi_tsf.buf, (int)len, 0);
-	Midi_tsf.chan->AddSamples_s16(len, Midi_tsf.buf);
+	DBP_ASSERT(len <= (MIXER_BUFSIZE/4));
+	if (len > (MIXER_BUFSIZE/4)) len = (MIXER_BUFSIZE/4);
+	tsf_render_short(Midi_tsf.sf, (Bit16s*)MixTemp, (int)len, 0);
+	Midi_tsf.chan->AddSamples_s16(len, (Bit16s*)MixTemp);
 }
 
 bool MIDI_TSF_SwitchSF2(const char* path)
