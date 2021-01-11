@@ -604,6 +604,7 @@
     <ClInclude Include="src\dos\wnaspi32.h" />
     <ClInclude Include="src\fpu\fpu_instructions.h" />
     <ClInclude Include="src\fpu\fpu_instructions_x86.h" />
+    <ClInclude Include="src\gui\midi_mt32.h" />
     <ClInclude Include="src\gui\midi_retro.h" />
     <ClInclude Include="src\gui\midi_tsf.h" />
     <ClInclude Include="src\gui\render_glsl.h" />

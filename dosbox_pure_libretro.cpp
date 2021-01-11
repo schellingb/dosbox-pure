@@ -2597,7 +2597,7 @@ void retro_init(void) //#3
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
 
-	static std::vector<std::string> sf2files;
+	static std::vector<std::string> synthfiles;
 	const char *system_dir = NULL;
 	struct retro_vfs_interface_info vfs = { 3, NULL };
 	if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
@@ -2617,8 +2617,13 @@ void retro_init(void) //#3
 				size_t entry_len = strlen(entry_name);
 				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
 					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-				else if (entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
-					sf2files.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				else if ((entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
+						|| (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
+				{
+					synthfiles.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+					synthfiles.push_back(entry_name[entry_len-1] == '2' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+					synthfiles.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] == '2' ? 4 : 12));
+				}
 			}
 			vfs.iface->closedir(dir);
 		}
@@ -2628,9 +2633,13 @@ void retro_init(void) //#3
 	for (retro_core_option_definition& def : option_defs)
 	{
 		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
-		int i;
-		for (i = 0; i != RETRO_NUM_CORE_OPTION_VALUES_MAX-2 && i != sf2files.size(); i++)
-			def.values[i] = { sf2files[i].c_str(), sf2files[i].c_str() };
+		size_t i = 0, numfiles = (synthfiles.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 : synthfiles.size());
+		for (size_t f = 0; f != numfiles; f += 2)
+			if (synthfiles[f].back() == '2')
+				def.values[i++] = { synthfiles[f].c_str(), synthfiles[f+1].c_str() };
+		for (size_t f = 0; f != numfiles; f += 2)
+			if (synthfiles[f].back() != '2')
+				def.values[i++] = { synthfiles[f].c_str(), synthfiles[f+1].c_str() };
 		def.values[i  ] = { "disabled", "Disabled" };
 		def.values[i+1] = { "frontend", "Frontend MIDI driver" };
 		def.default_value = def.values[0].value;

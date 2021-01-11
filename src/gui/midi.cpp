@@ -73,6 +73,10 @@ MidiHandler::MidiHandler(){
 #include "midi_tsf.h"
 #endif
 
+#ifdef C_DBP_SUPPORT_MIDI_TSF
+#include "midi_mt32.h"
+#endif
+
 #ifdef C_DBP_SUPPORT_MIDI_RETRO
 #include "midi_retro.h"
 #endif
