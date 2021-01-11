@@ -27,15 +27,13 @@ struct MidiHandler_retro : public MidiHandler
 
 	bool Open(const char * conf)
 	{
+		midi_interface.write = NULL;
 		if (conf && !strcasecmp(conf, "frontend"))
 		{
-			midi_interface.output_enabled = NULL;
-			extern void DBP_GetRetroMidiInterface(retro_midi_interface* res);
-			DBP_GetRetroMidiInterface(&midi_interface);
-			if (midi_interface.output_enabled && midi_interface.output_enabled())
+			extern bool DBP_GetRetroMidiInterface(retro_midi_interface* res);
+			if (DBP_GetRetroMidiInterface(&midi_interface) && midi_interface.write)
 				return true;
 		}
-		midi_interface.write = NULL;
 		return false;
 	};
 
@@ -49,7 +47,7 @@ struct MidiHandler_retro : public MidiHandler
 			for (Bit8u b : resetchan) midi_interface.write(b, 0);
 		}
 		midi_interface.write(0xFF, 0); // system reset
-		midi_interface.flush();
+		if (midi_interface.flush) midi_interface.flush();
 		midi_interface.write = NULL;
 	};
 
@@ -60,20 +58,20 @@ struct MidiHandler_retro : public MidiHandler
 		static const Bit8u ctrl_lengths[] = {  0, 2, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 		Bit8u b = *msg, len = (b < 0x80 ? 0 :  (b >= 0xF0 ? ctrl_lengths[b-0xF0] : msg_lengths[(b>>4)&7]));
 		while (len--) midi_interface.write(*(msg++), 0);
-		midi_interface.flush();
+		if (midi_interface.flush) midi_interface.flush();
 	};
 
 	void PlaySysex(Bit8u * sysex,Bitu len)
 	{
 		if (!midi_interface.write) return;
 		while (len--) midi_interface.write(*(sysex++), 0);
-		midi_interface.flush();
+		if (midi_interface.flush) midi_interface.flush();
 	}
 };
 
 static MidiHandler_retro Midi_retro;
 
-bool MIDI_Retro_IsActiveHandler()
+bool MIDI_Retro_HasOutputIssue()
 {
-	return (midi.handler == &Midi_retro);
+	return (midi.handler == &Midi_retro && (!Midi_retro.midi_interface.output_enabled || !Midi_retro.midi_interface.output_enabled()));
 }

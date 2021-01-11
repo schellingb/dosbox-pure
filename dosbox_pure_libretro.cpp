@@ -346,7 +346,7 @@ bool MSCDEX_HasDrive(char driveLetter);
 int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
 int MSCDEX_RemoveDrive(char driveLetter);
 bool MIDI_TSF_SwitchSF2(const char*);
-bool MIDI_Retro_IsActiveHandler();
+bool MIDI_Retro_HasOutputIssue();
 
 void DBP_Crash(const char* msg)
 {
@@ -626,9 +626,9 @@ bool DBP_IsShuttingDown()
 	return (!first_shell || first_shell->exit);
 }
 
-void DBP_GetRetroMidiInterface(retro_midi_interface* res)
+bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
 {
-	if(environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res);
+	return (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res));
 }
 
 Bitu GFX_GetBestMode(Bitu flags)
@@ -2847,18 +2847,8 @@ void retro_run(void)
 			dbp_calculate_min_sleep();
 		}
 
-		retro_variable var = { "dosbox_pure_midi", NULL };
-		if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value && !strcasecmp(var.value, "frontend") && !MIDI_Retro_IsActiveHandler())
-		{
-			retro_midi_interface midi = {0};
-			if (environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, &midi) && midi.output_enabled && midi.output_enabled())
-			{
-				// Reset MIDI section to restart the midi_retro handler now that the frontend MIDI driver has fully started up
-				std::string str = "midiconfig"; str += '='; str += "frontend";
-				DBP_QueueEvent(DBPET_SET_VARIABLE, str, control->GetSection("midi"));
-			}
-			else retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
-		}
+		if (MIDI_Retro_HasOutputIssue())
+			retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
 
 		// first frame
 		DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
