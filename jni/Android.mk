@@ -16,20 +16,15 @@
 #  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 
-ISWIN      := $(findstring :,$(firstword $(subst \, ,$(subst /, ,$(abspath .)))))
-ISMAC      := $(wildcard /Applications)
-PIPETONULL := $(if $(ISWIN),>nul 2>nul,>/dev/null 2>/dev/null)
-PROCCPU    := $(shell $(if $(ISWIN),GenuineIntel Intel sse sse2,cat /proc/cpuinfo))
-
 LOCAL_PATH := $(call my-dir)
 CORE_DIR   := $(LOCAL_PATH)/..
 
-#SOURCES := \
-#	$(CORE_DIR)/*.cpp       \
-#	$(CORE_DIR)/src/*.cpp   \
-#	$(CORE_DIR)/src/*/*.cpp \
-#	$(CORE_DIR)/src/*/*/*.cpp
-include $(LOCAL_PATH)/Sources.mk
+SOURCES := \
+	$(CORE_DIR)/*.cpp       \
+	$(CORE_DIR)/src/*.cpp   \
+	$(CORE_DIR)/src/*/*.cpp \
+	$(CORE_DIR)/src/*/*/*.cpp
+SOURCES := $(wildcard $(SOURCES))
 
   LDFLAGS :=  -Wl,-dead_strip
 
@@ -53,7 +48,7 @@ else
   BUILD    := RELEASE
   BUILDDIR := release
   CFLAGS   := -DNDEBUG -O2 -fno-ident
-  LDFLAGS  += -O2 -fno-ident
+  LDFLAGS  += -O2
 endif
 
 CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
@@ -61,8 +56,6 @@ CFLAGS  += -fvisibility=hidden -ffunction-sections -fdata-sections
 CFLAGS  += -pthread -D__LIBRETRO__ -Iinclude
 
 LDFLAGS += $(CPUFLAGS) -shared
-#LDFLAGS += $(CPUFLAGS) -lpthread -shared
-#LDFLAGS += -static-libstdc++ -static-libgcc #adds 1MB to output
 
 WITH_DYNAREC :=
 ifeq ($(TARGET_ARCH_ABI), armeabi)
@@ -86,10 +79,10 @@ LOCAL_MODULE       := retro
 LOCAL_SRC_FILES    := $(SOURCES)
 LOCAL_C_INCLUDES   := $(CORE_DIR)/include
 LOCAL_CFLAGS       := $(CFLAGS)
-LOCAL_CPPFLAGS     := $(CLAGS)
+LOCAL_CPPFLAGS     := $(CFLAGS)
 LOCAL_LDFLAGS      := $(LDFLAGS) #-Wl,-version-script=$(CORE_DIR)/libretro/link.T
 LOCAL_LDLIBS       := -llog
-LOCAL_CPP_FEATURES := rtti exceptions
+LOCAL_CPP_FEATURES := rtti
 LOCAL_DISABLE_FATAL_LINKER_WARNINGS := true
 LOCAL_ARM_MODE     := arm
 include $(BUILD_SHARED_LIBRARY)

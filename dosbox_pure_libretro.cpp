@@ -1363,7 +1363,7 @@ static void DBP_PureMenuProgram(Program** make)
 		virtual void Run()
 		{
 			bool on_boot = cmd->FindExist("-BOOT"), on_finish = cmd->FindExist("-FINISH");
-			bool always_show_menu = (dbp_menu_time == -1 || (on_finish && (DBP_GetTicks() - dbp_lastmenuticks) < 500));
+			bool always_show_menu = (dbp_menu_time == (char)-1 || (on_finish && (DBP_GetTicks() - dbp_lastmenuticks) < 500));
 			dbp_lastmenuticks = DBP_GetTicks();
 
 			RefreshFileList(true);
@@ -2411,7 +2411,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
-	if (force_start_menu) dbp_menu_time = -1;
+	if (force_start_menu) dbp_menu_time = (char)-1;
 
 	// Start DOSBox and wait until the shell has fully started
 	dbp_lastmenuticks = (Bit32u)-1;
