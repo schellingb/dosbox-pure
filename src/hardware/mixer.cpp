@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2002-2020  The DOSBox Team
+ *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@
 #define FREQ_NEXT ( 1 << FREQ_SHIFT)
 #define FREQ_MASK ( FREQ_NEXT -1 )
 
-#define TICK_SHIFT 14
+#define TICK_SHIFT 24
 #define TICK_NEXT ( 1 << TICK_SHIFT)
 #define TICK_MASK (TICK_NEXT -1)
 
@@ -240,7 +240,7 @@ void MixerChannel::AddSilence(void) {
 template<class Type,bool stereo,bool signeddata,bool nativeorder>
 inline void MixerChannel::AddSamples(Bitu len, const Type* data) {
 	last_samples_were_stereo = stereo;
-	
+
 	//Position where to write the data
 	Bitu mixpos = mixer.pos + done;
 	//Position in the incoming data
@@ -558,7 +558,7 @@ static void SDLCALL
 #else
 void
 #endif
-MIXER_CallBack(void * userdata, Bit8u *stream, int len) {
+MIXER_CallBack(void * /*userdata*/, Uint8 *stream, int len) {
 	Bitu need=(Bitu)len/MIXER_SSIZE;
 	Bit16s * output=(Bit16s *)stream;
 	Bitu reduce;
@@ -665,7 +665,7 @@ MIXER_CallBack(void * userdata, Bit8u *stream, int len) {
 	}
 }
 
-static void MIXER_Stop(Section* sec) {
+static void MIXER_Stop(Section* /*sec*/) {
 }
 
 class MIXER : public Program {
@@ -797,7 +797,7 @@ void MIXER_Init(Section* sec) {
 #endif
 	} else {
 #ifdef C_DBP_USE_SDL
-		if((mixer.freq != obtained.freq) || (mixer.blocksize != obtained.samples))
+		if ((mixer.freq != static_cast<Bit32u>(obtained.freq)) || (mixer.blocksize != obtained.samples))
 			LOG_MSG("MIXER: Got different values from SDL: freq %d, blocksize %d",obtained.freq,obtained.samples);
 		mixer.freq=obtained.freq;
 		mixer.blocksize=obtained.samples;
@@ -806,11 +806,14 @@ void MIXER_Init(Section* sec) {
 		TIMER_AddTickHandler(MIXER_Mix);
 		SDL_PauseAudio(0);
 	}
-	mixer.min_needed=section->Get_int("prebuffer");
-	if (mixer.min_needed>100) mixer.min_needed=100;
-	mixer.min_needed=(mixer.freq*mixer.min_needed)/1000;
-	mixer.max_needed=mixer.blocksize * 2 + 2*mixer.min_needed;
-	mixer.needed=mixer.min_needed+1;
+	//1000 = 8 *125
+	mixer.tick_counter = (mixer.freq%125)?TICK_NEXT:0;
+
+	mixer.min_needed = section->Get_int("prebuffer");
+	if (mixer.min_needed > 100) mixer.min_needed = 100;
+	mixer.min_needed = (mixer.freq*mixer.min_needed)/1000;
+	mixer.max_needed = mixer.blocksize * 2 + 2*mixer.min_needed;
+	mixer.needed = mixer.min_needed+1;
 	PROGRAMS_MakeFile("MIXER.COM",MIXER_ProgramStart);
 }
 
