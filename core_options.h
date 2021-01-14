@@ -154,6 +154,24 @@ static retro_core_option_definition option_defs[] =
 		"auto"
 	},
 	{
+		"dosbox_pure_joystick_analog_deadzone",
+		"Input > Joystick Analog Deadzone",
+		"Set the deadzone of the joystick analog sticks. May be used to eliminate drift caused by poorly calibrated joystick hardware.",
+		{
+         { "0",  "0%" },
+         { "5",  "5%" },
+         { "10", "10%" },
+         { "15", "15%" },
+         { "20", "20%" },
+         { "25", "25%" },
+         { "30", "30%" },
+         { "35", "35%" },
+         { "40", "40%" },
+         { NULL, NULL },
+		},
+		"15"
+	},
+	{
 		"dosbox_pure_joystick_timed",
 		"Input > Advanced > Enable Joystick Timed Intervals",
 		"Enable timed intervals for joystick axes. Experiment with this option if your joystick drifts." "\n\n", //end of Input > Advanced section
