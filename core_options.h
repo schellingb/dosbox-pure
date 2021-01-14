@@ -127,6 +127,7 @@ static retro_core_option_definition option_defs[] =
 		"Select the keyboard layout (will not change the On Screen Keyboard).",
 		{
 			{ "us",    "US (default)" },
+			{ "uk",    "UK" },
 			{ "br",    "Brazil" },
 			{ "hr",    "Croatia" },
 			{ "cz243", "Czech Republic" },
@@ -151,7 +152,7 @@ static retro_core_option_definition option_defs[] =
 			{ "sf",    "Switzerland (French)" },
 			{ "tr",    "Turkey" },
 		},
-		"auto"
+		"us"
 	},
 	{
 		"dosbox_pure_joystick_timed",
