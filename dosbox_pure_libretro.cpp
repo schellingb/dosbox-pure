@@ -121,6 +121,7 @@ static bool dbp_disk_eject_state;
 static char dbp_disk_mount_letter;
 
 // DOSBOX INPUT
+#define DBP_JOY_ANALOG_RANGE 0x8000 // System analog stick range is -0x8000 to 0x8000
 struct DBP_InputBind
 {
 	uint8_t port, device, index, id;
@@ -157,11 +158,18 @@ static bool dbp_on_screen_keyboard;
 static bool dbp_mouse_input;
 static char dbp_auto_mapping_mode;
 static int16_t dbp_bind_mousewheel;
+static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
 static float dbp_mouse_speed = 1;
 static float dbp_mouse_speed_x = 1;
 static Bit8u* dbp_auto_mapping;
 static const char* dbp_auto_mapping_names;
 static const char* dbp_auto_mapping_title;
+#define DBP_GET_JOY_ANALOG_VALUE(VAL) ((VAL < -dbp_joy_analog_deadzone || VAL > dbp_joy_analog_deadzone) ? \
+			((float)((VAL > dbp_joy_analog_deadzone) ?                                                        \
+					(VAL - dbp_joy_analog_deadzone) :                                                           \
+							(VAL + dbp_joy_analog_deadzone)) /                                                    \
+									(float)(DBP_JOY_ANALOG_RANGE - dbp_joy_analog_deadzone)) :                      \
+											0.0f)
 
 // DOSBOX EVENTS
 enum DBP_Event_Type
@@ -814,12 +822,12 @@ void GFX_Events()
 			case DBPET_MOUSEUP:   Mouse_ButtonReleased((Bit8u)e.val); break;
 			case DBPET_MOUSESETSPEED:   (e.val < 0 ? mouse_speed_down : mouse_speed_up) = true;  break;
 			case DBPET_MOUSERESETSPEED: (e.val < 0 ? mouse_speed_down : mouse_speed_up) = false; break;
-			case DBPET_JOY1X:     JOYSTICK_Move_X(0, e.val/32768.f); break;
-			case DBPET_JOY1Y:     JOYSTICK_Move_Y(0, e.val/32768.f); break;
-			case DBPET_JOY2X:     JOYSTICK_Move_X(1, e.val/32768.f); break;
-			case DBPET_JOY2Y:     JOYSTICK_Move_Y(1, e.val/32768.f); break;
-			case DBPET_JOYMX:     mouse_joy_x = e.val; break;
-			case DBPET_JOYMY:     mouse_joy_y = e.val; break;
+			case DBPET_JOY1X:     JOYSTICK_Move_X(0, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOY1Y:     JOYSTICK_Move_Y(0, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOY2X:     JOYSTICK_Move_X(1, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOY2Y:     JOYSTICK_Move_Y(1, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOYMX:     mouse_joy_x = (int)(DBP_GET_JOY_ANALOG_VALUE(e.val) * (float)DBP_JOY_ANALOG_RANGE); break;
+			case DBPET_JOYMY:     mouse_joy_y = (int)(DBP_GET_JOY_ANALOG_VALUE(e.val) * (float)DBP_JOY_ANALOG_RANGE); break;
 			case DBPET_JOY1DOWN:  JOYSTICK_Button(0, (Bit8u)e.val, true); break;
 			case DBPET_JOY1UP:    JOYSTICK_Button(0, (Bit8u)e.val, false); break;
 			case DBPET_JOY2DOWN:  JOYSTICK_Button(1, (Bit8u)e.val, true); break;
@@ -1728,8 +1736,8 @@ static void DBP_StartOnScreenKeyboard()
 						case KBD_enter: case KBD_kpenter: case KBD_space: goto case_ADDKEYUP;
 						case KBD_esc: goto case_CLOSEOSK;
 					}
-				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
-				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
+				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = DBP_GET_JOY_ANALOG_VALUE(e.val); break;
+				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = DBP_GET_JOY_ANALOG_VALUE(e.val); break;
 				case DBPET_MOUSESETSPEED: osk.mspeed = (e.val > 0 ? 4.f : 1.f); break;
 				case DBPET_MOUSERESETSPEED: osk.mspeed = 2.f; break;
 				case DBPET_ONSCREENKEYBOARD: case_CLOSEOSK:
@@ -2302,6 +2310,8 @@ static void check_variables()
 
 	dbp_mouse_speed = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor", "1.0"));
 	dbp_mouse_speed_x = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor_x", "1.0"));
+
+	dbp_joy_analog_deadzone = (int)((float)atoi(Variables::RetroGet("dosbox_pure_joystick_analog_deadzone", "15")) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 }
 
 static bool init_dosbox(const char* path, bool firsttime)
