@@ -558,7 +558,7 @@ static void SDLCALL
 #else
 void
 #endif
-MIXER_CallBack(void * /*userdata*/, Uint8 *stream, int len) {
+MIXER_CallBack(void * /*userdata*/, uint8_t *stream, int len) {
 	Bitu need=(Bitu)len/MIXER_SSIZE;
 	Bit16s * output=(Bit16s *)stream;
 	Bitu reduce;
