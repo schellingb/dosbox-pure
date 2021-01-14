@@ -73,7 +73,7 @@ MidiHandler::MidiHandler(){
 #include "midi_tsf.h"
 #endif
 
-#ifdef C_DBP_SUPPORT_MIDI_TSF
+#ifdef C_DBP_SUPPORT_MIDI_MT32
 #include "midi_mt32.h"
 #endif
 

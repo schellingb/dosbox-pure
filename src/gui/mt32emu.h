@@ -15,6 +15,12 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <string.h> /* memset, memcpy, strcmp */
+#include <stdarg.h> /* va_list, va_start, va_end */
+#include <stdlib.h> /* rand */
+#include <stdio.h> /* printf, vprintf, sprintf */
+#include <math.h> /* pow, exp, log, log10, fmod, sin, cos */
+
 #ifndef MT32EMU_GLOBALS_H
 #define MT32EMU_GLOBALS_H
 
@@ -865,12 +871,6 @@ public:
 } // namespace MT32Emu
 
 #endif // #ifndef MT32EMU_SYNTH_H
-
-#include <string.h> /* memset, memcpy, strcmp */
-#include <stdarg.h> /* va_list, va_start, va_end */
-#include <stdlib.h> /* rand */
-#include <stdio.h> /* printf, vprintf, sprintf */
-#include <math.h> /* pow, exp, log, log10, fmod, sin, cos */
 
 #ifndef MT32EMU_CONFIG_H
 #define MT32EMU_CONFIG_H
