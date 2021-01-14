@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2002-2020  The DOSBox Team
+ *  Copyright (C) 2002-2021  The DOSBox Team
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -73,7 +73,7 @@ MidiHandler::MidiHandler(){
 #include "midi_tsf.h"
 #endif
 
-#ifdef C_DBP_SUPPORT_MIDI_TSF
+#ifdef C_DBP_SUPPORT_MIDI_MT32
 #include "midi_mt32.h"
 #endif
 

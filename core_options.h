@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020 Bernhard Schelling
+ *  Copyright (C) 2020-2021 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -127,6 +127,7 @@ static retro_core_option_definition option_defs[] =
 		"Select the keyboard layout (will not change the On Screen Keyboard).",
 		{
 			{ "us",    "US (default)" },
+			{ "uk",    "UK" },
 			{ "br",    "Brazil" },
 			{ "hr",    "Croatia" },
 			{ "cz243", "Czech Republic" },
@@ -151,7 +152,25 @@ static retro_core_option_definition option_defs[] =
 			{ "sf",    "Switzerland (French)" },
 			{ "tr",    "Turkey" },
 		},
-		"auto"
+		"us"
+	},
+	{
+		"dosbox_pure_joystick_analog_deadzone",
+		"Input > Joystick Analog Deadzone",
+		"Set the deadzone of the joystick analog sticks. May be used to eliminate drift caused by poorly calibrated joystick hardware.",
+		{
+         { "0",  "0%" },
+         { "5",  "5%" },
+         { "10", "10%" },
+         { "15", "15%" },
+         { "20", "20%" },
+         { "25", "25%" },
+         { "30", "30%" },
+         { "35", "35%" },
+         { "40", "40%" },
+         { NULL, NULL },
+		},
+		"15"
 	},
 	{
 		"dosbox_pure_joystick_timed",

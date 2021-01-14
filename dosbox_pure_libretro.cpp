@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020 Bernhard Schelling
+ *  Copyright (C) 2020-2021 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -121,6 +121,7 @@ static bool dbp_disk_eject_state;
 static char dbp_disk_mount_letter;
 
 // DOSBOX INPUT
+#define DBP_JOY_ANALOG_RANGE 0x8000 // System analog stick range is -0x8000 to 0x8000
 struct DBP_InputBind
 {
 	uint8_t port, device, index, id;
@@ -157,11 +158,18 @@ static bool dbp_on_screen_keyboard;
 static bool dbp_mouse_input;
 static char dbp_auto_mapping_mode;
 static int16_t dbp_bind_mousewheel;
+static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
 static float dbp_mouse_speed = 1;
 static float dbp_mouse_speed_x = 1;
 static Bit8u* dbp_auto_mapping;
 static const char* dbp_auto_mapping_names;
 static const char* dbp_auto_mapping_title;
+#define DBP_GET_JOY_ANALOG_VALUE(VAL) ((VAL < -dbp_joy_analog_deadzone || VAL > dbp_joy_analog_deadzone) ? \
+			((float)((VAL > dbp_joy_analog_deadzone) ?                                                        \
+					(VAL - dbp_joy_analog_deadzone) :                                                           \
+							(VAL + dbp_joy_analog_deadzone)) /                                                    \
+									(float)(DBP_JOY_ANALOG_RANGE - dbp_joy_analog_deadzone)) :                      \
+											0.0f)
 
 // DOSBOX EVENTS
 enum DBP_Event_Type
@@ -814,12 +822,12 @@ void GFX_Events()
 			case DBPET_MOUSEUP:   Mouse_ButtonReleased((Bit8u)e.val); break;
 			case DBPET_MOUSESETSPEED:   (e.val < 0 ? mouse_speed_down : mouse_speed_up) = true;  break;
 			case DBPET_MOUSERESETSPEED: (e.val < 0 ? mouse_speed_down : mouse_speed_up) = false; break;
-			case DBPET_JOY1X:     JOYSTICK_Move_X(0, e.val/32768.f); break;
-			case DBPET_JOY1Y:     JOYSTICK_Move_Y(0, e.val/32768.f); break;
-			case DBPET_JOY2X:     JOYSTICK_Move_X(1, e.val/32768.f); break;
-			case DBPET_JOY2Y:     JOYSTICK_Move_Y(1, e.val/32768.f); break;
-			case DBPET_JOYMX:     mouse_joy_x = e.val; break;
-			case DBPET_JOYMY:     mouse_joy_y = e.val; break;
+			case DBPET_JOY1X:     JOYSTICK_Move_X(0, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOY1Y:     JOYSTICK_Move_Y(0, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOY2X:     JOYSTICK_Move_X(1, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOY2Y:     JOYSTICK_Move_Y(1, DBP_GET_JOY_ANALOG_VALUE(e.val)); break;
+			case DBPET_JOYMX:     mouse_joy_x = (int)(DBP_GET_JOY_ANALOG_VALUE(e.val) * (float)DBP_JOY_ANALOG_RANGE); break;
+			case DBPET_JOYMY:     mouse_joy_y = (int)(DBP_GET_JOY_ANALOG_VALUE(e.val) * (float)DBP_JOY_ANALOG_RANGE); break;
 			case DBPET_JOY1DOWN:  JOYSTICK_Button(0, (Bit8u)e.val, true); break;
 			case DBPET_JOY1UP:    JOYSTICK_Button(0, (Bit8u)e.val, false); break;
 			case DBPET_JOY2DOWN:  JOYSTICK_Button(1, (Bit8u)e.val, true); break;
@@ -1363,7 +1371,7 @@ static void DBP_PureMenuProgram(Program** make)
 		virtual void Run()
 		{
 			bool on_boot = cmd->FindExist("-BOOT"), on_finish = cmd->FindExist("-FINISH");
-			bool always_show_menu = (dbp_menu_time == -1 || (on_finish && (DBP_GetTicks() - dbp_lastmenuticks) < 500));
+			bool always_show_menu = (dbp_menu_time == (char)-1 || (on_finish && (DBP_GetTicks() - dbp_lastmenuticks) < 500));
 			dbp_lastmenuticks = DBP_GetTicks();
 
 			RefreshFileList(true);
@@ -1728,8 +1736,8 @@ static void DBP_StartOnScreenKeyboard()
 						case KBD_enter: case KBD_kpenter: case KBD_space: goto case_ADDKEYUP;
 						case KBD_esc: goto case_CLOSEOSK;
 					}
-				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
-				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = (e.val > 500 || e.val < -500 ? (e.val/32768.f) : 0); break;
+				case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: osk.jx = DBP_GET_JOY_ANALOG_VALUE(e.val); break;
+				case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: osk.jy = DBP_GET_JOY_ANALOG_VALUE(e.val); break;
 				case DBPET_MOUSESETSPEED: osk.mspeed = (e.val > 0 ? 4.f : 1.f); break;
 				case DBPET_MOUSERESETSPEED: osk.mspeed = 2.f; break;
 				case DBPET_ONSCREENKEYBOARD: case_CLOSEOSK:
@@ -1762,7 +1770,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.8";
+	info->library_version  = "0.9";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
@@ -1870,10 +1878,6 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 },
 		{ 0 }};
 	static const DBP_InputBind BindsBothDOSJoysticks[] = {
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Up",    DBPET_JOYHATSETBIT, 8 },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Down",  DBPET_JOYHATSETBIT, 2 },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Left",  DBPET_JOYHATSETBIT, 1 },
-		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Right", DBPET_JOYHATSETBIT, 4 },
 		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, "Stick 1 Horizontal", DBPET_JOY1X },
 		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, "Stick 1 Vertical",   DBPET_JOY1Y },
 		{ 1, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, "Stick 2 Horizontal", DBPET_JOY2X },
@@ -2302,6 +2306,8 @@ static void check_variables()
 
 	dbp_mouse_speed = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor", "1.0"));
 	dbp_mouse_speed_x = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor_x", "1.0"));
+
+	dbp_joy_analog_deadzone = (int)((float)atoi(Variables::RetroGet("dosbox_pure_joystick_analog_deadzone", "15")) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 }
 
 static bool init_dosbox(const char* path, bool firsttime)
@@ -2411,7 +2417,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
-	if (force_start_menu) dbp_menu_time = -1;
+	if (force_start_menu) dbp_menu_time = (char)-1;
 
 	// Start DOSBox and wait until the shell has fully started
 	dbp_lastmenuticks = (Bit32u)-1;
