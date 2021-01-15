@@ -28,10 +28,10 @@ PIPETONULL := $(if $(ISWIN),>nul 2>nul,>/dev/null 2>/dev/null)
 PROCCPU    := $(if $(ISWIN),GenuineIntel Intel sse sse2,$(if $(ISMAC),Unknown,$(shell cat /proc/cpuinfo)))
 
 SOURCES := \
-	*.cpp       \
-	src/*.cpp   \
-	src/*/*.cpp \
-	src/*/*/*.cpp
+  *.cpp       \
+  src/*.cpp   \
+  src/*/*.cpp \
+  src/*/*/*.cpp
 
 ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
@@ -47,7 +47,20 @@ else
   LDFLAGS := -Wl,--gc-sections -fno-ident
 endif
 
-ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
+ifeq ($(platform), gcw0)
+  # You must used the toolchain built on or around 2014-08-20
+  CXX := /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
+  CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
+  # Here's a stack of other flags that might be useful (?)
+  # -mplt -mno-shared
+  # -fdata-sections
+  # -DDINGUX=1 -MMD
+  # -Wall -Wno-unused-variable
+  # -D_GNU_SOURCE
+  # -ffunction-sections -D__STDC_CONSTANT_MACROS -fvisibility=hidden 
+  # -D__LIBRETRO__
+  
+else ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
   CPUFLAGS := -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
   ifneq ($(findstring version 10,$(shell g++ -v 2>&1)),)
     # Switch to gcc 9 to avoid buggy assembly genetation of gcc 10
@@ -108,8 +121,9 @@ clean:
 $(OUTNAME) : $(OBJS)
 	$(info Linking $@ ...)
 	$(CXX) $(LDFLAGS) -o $@ $^
-	@-strip --strip-all $@ $(PIPETONULL);true #others
-	@-strip -xS $@ $(PIPETONULL);true #mac
+	@-/opt/gcw0-toolchain/usr/mipsel-gcw0-linux-uclibc/bin/strip --strip-all $@ $(PIPETONULL);true # gcw0
+	@-strip --strip-all $@ $(PIPETONULL);true # others
+	@-strip -xS $@ $(PIPETONULL);true # mac
 
 define COMPILE
 	$(info Compiling $2 ...)

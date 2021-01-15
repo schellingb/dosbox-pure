@@ -21,6 +21,8 @@
 #ifndef _DRIVES_H__
 #define _DRIVES_H__
 
+#include <stdlib.h>
+
 #include <vector>
 #include <string>
 #include <sys/types.h>
