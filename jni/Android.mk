@@ -26,7 +26,7 @@ SOURCES := \
 	$(CORE_DIR)/src/*/*/*.cpp
 SOURCES := $(wildcard $(SOURCES))
 
-  LDFLAGS :=  -Wl,-dead_strip
+  LDFLAGS := 
 
   CPUFLAGS :=
 
