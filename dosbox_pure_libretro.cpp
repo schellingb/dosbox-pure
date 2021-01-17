@@ -1448,8 +1448,10 @@ static void DBP_PureMenuProgram(Program** make)
 			else if (result == RESULT_SHUTDOWN)
 				first_shell->exit = true;
 			else if (result == RESULT_COMMANDLINE)
+			{
+				if (Drives['C'-'A']) DOS_SetDrive('C'-'A');
 				WriteOut("Type 'PUREMENU' to return to the start menu\n");
-
+			}
 			dbp_lastmenuticks = DBP_GetTicks();
 		}
 	};
@@ -2347,7 +2349,6 @@ static bool init_dosbox(const char* path, bool firsttime)
 
 		// Set the media byte and the hard drive label and switch to it
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
-		DOS_SetDrive('C'-'A');
 	}
 
 	// Detect auto mapping
@@ -2408,7 +2409,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 
 	// Always launch puremenu, to tell us the shell was fully started
 	control->GetSection("autoexec")->ExecuteDestroy();
-	static_cast<Section_line*>(control->GetSection("autoexec"))->data += "@Z:PUREMENU -BOOT\n";
+	static_cast<Section_line*>(control->GetSection("autoexec"))->data += "@PUREMENU -BOOT\n";
 	control->GetSection("autoexec")->ExecuteInit();
 
 	char org_menu_time = dbp_menu_time;
@@ -2420,6 +2421,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 	if (force_start_menu) dbp_menu_time = (char)-1;
 
 	// Start DOSBox and wait until the shell has fully started
+	DBP_ASSERT(DOS_GetDefaultDrive() == ('Z'-'A')); // Shell must start with Z:\AUTOEXEC.BAT
 	dbp_lastmenuticks = (Bit32u)-1;
 	Thread::StartDetached(DBP_RunThreadDosBox);
 	while (dbp_lastmenuticks == (Bit32u)-1)
