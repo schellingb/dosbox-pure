@@ -371,7 +371,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		char dos_path[DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
 		const char* n = filename + (filename[1] == ':' ? 2 : 0);
 		if (*n == '\\' || *n == '/') n++; // absolute path
-		else // relative path
+		else if (*Drives[drive]->curdir) // relative path
 		{
 			strcpy(p_dos, Drives[drive]->curdir);
 			p_dos += strlen(p_dos);
