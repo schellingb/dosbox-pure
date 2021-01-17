@@ -66,7 +66,6 @@ else ifeq ($(TARGET_ARCH_ABI), arm64-v8a)
     WITH_DYNAREC := arm64
 else ifeq ($(TARGET_ARCH_ABI), x86)
     WITH_DYNAREC := x86_new
-    LDFLAGS      += -Wl,-z,notext
 else ifeq ($(TARGET_ARCH_ABI), x86_64)
     WITH_DYNAREC := x86_64
 else ifeq ($(TARGET_ARCH_ABI), mips)
@@ -84,6 +83,5 @@ LOCAL_CPPFLAGS     := $(CFLAGS)
 LOCAL_LDFLAGS      := $(LDFLAGS) #-Wl,-version-script=$(CORE_DIR)/libretro/link.T
 LOCAL_LDLIBS       := -llog
 LOCAL_CPP_FEATURES := rtti
-LOCAL_DISABLE_FATAL_LINKER_WARNINGS := true
 LOCAL_ARM_MODE     := arm
 include $(BUILD_SHARED_LIBRARY)
