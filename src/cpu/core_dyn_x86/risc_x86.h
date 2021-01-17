@@ -17,6 +17,17 @@
  */
 
 
+#if defined(ANDROID) 
+// This define activates behavior that avoids frame pointer register 'ebp' modification by inline assembly code
+// On Android, without this, it will either fail to link or it will fail to load the output file with the error
+// dlopen failed: ".so" has text relocations (https://android.googlesource.com/platform/bionic/+/master/android-changes-for-ndk-developers.md#Text-Relocations-Enforced-for-API-level-23)
+#define RISC_X86_USE_GEN_RUNCODEINIT
+#endif 
+
+#if defined (_MSC_VER)
+#pragma warning(disable:4731) //frame pointer register 'ebp' modified by inline assembly code
+#endif
+
 static void gen_init(void);
 
 /* End of needed */
@@ -84,6 +95,43 @@ public:
 	}
 };
 
+#ifdef RISC_X86_USE_GEN_RUNCODEINIT
+static BlockReturn gen_runcodeInit(Bit8u *code);
+static BlockReturn (*gen_runcode)(Bit8u *code) = gen_runcodeInit;
+
+static BlockReturn gen_runcodeInit(Bit8u *code) {
+	Bit8u* oldpos = cache.pos;
+	cache.pos = &cache_code_link_blocks[128];
+	gen_runcode = (BlockReturn(*)(Bit8u*))cache.pos;
+
+	cache_addb(0x53); // push ebx
+	cache_addb(0x57); // push edi
+	cache_addb(0x56); // push esi
+	cache_addb(0xb9); cache_addd(FMASK_TEST); // mov ecx,FMASK_TEST
+	cache_addb(0x8b); cache_addb(0x44); cache_addb(0x24); cache_addb(0x10); // mov eax,DWORD PTR [esp+0x10]
+	cache_addb(0x23); cache_addb(0x0d); cache_addd((Bit32u)&reg_flags); // and ecx,DWORD PTR [reg_flags]
+	cache_addb(0x55); // push ebp
+	cache_addb(0x68); Bit8u *ret_addr = cache.pos; cache_addd(0); // push return_address
+	cache_addb(0x51); // push ecx
+	cache_addb(0xff); cache_addb(0xe0); // jmp eax
+	*(Bit32u*)ret_addr = (Bit32u)(cache.pos); // write actual return_address
+	/* Restore the flags */
+	/* return here with flags in ecx */
+	cache_addb(0x5d); // pop ebp
+	cache_addb(0xBA); cache_addd(~FMASK_TEST); // mov edx,~FMASK_TEST
+	cache_addb(0x81); cache_addb(0xE1); cache_addd(FMASK_TEST); // and ecx,FMASK_TEST
+	cache_addb(0x23); cache_addb(0x15); cache_addd((Bit32u)&reg_flags); // and edx,DWORD PTR [reg_flags]
+	cache_addb(0x09); cache_addb(0xD1); // or ecx,edx
+	cache_addb(0x89); cache_addb(0x0D); cache_addd((Bit32u)&reg_flags); // mov DWORD PTR [reg_flags],ecx
+	cache_addb(0x5E); // pop esi
+	cache_addb(0x5F); // pop edi
+	cache_addb(0x5B); // pop ebx
+	cache_addb(0xC3); // ret
+
+	cache.pos = oldpos;
+	return gen_runcode(code);
+}
+#else
 static BlockReturn gen_runcode(Bit8u * code) {
 	BlockReturn retval;
 #if defined (_MSC_VER)
@@ -144,6 +192,7 @@ return_address:
 #endif
 	return retval;
 }
+#endif
 
 static GenReg * FindDynReg(DynReg * dynreg,bool stale=false) {
 	x86gen.last_used++;
@@ -1081,6 +1130,9 @@ static void gen_init(void) {
 	x86gen.flagsactive=false;
 	x86gen.last_used=0;
 	skip_flags=false;
+#ifdef RISC_X86_USE_GEN_RUNCODEINIT
+	gen_runcode = gen_runcodeInit;
+#endif
 }
 
 #if defined(X86_DYNFPU_DH_ENABLED)
