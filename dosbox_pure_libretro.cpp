@@ -1551,7 +1551,7 @@ static void DBP_StartOnScreenKeyboard()
 	{
 		static void reset()
 		{
-			int fac = (RDOSGFXwidth < 400 ? 1 : 2);
+			float fac = (RDOSGFXwidth < KWIDTH ? (RDOSGFXwidth - 10) / (float)KWIDTH : (RDOSGFXwidth < 400 ? 1.f : 2.f));
 			int osky = (int)(RDOSGFXheight / fac) - 3 - 65;
 			if (!osk.mx && !osk.my)
 			{
@@ -1590,7 +1590,8 @@ static void DBP_StartOnScreenKeyboard()
 				{ KBD_leftshift,KBD_extra_lt_gt,KBD_z,KBD_x,KBD_c,KBD_v,KBD_b,KBD_n,KBD_m,KBD_comma,KBD_period,KBD_slash,KBD_rightshift    ,KBD_NONE,   KBD_NONE,KBD_up,KBD_NONE    ,KBD_NONE,KBD_kp1,KBD_kp2,KBD_kp3,KBD_kpenter },
 				{ KBD_leftctrl,KBD_NONE,KBD_leftalt,                        KBD_space,                 KBD_rightalt,KBD_NONE,KBD_rightctrl ,KBD_NONE,  KBD_left,KBD_down,KBD_right  ,KBD_NONE,KBD_kp0,KBD_kpperiod },
 			};
-			int fac = (RDOSGFXwidth < 400 ? 1 : 2);
+			int thickness = (RDOSGFXwidth < 400 ? 1 : 2);
+			float fac = (RDOSGFXwidth < KWIDTH ? (RDOSGFXwidth - 10) / (float)KWIDTH : (RDOSGFXwidth < 400 ? 1.f : 2.f));
 			int oskx = (int)(RDOSGFXwidth / fac / 2) - (KWIDTH / 2);
 			int osky = (osk.my < (RDOSGFXheight / fac / 2) ? 3 : (int)(RDOSGFXheight / fac) - 3 - 65);
 
@@ -1634,7 +1635,7 @@ static void DBP_StartOnScreenKeyboard()
 					}
 
 					DBP_ASSERT(draww);
-					int rl = (oskx + x) * fac, rr = rl + (draww * fac), rt = (osky + y) * fac, rb = rt + (drawh * fac);
+					int rl = (int)((oskx + x) * fac), rr = (int)((oskx + x + draww) * fac), rt = (int)((osky + y) * fac), rb = (int)((osky + y + drawh) * fac);
 					bool hovered = (cX >= rl && cX < rr && cY >= rt && cY < rb);
 
 					KBD_KEYS kbd_key = keyboard_keys[row][k - keyboard_rows[row]];
@@ -1669,9 +1670,9 @@ static void DBP_StartOnScreenKeyboard()
 			for (unsigned int p = 0; p != 59*280; p++)
 			{
 				if (!(keyboard_letters[p>>5] & (1<<(p&31)))) continue;
-				unsigned lx = (oskx + (p%280)) * fac, ly = (osky + 1 + (p/280)) * fac;
-				for (unsigned y = ly; y != ly + fac; y++)
-					for (unsigned x = lx; x != lx + fac; x++)
+				int lx = (int)((oskx + (p%280)) * fac), ly = (int)((osky + 1 + (p/280)) * fac);
+				for (int y = ly; y != ly + thickness; y++)
+					for (int x = lx; x != lx + thickness; x++)
 						*(unsigned*)(buf + y * RDOSGFXpitch + x * 4) = 0xFFFFFFFF;
 			}
 
@@ -1679,10 +1680,11 @@ static void DBP_StartOnScreenKeyboard()
 			for (unsigned i = 0; i != 9; i++)
 			{
 				unsigned n = (i < 4 ? i : (i < 8 ? i+1 : 4)), x = (unsigned)cX + (n%3)-1, y = (unsigned)cY + (n/3)-1, ccol = (n == 4 ? 0xFFFFFFFF : 0xFF000000);
-				for (unsigned c = 0; c != 8*fac; c++)
+				for (unsigned c = 0; c != (unsigned)(8*fac); c++)
 				{
-					*(unsigned*)(buf + (y  ) * RDOSGFXpitch + (x+c) * 4) = ccol;
 					*(unsigned*)(buf + (y+c) * RDOSGFXpitch + (x  ) * 4) = ccol;
+					if (x+c >= RDOSGFXwidth) continue;
+					*(unsigned*)(buf + (y  ) * RDOSGFXpitch + (x+c) * 4) = ccol;
 					*(unsigned*)(buf + (y+c) * RDOSGFXpitch + (x+c) * 4) = ccol;
 				}
 			}
