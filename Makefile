@@ -57,7 +57,7 @@ ifeq ($(platform), gcw0)
   # -DDINGUX=1 -MMD
   # -Wall -Wno-unused-variable
   # -D_GNU_SOURCE
-  # -ffunction-sections -D__STDC_CONSTANT_MACROS -fvisibility=hidden 
+  # -D__STDC_CONSTANT_MACROS
   # -D__LIBRETRO__
   
 else ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
