@@ -959,8 +959,9 @@ bool unionDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster
 	Bit32u free_bytes  = over_free_clusters   * over_sectors_cluster  * over_bytes_sector;
 	*_bytes_sector    = (under_bytes_sector    > over_bytes_sector    ? under_bytes_sector    : over_bytes_sector   );
 	*_sectors_cluster = (under_sectors_cluster > over_sectors_cluster ? under_sectors_cluster : over_sectors_cluster);
-	*_total_clusters = (under_bytes + over_bytes) / (*_bytes_sector && *_sectors_cluster ? *_bytes_sector * *_sectors_cluster : 1);
-	*_free_clusters  = (free_bytes              ) / (*_bytes_sector && *_sectors_cluster ? *_bytes_sector * *_sectors_cluster : 1);
+	Bit32u cluster_div = (*_bytes_sector && *_sectors_cluster ? *_bytes_sector * *_sectors_cluster : 1);
+	*_total_clusters = (under_bytes > over_bytes ? under_bytes : over_bytes) / cluster_div;
+	*_free_clusters  = free_bytes / cluster_div;
 	return true;
 }
 
