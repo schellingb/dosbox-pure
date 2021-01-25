@@ -408,11 +408,11 @@ bool memoryDrive::GetFileAttr(char * name, Bit16u * attr)
 
 bool memoryDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)
 {
-	// return dummy numbers
+	// return dummy numbers (not above 0x7FFF which seems to be needed for some games)
 	*_bytes_sector = 512;
 	*_sectors_cluster = 32;
-	*_total_clusters = 0xFFFF; // 1GB
-	*_free_clusters = 0x8000; // 512MB
+	*_total_clusters = 32765; // 512MB
+	*_free_clusters = 16000; // 250MB
 	return true;
 }
 
