@@ -534,7 +534,7 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	}
 	df->Close();
 	delete df;
-	istringstream inString; //  = istringstream(dosfilebuf);
+	istringstream inString(dosfilebuf);
 	istream& in = (istream&)inString;
 #else
 	char tmp[MAX_FILENAME_LENGTH];	// dirname can change its argument
