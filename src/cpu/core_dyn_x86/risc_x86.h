@@ -96,13 +96,13 @@ public:
 };
 
 #ifdef RISC_X86_USE_GEN_RUNCODEINIT
-static BlockReturn gen_runcodeInit(Bit8u *code);
-static BlockReturn (*gen_runcode)(Bit8u *code) = gen_runcodeInit;
+static BlockReturn gen_runcodeInit(const Bit8u *code);
+static BlockReturn (*gen_runcode)(const Bit8u *code) = gen_runcodeInit;
 
-static BlockReturn gen_runcodeInit(Bit8u *code) {
-	Bit8u* oldpos = cache.pos;
+static BlockReturn gen_runcodeInit(const Bit8u *code) {
+	const Bit8u* oldpos = cache.pos;
 	cache.pos = &cache_code_link_blocks[128];
-	gen_runcode = (BlockReturn(*)(Bit8u*))cache.pos;
+	gen_runcode = (BlockReturn(*)(const Bit8u*))cache.pos;
 
 	cache_addb(0x53); // push ebx
 	cache_addb(0x57); // push edi
@@ -111,10 +111,10 @@ static BlockReturn gen_runcodeInit(Bit8u *code) {
 	cache_addb(0x8b); cache_addb(0x44); cache_addb(0x24); cache_addb(0x10); // mov eax,DWORD PTR [esp+0x10]
 	cache_addb(0x23); cache_addb(0x0d); cache_addd((Bit32u)&reg_flags); // and ecx,DWORD PTR [reg_flags]
 	cache_addb(0x55); // push ebp
-	cache_addb(0x68); Bit8u *ret_addr = cache.pos; cache_addd(0); // push return_address
+	cache_addb(0x68); const Bit8u *ret_addr = cache.pos; cache_addd(0); // push return_address
 	cache_addb(0x51); // push ecx
 	cache_addb(0xff); cache_addb(0xe0); // jmp eax
-	*(Bit32u*)ret_addr = (Bit32u)(cache.pos); // write actual return_address
+	cache_addd((Bit32u)cache.pos, ret_addr); // write actual return_address
 	/* Restore the flags */
 	/* return here with flags in ecx */
 	cache_addb(0x5d); // pop ebp
