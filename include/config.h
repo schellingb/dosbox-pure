@@ -108,7 +108,8 @@
 #define C_DYNAMIC_X86 1
 #define C_TARGETCPU X86
 #elif defined(__mips__) && defined(__MIPSEL__)
-#define C_DYNREC 0
+#define C_DYNREC 1
+#define C_UNALIGNED_MEMORY 1
 #define C_TARGETCPU MIPSEL
 #endif
 

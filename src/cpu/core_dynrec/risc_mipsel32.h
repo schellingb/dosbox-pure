@@ -51,6 +51,7 @@ typedef Bit8u HostReg;
 #define HOST_v1 3
 #define HOST_a0 4
 #define HOST_a1 5
+#define HOST_a2 6
 #define HOST_t4 12
 #define HOST_t5 13
 #define HOST_t6 14
@@ -74,7 +75,7 @@ typedef Bit8u HostReg;
 #define FC_OP2 HOST_a1
 
 // special register that holds the third parameter for _R3 calls (byte accessible)
-#define FC_OP3 HOST_???
+#define FC_OP3 HOST_a2
 
 // register that holds byte-accessible temporary values
 #define FC_TMP_BA1 HOST_t5
@@ -165,7 +166,7 @@ static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
 			cache_addw(0x9000+(temp1<<5)+dest_reg);
 			cache_addw(lohalf+1);		// lbu temp2, 1(temp1)
 			cache_addw(0x9000+(temp1<<5)+temp2);
-#if (_MIPS_ISA==MIPS32R2) || defined(PSP)
+#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
 			cache_addw(0x7a04);		// ins dest_reg, temp2, 8, 8
 			cache_addw(0x7c00+(temp2<<5)+dest_reg);
 #else
@@ -264,7 +265,7 @@ static void gen_mov_byte_from_reg_low(HostReg src_reg,void* dest) {
 // the register is zero-extended (sign==false) or sign-extended (sign==true)
 static void gen_extend_byte(bool sign,HostReg reg) {
 	if (sign) {
-#if (_MIPS_ISA==MIPS32R2) || defined(PSP)
+#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
 		cache_addw((reg<<11)+0x420);	// seb reg, reg
 		cache_addw(0x7c00+reg);
 #else
@@ -280,7 +281,7 @@ static void gen_extend_byte(bool sign,HostReg reg) {
 // the register is zero-extended (sign==false) or sign-extended (sign==true)
 static void gen_extend_word(bool sign,HostReg reg) {
 	if (sign) {
-#if (_MIPS_ISA==MIPS32R2) || defined(PSP)
+#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
 		cache_addw((reg<<11)+0x620);	// seh reg, reg
 		cache_addw(0x7c00+reg);
 #else
@@ -404,7 +405,7 @@ static Bit32u INLINE gen_call_function_setup(void * func,Bitu paramcount,bool fa
 	return proc_addr;
 }
 
-#ifdef __mips_eabi
+#ifdef _MIPS_ARCH_MIPS32R2
 // max of 8 parameters in $a0-$a3 and $t0-$t3
 
 // load an immediate value as param'th function parameter
@@ -630,7 +631,7 @@ static void gen_fill_function_ptr(Bit8u * pos,void* fct_ptr,Bitu flags_type) {
 		case t_SARd:
 			*(Bit32u*)pos=0x00a41007;					// srav $v0, $a0, $a1
 			break;
-#if (_MIPS_ISA==MIPS32R2) || defined(PSP)
+#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
 		case t_RORd:
 			*(Bit32u*)pos=0x00a41046;					// rotr $v0, $a0, $a1
 			break;
