@@ -21,10 +21,9 @@
 #ifndef _DRIVES_H__
 #define _DRIVES_H__
 
-#include <stdlib.h>
-
 #include <vector>
 #include <string>
+#include <stdlib.h>
 #include <sys/types.h>
 #include "dos_system.h"
 #include "shell.h" /* for DOS_Shell */

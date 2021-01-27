@@ -540,7 +540,6 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	char tmp[MAX_FILENAME_LENGTH];	// dirname can change its argument
 	safe_strncpy(tmp, cuefile, MAX_FILENAME_LENGTH);
 	string pathname(dirname(tmp));
-
 	ifstream in;
 	in.open(cuefile, ios::in);
 #endif
