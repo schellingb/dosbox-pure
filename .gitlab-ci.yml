@@ -24,7 +24,7 @@ include:
   # Linux 64-bit
   - project: 'libretro-infrastructure/ci-templates'
     file: '/linux-x64.yml'
-    
+
   # Linux 32-bit
   - project: 'libretro-infrastructure/ci-templates'
     file: '/linux-i686.yml'
@@ -32,11 +32,28 @@ include:
   # MacOS 64-bit
   - project: 'libretro-infrastructure/ci-templates'
     file: '/osx-x64.yml'
-    
+
   ################################## CELLULAR ################################
   # Android
   - project: 'libretro-infrastructure/ci-templates'
     file: '/android-jni.yml'
+
+  ################################## CONSOLES ################################
+  # Nintendo 3DS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/ctr-static.yml'
+
+  # Nintendo WiiU
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/wiiu-static.yml'
+
+  # Nintendo Switch
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/libnx-static.yml'
+
+  # PlayStation Vita
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/vita-static.yml'
 
 # Stages for building
 stages:
@@ -55,7 +72,7 @@ libretro-build-windows-x64:
     - .core-defs
   variables:
     ISWIN: 1
-    
+
 # Windows 32-bit
 libretro-build-windows-i686:
   extends:
@@ -69,7 +86,7 @@ libretro-build-linux-x64:
   extends:
     - .libretro-linux-x64-make-default
     - .core-defs
-    
+
 # Linux 32-bit
 libretro-build-linux-i686:
   extends:
@@ -83,7 +100,7 @@ libretro-build-osx-x64:
     - .core-defs
   variables:
     ISMAC: 1
-    
+
 ################################### CELLULAR #################################
 # Android ARMv7a
 android-armeabi-v7a:
@@ -107,4 +124,29 @@ android-x86_64:
 android-x86:
   extends:
     - .libretro-android-jni-x86
+    - .core-defs
+
+################################### CONSOLES #################################
+# Nintendo 3DS
+libretro-build-ctr:
+  extends:
+    - .libretro-ctr-static-retroarch-master
+    - .core-defs
+
+# Nintendo WiiU
+libretro-build-wiiu:
+  extends:
+    - .libretro-wiiu-static-retroarch-master
+    - .core-defs
+
+# Nintendo Switch
+libretro-build-libnx-aarch64:
+  extends:
+    - .libretro-libnx-static-retroarch-master
+    - .core-defs
+
+# PlayStation Vita
+libretro-build-vita:
+  extends:
+    - .libretro-vita-static-retroarch-master
     - .core-defs
