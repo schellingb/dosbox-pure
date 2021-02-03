@@ -584,9 +584,6 @@ static void gen_return_function(void) {
 static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_type) {
 #ifdef DRC_FLAGS_INVALIDATION_DCODE
 	// try to avoid function calls but rather directly fill in code
-	#ifndef PSP
-		pos += 8;
-	#endif
 	switch (flags_type) {
 		case t_ADDb:
 		case t_ADDw:
@@ -655,7 +652,7 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 			cache_addd(0x00041023,pos);					// subu $v0, $0, $a0
 			break;
 		default:
-			#ifdef PSP
+			#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
 				cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);		// jal simple_func
 			#else			
 				// assume that pos points to jalr $at
@@ -666,7 +663,7 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 			break;
 	}
 #else
-	#ifdef PSP
+	#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
 		cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);	// jal simple_func
 	#else
 		// assume that pos points to jalr $at
