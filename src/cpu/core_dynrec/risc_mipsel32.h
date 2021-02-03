@@ -670,8 +670,8 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 		cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);	// jal simple_func
 	#else
 		// assume that pos points to jalr $at
-		cache_addd(0x3c010000 + (((Bit32u)fct_ptr) >> 2) & 0xFFFF, pos - 8);
-		cache_addd(0x34210000 + (((Bit32u)fct_ptr) >> 2) & 0xFFFF, pos - 4);
+		cache_addd(0x3c010000 + (((Bit32u)fct_ptr) >> 16) & 0xFFFF, pos - 8);
+		cache_addd(0x34210000 + (((Bit32u)fct_ptr)) & 0xFFFF, pos - 4);
 		// jalr $at already there
 	#endif
 #endif
