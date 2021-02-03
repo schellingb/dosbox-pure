@@ -31,7 +31,11 @@
 // try to use non-flags generating functions if possible
 #define DRC_FLAGS_INVALIDATION
 // try to replace _simple functions by code
-#define DRC_FLAGS_INVALIDATION_DCODE
+#undef DRC_FLAGS_INVALIDATION_DCODE
+
+#if defined(_MIPS_ARCH_MIPS32R2) || defined(_MIPS_ARCH_MIPS32R3) || defined(_MIPS_ARCH_MIPS32R5) || defined(_MIPS_ARCH_MIPS32R6) || defined(PSP)
+	#define _MIPS_ARCH_NEW
+#endif
 
 // calling convention modifier
 #define DRC_CALL_CONV	/* nothing */
@@ -164,7 +168,7 @@ static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
 			cache_addw(0x9000+(temp1<<5)+dest_reg);
 			cache_addw(lohalf+1);		// lbu temp2, 1(temp1)
 			cache_addw(0x9000+(temp1<<5)+temp2);
-#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
+#ifdef _MIPS_ARCH_NEW
 			cache_addw(0x7a04);		// ins dest_reg, temp2, 8, 8
 			cache_addw(0x7c00+(temp2<<5)+dest_reg);
 #else
@@ -263,7 +267,7 @@ static void gen_mov_byte_from_reg_low(HostReg src_reg,void* dest) {
 // the register is zero-extended (sign==false) or sign-extended (sign==true)
 static void gen_extend_byte(bool sign,HostReg reg) {
 	if (sign) {
-#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
+#ifdef _MIPS_ARCH_NEW
 		cache_addw((reg<<11)+0x420);	// seb reg, reg
 		cache_addw(0x7c00+reg);
 #else
@@ -282,7 +286,7 @@ static void gen_extend_byte(bool sign,HostReg reg) {
 // the register is zero-extended (sign==false) or sign-extended (sign==true)
 static void gen_extend_word(bool sign,HostReg reg) {
 	if (sign) {
-#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
+#ifdef _MIPS_ARCH_NEW
 		cache_addw((reg<<11)+0x620);	// seh reg, reg
 		cache_addw(0x7c00+reg);
 #else
@@ -396,7 +400,7 @@ static void INLINE gen_call_function_raw(void * func) {
 	if (((Bit32u)cache.pos ^ (Bit32u)func) & 0xf0000000) LOG_MSG("jump overflow\n");
 #endif
 	temp1_valid = false;
-	#ifdef PSP
+	#ifdef _MIPS_ARCH_NEW
 		cache_addd(0x0c000000+(((Bit32u)func>>2)&0x3ffffff));		// jal func
 	#else
 		cache_addd(0x3c010000 | (((Bit32u)func) >> 16) & 0xFFFF);	// lui $at, %hi(func)
@@ -415,7 +419,7 @@ static INLINE const Bit8u* gen_call_function_setup(void * func,Bitu paramcount,b
 	return proc_addr;
 }
 
-#ifdef _MIPS_ARCH_MIPS32R2
+#ifdef _MIPS_ARCH_NEW
 // max of 8 parameters in $a0-$a3 and $t0-$t3
 
 // load an immediate value as param'th function parameter
@@ -581,8 +585,9 @@ static void gen_return_function(void) {
 #ifdef DRC_FLAGS_INVALIDATION
 // called when a call to a function can be replaced by a
 // call to a simpler function
-static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_type) {
+static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_type) {	
 #ifdef DRC_FLAGS_INVALIDATION_DCODE
+	
 	// try to avoid function calls but rather directly fill in code
 	switch (flags_type) {
 		case t_ADDb:
@@ -641,7 +646,7 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 		case t_SARd:
 			cache_addd(0x00a41007,pos);					// srav $v0, $a0, $a1
 			break;
-#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
+#ifdef _MIPS_ARCH_NEW
 		case t_RORd:
 			cache_addd(0x00a41046,pos);					// rotr $v0, $a0, $a1
 			break;
@@ -652,24 +657,26 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 			cache_addd(0x00041023,pos);					// subu $v0, $0, $a0
 			break;
 		default:
-			#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
+			#ifdef PSP
 				cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);		// jal simple_func
 			#else			
 				// assume that pos points to jalr $at
-				cache_addd(0x3c010000 + (((Bit32u)fct_ptr) >> 16) & 0xFFFF, pos - 8);
-				cache_addd(0x34210000 + (((Bit32u)fct_ptr)) & 0xFFFF, pos - 4);
+				cache_addd(0x3c010000 | (((Bit32u)func) >> 16) & 0xFFFF, pos);	// lui $at, %hi(func)
+				cache_addd(0x34210000 | (((Bit32u)func) & 0xFFFF), pos + 4);			// ori $at, %lo(func)
 				// jalr $at already there
+				// cache_addd(0x0020F809, pos);										// jalr $at  
 			#endif
 			break;
 	}
 #else
-	#if (_MIPS_ARCH_MIPS32R2) || defined(PSP)
+	#ifdef PSP
 		cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);	// jal simple_func
 	#else
 		// assume that pos points to jalr $at
-		cache_addd(0x3c010000 + (((Bit32u)fct_ptr) >> 16) & 0xFFFF, pos - 8);
-		cache_addd(0x34210000 + (((Bit32u)fct_ptr)) & 0xFFFF, pos - 4);
+		cache_addd(0x3c010000 | (((Bit32u)func) >> 16) & 0xFFFF, pos);	// lui $at, %hi(func)
+		cache_addd(0x34210000 | (((Bit32u)func) & 0xFFFF), pos + 4);			// ori $at, %lo(func)
 		// jalr $at already there
+		// cache_addd(0x0020F809, pos);										// jalr $at  
 	#endif
 #endif
 }
