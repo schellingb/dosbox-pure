@@ -89,7 +89,7 @@ else ifeq ($(platform),libnx)
 else ifeq ($(platform), gcw0)
   # You must used the toolchain built on or around 2014-08-20
   OUTNAME := dosbox_pure_libretro.so
-  CXX     ?= /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
+  CXX     := /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
   CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
 else
