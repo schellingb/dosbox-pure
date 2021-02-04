@@ -168,7 +168,7 @@ static void gen_mov_word_to_reg(HostReg dest_reg,void* data,bool dword) {
 			cache_addw(0x9000+(temp1<<5)+dest_reg);
 			cache_addw(lohalf+1);		// lbu temp2, 1(temp1)
 			cache_addw(0x9000+(temp1<<5)+temp2);
-#ifdef _MIPS_ARCH_NEW
+#ifdef PSP
 			cache_addw(0x7a04);		// ins dest_reg, temp2, 8, 8
 			cache_addw(0x7c00+(temp2<<5)+dest_reg);
 #else
@@ -267,7 +267,7 @@ static void gen_mov_byte_from_reg_low(HostReg src_reg,void* dest) {
 // the register is zero-extended (sign==false) or sign-extended (sign==true)
 static void gen_extend_byte(bool sign,HostReg reg) {
 	if (sign) {
-#ifdef _MIPS_ARCH_NEW
+#ifdef PSP
 		cache_addw((reg<<11)+0x420);	// seb reg, reg
 		cache_addw(0x7c00+reg);
 #else
@@ -286,7 +286,7 @@ static void gen_extend_byte(bool sign,HostReg reg) {
 // the register is zero-extended (sign==false) or sign-extended (sign==true)
 static void gen_extend_word(bool sign,HostReg reg) {
 	if (sign) {
-#ifdef _MIPS_ARCH_NEW
+#ifdef PSP
 		cache_addw((reg<<11)+0x620);	// seh reg, reg
 		cache_addw(0x7c00+reg);
 #else
@@ -400,10 +400,12 @@ static void INLINE gen_call_function_raw(void * func) {
 	if (((Bit32u)cache.pos ^ (Bit32u)func) & 0xf0000000) LOG_MSG("jump overflow\n");
 #endif
 	temp1_valid = false;
-	#ifdef _MIPS_ARCH_NEW
+	#ifdef PSP
 		cache_addd(0x0c000000 + (((Bit32u)func) >> 2) & 0x3ffffff);		// jal simple_func
 	#else			
-		no jal simple_func
+		cache_addd(0x3c010000 | (((Bit32u)func) >> 16) & 0xFFFF);	// lui $at, %hi(func)
+		cache_addd(0x34210000 | (((Bit32u)func) & 0xFFFF));			// ori $at, %lo(func)
+		cache_addd(0x0020F809);		
 	#endif
 	DELAY;
 }
@@ -587,6 +589,10 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 #ifdef DRC_FLAGS_INVALIDATION_DCODE
 	
 	// try to avoid function calls but rather directly fill in code
+#ifndef PSP
+	pos += 8;
+#endif
+	
 	switch (flags_type) {
 		case t_ADDb:
 		case t_ADDw:
@@ -655,18 +661,26 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 			cache_addd(0x00041023,pos);					// subu $v0, $0, $a0
 			break;
 		default:
-			#ifdef _MIPS_ARCH_NEW
+			#ifdef PSP
 				cache_addd(0x0c000000 + (((Bit32u)fct_ptr) >> 2) & 0x3ffffff, pos);		// jal simple_func
-			#else			
-				no jal simple_func
+			#else
+				// TODO Rewrite with cache_addd
+				// assume that pos points to jalr $at
+				*(Bit32u*)(pos-8)=0x3c010000 | (((Bit32u)fct_ptr) >> 16) & 0xFFFF;		// lui $at, %hi(func)
+				*(Bit32u*)(pos-4)=0x34210000 | (((Bit32u)fct_ptr) & 0xFFFF);			// ori $at, %lo(func)
+				// jalr $at already there
 			#endif
 			break;
 	}
 #else
-	#ifdef _MIPS_ARCH_NEW
+	#ifdef PSP
 		cache_addd(0x0c000000 + (((Bit32u)fct_ptr) >> 2) & 0x3ffffff, pos);		// jal simple_func
-	#else			
-		no jal simple_func
+	#else
+		// TODO Rewrite with cache_addd
+		// assume that pos points to jalr $at
+		*(Bit32u*)(pos-8)=0x3c010000 | (((Bit32u)fct_ptr) >> 16) & 0xFFFF;		// lui $at, %hi(func)
+		*(Bit32u*)(pos-4)=0x34210000 | (((Bit32u)fct_ptr) & 0xFFFF);			// ori $at, %lo(func)
+		// jalr $at already there
 	#endif
 #endif
 }
