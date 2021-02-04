@@ -31,7 +31,7 @@
 // try to use non-flags generating functions if possible
 #define DRC_FLAGS_INVALIDATION
 // try to replace _simple functions by code
-#undef DRC_FLAGS_INVALIDATION_DCODE
+#define DRC_FLAGS_INVALIDATION_DCODE
 
 #if defined(_MIPS_ARCH_MIPS32R2) || defined(_MIPS_ARCH_MIPS32R3) || defined(_MIPS_ARCH_MIPS32R5) || defined(_MIPS_ARCH_MIPS32R6) || defined(PSP)
 	#define _MIPS_ARCH_NEW
@@ -401,11 +401,9 @@ static void INLINE gen_call_function_raw(void * func) {
 #endif
 	temp1_valid = false;
 	#ifdef _MIPS_ARCH_NEW
-		cache_addd(0x0c000000+(((Bit32u)func>>2)&0x3ffffff));		// jal func
-	#else
-		cache_addd(0x3c010000 | (((Bit32u)func) >> 16) & 0xFFFF);	// lui $at, %hi(func)
-		cache_addd(0x34210000 | (((Bit32u)func) & 0xFFFF));			// ori $at, %lo(func)
-		cache_addd(0x0020F809);										// jalr $at  
+		cache_addd(0x0c000000 + (((Bit32u)func) >> 2) & 0x3ffffff);		// jal simple_func
+	#else			
+		no jal simple_func
 	#endif
 	DELAY;
 }
@@ -657,26 +655,18 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 			cache_addd(0x00041023,pos);					// subu $v0, $0, $a0
 			break;
 		default:
-			#ifdef PSP
-				cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);		// jal simple_func
+			#ifdef _MIPS_ARCH_NEW
+				cache_addd(0x0c000000 + (((Bit32u)fct_ptr) >> 2) & 0x3ffffff, pos);		// jal simple_func
 			#else			
-				// assume that pos points to jalr $at
-				cache_addd(0x3c010000 | (((Bit32u)fct_ptr) >> 16) & 0xFFFF, pos);	// lui $at, %hi(func)
-				cache_addd(0x34210000 | (((Bit32u)fct_ptr) & 0xFFFF), pos + 4);			// ori $at, %lo(func)
-				// jalr $at already there
-				// cache_addd(0x0020F809, pos + 8);										// jalr $at  
+				no jal simple_func
 			#endif
 			break;
 	}
 #else
-	#ifdef PSP
-		cache_addd(0x0c000000+(((Bit32u)fct_ptr)>>2)&0x3ffffff,pos);	// jal simple_func
-	#else
-		// assume that pos points to jalr $at
-		cache_addd(0x3c010000 | (((Bit32u)fct_ptr) >> 16) & 0xFFFF, pos);	// lui $at, %hi(func)
-		cache_addd(0x34210000 | (((Bit32u)fct_ptr) & 0xFFFF), pos + 4);			// ori $at, %lo(func)
-		// jalr $at already there
-		// cache_addd(0x0020F809, pos + 8);										// jalr $at  
+	#ifdef _MIPS_ARCH_NEW
+		cache_addd(0x0c000000 + (((Bit32u)fct_ptr) >> 2) & 0x3ffffff, pos);		// jal simple_func
+	#else			
+		no jal simple_func
 	#endif
 #endif
 }
