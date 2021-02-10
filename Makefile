@@ -37,8 +37,12 @@ ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
-else ifneq ($(ISMAC),)
+else ifeq($(platform),ios-arm64)
   OUTNAME := dosbox_pure_libretro.dylib
+  CXX     = clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk
+  LDFLAGS := -Wl,-dead_strip
+else ifneq ($(ISMAC),)
+  OUTNAME := dosbox_pure_libretro_ios.dylib
   CXX     ?= clang++
   LDFLAGS := -Wl,-dead_strip
 else ifeq ($(platform), vita)
