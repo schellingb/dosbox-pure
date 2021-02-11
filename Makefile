@@ -38,13 +38,19 @@ ifneq ($(ISWIN),)
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
 else ifeq ($(platform),ios-arm64)
+	ifeq ($(IOSSDK),)
+		IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
+	endif
   OUTNAME := dosbox_pure_libretro_ios.dylib
-  CXX     = clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk
+  CXX     = clang++ -arch arm64 -isysroot $(IOSSDK)
   LDFLAGS := -Wl,-dead_strip
   COMMONFLAGS += -DDISABLE_DYNAREC=1
 else ifeq ($(platform),tvos-arm64)
+	ifeq ($(IOSSDK),)
+		IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
+	endif
   OUTNAME := dosbox_pure_libretro_tvos.dylib
-  CXX     = clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS.sdk/
+  CXX     = clang++ -arch arm64 -isysroot $(IOSSDK)
   LDFLAGS := -Wl,-dead_strip
   COMMONFLAGS += -DDISABLE_DYNAREC=1
 else ifneq ($(ISMAC),)
