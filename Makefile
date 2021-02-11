@@ -39,7 +39,7 @@ ifneq ($(ISWIN),)
   LDFLAGS := -Wl,--gc-sections -fno-ident
 else ifeq ($(platform),ios-arm64)
   ifeq ($(IOSSDK),)
-	  IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
+    IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
   endif
   OUTNAME := dosbox_pure_libretro_ios.dylib
   CXX     = clang++ -arch arm64 -isysroot $(IOSSDK)
