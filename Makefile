@@ -174,9 +174,11 @@ ifeq ($(STATIC_LINKING), 1)
 else
 	$(info Linking $@ ...)
 	$(CXX) $(LDFLAGS) -o $@ $^
+ifneq ($(BUILD),DEBUG)
 	@-/opt/gcw0-toolchain/usr/mipsel-gcw0-linux-uclibc/bin/strip --strip-all $@ $(PIPETONULL);true # gcw0
 	@-strip --strip-all $@ $(PIPETONULL);true # others
 	@-strip -xS $@ $(PIPETONULL);true # mac
+endif
 endif
 
 define COMPILE
