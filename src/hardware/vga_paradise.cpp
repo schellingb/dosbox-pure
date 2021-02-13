@@ -23,7 +23,8 @@
 #include "inout.h"
 #include "mem.h"
 
-typedef struct {
+//DBP: Changed this to a C++ struct to avoid 'type is not C-compatible due to this member' warning
+/*typedef*/ struct SVGA_PVGA1A_DATA {
 	Bitu PR0A;
 	Bitu PR0B;
 	Bitu PR1;
@@ -36,7 +37,7 @@ typedef struct {
 
 	Bitu clockFreq[4];
 	Bitu biosMode;
-} SVGA_PVGA1A_DATA;
+} /*SVGA_PVGA1A_DATA*/;
 
 static SVGA_PVGA1A_DATA pvga1a = { 0,0, 0,0,0,0,0, {0,0,0,0}, 0 };
 
