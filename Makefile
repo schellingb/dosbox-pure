@@ -41,10 +41,10 @@ else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= clang++
   LDFLAGS := -Wl,-dead_strip
-else ifeq ($(platform), vita)
+else ifeq ($(platform),vita)
   OUTNAME := dosbox_pure_libretro_vita.a
-  CXX     ?= arm-vita-eabi-g++
-  AR      ?= arm-vita-eabi-ar
+  CXX     := arm-vita-eabi-g++
+  AR      := arm-vita-eabi-ar
   COMMONFLAGS += -DVITA
   COMMONFLAGS += -mthumb -mcpu=cortex-a9 -mfloat-abi=hard -ftree-vectorize -ffast-math -fsingle-precision-constant -funroll-loops
   COMMONFLAGS += -mword-relocations
@@ -52,8 +52,8 @@ else ifeq ($(platform), vita)
   STATIC_LINKING = 1
 else ifeq ($(platform),ctr)
   OUTNAME := dosbox_pure_libretro_ctr.a
-  CXX     ?= $(DEVKITARM)/bin/arm-none-eabi-g++
-  AR      ?= $(DEVKITARM)/bin/arm-none-eabi-ar
+  CXX     := $(DEVKITARM)/bin/arm-none-eabi-g++
+  AR      := $(DEVKITARM)/bin/arm-none-eabi-ar
   COMMONFLAGS += -DARM11 -D_3DS -Os -s -I$(CTRULIB)/include/ -DHAVE_MKDIR
   COMMONFLAGS += -march=armv6k -mtune=mpcore -mfloat-abi=hard -mword-relocations
   COMMONFLAGS += -fomit-frame-pointer -fstrict-aliasing -ffast-math -fpermissive
@@ -61,21 +61,21 @@ else ifeq ($(platform),ctr)
   STATIC_LINKING = 1
 else ifeq ($(platform),ngc)
   OUTNAME := dosbox_pure_libretro_ngc.a
-  CXX     ?= $(DEVKITPPC)/bin/powerpc-eabi-g++
-  AR      ?= $(DEVKITPPC)/bin/powerpc-eabi-ar
+  CXX     := $(DEVKITPPC)/bin/powerpc-eabi-g++
+  AR      := $(DEVKITPPC)/bin/powerpc-eabi-ar
   COMMONFLAGS += -DGEKKO -DHW_DOL -mrvl -mcpu=750 -meabi -mhard-float -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1
   STATIC_LINKING = 1
 else ifeq ($(platform),wii)
   OUTNAME := dosbox_pure_libretro_wii.a
-  CXX     ?= $(DEVKITPPC)/bin/powerpc-eabi-g++
-  AR      ?= $(DEVKITPPC)/bin/powerpc-eabi-ar
+  CXX     := $(DEVKITPPC)/bin/powerpc-eabi-g++
+  AR      := $(DEVKITPPC)/bin/powerpc-eabi-ar
   COMMONFLAGS += -DGEKKO -mrvl -mcpu=750 -meabi -mhard-float -fpermissive
   COMMONFLAGS += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1
   STATIC_LINKING = 1
 else ifeq ($(platform),wiiu)
   OUTNAME := dosbox_pure_libretro_wiiu.a
-  CXX     ?= $(DEVKITPPC)/bin/powerpc-eabi-g++
-  AR      ?= $(DEVKITPPC)/bin/powerpc-eabi-ar
+  CXX     := $(DEVKITPPC)/bin/powerpc-eabi-g++
+  AR      := $(DEVKITPPC)/bin/powerpc-eabi-ar
   COMMONFLAGS += -DGEKKO -DWIIU -DHW_RVL -mcpu=750 -meabi -mhard-float -I./deps/include/
   COMMONFLAGS += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1
   STATIC_LINKING = 1
@@ -89,7 +89,7 @@ else ifeq ($(platform),libnx)
 else ifeq ($(platform), gcw0)
   # You must used the toolchain built on or around 2014-08-20
   OUTNAME := dosbox_pure_libretro.so
-  CXX     ?= /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
+  CXX     := /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
   CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
 else
