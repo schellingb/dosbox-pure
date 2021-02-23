@@ -98,7 +98,7 @@ static bool dbp_timing_tamper;
 static bool dbp_fast_forward;
 static bool dbp_game_running;
 static bool dbp_lockthreadstate;
-static void dbp_calculate_min_sleep() { dbp_min_sleep = 1 + (uint32_t)(700 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
+static void dbp_calculate_min_sleep() { dbp_min_sleep = (uint32_t)(1000 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
 
 // DOSBOX GFX
 enum { DBP_BUFFER_COUNT = 2 };
@@ -3050,8 +3050,8 @@ void retro_run(void)
 	}
 
 	// keep frontend UI thread from running at 100% cpu
-	uint32_t this_run = DBP_GetTicks();
-	if (this_run - dbp_last_run < dbp_min_sleep) sleep_ms(dbp_min_sleep - (this_run - dbp_last_run));
+	uint32_t this_run = DBP_GetTicks(), run_sleep = dbp_min_sleep - (this_run - dbp_last_run);
+	if (run_sleep < dbp_min_sleep) { sleep_ms(run_sleep); this_run += run_sleep; }
 	dbp_last_run = this_run;
 }
 
