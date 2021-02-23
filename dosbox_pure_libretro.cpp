@@ -2883,13 +2883,17 @@ void retro_run(void)
 	extern bool DBP_CPUOverload;
 	if (DBP_CPUOverload)
 	{
-		static uint32_t first_overload;
+		static Bit32u first_overload, last_overload_msg;
 		if (!dbp_overload_count) first_overload = DBP_GetTicks();
 		if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_fast_forward) dbp_overload_count = 0;
 		else if (dbp_overload_count++ >= 200)
 		{
-			if ((DBP_GetTicks() - first_overload) < 10000)
+			Bit32u ticks = DBP_GetTicks();
+			if ((ticks - first_overload) < 10000 && (!last_overload_msg || (ticks - last_overload_msg) >= 60000))
+			{
 				retro_notify(0, RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
+				last_overload_msg = ticks;
+			}
 			dbp_overload_count = 0;
 		}
 	}
