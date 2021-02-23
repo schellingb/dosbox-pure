@@ -141,6 +141,8 @@ enum DBP_Port_Device
 	DBP_DEVICE_ThrustMasterFlightStick = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 6),
 	DBP_DEVICE_BothDOSJoysticks        = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 7),
 	DBP_DEVICE_BindCustomKeyboard      = RETRO_DEVICE_KEYBOARD,
+	DBP_DEVICE_KeyboardMouseLeftStick  = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 1),
+	DBP_DEVICE_KeyboardMouseRightStick = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 2),
 };
 enum { DBP_MAX_PORTS = 8 };
 static const char* DBP_KBDNAMES[] =
@@ -1901,9 +1903,11 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			case DBP_DEVICE_Disabled:
 				continue;
 			case DBP_DEVICE_MouseLeftAnalog:
+			case DBP_DEVICE_KeyboardMouseLeftStick:
 				binds = BindsMouseLeftAnalog;
 				break;
 			case DBP_DEVICE_MouseRightAnalog:
+			case DBP_DEVICE_KeyboardMouseRightStick:
 				binds = BindsMouseRightAnalog;
 				break;
 			case DBP_DEVICE_DefaultJoypad:
@@ -2026,7 +2030,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "On Screen Keyboard", DBPET_ONSCREENKEYBOARD });
 		}
 
-		if (dbp_port_devices[port] == DBP_DEVICE_BindCustomKeyboard)
+		if ((dbp_port_devices[port] & RETRO_DEVICE_MASK) == RETRO_DEVICE_KEYBOARD)
 			continue;
 
 		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_DefaultJoypad)
@@ -2749,6 +2753,8 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", DBP_DEVICE_ThrustMasterFlightStick });
 		controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       DBP_DEVICE_BothDOSJoysticks        });
 		controller_descriptions.push_back({ "Custom Keyboard Bindings",                             DBP_DEVICE_BindCustomKeyboard      });
+		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Left Stick and B/A/X",      DBP_DEVICE_KeyboardMouseLeftStick  });
+		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Right Stick and L/R/X",     DBP_DEVICE_KeyboardMouseRightStick });
 		ports[port].num_types = (unsigned)controller_descriptions.size() - port_first_cd[port];
 	}
 	for (port = 0; port != 3; port++) ports[port].types = &controller_descriptions[port_first_cd[port]];
