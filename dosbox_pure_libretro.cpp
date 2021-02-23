@@ -2209,7 +2209,7 @@ static void check_variables()
 	bool mem_use_extended = (atoi(mem) > 0);
 	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
 	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
-	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "4"), true);
+	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "16"), true);
 
 	// handle setting strings like on/yes/true/savestate or rewind
 	const char* savestate = Variables::RetroGet("dosbox_pure_savestate", "false");
