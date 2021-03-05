@@ -80,13 +80,16 @@ struct MidiHandler_tsf : public MidiHandler
 		if (!sf && (!f || !LoadFont())) return;
 
 		Bit8u channel = (msg[0] & 0x0f);
+//		if (channel == 2 || channel == 3 || channel == 4)
 		switch (msg[0] & 0xf0)
 		{
 			case 0xC0: //channel program (preset) change (special handling for 10th MIDI channel with drums)
+//				printf("[MIDI] Channel %2d PRESET %3d\n", channel, msg[1]);
 				tsf_channel_set_presetnumber(sf, channel, msg[1], (channel == 9));
 				break;
 			case 0x90: //play a note
-				tsf_channel_note_on(sf, channel, msg[1], msg[2] / 127.0f);
+//				printf("[MIDI] Channel %2d NOTE %3d AT VEL %3d\n", channel, msg[1], msg[2]);
+				tsf_channel_note_on(sf, channel, msg[1], msg[2] / 127.0f); //1);//TSF_POWF(msg[2] / 127.0f, .5f));
 				break;
 			case 0x80: //stop a note
 				tsf_channel_note_off(sf, channel, msg[1]);
@@ -95,6 +98,7 @@ struct MidiHandler_tsf : public MidiHandler
 				tsf_channel_set_pitchwheel(sf, channel, ((msg[2] & 0x7f) << 7) | msg[1]);
 				break;
 			case 0xB0: //MIDI controller messages
+//				printf("[MIDI] Channel %2d CONTROLLER %3d - %3d\n", channel, msg[1], msg[2]);
 				tsf_channel_midi_control(sf, channel, msg[1], msg[2]);
 				break;
 		}
@@ -108,9 +112,9 @@ struct MidiHandler_tsf : public MidiHandler
 		// F0 43 10 4C 00 00 7E 00 F7 //XG RESET
 		// F0 7E 7F 09 01 F7 //GM RESET
 		// 00 00 00 00 00 00 // DOOM reset?
-		//fprintf(stderr, "[SYSEX]");
-		//for (Bitu i = 0; i != len; i++) fprintf(stderr, " %02X", sysex[len]);
-		//fprintf(stderr, "\n");
+//		fprintf(stderr, "[SYSEX]");
+//		for (Bitu i = 0; i != len; i++) fprintf(stderr, " %02X", sysex[len]);
+//		fprintf(stderr, "\n");
 	}
 };
 

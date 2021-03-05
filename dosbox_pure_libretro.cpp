@@ -98,7 +98,7 @@ static bool dbp_timing_tamper;
 static bool dbp_fast_forward;
 static bool dbp_game_running;
 static bool dbp_lockthreadstate;
-static void dbp_calculate_min_sleep() { dbp_min_sleep = 1 + (uint32_t)(700 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
+static void dbp_calculate_min_sleep() { dbp_min_sleep = (uint32_t)(1000 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
 
 // DOSBOX GFX
 enum { DBP_BUFFER_COUNT = 2 };
@@ -141,6 +141,8 @@ enum DBP_Port_Device
 	DBP_DEVICE_ThrustMasterFlightStick = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 6),
 	DBP_DEVICE_BothDOSJoysticks        = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 7),
 	DBP_DEVICE_BindCustomKeyboard      = RETRO_DEVICE_KEYBOARD,
+	DBP_DEVICE_KeyboardMouseLeftStick  = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 1),
+	DBP_DEVICE_KeyboardMouseRightStick = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 2),
 };
 enum { DBP_MAX_PORTS = 8 };
 static const char* DBP_KBDNAMES[] =
@@ -1774,7 +1776,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.10";
+	info->library_version  = "0.11";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
@@ -1901,9 +1903,11 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			case DBP_DEVICE_Disabled:
 				continue;
 			case DBP_DEVICE_MouseLeftAnalog:
+			case DBP_DEVICE_KeyboardMouseLeftStick:
 				binds = BindsMouseLeftAnalog;
 				break;
 			case DBP_DEVICE_MouseRightAnalog:
+			case DBP_DEVICE_KeyboardMouseRightStick:
 				binds = BindsMouseRightAnalog;
 				break;
 			case DBP_DEVICE_DefaultJoypad:
@@ -2026,7 +2030,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 			dbp_input_binds.push_back({ port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, "On Screen Keyboard", DBPET_ONSCREENKEYBOARD });
 		}
 
-		if (dbp_port_devices[port] == DBP_DEVICE_BindCustomKeyboard)
+		if ((dbp_port_devices[port] & RETRO_DEVICE_MASK) == RETRO_DEVICE_KEYBOARD)
 			continue;
 
 		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_DefaultJoypad)
@@ -2205,7 +2209,7 @@ static void check_variables()
 	bool mem_use_extended = (atoi(mem) > 0);
 	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
 	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
-	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "4"), true);
+	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "16"), true);
 
 	// handle setting strings like on/yes/true/savestate or rewind
 	const char* savestate = Variables::RetroGet("dosbox_pure_savestate", "false");
@@ -2749,6 +2753,8 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", DBP_DEVICE_ThrustMasterFlightStick });
 		controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       DBP_DEVICE_BothDOSJoysticks        });
 		controller_descriptions.push_back({ "Custom Keyboard Bindings",                             DBP_DEVICE_BindCustomKeyboard      });
+		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Left Stick and B/A/X",      DBP_DEVICE_KeyboardMouseLeftStick  });
+		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Right Stick and L/R/X",     DBP_DEVICE_KeyboardMouseRightStick });
 		ports[port].num_types = (unsigned)controller_descriptions.size() - port_first_cd[port];
 	}
 	for (port = 0; port != 3; port++) ports[port].types = &controller_descriptions[port_first_cd[port]];
@@ -2877,13 +2883,17 @@ void retro_run(void)
 	extern bool DBP_CPUOverload;
 	if (DBP_CPUOverload)
 	{
-		static uint32_t first_overload;
+		static Bit32u first_overload, last_overload_msg;
 		if (!dbp_overload_count) first_overload = DBP_GetTicks();
 		if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_fast_forward) dbp_overload_count = 0;
 		else if (dbp_overload_count++ >= 200)
 		{
-			if ((DBP_GetTicks() - first_overload) < 10000)
+			Bit32u ticks = DBP_GetTicks();
+			if ((ticks - first_overload) < 10000 && (!last_overload_msg || (ticks - last_overload_msg) >= 60000))
+			{
 				retro_notify(0, RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
+				last_overload_msg = ticks;
+			}
 			dbp_overload_count = 0;
 		}
 	}
@@ -3050,8 +3060,8 @@ void retro_run(void)
 	}
 
 	// keep frontend UI thread from running at 100% cpu
-	uint32_t this_run = DBP_GetTicks();
-	if (this_run - dbp_last_run < dbp_min_sleep) sleep_ms(dbp_min_sleep - (this_run - dbp_last_run));
+	uint32_t this_run = DBP_GetTicks(), run_sleep = dbp_min_sleep - (this_run - dbp_last_run);
+	if (run_sleep < dbp_min_sleep) { sleep_ms(run_sleep); this_run += run_sleep; }
 	dbp_last_run = this_run;
 }
 

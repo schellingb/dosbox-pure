@@ -23,7 +23,8 @@
 #include "inout.h"
 #include "mem.h"
 
-typedef struct {
+//DBP: Changed this to a C++ struct to avoid 'type is not C-compatible due to this member' warning
+/*typedef*/ struct SVGA_PVGA1A_DATA {
 	Bitu PR0A;
 	Bitu PR0B;
 	Bitu PR1;
@@ -36,7 +37,7 @@ typedef struct {
 
 	Bitu clockFreq[4];
 	Bitu biosMode;
-} SVGA_PVGA1A_DATA;
+} /*SVGA_PVGA1A_DATA*/;
 
 static SVGA_PVGA1A_DATA pvga1a = { 0,0, 0,0,0,0,0, {0,0,0,0}, 0 };
 
@@ -103,7 +104,7 @@ void write_p3cf_pvga1a(Bitu reg,Bitu val,Bitu /*iolen*/) {
 		pvga1a.PR5 = val;
 		break;
 	default:
-		LOG(LOG_VGAMISC,LOG_NORMAL)("VGA:GFX:PVGA1A:Write to illegal index %2X", reg);
+		LOG(LOG_VGAMISC,LOG_NORMAL)("VGA:GFX:PVGA1A:Write to illegal index %2" sBitfs(X), reg);
 		break;
 	}
 }
@@ -128,7 +129,7 @@ Bitu read_p3cf_pvga1a(Bitu reg,Bitu /*iolen*/) {
 	case 0x0f:
 		return pvga1a.PR5;
 	default:
-		LOG(LOG_VGAMISC,LOG_NORMAL)("VGA:GFX:PVGA1A:Read from illegal index %2X", reg);
+		LOG(LOG_VGAMISC,LOG_NORMAL)("VGA:GFX:PVGA1A:Read from illegal index %2" sBitfs(X), reg);
 		break;
 	}
 
@@ -138,7 +139,7 @@ Bitu read_p3cf_pvga1a(Bitu reg,Bitu /*iolen*/) {
 void FinishSetMode_PVGA1A(Bitu /*crtc_base*/, VGA_ModeExtraData* modeData) {
 	pvga1a.biosMode = modeData->modeNo;
 
-// Reset to single bank and set it to 0. May need to unlock first (DPaint locks on exit)
+	// Reset to single bank and set it to 0. May need to unlock first (DPaint locks on exit)
 	IO_Write(0x3ce, 0x0f);
 	Bitu oldlock = IO_Read(0x3cf);
 	IO_Write(0x3cf, 0x05);
