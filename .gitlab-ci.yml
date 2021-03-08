@@ -38,6 +38,10 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/android-jni.yml'
 
+  # iOS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/ios-arm64.yml'
+
 #  ################################## CONSOLES ################################
 #  # Nintendo 3DS
 #  - project: 'libretro-infrastructure/ci-templates'
@@ -54,6 +58,10 @@ include:
 #  # PlayStation Vita
 #  - project: 'libretro-infrastructure/ci-templates'
 #    file: '/vita-static.yml'
+
+  # tvOS (AppleTV)
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/tvos-arm64.yml'
 
 # Stages for building
 stages:
@@ -127,6 +135,11 @@ android-x86:
     - .libretro-android-jni-x86
     - .core-defs
 
+ios-arm64:
+  extends:
+    - .libretro-ios-arm64-make-default
+    - .core-defs
+
 #################################### CONSOLES #################################
 ## Nintendo 3DS
 #libretro-build-ctr:
@@ -151,3 +164,8 @@ android-x86:
 #  extends:
 #    - .libretro-vita-static-retroarch-master
 #    - .core-defs
+
+tvos-arm64:
+  extends:
+    - .libretro-tvos-arm64-make-default
+    - .core-defs
