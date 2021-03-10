@@ -29,8 +29,7 @@ extern "C" int getVMBlock();
 
 #ifdef HAVE_LIBNX
 #include <stdio.h>
-#include <libnx/jit.h>
-#include <libnx/result.h>
+#include <switch.h>
 static Jit dynarec_jit;
 static u_char *jit_dynrec;
 static void *jit_rx_addr, *jit_rw_addr, *jit_rw_buffer, *jit_old_addr;
