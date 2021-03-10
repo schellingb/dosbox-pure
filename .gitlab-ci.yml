@@ -128,17 +128,17 @@ android-x86:
     - .core-defs
 
 ################################### CONSOLES #################################
-# Nintendo 3DS
-libretro-build-ctr:
-  extends:
-    - .libretro-ctr-static-retroarch-master
-    - .core-defs
-
-# Nintendo WiiU
-libretro-build-wiiu:
-  extends:
-    - .libretro-wiiu-static-retroarch-master
-    - .core-defs
+## Nintendo 3DS
+#libretro-build-ctr:
+#  extends:
+#    - .libretro-ctr-static-retroarch-master
+#    - .core-defs
+#
+## Nintendo WiiU
+#libretro-build-wiiu:
+#  extends:
+#    - .libretro-wiiu-static-retroarch-master
+#    - .core-defs
 
 # Nintendo Switch
 libretro-build-libnx-aarch64:
