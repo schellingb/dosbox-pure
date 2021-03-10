@@ -791,7 +791,7 @@ static void cache_close(void) {
 #elif defined (HAVE_LIBNX)
 		nxmunmap(cache_code_start_ptr, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #elif defined (VITA)
-		sceKernelFreeMemBlock(sceBlock)
+		sceKernelFreeMemBlock(sceBlock);
 		sceBlock = 0;
 #else
 		free(cache_code_start_ptr);
