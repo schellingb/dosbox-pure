@@ -37,10 +37,12 @@ ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
+  COMMONFLAGS += -pthread
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= clang++
   LDFLAGS := -Wl,-dead_strip
+  COMMONFLAGS += -pthread
 else ifeq ($(platform),vita)
   OUTNAME := dosbox_pure_libretro_vita.a
   CXX     := arm-vita-eabi-g++
@@ -92,10 +94,12 @@ else ifeq ($(platform), gcw0)
   CXX     := /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
   CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
+  COMMONFLAGS += -pthread
 else
   OUTNAME := dosbox_pure_libretro.so
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
+  COMMONFLAGS += -pthread
   # ARM optimizations
   PROCCPU := $(shell cat /proc/cpuinfo))
   ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
@@ -144,7 +148,7 @@ endif
 
 CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
 CFLAGS  += -fvisibility=hidden -ffunction-sections
-CFLAGS  += -pthread -D__LIBRETRO__ -Iinclude
+CFLAGS  += -D__LIBRETRO__ -Iinclude
 CFLAGS  += $(COMMONFLAGS)
 #CFLAGS  += -fdata-sections #saves around 32 bytes on most platforms but wrongfully adds up to 60MB on msys2
 

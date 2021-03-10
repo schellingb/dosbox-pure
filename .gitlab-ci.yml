@@ -38,28 +38,28 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/android-jni.yml'
 
-#  ################################## CONSOLES ################################
-#  # Nintendo 3DS
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/ctr-static.yml'
-#
-#  # Nintendo WiiU
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/wiiu-static.yml'
-#
-#  # Nintendo Switch
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/libnx-static.yml'
-#
-#  # PlayStation Vita
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/vita-static.yml'
+  ################################## CONSOLES ################################
+  # Nintendo 3DS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/ctr-static.yml'
+
+  # Nintendo WiiU
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/wiiu-static.yml'
+
+  # Nintendo Switch
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/libnx-static.yml'
+
+  # PlayStation Vita
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/vita-static.yml'
 
 # Stages for building
 stages:
   - build-prepare
   - build-shared
-#  - build-static
+  - build-static
 
 ##############################################################################
 #################################### STAGES ##################################
@@ -127,27 +127,27 @@ android-x86:
     - .libretro-android-jni-x86
     - .core-defs
 
-#################################### CONSOLES #################################
-## Nintendo 3DS
-#libretro-build-ctr:
-#  extends:
-#    - .libretro-ctr-static-retroarch-master
-#    - .core-defs
-#
-## Nintendo WiiU
-#libretro-build-wiiu:
-#  extends:
-#    - .libretro-wiiu-static-retroarch-master
-#    - .core-defs
-#
-## Nintendo Switch
-#libretro-build-libnx-aarch64:
-#  extends:
-#    - .libretro-libnx-static-retroarch-master
-#    - .core-defs
-#
-## PlayStation Vita
-#libretro-build-vita:
-#  extends:
-#    - .libretro-vita-static-retroarch-master
-#    - .core-defs
+################################### CONSOLES #################################
+# Nintendo 3DS
+libretro-build-ctr:
+  extends:
+    - .libretro-ctr-static-retroarch-master
+    - .core-defs
+
+# Nintendo WiiU
+libretro-build-wiiu:
+  extends:
+    - .libretro-wiiu-static-retroarch-master
+    - .core-defs
+
+# Nintendo Switch
+libretro-build-libnx-aarch64:
+  extends:
+    - .libretro-libnx-static-retroarch-master
+    - .core-defs
+
+# PlayStation Vita
+libretro-build-vita:
+  extends:
+    - .libretro-vita-static-retroarch-master
+    - .core-defs
