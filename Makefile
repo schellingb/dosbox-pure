@@ -41,7 +41,7 @@ else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= clang++
   LDFLAGS := -Wl,-dead_strip
-else ifeq ($(platform),windows)
+else ifeq ($(platform),windows) #For MSYS2 only
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
