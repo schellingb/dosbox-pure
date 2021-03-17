@@ -41,6 +41,10 @@ else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= clang++
   LDFLAGS := -Wl,-dead_strip
+else ifeq ($(platform),windows)
+  OUTNAME := dosbox_pure_libretro.dll
+  CXX     ?= g++
+  LDFLAGS := -Wl,--gc-sections -fno-ident
 else ifeq ($(platform),vita)
   OUTNAME := dosbox_pure_libretro_vita.a
   CXX     := arm-vita-eabi-g++
