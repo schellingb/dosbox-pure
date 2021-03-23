@@ -38,6 +38,33 @@ ifneq ($(ISWIN),)
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
   COMMONFLAGS += -pthread
+else ifneq (,$(findstring ios,$(platform)))
+  ifeq ($(IOSSDK),)
+     IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
+  endif
+  OUTNAME := dosbox_pure_libretro_ios.dylib
+  MINVERSION :=
+  COMMONFLAGS += -DDISABLE_DYNAREC=1
+ifeq ($(platform),ios-arm64)
+  CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
+else
+  CXX     = c++ -arch armv7 -isysroot $(IOSSDK)
+endif
+  LDFLAGS := -Wl,-dead_strip
+ifeq ($(platform),$(filter $(platform),ios9 ios-arm64))
+  MINVERSION = -miphoneos-version-min=8.0
+else
+  MINVERSION = -miphoneos-version-min=5.0
+endif
+  COMMONFLAGS += $(MINVERSION)
+else ifeq ($(platform),tvos-arm64)
+  ifeq ($(IOSSDK),)
+     IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
+  endif
+  OUTNAME := dosbox_pure_libretro_tvos.dylib
+  CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
+  LDFLAGS := -Wl,-dead_strip
+  COMMONFLAGS += -DDISABLE_DYNAREC=1
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= clang++
