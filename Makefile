@@ -67,9 +67,19 @@ else ifeq ($(platform),tvos-arm64)
   COMMONFLAGS += -DDISABLE_DYNAREC=1
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
-  CXX     ?= clang++
+  CXX     ?= c++
   LDFLAGS := -Wl,-dead_strip
   COMMONFLAGS += -pthread
+
+   ifeq ($(CROSS_COMPILE),1)
+	TARGET_RULE   = -target $(LIBRETRO_APPLE_PLATFORM) -isysroot $(LIBRETRO_APPLE_ISYSROOT)
+	COMMONFLAGS   += $(TARGET_RULE)
+	LDFLAGS       += $(TARGET_RULE)
+   endif
+
+   COMMONFLAGS  += $(ARCHFLAGS)
+   LDFLAGS      += $(ARCHFLAGS)
+
 else ifeq ($(platform),windows) # For MSYS2 only
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
