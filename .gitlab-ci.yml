@@ -76,12 +76,24 @@ include:
     file: '/tvos-arm64.yml'
 
   #################################### MISC ##################################
+#
+#  # Nintendo WiiU
+#  - project: 'libretro-infrastructure/ci-templates'
+#    file: '/wiiu-static.yml'
+#
+#  # Nintendo Switch
+#  - project: 'libretro-infrastructure/ci-templates'
+#    file: '/libnx-static.yml'
+#
+#  # PlayStation Vita
+#  - project: 'libretro-infrastructure/ci-templates'
+#    file: '/vita-static.yml'
 
 # Stages for building
 stages:
   - build-prepare
   - build-shared
-  - build-static
+#  - build-static
 
 ##############################################################################
 #################################### STAGES ##################################
@@ -175,13 +187,14 @@ libretro-build-tvos-arm64:
     - .libretro-tvos-arm64-make-default
     - .core-defs
 
-################################### CONSOLES #################################
+#################################### CONSOLES #################################
 ## Nintendo 3DS
 #libretro-build-ctr:
 #  extends:
 #    - .libretro-ctr-static-retroarch-master
 #    - .core-defs
 
+#
 ## Nintendo WiiU
 #libretro-build-wiiu:
 #  extends:
@@ -189,10 +202,10 @@ libretro-build-tvos-arm64:
 #    - .core-defs
 
 # Nintendo Switch
-libretro-build-libnx-aarch64:
-  extends:
-    - .libretro-libnx-static-retroarch-master
-    - .core-defs
+#libretro-build-libnx-aarch64:
+  #extends:
+    #- .libretro-libnx-static-retroarch-master
+    #- .core-defs
 
 ## PlayStation Vita
 #libretro-build-vita:

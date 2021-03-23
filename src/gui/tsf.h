@@ -813,7 +813,11 @@ static void tsf_load_presets(tsf* res, struct tsf_hydra *hydra, unsigned int fon
 			}
 
 			// Modulators (TODO)
-			//if (pbag->modNdx < pbag[1].modNdx) addUnsupportedOpcode("any modulator");
+			//if (ppbag->modNdx < ppbag[1].modNdx) addUnsupportedOpcode("any modulator");
+//			if (ppbag->modNdx < ppbag[1].modNdx)
+//			{
+//				printf("UNSUPPORTED MODULATOR\n");
+//			}
 
 			// Handle preset's global zone.
 			if (ppbag == hydra->pbags + pphdr->presetBagNdx && !hadGenInstrument)
@@ -1736,7 +1740,8 @@ TSFDEF void tsf_channel_midi_control(tsf* f, int channel, int controller, int co
 	}
 	return;
 TCMC_SET_VOLUME:
-	//Raising to the power of 3 seems to result in a decent sounding volume curve for MIDI
+//	printf("[MIDI] Channel %2d to %5d - %5d\n", channel, c->midiVolume, c->midiExpression);
+//	tsf_channel_set_volume(f, channel, TSF_POWF((c->midiVolume / 16383.0f) * (c->midiExpression / 16383.0f), 2.0f));
 	tsf_channel_set_volume(f, channel, TSF_POWF((c->midiVolume / 16383.0f) * (c->midiExpression / 16383.0f), 3.0f));
 	return;
 TCMC_SET_PAN:
