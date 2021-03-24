@@ -52,14 +52,14 @@
 #define THREAD_CC WINAPI
 struct Thread { typedef DWORD RET_t; typedef RET_t (THREAD_CC *FUNC_t)(LPVOID); static void StartDetached(FUNC_t f, void* p = NULL) { HANDLE h = CreateThread(0,0,f,p,0,0); CloseHandle(h); } };
 struct Mutex { Mutex() : h(CreateMutexA(0,0,0)) {} ~Mutex() { CloseHandle(h); } __inline void Lock() { WaitForSingleObject(h,INFINITE); } __inline void Unlock() { ReleaseMutex(h); } private:HANDLE h;Mutex(const Mutex&);Mutex& operator=(const Mutex&);};
-static INLINE void sleep_ms(Bit32u ms) { Sleep(ms); }
 #else
 #include <pthread.h>
 #define THREAD_CC
 struct Thread { typedef void* RET_t; typedef RET_t (THREAD_CC *FUNC_t)(void*); static void StartDetached(FUNC_t f, void* p = NULL) { pthread_t h = 0; pthread_create(&h, NULL, f, p); } };
 struct Mutex { Mutex() { pthread_mutex_init(&h,0); } ~Mutex() { pthread_mutex_destroy(&h); } __inline void Lock() { pthread_mutex_lock(&h); } __inline void Unlock() { pthread_mutex_unlock(&h); } private:pthread_mutex_t h;Mutex(const Mutex&);Mutex& operator=(const Mutex&);};
-static void sleep_ms(Bit32u ms) { timespec req, rem; req.tv_sec = ms / 1000; req.tv_nsec = (ms % 1000) * 1000000ULL; while (nanosleep(&req, &rem)) req = rem; }
 #endif
+#include "libretro-common/include/retro_timers.h"
+static INLINE void sleep_ms(Bit32u ms) { retro_sleep(ms); }
 #endif
 
 // RETROARCH AUDIO/VIDEO

@@ -16,10 +16,6 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifdef HAVE_LIBNX
-#include "../../../switch/mman.h"
-#endif
-
 #ifdef VITA
 #include <psp2/kernel/sysmem.h>
 static int sceBlock;
@@ -29,6 +25,47 @@ static int sceBlock;
    +PAGESIZE_TEMP which is currently 8.1MiB.  */
 int _newlib_vm_size_user = 0x1000000;
 extern "C" int getVMBlock();
+#endif
+
+#ifdef HAVE_LIBNX
+#include <stdio.h>
+#include <switch.h>
+static Jit dynarec_jit;
+static u_char *jit_dynrec;
+static void *jit_rx_addr, *jit_rw_addr, *jit_rw_buffer, *jit_old_addr;
+static size_t jit_len;
+static bool jit_is_executable;
+extern char __start__;
+static inline void *nxmmap(void *addr, size_t len)
+{
+	jit_len = len;
+	if (R_SUCCEEDED(jitCreate(&dynarec_jit, jit_len)))
+	{
+		jit_len = dynarec_jit.size;
+		jit_rw_buffer = malloc(jit_len);
+		jit_rx_addr = (void*)(&__start__ - 0x1000 - jit_len);
+		jit_old_addr = dynarec_jit.rx_addr;
+		dynarec_jit.rx_addr = jit_rx_addr;
+		jit_rw_addr = jitGetRwAddr(&dynarec_jit);
+		jit_dynrec = (u_char*)jit_rw_addr;
+		printf("Jit Initialized: RX %p, RW %p\n", jit_rx_addr, jit_rw_addr);
+		jitTransitionToExecutable(&dynarec_jit);
+		jit_is_executable = true;
+		return jit_rx_addr;
+	}
+	printf("Jit failed!\n");
+	return (void*)-1;
+}
+static inline int nxmunmap(void *addr, size_t)
+{
+	jitTransitionToWritable(&dynarec_jit);
+	if(jit_old_addr != 0) dynarec_jit.rx_addr = jit_old_addr;
+	jit_old_addr = 0;
+	jitClose(&dynarec_jit);
+	free(jit_rw_buffer);
+	jit_rw_buffer = 0;
+	return 0;
+}
 #endif
 
 class CodePageHandlerDynRec;	// forward
@@ -672,7 +709,7 @@ static void cache_init(bool enable) {
 			if (!cache_code_start_ptr)
 				cache_code_start_ptr=(Bit8u*)malloc(CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #elif defined (HAVE_LIBNX)
-			cache_code_start_ptr=(Bit8u*)mmap(NULL, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP, 0, 0, 0, 0);
+			cache_code_start_ptr=(Bit8u*)nxmmap(NULL, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #elif defined (VITA)
 			sceBlock = getVMBlock();
 			if (sceBlock >= 0) {
@@ -752,9 +789,9 @@ static void cache_close(void) {
 		if (!VirtualFree(cache_code_start_ptr, 0, MEM_RELEASE))
 			free(cache_code_start_ptr);
 #elif defined (HAVE_LIBNX)
-		munmap(cache_code_start_ptr, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
+		nxmunmap(cache_code_start_ptr, CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #elif defined (VITA)
-		sceKernelFreeMemBlock(sceBlock)
+		sceKernelFreeMemBlock(sceBlock);
 		sceBlock = 0;
 #else
 		free(cache_code_start_ptr);

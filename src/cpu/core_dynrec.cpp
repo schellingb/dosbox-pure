@@ -64,21 +64,6 @@
 
 //#define DYN_LOG 1 //Turn Logging on.
 
-#ifdef HAVE_LIBNX
-#include <switch.h>
-
-extern "C" {
-Jit dynarec_jit;
-void *jit_rx_addr = 0;
-u_char *jit_dynrec = 0;
-void *jit_rw_addr = 0;
-void *jit_rw_buffer = 0;
-void *jit_old_addr = 0;
-size_t jit_len = 0;
-bool jit_is_executable = false;
-}
-#endif
-
 
 #if C_FPU
 #define CPU_FPU 1                                               //Enable FPU escape instructions

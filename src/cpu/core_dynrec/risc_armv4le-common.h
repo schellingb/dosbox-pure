@@ -88,7 +88,7 @@ static void cache_block_closing(const Bit8u* block_start,Bitu block_size) {
 #if defined(__QNX__)
 	msync(block_start, block_size, MS_INVALIDATE_ICACHE | MS_SYNC | MS_INVALIDATE | MS_CACHE_ONLY);
 #elif defined(VITA)
-	sceKernelSyncVMDomain(sceBlock, block_start, block_size);
+	sceKernelSyncVMDomain(sceBlock, (void*)block_start, block_size);
 #elif (__ARM_EABI__)
 	//flush cache - eabi
 	register unsigned long _beg __asm ("a1") = (unsigned long)(block_start);				// block start
