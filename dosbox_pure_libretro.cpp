@@ -44,6 +44,7 @@
 #include "keyb2joypad.h"
 #include "libretro-common/include/libretro.h"
 #include <string>
+#include <chrono>
 
 #ifndef DBP_THREADS_CLASSES
 #ifdef WIN32
@@ -2318,6 +2319,11 @@ static void check_variables()
 	dbp_joy_analog_deadzone = (int)((float)atoi(Variables::RetroGet("dosbox_pure_joystick_analog_deadzone", "15")) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 }
 
+static retro_time_t time_in_microseconds()
+{
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
+
 static bool init_dosbox(const char* path, bool firsttime)
 {
 	DBP_ASSERT(dbp_state == DBPSTATE_BOOT);
@@ -2676,12 +2682,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	}
 
 	struct retro_perf_callback perf;
-	time_cb = (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) ? perf.get_time_usec : NULL);
-	if (!time_cb)
-	{
-		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not supply proper PERF_INTERFACE.\n");
-		return false;
-	}
+	time_cb = (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) ? perf.get_time_usec : &time_in_microseconds);
 
 	//// RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK crashes RetroArch with the XAudio driver when launching from the command line
 	//// Also it explicitly doesn't support save state rewinding when used so give up on this for now.
