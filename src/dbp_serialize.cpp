@@ -271,7 +271,7 @@ void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
 
 	Bit32u magic;
 	bool serialized_invalid_state;
-	if (ar.mode == DBPArchive::MODE_SAVE)
+	if (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE || ar.mode == DBPArchive::MODE_MAXSIZE)
 	{
 		magic = 0xD05B5747;
 		ar.version = 3;
