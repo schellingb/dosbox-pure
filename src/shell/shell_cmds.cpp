@@ -1277,6 +1277,9 @@ void DOS_Shell::CMD_CHOICE(char * args){
 	Bit16u n=1;
 	do {
 		DOS_ReadFile (STDIN,&c,&n);
+
+		//DBP: Added this abort to support restart
+		if (first_shell->exit) { ptr = rem; break; }
 	} while (!c || !(ptr = strchr(rem,(optS?c:toupper(c)))));
 	c = optS?c:(Bit8u)toupper(c);
 	DOS_WriteFile (STDOUT,&c, &n);
