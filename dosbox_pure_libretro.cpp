@@ -3054,10 +3054,13 @@ void retro_run(void)
 			if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_fast_forward) mix_missed = 0;
 			else mix_missed += (mix_samples_need - mix_samples);
 		}
-		dbp_audiomutex.Lock();
-		MIXER_CallBack(0, audioData, mix_samples * 4);
-		dbp_audiomutex.Unlock();
-		audio_batch_cb((int16_t*)audioData, mix_samples);
+		if (mix_samples)
+		{
+			dbp_audiomutex.Lock();
+			MIXER_CallBack(0, audioData, mix_samples * 4);
+			dbp_audiomutex.Unlock();
+			audio_batch_cb((int16_t*)audioData, mix_samples);
+		}
 	}
 
 	// keep frontend UI thread from running at 100% cpu
