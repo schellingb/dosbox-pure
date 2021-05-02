@@ -262,27 +262,26 @@ static Bit64s __rdtsc() { struct timeval tv; gettimeofday(&tv, NULL); return ((B
 #include <vga.h>
 #include <paging.h>
 
-void DBPSerialize_All(DBPArchive& ar, bool invalid_state)
+void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 {
 	#ifdef DBP_SERIALIZE_PERF_TEST
 	static Bit64s sum_ticks, avg_ticks, sum_count, avg_size;
 	Bit64s from = __rdtsc();
 	#endif
 
-	Bit32u magic;
-	bool serialized_invalid_state;
-	if (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE || ar.mode == DBPArchive::MODE_MAXSIZE)
+	ar.version = 3;
+	if (ar.mode != DBPArchive::MODE_ZERO)
 	{
-		magic = 0xD05B5747;
-		ar.version = 3;
-		serialized_invalid_state = invalid_state;
-	}
-	ar << magic << ar.version << serialized_invalid_state;
-	if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
-	{
+		Bit32u magic = 0xD05B5747;
+		Bit8u invalid_state = (dos_running ? 0 : 1) | (game_running ? 0 : 2);
+		ar << magic << ar.version << invalid_state;
 		if (magic != 0xD05B5747) { ar.had_error = DBPArchive::ERR_LAYOUT; return; }
 		if (ar.version < 1 || ar.version > 3) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
-		if (serialized_invalid_state || invalid_state) { ar.had_error = DBPArchive::ERR_INVALIDSTATE; return; }
+		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
+		{
+			if (!dos_running  || (invalid_state & 1)) { ar.had_error = DBPArchive::ERR_DOSNOTRUNNING; return; }
+			if (!game_running || (invalid_state & 2)) { ar.had_error = DBPArchive::ERR_GAMENOTRUNNING; return; }
+		}
 	}
 
 	Bit8u serialized_machine = (Bit8u)machine, current_machine = serialized_machine;

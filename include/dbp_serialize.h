@@ -57,7 +57,8 @@ struct DBPArchive
 		ERR_NONE,
 		ERR_LAYOUT,
 		ERR_VERSION,
-		ERR_INVALIDSTATE,
+		ERR_DOSNOTRUNNING,
+		ERR_GAMENOTRUNNING,
 		ERR_WRONGMACHINECONFIG,
 		ERR_WRONGMEMORYCONFIG,
 		ERR_WRONGVGAMEMCONFIG,
@@ -150,6 +151,6 @@ struct DBPArchiveZeroer : DBPArchive
 	virtual size_t GetOffset() { return 0; }
 };
 
-void DBPSerialize_All(DBPArchive& ar, bool invalid_state);
+void DBPSerialize_All(DBPArchive& ar, bool dos_running = true, bool game_running = true);
 
 #endif

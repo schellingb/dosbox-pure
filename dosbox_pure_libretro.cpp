@@ -2804,7 +2804,7 @@ void retro_reset(void)
 {
 	DBP_Shutdown();
 	DBPArchiveZeroer ar;
-	DBPSerialize_All(ar, false);
+	DBPSerialize_All(ar);
 	extern const char* RunningProgram;
 	RunningProgram = "DOSBOX";
 	dbp_crash_message.clear();
@@ -3069,20 +3069,19 @@ void retro_run(void)
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 {
 	if (dbp_serializemode == DBPSERIALIZE_DISABLED) return false;
-	if (dbp_serializemode == DBPSERIALIZE_STATES || ar.mode == DBPArchive::MODE_SIZE)
-	{
-		if (ar.mode == DBPArchive::MODE_MAXSIZE) return false; // measure max size for rewind buffers is ignored with DBPSERIALIZE_STATES
-		if (!dbp_game_running) { retro_notify(0, RETRO_LOG_WARN, "Unable to save/load state while start menu is open"); return false; }
-		if (dbp_state != DBPSTATE_RUNNING) { retro_notify(0, RETRO_LOG_WARN, "Unable to save/load state while DOS is not running"); return false; }
-	}
 	DBP_LockThread(true);
-	DBPSerialize_All(ar, (!dbp_game_running || (dbp_state != DBPSTATE_RUNNING)));
+	DBPSerialize_All(ar, (dbp_state == DBPSTATE_RUNNING), dbp_game_running);
 	if (dbp_game_running && ar.mode == DBPArchive::MODE_LOAD) dbp_lastmenuticks = DBP_GetTicks(); // force show menu on immediate emulation crash
 	if (unlock_thread) DBP_LockThread(false);
-	if (ar.had_error && ar.mode == DBPArchive::MODE_LOAD)
+	if (ar.had_error && (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE))
 	{
 		static const char* machine_names[MCH_VGA+1] = { "hercules", "cga", "tandy", "pcjr", "ega", "vga" };
-		switch (ar.had_error)
+		static Bit8u lastErrorHad;
+		static Bit32u lastErrorTick;
+		Bit32u ticks = DBP_GetTicks();
+		if ((ticks - lastErrorTick) < 5000U) return true; // don't spam errors (especially when doing rewind)
+		lastErrorTick = ticks;
+		switch (lastErrorHad = ar.had_error)
 		{
 			case DBPArchive::ERR_LAYOUT:
 				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
@@ -3090,8 +3089,11 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 			case DBPArchive::ERR_VERSION:
 				retro_notify(0, RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
-			case DBPArchive::ERR_INVALIDSTATE:
-				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Save state was made during start menu or while system was crashed");
+			case DBPArchive::ERR_DOSNOTRUNNING:
+				retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while DOS was" : "save state while DOS is"));
+				break;
+			case DBPArchive::ERR_GAMENOTRUNNING:
+				retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while game was" : "save state while game is"));
 				break;
 			case DBPArchive::ERR_WRONGMACHINECONFIG:
 				retro_notify(0, RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
