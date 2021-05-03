@@ -375,6 +375,14 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 			p_dos += strlen(p_dos);
 			*(p_dos++) = '\\';
 		}
+		if (p_dos == dos_path)
+		{
+			// try open path untransformed (works on localDrive and with paths without long file names)
+			if (writable && Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READWRITE))
+				goto get_file_size;
+			if (Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READ))
+				goto get_file_size_write_protected;
+		}
 		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; nDir = ++n)
 		{
 			while (*n != '/' && *n != '\\' && n != nEnd) n++;
