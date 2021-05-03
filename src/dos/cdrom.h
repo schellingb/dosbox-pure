@@ -226,6 +226,9 @@ public:
 	
 static	CDROM_Interface_Image* images[26];
 
+	//DBP: for restart
+static	void	ShutDown();
+
 private:
 	// player
 static	void	CDAudioCallBack(Bitu len);

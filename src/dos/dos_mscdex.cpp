@@ -1352,6 +1352,8 @@ void MSCDEX_ShutDown(Section* /*sec*/) {
 	delete mscdex;
 	mscdex = 0;
 	curReqheaderPtr = 0;
+	//DBP: for restart
+	CDROM_Interface_Image::ShutDown();
 }
 
 void MSCDEX_Init(Section* sec) {

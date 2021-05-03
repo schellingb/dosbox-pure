@@ -374,6 +374,14 @@ bool CDROM_Interface_Image::ReadSector(Bit8u *buffer, bool raw, unsigned long se
 	return tracks[track].file->read(buffer, seek, length);
 }
 
+//DBP: for restart
+void CDROM_Interface_Image::ShutDown()
+{
+	if (CDROM_Interface_Image::player.channel)
+		MIXER_DelChannel(CDROM_Interface_Image::player.channel);
+	memset(&CDROM_Interface_Image::player, 0, sizeof(CDROM_Interface_Image::player));
+}
+
 void CDROM_Interface_Image::CDAudioCallBack(Bitu len)
 {
 	len *= 4;       // 16 bit, stereo
