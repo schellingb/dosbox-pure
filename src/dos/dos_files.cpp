@@ -1342,16 +1342,15 @@ void DBPSerialize_Files(DBPArchive& ar)
 	for (Bit8u i = 0; i < DOS_FILES; i++)
 	{
 		if (!Files[i]) continue;
+		DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
 		if (ar.mode != DBPArchive::MODE_LOAD)
 		{
-			if (!Files[i]->open || Files[i]->refCtr <= 0) { DBP_ASSERT(false); continue; } //file handles shouldn't hang around closed
 			if (!Files[i]->name || !*Files[i]->name) { DBP_ASSERT(false); continue; } //file handles need a name
 			openFiles++;
 		}
 		else
 		{
 			// First close all files
-			DBP_ASSERT(Files[i]->open && Files[i]->refCtr > 0); //files shouldn't hang around closed
 			while (Files[i]->refCtr > 0) { if (Files[i]->IsOpen()) Files[i]->Close(); Files[i]->RemoveRef(); }
 			delete Files[i];
 			Files[i] = NULL;
@@ -1367,13 +1366,14 @@ void DBPSerialize_Files(DBPArchive& ar)
 		Bit8u drive, name_len, devnum; Bit32u flags; Bit16u attr; Bit32u refCtr, seekPos;
 		if (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE)
 		{
-			while (!Files[++i] || !Files[i]->open || Files[i]->refCtr <= 0 || !Files[i]->name || !*Files[i]->name) { }
+			while (!Files[++i] || !Files[i]->name || !*Files[i]->name) { }
 			drive = Files[i]->GetDrive();
 			name_len = (Bit8u)strlen(Files[i]->name);
 			flags = Files[i]->flags;
 			attr = Files[i]->attr;
 			refCtr = (Bit32u)Files[i]->refCtr;
-			Files[i]->Seek(&(seekPos = 0), DOS_SEEK_CUR);
+			seekPos = 0;
+			if (refCtr) Files[i]->Seek(&seekPos, DOS_SEEK_CUR);
 			if (drive >= DOS_DRIVES) devnum = (Bit8u)dynamic_cast<DOS_Device*>(Files[i])->GetDeviceNumber();
 		}
 
@@ -1394,17 +1394,25 @@ void DBPSerialize_Files(DBPArchive& ar)
 			}
 			else
 			{
-				if (!Drives[drive] || (
+				if (!refCtr)
+				{
+					// real file was closed but the DOS program still holds a handle to it (create valid closed dummy file instance)
+					Files[i] = new rawFile(NULL, false);
+					Files[i]->AddRef();
+					Files[i]->SetName(&buf[0]);
+				}
+				else if (!Drives[drive] || (
 					!Drives[drive]->FileOpen(&Files[i], &buf[0], flags) &&
 						(!OPEN_IS_WRITING(flags) || !Drives[drive]->FileCreate(&Files[i], &buf[0], attr))))
 					{ ar.warnings |= DBPArchive::WARN_WRONGDRIVES; continue; }
 				DBP_ASSERT(Files[i]);
 				Files[i]->SetDrive(drive);
 			}
+			if (!refCtr && Files[i]->open) Files[i]->Close();
 			Files[i]->flags = flags;
 			Files[i]->attr = attr;
 			Files[i]->refCtr = (Bits)refCtr;
-			Files[i]->Seek(&seekPos, DOS_SEEK_SET);
+			if (seekPos) Files[i]->Seek(&seekPos, DOS_SEEK_SET);
 		}
 	}
 }

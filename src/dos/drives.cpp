@@ -126,7 +126,7 @@ void DOS_Drive::ForceCloseAll() {
 	if (drive != DOS_DRIVES) {
 		for (i = 0; i < DOS_FILES; i++) {
 			if (Files[i] && Files[i]->GetDrive() == drive) {
-				DBP_ASSERT(Files[i]->open && Files[i]->refCtr > 0); //files shouldn't hang around closed
+				DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
 				while (Files[i]->refCtr > 0) { if (Files[i]->IsOpen()) Files[i]->Close(); Files[i]->RemoveRef(); }
 				delete Files[i];
 				Files[i] = NULL;
@@ -306,10 +306,8 @@ bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
 			const char* fname = f->name;
 			DOSPATH_REMOVE_ENDINGDOTS(fname);
 			if (strcasecmp(name, fname)) continue;
-			DBP_ASSERT(f->open && f->refCtr > 0); //files shouldn't hang around closed
+			DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
 			while (f->refCtr > 0) { if (f->IsOpen()) f->Close(); f->RemoveRef(); }
-			delete f;
-			Files[i] = NULL;
 			found_file = true;
 		}
 	}
