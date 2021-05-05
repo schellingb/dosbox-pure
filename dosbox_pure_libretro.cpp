@@ -2927,12 +2927,24 @@ void retro_run(void)
 		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, NULL, DBPET_MOUSESETSPEED,  1 },
 		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, NULL, DBPET_MOUSESETSPEED, -1 },
 	};
-	static bool use_input_intercept;
-	bool toggled_intercept = (use_input_intercept != !!dbp_input_intercept);
-	if (toggled_intercept) use_input_intercept ^= 1;
 	DBP_InputBind *binds = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]);
 	DBP_InputBind *binds_end = binds + dbp_input_binds.size();
 	input_poll_cb();
+	static bool use_input_intercept;
+	bool toggled_intercept = (use_input_intercept != !!dbp_input_intercept);
+	if (toggled_intercept)
+	{
+		use_input_intercept ^= 1;
+		if (!use_input_intercept) for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
+		{
+			// Release all pressed events when leaving intercepted screen
+			DBP_ASSERT(b->evt != DBPET_AXIS_TO_KEY);
+			if (!b->lastval) continue;
+			if (b->evt <= _DBPET_JOY_AXIS_MAX) DBP_QueueEvent((DBP_Event_Type)b->evt, 0);
+			else DBP_QueueEvent((DBP_Event_Type)(b->evt + 1), b->meta);
+			b->lastval = 0;
+		}
+	}
 	if (use_input_intercept)
 	{
 		if (toggled_intercept)
