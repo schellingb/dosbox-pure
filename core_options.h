@@ -128,6 +128,7 @@ static retro_core_option_definition option_defs[] =
 		{
 			{ "us",    "US (default)" },
 			{ "uk",    "UK" },
+			{ "be",    "Belgium" },
 			{ "br",    "Brazil" },
 			{ "hr",    "Croatia" },
 			{ "cz243", "Czech Republic" },
