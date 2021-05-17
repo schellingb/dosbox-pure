@@ -2742,20 +2742,20 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		const DBP_Port_Device gravis_device = (port != 0 || dbp_auto_mapping ? DBP_DEVICE_GravisGamepad : DBP_DEVICE_DefaultJoypad);
 		const DBP_Port_Device secondjoystick_device = (port != 1 ? DBP_DEVICE_BasicJoystick2 : DBP_DEVICE_DefaultJoypad);
 		port_first_cd[port] = (unsigned)controller_descriptions.size();
-		controller_descriptions.push_back({ "Disabled",                                             DBP_DEVICE_Disabled                });
+		controller_descriptions.push_back({ "Disabled",                                             (unsigned)DBP_DEVICE_Disabled                });
 		if (port == 0 && dbp_auto_mapping)
-			controller_descriptions.push_back({ dbp_auto_mapping_title,                             DBP_DEVICE_DefaultJoypad           });
-		controller_descriptions.push_back({ "Generic Keyboard Bindings",                            DBP_DEVICE_BindGenericKeyboard     });
-		controller_descriptions.push_back({ "Mouse with Left Analog Stick",                         DBP_DEVICE_MouseLeftAnalog         });
-		controller_descriptions.push_back({ "Mouse with Right Analog Stick",                        DBP_DEVICE_MouseRightAnalog        });
-		controller_descriptions.push_back({ "Gravis GamePad (1 D-Pad, 4 Buttons)",                  gravis_device                      });
-		controller_descriptions.push_back({ "First DOS joystick (2 Axes, 2 Buttons)",               DBP_DEVICE_BasicJoystick1          });
-		controller_descriptions.push_back({ "Second DOS joystick (2 Axes, 2 Buttons)",              secondjoystick_device              });
-		controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", DBP_DEVICE_ThrustMasterFlightStick });
-		controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       DBP_DEVICE_BothDOSJoysticks        });
-		controller_descriptions.push_back({ "Custom Keyboard Bindings",                             DBP_DEVICE_BindCustomKeyboard      });
-		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Left Stick and B/A/X",      DBP_DEVICE_KeyboardMouseLeftStick  });
-		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Right Stick and L/R/X",     DBP_DEVICE_KeyboardMouseRightStick });
+			controller_descriptions.push_back({ dbp_auto_mapping_title,                             (unsigned)DBP_DEVICE_DefaultJoypad           });
+		controller_descriptions.push_back({ "Generic Keyboard Bindings",                            (unsigned)DBP_DEVICE_BindGenericKeyboard     });
+		controller_descriptions.push_back({ "Mouse with Left Analog Stick",                         (unsigned)DBP_DEVICE_MouseLeftAnalog         });
+		controller_descriptions.push_back({ "Mouse with Right Analog Stick",                        (unsigned)DBP_DEVICE_MouseRightAnalog        });
+		controller_descriptions.push_back({ "Gravis GamePad (1 D-Pad, 4 Buttons)",                  (unsigned)gravis_device                      });
+		controller_descriptions.push_back({ "First DOS joystick (2 Axes, 2 Buttons)",               (unsigned)DBP_DEVICE_BasicJoystick1          });
+		controller_descriptions.push_back({ "Second DOS joystick (2 Axes, 2 Buttons)",              (unsigned)secondjoystick_device              });
+		controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", (unsigned)DBP_DEVICE_ThrustMasterFlightStick });
+		controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       (unsigned)DBP_DEVICE_BothDOSJoysticks        });
+		controller_descriptions.push_back({ "Custom Keyboard Bindings",                             (unsigned)DBP_DEVICE_BindCustomKeyboard      });
+		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Left Stick and B/A/X",      (unsigned)DBP_DEVICE_KeyboardMouseLeftStick  });
+		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Right Stick and L/R/X",     (unsigned)DBP_DEVICE_KeyboardMouseRightStick });
 		ports[port].num_types = (unsigned)controller_descriptions.size() - port_first_cd[port];
 	}
 	for (port = 0; port != 3; port++) ports[port].types = &controller_descriptions[port_first_cd[port]];

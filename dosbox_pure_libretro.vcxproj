@@ -142,6 +142,7 @@
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
       <WarningLevel>Level2</WarningLevel>
+      <AdditionalOptions Condition="'$(VisualStudioYear)' &gt;= '2017'">/Zc:offsetof- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <ClCompile Include="src\cpu\core_full.cpp">
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
