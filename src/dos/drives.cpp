@@ -330,7 +330,7 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 		}
 	};
 	const char *target_start = target, *target_end = target + target_len, *source_end = source + source_len, *sDot;
-	for (sDot = source_end - 1; *sDot != '.' && sDot >= source; sDot--);
+	for (sDot = source_end - 1; *sDot != '.' && sDot > source; sDot--);
 	Bit32u baseLen = (Bit32u)((*sDot == '.' ? sDot : source_end) - source);
 	Bit32u extLen = (Bit32u)(*sDot == '.' ? source_end - 1 - sDot : 0);
 	Bit32u baseLeft = (baseLen > 8 ? 4 : baseLen), baseRight = (baseLen > 8 ? 4 : 0);
