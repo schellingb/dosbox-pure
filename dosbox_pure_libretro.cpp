@@ -47,16 +47,17 @@
 #include <chrono>
 
 #ifndef DBP_THREADS_CLASSES
+#define DBP_STACK_SIZE (2*1024*1024) //2 MB
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #define THREAD_CC WINAPI
-struct Thread { typedef DWORD RET_t; typedef RET_t (THREAD_CC *FUNC_t)(LPVOID); static void StartDetached(FUNC_t f, void* p = NULL) { HANDLE h = CreateThread(0,0,f,p,0,0); CloseHandle(h); } };
+struct Thread { typedef DWORD RET_t; typedef RET_t (THREAD_CC *FUNC_t)(LPVOID); static void StartDetached(FUNC_t f, void* p = NULL) { HANDLE h = CreateThread(0,DBP_STACK_SIZE,f,p,0,0); CloseHandle(h); } };
 struct Mutex { Mutex() : h(CreateMutexA(0,0,0)) {} ~Mutex() { CloseHandle(h); } __inline void Lock() { WaitForSingleObject(h,INFINITE); } __inline void Unlock() { ReleaseMutex(h); } private:HANDLE h;Mutex(const Mutex&);Mutex& operator=(const Mutex&);};
 #else
 #include <pthread.h>
 #define THREAD_CC
-struct Thread { typedef void* RET_t; typedef RET_t (THREAD_CC *FUNC_t)(void*); static void StartDetached(FUNC_t f, void* p = NULL) { pthread_t h = 0; pthread_create(&h, NULL, f, p); } };
+struct Thread { typedef void* RET_t; typedef RET_t (THREAD_CC *FUNC_t)(void*); static void StartDetached(FUNC_t f, void* p = NULL) { pthread_t h = 0; pthread_attr_t a; pthread_attr_init(&a); pthread_attr_setstacksize(&a, DBP_STACK_SIZE); pthread_create(&h, &a, f, p); pthread_attr_destroy(&a); } };
 struct Mutex { Mutex() { pthread_mutex_init(&h,0); } ~Mutex() { pthread_mutex_destroy(&h); } __inline void Lock() { pthread_mutex_lock(&h); } __inline void Unlock() { pthread_mutex_unlock(&h); } private:pthread_mutex_t h;Mutex(const Mutex&);Mutex& operator=(const Mutex&);};
 #endif
 #include "libretro-common/include/retro_timers.h"
