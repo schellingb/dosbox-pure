@@ -190,7 +190,7 @@ endif
 
 CFLAGS  += $(CPUFLAGS) -std=gnu++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
 CFLAGS  += -fvisibility=hidden -ffunction-sections
-CFLAGS  += -D__LIBRETRO__ -Iinclude
+CFLAGS  += -D__LIBRETRO__ -Iinclude -D_FILE_OFFSET_BITS=64
 CFLAGS  += $(COMMONFLAGS)
 #CFLAGS  += -fdata-sections #saves around 32 bytes on most platforms but wrongfully adds up to 60MB on msys2
 
