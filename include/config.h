@@ -133,7 +133,7 @@
 #endif
 
 // ----- STANDARD LIBRARY FEATURES
-#if !defined (__QNX__) && !defined(VITA) && !defined(PSP)
+#if !defined (__QNX__) && !defined(VITA) && !defined(PSP) && !defined(__HAIKU__)
 #define DIRENT_HAS_D_TYPE 1 /* struct dirent has d_type */
 #endif
 

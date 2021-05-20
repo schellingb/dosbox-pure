@@ -137,6 +137,14 @@ else ifeq ($(platform), gcw0)
   LDFLAGS := -Wl,--gc-sections -fno-ident
   CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
   COMMONFLAGS += -pthread
+else ifneq ($(findstring Haiku,$(shell uname -s)),)
+  OUTNAME := dosbox_pure_libretro.so
+  LDFLAGS := -Wl,--gc-sections -fno-ident -lroot -lnetwork
+  ifneq ($(findstring BePC,$(shell uname -m)),)
+    CXX   ?= g++-x86
+  else
+    CXX   ?= g++
+  endif
 else
   OUTNAME := dosbox_pure_libretro.so
   CXX     ?= g++
