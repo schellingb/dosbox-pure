@@ -110,6 +110,7 @@
 #elif defined(__mips__) && defined(__MIPSEL__)
 #define C_DYNREC 1
 #define C_UNALIGNED_MEMORY 1
+#define C_ATTRIBUTE_ALWAYS_INLINE 1
 #define C_TARGETCPU MIPSEL
 #endif
 
