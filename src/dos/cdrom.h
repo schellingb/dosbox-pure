@@ -153,45 +153,58 @@ class CDROM_Interface_Image : public CDROM_Interface
 private:
 	class TrackFile {
 	public:
+	#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+		TrackFile(const char *filename, bool &error, const char *relative_to = NULL);
+		virtual bool read(Bit8u *buffer, int seek, int count);
+		virtual int getLength();
+		virtual ~TrackFile();
+	protected:
+		class DOS_File* dos_file;
+		Bit32u dos_ofs, dos_end;
+	#else
 		virtual bool read(Bit8u *buffer, int seek, int count) = 0;
 		virtual int getLength() = 0;
 		virtual ~TrackFile() { };
+	#endif
 	};
 	
 	class BinaryFile : public TrackFile {
 	public:
 		#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-		BinaryFile(const char *filename, bool &error, const char *relative_to = NULL);
+		BinaryFile(const char *filename, bool &error, const char *relative_to = NULL) : TrackFile(filename, error, relative_to) { }
 		#else
 		BinaryFile(const char *filename, bool &error);
 		#endif
-		~BinaryFile();
-		bool read(Bit8u *buffer, int seek, int count);
-		int getLength();
 	private:
+		#ifndef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 		BinaryFile();
-		#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-		class DOS_File* dos_file;
-		Bit32u dos_ofs, dos_size;
-		#else
 		std::ifstream *file;
 		#endif
 	};
 	
-	#if defined(C_SDL_SOUND)
 	class AudioFile : public TrackFile {
 	public:
+		#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+		AudioFile(const char *filename, bool &error, const char *relative_to = NULL);
+		#else
 		AudioFile(const char *filename, bool &error);
+		#endif
 		~AudioFile();
 		bool read(Bit8u *buffer, int seek, int count);
 		int getLength();
 	private:
 		AudioFile();
+		#ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
+		Bit32u wave_start, audio_length, last_seek;
+		double audio_factor;
+		struct stb_vorbis *vorb;
+		std::vector<Bit8u> buffer_temp;
+		#elif defined(C_SDL_SOUND)
 		Sound_Sample *sample;
 		int lastCount;
 		int lastSeek;
+		#endif
 	};
-	#endif
 	
 	struct Track {
 		int number;
