@@ -1588,8 +1588,8 @@ static void DBP_StartOnScreenKeyboard()
 				{ KBD_leftshift,KBD_extra_lt_gt,KBD_z,KBD_x,KBD_c,KBD_v,KBD_b,KBD_n,KBD_m,KBD_comma,KBD_period,KBD_slash,KBD_rightshift    ,KBD_NONE,   KBD_NONE,KBD_up,KBD_NONE    ,KBD_NONE,KBD_kp1,KBD_kp2,KBD_kp3,KBD_kpenter },
 				{ KBD_leftctrl,KBD_NONE,KBD_leftalt,                        KBD_space,                 KBD_rightalt,KBD_NONE,KBD_rightctrl ,KBD_NONE,  KBD_left,KBD_down,KBD_right  ,KBD_NONE,KBD_kp0,KBD_kpperiod },
 			};
-			int thickness = (RDOSGFXwidth < 400 ? 1 : 2);
-			float fac = (RDOSGFXwidth < KWIDTH ? (RDOSGFXwidth - 10) / (float)KWIDTH : (RDOSGFXwidth < 400 ? 1.f : 2.f));
+			int thickness = (RDOSGFXwidth < (KWIDTH + 10) ? 1 : (RDOSGFXwidth - 10) / KWIDTH);
+			float fac = (RDOSGFXwidth < KWIDTH ? (RDOSGFXwidth - 10) / (float)KWIDTH : (float)thickness);
 			int oskx = (int)(RDOSGFXwidth / fac / 2) - (KWIDTH / 2);
 			int osky = (osk.my < (RDOSGFXheight / fac / 2) ? 3 : (int)(RDOSGFXheight / fac) - 3 - 65);
 
