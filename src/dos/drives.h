@@ -231,7 +231,7 @@ private:
 	Bit32u curFatSect;
 };
 
-#ifdef C_DBP_NATIVE_CDROM
+
 class cdromDrive : public localDrive
 {
 public:
@@ -252,7 +252,6 @@ private:
 	Bit8u subUnit;
 	char driveLetter;
 };
-#endif /* C_DBP_NATIVE_CDROM */
 
 #ifdef _MSC_VER
 #pragma pack (1)

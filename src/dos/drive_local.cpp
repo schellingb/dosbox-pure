@@ -560,7 +560,6 @@ void localFile::Flush(void) {
 }
 
 
-#ifdef C_DBP_NATIVE_CDROM
 // ********************************************
 // CDROM DRIVE
 // ********************************************
@@ -632,10 +631,10 @@ bool cdromDrive::GetFileAttr(char * name,Bit16u * attr) {
 bool cdromDrive::FindFirst(char * _dir,DOS_DTA & dta,bool /*fcb_findfirst*/) {
 	// If media has changed, reInit drivecache.
 	if (MSCDEX_HasMediaChanged(subUnit)) {
-		dirCache.EmptyCache();
+		EmptyCache();
 		// Get Volume Label
 		char name[32];
-		if (MSCDEX_GetVolumeName(subUnit,name)) dirCache.SetLabel(name,true,true);
+		if (MSCDEX_GetVolumeName(subUnit,name)) label.SetLabel(name,true,true);
 	}
 	return localDrive::FindFirst(_dir,dta);
 }
@@ -643,10 +642,10 @@ bool cdromDrive::FindFirst(char * _dir,DOS_DTA & dta,bool /*fcb_findfirst*/) {
 void cdromDrive::SetDir(const char* path) {
 	// If media has changed, reInit drivecache.
 	if (MSCDEX_HasMediaChanged(subUnit)) {
-		dirCache.EmptyCache();
+		EmptyCache();
 		// Get Volume Label
 		char name[32];
-		if (MSCDEX_GetVolumeName(subUnit,name)) dirCache.SetLabel(name,true,true);
+		if (MSCDEX_GetVolumeName(subUnit,name)) label.SetLabel(name,true,true);
 	}
 	localDrive::SetDir(path);
 }
@@ -666,4 +665,3 @@ Bits cdromDrive::UnMount(void) {
 	}
 	return 2;
 }
-#endif /* C_DBP_NATIVE_CDROM */

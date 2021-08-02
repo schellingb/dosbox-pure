@@ -217,15 +217,8 @@ public:
 
 		std::string type="dir";
 		cmd->FindString("-t",type,true);
-#ifdef C_DBP_NATIVE_CDROM
 		bool iscdrom = (type =="cdrom"); //Used for mscdex bug cdrom label name emulation
-#else
-		const bool iscdrom = false;
-#endif
-		if (type=="floppy" || type=="dir"
-#ifdef C_DBP_NATIVE_CDROM
-			|| type=="cdrom"
-#endif
+		if (type=="floppy" || type=="dir" || type=="cdrom"
 #ifdef C_DBP_NATIVE_OVERLAY
 			|| type =="overlay"
 #endif
@@ -245,14 +238,10 @@ public:
 				// 512*32*16000==~250MB total free size
 				str_size="512,32,32765,16000";
 				mediaid=0xF8;		/* Hard Disk */
-			}
-#ifdef C_DBP_NATIVE_CDROM
-			else if (type=="cdrom") {
+			} else if (type=="cdrom") {
 				str_size="2048,1,65535,0";
 				mediaid=0xF8;		/* Hard Disk */
-			}
-#endif
-			else {
+			} else {
 				WriteOut(MSG_Get("PROGAM_MOUNT_ILL_TYPE"),type.c_str());
 				return;
 			}
@@ -391,11 +380,11 @@ public:
 
 			if (temp_line[temp_line.size()-1]!=CROSS_FILESPLIT) temp_line+=CROSS_FILESPLIT;
 			Bit8u bit8size=(Bit8u) sizes[1];
-#ifdef C_DBP_NATIVE_CDROM
 			if (type=="cdrom") {
 				int num = -1;
 				cmd->FindInt("-usecd",num,true);
 				int error = 0;
+#ifdef C_DBP_NATIVE_CDROM
 				if (cmd->FindExist("-aspi",false)) {
 					MSCDEX_SetCDInterface(CDROM_USE_ASPI, num);
 				} else if (cmd->FindExist("-ioctl_dio",false)) {
@@ -424,6 +413,9 @@ public:
 					MSCDEX_SetCDInterface(CDROM_USE_IOCTL_DIO, num);
 #endif
 				}
+#else
+				MSCDEX_SetCDInterface(0, num);
+#endif /* C_DBP_NATIVE_CDROM */
 				newdrive  = new cdromDrive(drive,temp_line.c_str(),sizes[0],bit8size,sizes[2],0,mediaid,error);
 				// Check Mscdex, if it worked out...
 				switch (error) {
@@ -439,9 +431,7 @@ public:
 					delete newdrive;
 					return;
 				}
-			} else
-#endif /* C_DBP_NATIVE_CDROM */
-			{
+			} else {
 				/* Give a warning when mount c:\ or the / */
 #if defined (WIN32) || defined(OS2)
 				if( (temp_line == "c:\\") || (temp_line == "C:\\") || 
@@ -453,7 +443,8 @@ public:
 #ifdef C_DBP_NATIVE_OVERLAY
 				if(type == "overlay") {
 					localDrive* ldp = dynamic_cast<localDrive*>(Drives[drive-'A']);
-					if (!ldp) {
+					cdromDrive* cdp = dynamic_cast<cdromDrive*>(Drives[drive-'A']);
+					if (!ldp || cdp) {
 						WriteOut(MSG_Get("PROGRAM_MOUNT_OVERLAY_INCOMPAT_BASE"));
 						return;
 					}

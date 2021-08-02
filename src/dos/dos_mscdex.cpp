@@ -50,10 +50,8 @@
 // Use cdrom Interface
 #ifdef C_DBP_NATIVE_CDROM
 int useCdromInterface	= CDROM_USE_SDL;
-int forceCD				= -1;
-#else
-#define forceCD (-1)
 #endif
+int forceCD				= -1;
 
 static Bitu MSCDEX_Strategy_Handler(void); 
 static Bitu MSCDEX_Interrupt_Handler(void);
@@ -1341,12 +1339,12 @@ bool MSCDEX_HasMediaChanged(Bit8u subUnit)
 	return true;
 }
 
-#ifdef C_DBP_NATIVE_CDROM
 void MSCDEX_SetCDInterface(int intNr, int numCD) {
+#ifdef C_DBP_NATIVE_CDROM
 	useCdromInterface = intNr;
+#endif
 	forceCD	= numCD;
 }
-#endif
 
 void MSCDEX_ShutDown(Section* /*sec*/) {
 	delete mscdex;
