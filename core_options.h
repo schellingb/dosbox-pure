@@ -29,7 +29,7 @@ static retro_core_option_definition option_defs[] =
 		"dosbox_pure_savestate",
 		"Save States Support",
 		"Make sure to test it in each game before using it. Complex late era DOS games might have problems." "\n"
-		"Be aware that states saved with different video or CPU settings are not loadable." "\n"
+		"Be aware that states saved with different video, CPU or memory settings are not loadable." "\n"
 		"Rewind support comes at a high performance cost, setting it requires a full core restart." "\n"
 		"Save states might not be compatible with new versions of this core." "\n\n", //end of top section
 		{
@@ -286,16 +286,20 @@ static retro_core_option_definition option_defs[] =
 	{
 		"dosbox_pure_memory_size",
 		"System > Memory Size (restart required)",
-		"The amount of (high) memory that the emulated machine has. You can also disable extended memory (EMS/XMS).",
+		"The amount of (high) memory that the emulated machine has. You can also disable extended memory (EMS/XMS)." "\n"
+		"Using more than the default is not recommended, due to incompatibility with certain games and applications.",
 		{
 			{ "none", "Disable extended memory (no EMS/XMS)" },
 			{ "4",  "4 MB" },
 			{ "8",  "8 MB" },
 			{ "16", "16 MB (default)" },
 			{ "24", "24 MB" },
-			{ "32", "32 MB" },
-			{ "48", "48 MB" },
-			{ "64", "64 MB" },
+			{ "32", "32 MB (unsafe)" },
+			{ "48", "48 MB (unsafe)" },
+			{ "64", "64 MB (unsafe)" },
+			{ "96", "96 MB (unsafe)" },
+			{ "128", "128 MB (unsafe)" },
+			{ "224", "224 MB (unsafe)" },
 		},
 		"16"
 	},

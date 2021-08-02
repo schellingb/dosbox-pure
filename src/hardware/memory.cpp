@@ -27,22 +27,28 @@
 #include <string.h>
 
 #define PAGES_IN_BLOCK	((1024*1024)/MEM_PAGE_SIZE)
+#ifndef C_DBP_LIBRETRO
 #define SAFE_MEMORY	32
 #define MAX_MEMORY	64
+#else
+#define MAX_MEMORY	225 // needs to be <= 255 (MAXUINT8) due to DBPSerialize_All
+#endif
 #define MAX_PAGE_ENTRIES (MAX_MEMORY*1024*1024/4096)
 #define LFB_PAGES	512
 #define MAX_LINKS	((MAX_MEMORY*1024/4)+4096)		//Hopefully enough
 
-struct LinkBlock {
-	Bitu used;
-	Bit32u pages[MAX_LINKS];
-};
+//DBP: Unused
+//struct LinkBlock {
+//	Bitu used;
+//	Bit32u pages[MAX_LINKS];
+//};
 
 static struct MemoryBlock {
 	Bitu pages;
 	PageHandler * * phandlers;
 	MemHandle * mhandles;
-	LinkBlock links;
+	//DBP: Unused
+	//LinkBlock links;
 	struct	{
 		Bitu		start_page;
 		Bitu		end_page;
@@ -555,10 +561,18 @@ public:
 			LOG_MSG("Maximum memory size is %d MB",MAX_MEMORY - 1);
 			memsize = MAX_MEMORY-1;
 		}
+#ifndef C_DBP_LIBRETRO
 		if (memsize > SAFE_MEMORY-1) {
 			LOG_MSG("Memory sizes above %d MB are NOT recommended.",SAFE_MEMORY - 1);
 			LOG_MSG("Stick with the default values unless you are absolutely certain.");
 		}
+#else
+		if (memsize == 64) {
+			// In older versions MAX_MEMORY was set to 64 which caused the code above to limit it to 63
+			// Avoid problems for users who have created save states with the "64 MB" options by replicating that behavior
+			memsize = 63;
+		}
+#endif
 		MemBase = new(std::nothrow) Bit8u[memsize*1024*1024];
 		if (!MemBase) E_Exit("Can't allocate main memory of %" sBitfs(d) " MB",memsize);
 		/* Clear the memory, as new doesn't always give zeroed memory
@@ -587,7 +601,8 @@ public:
 			}
 		}
 		/* Reset some links */
-		memory.links.used = 0;
+		//DBP: Unused
+		//memory.links.used = 0;
 		// A20 Line - PS/2 system control port A
 		WriteHandler.Install(0x92,write_p92,IO_MB);
 		ReadHandler.Install(0x92,read_p92,IO_MB);
