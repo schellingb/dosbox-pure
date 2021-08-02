@@ -3175,9 +3175,11 @@ void retro_deinit(void) { }
 // UTF8 fopen
 #include "libretro-common/include/compat/fopen_utf8.h"
 FILE *fopen_wrap(const char *path, const char *mode) { return (FILE*)fopen_utf8(path, mode); }
+#ifndef STATIC_LINKING
 #include "libretro-common/compat/fopen_utf8.c"
 #include "libretro-common/compat/compat_strl.c"
 #include "libretro-common/encodings/encoding_utf.c"
+#endif
 
 bool fpath_nocase(char* path, const char* base_dir)
 {

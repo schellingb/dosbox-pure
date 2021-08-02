@@ -50,22 +50,22 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/ios9.yml'
 
-#  ################################## CONSOLES ################################
-#  # Nintendo 3DS
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/ctr-static.yml'
+  ################################## CONSOLES ################################
+  # Nintendo 3DS
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/ctr-static.yml'
 
-#  # Nintendo WiiU
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/wiiu-static.yml'
+  # Nintendo WiiU
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/wiiu-static.yml'
 
   # Nintendo Switch
   - project: 'libretro-infrastructure/ci-templates'
     file: '/libnx-static.yml'
 
-#  # PlayStation Vita
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/vita-static.yml'
+  # PlayStation Vita
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/vita-static.yml'
 
   # OpenDingux
   - project: 'libretro-infrastructure/ci-templates'
@@ -75,30 +75,16 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/tvos-arm64.yml'
 
-  #################################### MISC ##################################
-#
-#  # Nintendo WiiU
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/wiiu-static.yml'
-#
-#  # Nintendo Switch
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/libnx-static.yml'
-#
-#  # PlayStation Vita
-#  - project: 'libretro-infrastructure/ci-templates'
-#    file: '/vita-static.yml'
+##############################################################################
+#################################### STAGES ##################################
+##############################################################################
 
 # Stages for building
 stages:
   - build-prepare
   - build-shared
-#  - build-static
+  - build-static
 
-##############################################################################
-#################################### STAGES ##################################
-##############################################################################
-#
 ################################### DESKTOPS #################################
 # Windows 64-bit
 libretro-build-windows-x64:
@@ -194,24 +180,23 @@ libretro-build-tvos-arm64:
 #    - .libretro-ctr-static-retroarch-master
 #    - .core-defs
 
-#
 ## Nintendo WiiU
 #libretro-build-wiiu:
 #  extends:
 #    - .libretro-wiiu-static-retroarch-master
 #    - .core-defs
 
-# Nintendo Switch
+## Nintendo Switch
 #libretro-build-libnx-aarch64:
-  #extends:
-    #- .libretro-libnx-static-retroarch-master
-    #- .core-defs
-
-## PlayStation Vita
-#libretro-build-vita:
 #  extends:
-#    - .libretro-vita-static-retroarch-master
+#    - .libretro-libnx-static-retroarch-master
 #    - .core-defs
+
+# PlayStation Vita
+libretro-build-vita:
+  extends:
+    - .libretro-vita-static-retroarch-master
+    - .core-defs
 
 # OpenDingux
 libretro-build-dingux-mips32:

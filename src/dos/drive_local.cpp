@@ -23,6 +23,11 @@
 #include <time.h>
 #include <errno.h>
 
+#ifdef VITA
+#include <psp2/io/stat.h>
+#include <psp2/io/fcntl.h>
+#endif
+
 #include "dosbox.h"
 #include "dos_inc.h"
 #include "drives.h"
@@ -310,6 +315,8 @@ bool localDrive::MakeDir(char * dir) {
 	CROSS_FILENAME(newdir);
 #if defined (WIN32)						/* MS Visual C++ */
 	int temp=mkdir(dirCache.GetExpandName(newdir));
+#elif defined(VITA)
+	int temp=sceIoMkdir(dirCache.GetExpandName(newdir), 0777);
 #else
 	int temp=mkdir(dirCache.GetExpandName(newdir),0700);
 #endif
@@ -323,7 +330,11 @@ bool localDrive::RemoveDir(char * dir) {
 	strcpy(newdir,basedir);
 	strcat(newdir,dir);
 	CROSS_FILENAME(newdir);
+#if defined(VITA)
+	int temp=sceIoRmdir(dirCache.GetExpandName(newdir));
+#else
 	int temp=rmdir(dirCache.GetExpandName(newdir));
+#endif
 	if (temp==0) dirCache.DeleteEntry(newdir,true);
 	return (temp==0);
 }
