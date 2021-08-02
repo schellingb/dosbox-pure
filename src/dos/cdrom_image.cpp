@@ -120,6 +120,7 @@ int CDROM_Interface_Image::BinaryFile::getLength()
 #define STB_VORBIS_NO_PUSHDATA_API
 #define STB_VORBIS_NO_STDIO
 #define STB_VORBIS_TRACKFILE
+#define STB_VORBIS_STATIC // Avoid issues when statically linking with RetroArch
 #include "stb_vorbis.inl"
 
 CDROM_Interface_Image::AudioFile::AudioFile(const char *filename, bool &error, const char *relative_to) : TrackFile(filename, error, relative_to), last_seek(0), vorb(NULL)
@@ -172,16 +173,9 @@ CDROM_Interface_Image::AudioFile::AudioFile(const char *filename, bool &error, c
 				return trk->dos_ofs;
 			}
 		};
-		stb_vorbis p;
-		vorbis_init(&p, NULL);
-		p.trk = this;
-		p.trkread = (bool(*)(void*,Bit8u*,int))&VorbisFuncs::trkread;
-		p.trkseek = (bool (*)(void*,int,int))&VorbisFuncs::trkseek;
-		p.trktell = (Bit32u(*)(void*))&VorbisFuncs::trktell;
-		p.stream_len = dos_end;
-		if (!start_decoder(&p) || (vorb = vorbis_alloc(&p)) == NULL) { vorbis_deinit(&p); LOG_MSG("ERROR: CD audio OGG file '%s' is invalid", filename); error = true; return; }
-		*vorb = p;
-		vorbis_pump_first_frame(vorb);
+		vorb = stb_vorbis_open_trackfile(this, (bool(*)(void*,Bit8u*,int))&VorbisFuncs::trkread, (bool (*)(void*,int,int))&VorbisFuncs::trkseek, (Bit32u(*)(void*))&VorbisFuncs::trktell, dos_end);
+		if (!vorb) { LOG_MSG("ERROR: CD audio OGG file '%s' is invalid", filename); error = true; return; }
+		stb_vorbis_info p = stb_vorbis_get_info(vorb);
 		if (p.sample_rate != 44100) { LOG_MSG("WARNING: CD audio OGG file '%s' has a rate of %d hz (playback quality might suffer if it's not a rate of 44100 hz)", filename, (int)p.sample_rate); }
 		audio_factor = p.sample_rate / 44100.0f;
 		audio_length = stb_vorbis_stream_length_in_samples(vorb) * 4;
