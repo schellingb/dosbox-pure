@@ -2176,7 +2176,9 @@ static void check_variables()
 	};
 
 	char buf[16];
-	bool show_advanced = (Variables::RetroGet("dosbox_pure_advanced", "false")[0] != 'f');
+	unsigned options_ver = 0;
+	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
+	bool show_advanced = (options_ver != 1 || Variables::RetroGet("dosbox_pure_advanced", "false")[0] != 'f');
 
 	static const char* advanced_options[] =
 	{
@@ -2185,6 +2187,7 @@ static void check_variables()
 		"dosbox_pure_auto_mapping",
 		"dosbox_pure_joystick_timed",
 		"dosbox_pure_keyboard_layout",
+		"dosbox_pure_joystick_analog_deadzone",
 		"dosbox_pure_cpu_core",
 		"dosbox_pure_menu_time",
 		"dosbox_pure_sblaster_type",
@@ -2627,7 +2630,7 @@ void retro_init(void) //#3
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
 
-	static std::vector<std::string> synthfiles;
+	static std::vector<std::string> dynstr;
 	const char *system_dir = NULL;
 	struct retro_vfs_interface_info vfs = { 3, NULL };
 	if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
@@ -2650,9 +2653,9 @@ void retro_init(void) //#3
 				else if ((entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
 						|| (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
 				{
-					synthfiles.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-					synthfiles.push_back(entry_name[entry_len-1] == '2' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
-					synthfiles.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] == '2' ? 4 : 12));
+					dynstr.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+					dynstr.push_back(entry_name[entry_len-1] == '2' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] == '2' ? 4 : 12));
 				}
 			}
 			vfs.iface->closedir(dir);
@@ -2660,22 +2663,65 @@ void retro_init(void) //#3
 	}
 
 	#include "core_options.h"
-	for (retro_core_option_definition& def : option_defs)
+	for (retro_core_option_v2_definition& def : option_defs)
 	{
 		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
-		size_t i = 0, numfiles = (synthfiles.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 : synthfiles.size());
+		size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 : dynstr.size());
 		for (size_t f = 0; f != numfiles; f += 2)
-			if (synthfiles[f].back() == '2')
-				def.values[i++] = { synthfiles[f].c_str(), synthfiles[f+1].c_str() };
+			if (dynstr[f].back() == '2')
+				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
 		for (size_t f = 0; f != numfiles; f += 2)
-			if (synthfiles[f].back() != '2')
-				def.values[i++] = { synthfiles[f].c_str(), synthfiles[f+1].c_str() };
+			if (dynstr[f].back() != '2')
+				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
 		def.values[i  ] = { "disabled", "Disabled" };
 		def.values[i+1] = { "frontend", "Frontend MIDI driver" };
 		def.default_value = def.values[0].value;
 		break;
 	}
-	environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, (void*)&option_defs);
+
+	unsigned options_ver = 0;
+	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
+	if (options_ver >= 2)
+	{
+		// Category options support, skip the first 'Show Advanced Options' entry
+		static const struct retro_core_options_v2 options = { option_cats, option_defs+1 };
+		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, (void*)&options);
+	}
+	else if (options_ver == 1)
+	{
+		// Convert options to V1 format, keep first 'Show Advanced Options' entry
+		static std::vector<retro_core_option_definition> v1defs;
+		for (const retro_core_option_v2_definition& v2def : option_defs)
+		{
+			if (v2def.category_key)
+			{
+				// Build desc string "CATEGORY > V2DESC"
+				dynstr.push_back(v2def.category_key);
+				dynstr.back().append(" > ").append(v2def.desc);
+			}
+			v1defs.push_back({ v2def.key, (v2def.category_key ? dynstr.back().c_str() : v2def.desc), v2def.info, {}, v2def.default_value });
+			memcpy(v1defs.back().values, v2def.values, sizeof(v2def.values));
+		}
+		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, (void*)&v1defs[0]);
+	}
+	else
+	{
+		// Convert options to legacy format, skip the first 'Show Advanced Options' entry
+		static std::vector<retro_variable> v0defs;
+		for (const retro_core_option_v2_definition& v2def : option_defs)
+		{
+			if (!v2def.desc) { v0defs.push_back({0,0}); break; }
+			dynstr.resize(dynstr.size() + 1);
+			if (v2def.category_key)
+				dynstr.back().append(v2def.category_key).append(" > ");
+			dynstr.back().append(v2def.desc).append("; ").append(v2def.default_value);
+			for (const retro_core_option_value& v2val : v2def.values)
+				if (v2val.value && strcmp(v2def.default_value, v2val.value))
+					dynstr.back().append("|").append(v2val.value);
+			v0defs.push_back({ v2def.key, dynstr.back().c_str() });
+		}
+		environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)&v0defs[1]);
+	}
 
 	// Set default ports
 	dbp_port_devices[0] = (DBP_Port_Device)DBP_DEVICE_DefaultJoypad;
