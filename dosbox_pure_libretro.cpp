@@ -1589,9 +1589,11 @@ static void DBP_StartOnScreenKeyboard()
 				{ KBD_leftctrl,KBD_NONE,KBD_leftalt,                        KBD_space,                 KBD_rightalt,KBD_NONE,KBD_rightctrl ,KBD_NONE,  KBD_left,KBD_down,KBD_right  ,KBD_NONE,KBD_kp0,KBD_kpperiod },
 			};
 			int thickness = (RDOSGFXwidth < (KWIDTH + 10) ? 1 : (RDOSGFXwidth - 10) / KWIDTH);
-			float fac = (RDOSGFXwidth < KWIDTH ? (RDOSGFXwidth - 10) / (float)KWIDTH : (float)thickness);
-			int oskx = (int)(RDOSGFXwidth / fac / 2) - (KWIDTH / 2);
-			int osky = (osk.my < (RDOSGFXheight / fac / 2) ? 3 : (int)(RDOSGFXheight / fac) - 3 - 65);
+			float fx = (RDOSGFXwidth < KWIDTH ? (RDOSGFXwidth - 10) / (float)KWIDTH : (float)thickness);
+			float fy = fx * RDOSGFXratio * RDOSGFXheight / RDOSGFXwidth;
+			int thicknessy = (int)(thickness * (fy / fx + .4f)); if (thicknessy < 1) thicknessy = 1;
+			int oskx = (int)(RDOSGFXwidth / fx / 2) - (KWIDTH / 2);
+			int osky = (osk.my < (RDOSGFXheight / fy / 2) ? 3 : (int)(RDOSGFXheight / fy) - 3 - 65);
 
 			if (osk.dx) { osk.mx += osk.dx; osk.dx = 0; }
 			if (osk.dy) { osk.my += osk.dy; osk.dy = 0; }
@@ -1600,9 +1602,9 @@ static void DBP_StartOnScreenKeyboard()
 			if (osk.mx < 0)      osk.mx = 0;
 			if (osk.mx > KWIDTH) osk.mx = KWIDTH;
 			if (osk.my <                         3) osk.my = (float)(                        3);
-			if (osk.my > (RDOSGFXheight / fac) - 3) osk.my = (float)((RDOSGFXheight / fac) - 3);
-			int cX = (int)((oskx+osk.mx)*fac); // mx is related to oskx
-			int cY = (int)((     osk.my)*fac); // my is related to screen!
+			if (osk.my > (RDOSGFXheight / fy) - 3) osk.my = (float)((RDOSGFXheight / fy) - 3);
+			int cX = (int)((oskx+osk.mx)*fx); // mx is related to oskx
+			int cY = (int)((     osk.my)*fy); // my is related to screen!
 
 			if (osk.pressed_key && (DBP_GetTicks() - osk.pressed_time) > 500)
 			{
@@ -1639,7 +1641,7 @@ static void DBP_StartOnScreenKeyboard()
 					}
 
 					DBP_ASSERT(draww);
-					int rl = (int)((oskx + x) * fac), rr = (int)((oskx + x + draww) * fac), rt = (int)((osky + y) * fac), rb = (int)((osky + y + drawh) * fac);
+					int rl = (int)((oskx + x) * fx), rr = (int)((oskx + x + draww) * fx), rt = (int)((osky + y) * fy), rb = (int)((osky + y + drawh) * fy);
 					bool hovered = (cX >= rl && cX < rr && cY >= rt && cY < rb);
 
 					KBD_KEYS kbd_key = keyboard_keys[row][k - keyboard_rows[row]];
@@ -1674,8 +1676,8 @@ static void DBP_StartOnScreenKeyboard()
 			for (unsigned int p = 0; p != 59*280; p++)
 			{
 				if (!(keyboard_letters[p>>5] & (1<<(p&31)))) continue;
-				int lx = (int)((oskx + (p%280)) * fac), ly = (int)((osky + 1 + (p/280)) * fac);
-				for (int y = ly; y != ly + thickness; y++)
+				int lx = (int)((oskx + (p%280)) * fx), ly = (int)((osky + 1 + (p/280)) * fy);
+				for (int y = ly; y != ly + thicknessy; y++)
 					for (int x = lx; x != lx + thickness; x++)
 						*(unsigned*)(buf + y * RDOSGFXpitch + x * 4) = 0xFFFFFFFF;
 			}
@@ -1684,7 +1686,7 @@ static void DBP_StartOnScreenKeyboard()
 			for (unsigned i = 0; i != 9; i++)
 			{
 				unsigned n = (i < 4 ? i : (i < 8 ? i+1 : 4)), x = (unsigned)cX + (n%3)-1, y = (unsigned)cY + (n/3)-1, ccol = (n == 4 ? 0xFFFFFFFF : 0xFF000000);
-				for (unsigned c = 0; c != (unsigned)(8*fac); c++)
+				for (unsigned c = 0; c != (unsigned)(8*fx); c++)
 				{
 					*(unsigned*)(buf + (y+c) * RDOSGFXpitch + (x  ) * 4) = ccol;
 					if (x+c >= RDOSGFXwidth) continue;
