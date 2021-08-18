@@ -160,6 +160,9 @@ static DBP_Port_Device dbp_port_devices[DBP_MAX_PORTS];
 static bool dbp_bind_unused;
 static bool dbp_on_screen_keyboard;
 static bool dbp_mouse_input;
+static bool dbp_optionsupdatecallback;
+static bool dbp_last_hideadvanced;
+static char dbp_last_machine;
 static char dbp_auto_mapping_mode;
 static int16_t dbp_bind_mousewheel;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
@@ -2127,25 +2130,25 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 	JOYSTICK_Enable(1, useJoy2);
 }
 
-static void check_variables()
+static bool check_variables()
 {
 	struct Variables
 	{
-		static void DosBoxSet(const char* section_name, const char* var_name, const char* new_value, bool disallow_in_game = false)
+		static bool DosBoxSet(const char* section_name, const char* var_name, const char* new_value, bool disallow_in_game = false)
 		{
-			if (!control) return;
+			if (!control) return false;
 
 			Section* section = control->GetSection(section_name);
 			DBP_ASSERT(section);
 			std::string str = var_name;
 			std::string old_val = section->GetPropValue(str);
 			DBP_ASSERT(old_val != "PROP_NOT_EXIST");
-			if (!section || old_val == new_value) return;
+			if (!section || old_val == new_value) return false;
 
 			if (disallow_in_game && dbp_game_running)
 			{
 				retro_notify(0, RETRO_LOG_ERROR, "Unable to change value while game is running");
-				return;
+				return false;
 			}
 
 			//log_cb(RETRO_LOG_INFO, "[DOSBOX] variable %s::%s updated from %s to %s\n", section_name, var_name, old_val.c_str(), new_value);
@@ -2159,6 +2162,7 @@ static void check_variables()
 			{
 				section->HandleInputline(str);
 			}
+			return true;
 		}
 
 		static const char* RetroGet(const char* key, const char* default_value)
@@ -2181,27 +2185,34 @@ static void check_variables()
 	unsigned options_ver = 0;
 	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
 	bool show_advanced = (options_ver != 1 || Variables::RetroGet("dosbox_pure_advanced", "false")[0] != 'f');
+	bool visibility_changed = false;
 
-	static const char* advanced_options[] =
+	if (dbp_last_hideadvanced == show_advanced)
 	{
-		"dosbox_pure_mouse_speed_factor_x",
-		"dosbox_pure_mouse_input",
-		"dosbox_pure_auto_mapping",
-		"dosbox_pure_joystick_timed",
-		"dosbox_pure_keyboard_layout",
-		"dosbox_pure_joystick_analog_deadzone",
-		"dosbox_pure_cpu_core",
-		"dosbox_pure_menu_time",
-		"dosbox_pure_sblaster_type",
-		"dosbox_pure_sblaster_adlib_mode",
-		"dosbox_pure_sblaster_adlib_emu",
-		"dosbox_pure_gus",
-	};
-	for (const char* i : advanced_options) Variables::RetroVisibility(i, show_advanced);
+		static const char* advanced_options[] =
+		{
+			"dosbox_pure_mouse_speed_factor_x",
+			"dosbox_pure_mouse_input",
+			"dosbox_pure_auto_mapping",
+			"dosbox_pure_joystick_timed",
+			"dosbox_pure_keyboard_layout",
+			"dosbox_pure_joystick_analog_deadzone",
+			"dosbox_pure_cpu_core",
+			"dosbox_pure_menu_time",
+			"dosbox_pure_sblaster_type",
+			"dosbox_pure_sblaster_adlib_mode",
+			"dosbox_pure_sblaster_adlib_emu",
+			"dosbox_pure_gus",
+		};
+		for (const char* i : advanced_options) Variables::RetroVisibility(i, show_advanced);
+		dbp_last_hideadvanced = !show_advanced;
+		visibility_changed = true;
+	}
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{
 		const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
+		dbp_last_machine = machine[0];
 		if (!strcmp(machine, "svga"))
 			machine = Variables::RetroGet("dosbox_pure_svga", "svga_s3");
 		else if (!strcmp(machine, "vga"))
@@ -2241,9 +2252,14 @@ static void check_variables()
 		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(Variables::RetroGet("dosbox_pure_cycles_scale", "1.0")) + .499));
 		cycles = buf;
 	}
-	Variables::DosBoxSet("cpu", "cycles", cycles);
+	visibility_changed |= Variables::DosBoxSet("cpu", "cycles", cycles);
 
 	const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
+	if (dbp_last_machine != machine[0])
+	{
+		dbp_last_machine = machine[0];
+		visibility_changed = true;
+	}
 
 	bool machine_is_svga = !strcmp(machine, "svga");
 	Variables::RetroVisibility("dosbox_pure_svga", machine_is_svga);
@@ -2332,6 +2348,8 @@ static void check_variables()
 	dbp_mouse_speed_x = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor_x", "1.0"));
 
 	dbp_joy_analog_deadzone = (int)((float)atoi(Variables::RetroGet("dosbox_pure_joystick_analog_deadzone", "15")) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
+
+	return visibility_changed;
 }
 
 static retro_time_t time_in_microseconds()
@@ -2612,6 +2630,13 @@ void retro_init(void) //#3
 			safe_strncpy(label, basePath, len);
 			return true;
 		}
+
+		static bool RETRO_CALLCONV options_update_display(void)
+		{
+			// because we read variables here, clear variable dirty flag in frontend
+			bool variable_update; environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variable_update);
+			return check_variables();
+		}
 	};
 
 	static const struct retro_keyboard_callback kc = { CallBacks::keyboard_event };
@@ -2619,6 +2644,9 @@ void retro_init(void) //#3
 
 	static const struct retro_frame_time_callback rftc = { CallBacks::retro_frame_time, 0 };
 	environ_cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, (void*)&rftc);
+
+	static const struct retro_core_options_update_display_callback coudc = { CallBacks::options_update_display };
+	dbp_optionsupdatecallback = environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK, (void*)&coudc);
 
 	static const retro_disk_control_ext_callback disk_control_callback =
 	{
@@ -2932,7 +2960,7 @@ void retro_run(void)
 	}
 
 	bool variable_update = false;
-	if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variable_update) && variable_update)
+	if (!dbp_optionsupdatecallback && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variable_update) && variable_update)
 		check_variables();
 
 	bool new_fast_forward = false;

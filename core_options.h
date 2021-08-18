@@ -196,22 +196,6 @@ static retro_core_option_v2_definition option_defs[] =
 
 	// Performance
 	{
-		"dosbox_pure_cycles_scale",
-		"Performance Scale", NULL,
-		"Fine tune the emulated performance for specific needs.", NULL,
-		"Performance",
-		{
-			{ "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" },
-			{ "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" },
-			{ "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.05", "105%" },
-			{ "1.1", "110%" }, { "1.15", "115%" }, { "1.2", "120%" }, { "1.25", "125%" }, { "1.3", "130%" }, { "1.35", "135%" },
-			{ "1.4", "140%" }, { "1.45", "145%" }, { "1.5", "150%" }, { "1.55", "155%" }, { "1.6", "160%" }, { "1.65", "165%" },
-			{ "1.7", "170%" }, { "1.75", "175%" }, { "1.8", "180%" }, { "1.85", "185%" }, { "1.9", "190%" }, { "1.95", "195%" },
-			{ "2.0", "200%" },
-		},
-		"1.0",
-	},
-	{
 		"dosbox_pure_cycles",
 		"Emulated Performance", NULL,
 		"The raw performance that DOSBox will try to emulate." "\n\n", NULL, //end of Performance section
@@ -233,8 +217,40 @@ static retro_core_option_v2_definition option_defs[] =
 		},
 		"auto"
 	},
+	{
+		"dosbox_pure_cycles_scale",
+		"Detailed > Performance Scale", NULL,
+		"Fine tune the emulated performance for specific needs." "\n\n", NULL, //end of Performance > Detailed section
+		"Performance",
+		{
+			{ "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" },
+			{ "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" },
+			{ "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.05", "105%" },
+			{ "1.1", "110%" }, { "1.15", "115%" }, { "1.2", "120%" }, { "1.25", "125%" }, { "1.3", "130%" }, { "1.35", "135%" },
+			{ "1.4", "140%" }, { "1.45", "145%" }, { "1.5", "150%" }, { "1.55", "155%" }, { "1.6", "160%" }, { "1.65", "165%" },
+			{ "1.7", "170%" }, { "1.75", "175%" }, { "1.8", "180%" }, { "1.85", "185%" }, { "1.9", "190%" }, { "1.95", "195%" },
+			{ "2.0", "200%" },
+		},
+		"1.0",
+	},
 
 	// Video
+	{
+		"dosbox_pure_machine",
+		"Emulated Graphics Chip (restart required)", NULL,
+		"The type of graphics chip that DOSBox will emulate.", NULL,
+		"Video",
+		{
+			{ "svga",     "SVGA (Super Video Graphics Array) (default)" },
+			{ "vga",      "VGA (Video Graphics Array)" },
+			{ "ega",      "EGA (Enhanced Graphics Adapter" },
+			{ "cga",      "CGA (Color Graphics Adapter)" },
+			{ "tandy",    "Tandy (Tandy Graphics Adapter" },
+			{ "hercules", "Hercules (Hercules Graphics Card)" },
+			{ "pcjr",     "PCjr" },
+		},
+		"svga"
+	},
 	{
 		"dosbox_pure_cga",
 		"CGA Mode", NULL,
@@ -276,22 +292,6 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "svga_paradise", "Paradise PVGA1A" },
 		},
 		"s3"
-	},
-	{
-		"dosbox_pure_machine",
-		"Emulated Graphics Chip (restart required)", NULL,
-		"The type of graphics chip that DOSBox will emulate.", NULL,
-		"Video",
-		{
-			{ "svga",     "SVGA (Super Video Graphics Array) (default)" },
-			{ "vga",      "VGA (Video Graphics Array)" },
-			{ "ega",      "EGA (Enhanced Graphics Adapter" },
-			{ "cga",      "CGA (Color Graphics Adapter)" },
-			{ "tandy",    "Tandy (Tandy Graphics Adapter" },
-			{ "hercules", "Hercules (Hercules Graphics Card)" },
-			{ "pcjr",     "PCjr" },
-		},
-		"svga"
 	},
 	{
 		"dosbox_pure_aspect_correction",
