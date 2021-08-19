@@ -2134,7 +2134,7 @@ static bool check_variables()
 {
 	struct Variables
 	{
-		static bool DosBoxSet(const char* section_name, const char* var_name, const char* new_value, bool disallow_in_game = false)
+		static bool DosBoxSet(const char* section_name, const char* var_name, const char* new_value, bool disallow_in_game = false, bool need_restart = false)
 		{
 			if (!control) return false;
 
@@ -2145,16 +2145,22 @@ static bool check_variables()
 			DBP_ASSERT(old_val != "PROP_NOT_EXIST");
 			if (!section || old_val == new_value) return false;
 
+			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
 			if (disallow_in_game && dbp_game_running)
 			{
-				retro_notify(0, RETRO_LOG_ERROR, "Unable to change value while game is running");
-				return false;
+				retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
+				reInitSection = false;
+			}
+			if (need_restart && reInitSection)
+			{
+				retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
+				reInitSection = false;
 			}
 
 			//log_cb(RETRO_LOG_INFO, "[DOSBOX] variable %s::%s updated from %s to %s\n", section_name, var_name, old_val.c_str(), new_value);
 			str += '=';
 			str += new_value;
-			if (dbp_state != DBPSTATE_BOOT)
+			if (reInitSection)
 			{
 				DBP_QueueEvent(DBPET_SET_VARIABLE, str, section);
 			}
@@ -2236,7 +2242,7 @@ static bool check_variables()
 	bool mem_use_extended = (atoi(mem) > 0);
 	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
 	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
-	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "16"), true);
+	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "16"), false, true);
 
 	// handle setting strings like on/yes/true/savestate or rewind
 	const char* savestate = Variables::RetroGet("dosbox_pure_savestate", "false");
@@ -2253,6 +2259,9 @@ static bool check_variables()
 		cycles = buf;
 	}
 	visibility_changed |= Variables::DosBoxSet("cpu", "cycles", cycles);
+
+	Variables::DosBoxSet("cpu", "core",    Variables::RetroGet("dosbox_pure_cpu_core", "auto"), false, true);
+	Variables::DosBoxSet("cpu", "cputype", Variables::RetroGet("dosbox_pure_cpu_type", "auto"), false, true);
 
 	const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
 	if (dbp_last_machine != machine[0])
@@ -2285,8 +2294,6 @@ static bool check_variables()
 	}
 
 	Variables::DosBoxSet("render", "aspect",  Variables::RetroGet("dosbox_pure_aspect_correction", "false"));
-	Variables::DosBoxSet("cpu",    "core",    Variables::RetroGet("dosbox_pure_cpu_core",          "auto" ));
-	Variables::DosBoxSet("cpu",    "cputype", Variables::RetroGet("dosbox_pure_cpu_type",          "auto" ));
 
 	dbp_menu_time = (char)atoi(Variables::RetroGet("dosbox_pure_menu_time", "5"));
 

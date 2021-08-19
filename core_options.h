@@ -326,7 +326,7 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_cpu_type",
-		"CPU Type", NULL,
+		"CPU Type (restart required)", NULL,
 		"Emulated CPU type. Auto is the fastest choice." "\n"
 			"Games that require specific CPU type selection:" "\n"
 			"386 (prefetch): X-Men: Madness in The Murderworld, Terminator 1, Contra, Fifa International Soccer 1994" "\n"
@@ -345,7 +345,7 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_cpu_core",
-		"Advanced > CPU Core", NULL,
+		"Advanced > CPU Core (restart required)", NULL,
 		"Emulation method (DOSBox CPU core) used.", NULL,
 		"System",
 		{
