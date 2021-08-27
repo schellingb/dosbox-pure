@@ -1383,6 +1383,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 			RefreshFileList(true);
 
+			#ifndef STATIC_LINKING
 			if (on_finish && !always_show_menu && ((exe_count == 1 && fs_count <= 1) || use_autoboot))
 			{
 				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
@@ -1397,6 +1398,7 @@ static void DBP_PureMenuProgram(Program** make)
 				if (!IdleLoop(CheckAnyPress, DBP_GetTicks() + (dbp_menu_time * 1000))) return;
 				result = 0;
 			}
+			#endif
 			if (on_finish)
 			{
 				// ran without auto start or only for a very short time (maybe crash), wait for user confirmation
@@ -2944,8 +2946,15 @@ void retro_run(void)
 			if (!dbp_crash_message.empty()) // unexpected shutdown
 				DBP_Shutdown();
 			else if (dbp_state == DBPSTATE_EXITED) // expected shutdown
+			{
+				#ifndef STATIC_LINKING
 				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, 0);
-
+				#else
+				// On statically linked platforms shutdown would exit the frontend, so don't do that. Just tint the screen red and sleep.
+				for (Bit8u *p = dosbox_buffers[dosbox_buffers_last], *pEnd = p + sizeof(dosbox_buffers[0]); p < pEnd; p += 56) p[2] = 255;
+				sleep_ms(10);
+				#endif
+			}
 			return;
 		}
 
