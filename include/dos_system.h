@@ -87,6 +87,8 @@ public:
 	Bits refCtr;
 	bool open;
 	char* name;
+	//DBP: Added for large ZIP file support
+	inline virtual bool Seek64(Bit64u * pos,Bit32u type) { Bit32u i; bool j = Seek(&i, type); *pos = i; return j; }
 /* Some Device Specific Stuff */
 private:
 	Bit8u hdrive;

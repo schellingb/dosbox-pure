@@ -44,8 +44,9 @@ struct miniz
 	#define MZ_MIN(a,b) (((a)<(b))?(a):(b))
 	#define MZ_CLEAR_OBJ(obj) memset(&(obj), 0, sizeof(obj))
 
-	#define MZ_READ_LE16(p) ((miniz::mz_uint16)(((const miniz::mz_uint8 *)(p))[0]) | ((miniz::mz_uint32)(((const miniz::mz_uint8 *)(p))[1]) << 8U))
+	#define MZ_READ_LE16(p) ((miniz::mz_uint16)(((const miniz::mz_uint8 *)(p))[0]) | ((miniz::mz_uint16)(((const miniz::mz_uint8 *)(p))[1]) << 8U))
 	#define MZ_READ_LE32(p) ((miniz::mz_uint32)(((const miniz::mz_uint8 *)(p))[0]) | ((miniz::mz_uint32)(((const miniz::mz_uint8 *)(p))[1]) << 8U) | ((miniz::mz_uint32)(((const miniz::mz_uint8 *)(p))[2]) << 16U) | ((miniz::mz_uint32)(((const miniz::mz_uint8 *)(p))[3]) << 24U))
+	#define MZ_READ_LE64(p) ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[0]) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[1]) << 8U) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[2]) << 16U) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[3]) << 24U) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[4]) << 32U) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[5]) << 40U) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[6]) << 48U) | ((miniz::mz_uint64)(((const miniz::mz_uint8 *)(p))[7]) << 56U))
 
 	// Set MINIZ_HAS_64BIT_REGISTERS to 1 if operations on 64-bit integers are reasonably fast (and don't involve compiler generated calls to helper functions).
 	#if defined(_M_X64) || defined(_WIN64) || defined(__MINGW64__) || defined(_LP64) || defined(__LP64__) || defined(__ia64__) || defined(__x86_64__)
@@ -906,14 +907,14 @@ struct unz_explode
 struct Zip_Archive
 {
 	DOS_File* zip;
-	Bit32u ofs;
-	Bit32u size;
+	Bit64u ofs;
+	Bit64u size;
 
 	Zip_Archive(DOS_File* _zip) : zip(_zip)
 	{
 		zip->AddRef();
 		size = 0;
-		bool can_seek = zip->Seek(&size, DOS_SEEK_END);
+		bool can_seek = zip->Seek64(&size, DOS_SEEK_END);
 		ofs = size;
 		DBP_ASSERT(can_seek);
 	}
@@ -925,13 +926,13 @@ struct Zip_Archive
 		if (zip->RemoveRef() <= 0) delete zip;
 	}
 
-	Bit32u Read(Bit32u seek_ofs, void *pBuf, Bit32u n)
+	Bit32u Read(Bit64u seek_ofs, void *pBuf, Bit32u n)
 	{
 		if (seek_ofs >= size) n = 0;
-		else if (size - seek_ofs < n) n = size - seek_ofs;
+		else if (n > (Bit32u)(size - seek_ofs)) n = (Bit32u)(size - seek_ofs);
 		if (seek_ofs != ofs)
 		{
-			zip->Seek(&seek_ofs, DOS_SEEK_SET);
+			zip->Seek64(&seek_ofs, DOS_SEEK_SET);
 			ofs = seek_ofs;
 		}
 		Bit8u* pOut = (Bit8u*)pBuf;
@@ -941,7 +942,6 @@ struct Zip_Archive
 			if (!zip->Read(pOut, &sz) || !sz) { n -= remain; break; }
 			remain -= sz;
 			pOut += sz;
-			
 		}
 		ofs += n;
 		return n;
@@ -981,15 +981,15 @@ public:
 
 struct Zip_File : Zip_Entry
 {
-	Bit32u data_ofs, comp_size;
-	Bit32u uncomp_size;
+	Bit64u data_ofs;
+	Bit32u comp_size, uncomp_size;
 	Bit32u refs;
 	Bit16u bit_flags;
 	Bit8u method;
 	bool ofs_past_header;
 	ZIP_Unpacker* unpacker;
 
-	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, Bit32u _data_ofs, Bit32u _comp_size, Bit32u _uncomp_size, Bit16u _bit_flags, Bit8u _method)
+	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, Bit64u _data_ofs, Bit32u _comp_size, Bit32u _uncomp_size, Bit16u _bit_flags, Bit8u _method)
 		: Zip_Entry(_attr, filename, _date, _time), data_ofs(_data_ofs), comp_size(_comp_size), uncomp_size(_uncomp_size), refs(0), bit_flags(_bit_flags), method(_method), ofs_past_header(false), unpacker(NULL) {}
 
 	~Zip_File()
@@ -1072,7 +1072,8 @@ struct Zip_DeflateMemoryUnpacker : Zip_MemoryUnpacker
 		mem_data.resize(f.uncomp_size);
 
 		miniz::tinfl_decompressor inflator;
-		Bit32u ofs = f.data_ofs, out_buf_ofs = 0, read_buf_avail = 0, read_buf_ofs = 0, comp_remaining = f.comp_size, ofs_last_read = 0;
+		Bit64u ofs = f.data_ofs, ofs_last_read = 0;
+		Bit32u out_buf_ofs = 0, read_buf_avail = 0, read_buf_ofs = 0, comp_remaining = f.comp_size;
 		Bit8u read_buf[miniz::MZ_ZIP_MAX_IO_BUF_SIZE], *out_data = &mem_data[0];
 		miniz::tinfl_init(&inflator);
 
@@ -1106,12 +1107,12 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 {
 	Zip_Archive& archive;
 	miniz::tinfl_decompressor inflator;
-	Bit32u ofs;
+	Bit64u ofs;
+	Bit64u ofs_last_read;
 	Bit32u out_buf_ofs;
 	Bit32u read_buf_avail;
 	Bit32u read_buf_ofs;
 	Bit32u comp_remaining;
-	Bit32u ofs_last_read;
 
 	enum { READ_BLOCK = miniz::MZ_ZIP_MAX_IO_BUF_SIZE, WRITE_BLOCK = miniz::TINFL_LZ_DICT_SIZE };
 	Bit8u read_buf[READ_BLOCK];
@@ -1119,7 +1120,7 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 
 	struct SeekCursor
 	{
-		Bit32u cursor_in;
+		Bit64u cursor_in;
 		Bit32u cursor_out;
 		miniz::mz_uint32 m_num_bits;
 		miniz::tinfl_bit_buf_t m_bit_buf;
@@ -1198,7 +1199,7 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 				inflator.m_num_extra               = cursors[idx].m_num_extra;
 				inflator.m_dist_from_out_buf_start = cursors[idx].m_dist_from_out_buf_start;
 				inflator.m_state = miniz::TINFL_STATE_INDEX_BLOCK_BOUNDRY;
-				comp_remaining = f.comp_size - (ofs - f.data_ofs);
+				comp_remaining = f.comp_size - (Bit32u)(ofs - f.data_ofs);
 				memcpy(write_buf, cursors[idx].write_buf, sizeof(write_buf));
 				break;
 			}
@@ -1404,7 +1405,7 @@ struct zipDriveImpl
 	StringToPointerHashMap<Zip_Directory> directories;
 	std::vector<Zip_Search> searches;
 	std::vector<Bit16u> free_search_ids;
-	Bit32u total_decomp_size;
+	Bit64u total_decomp_size;
 
 	// Various ZIP archive enums. To completely avoid cross platform compiler alignment and platform endian issues, miniz.c doesn't use structs for any of this stuff.
 	enum
@@ -1413,8 +1414,15 @@ struct zipDriveImpl
 		// ZIP archive identifiers and record sizes
 		MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG = 0x06054b50, MZ_ZIP_CENTRAL_DIR_HEADER_SIG = 0x02014b50, MZ_ZIP_LOCAL_DIR_HEADER_SIG = 0x04034b50,
 		MZ_ZIP_LOCAL_DIR_HEADER_SIZE = 30, MZ_ZIP_CENTRAL_DIR_HEADER_SIZE = 46, MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE = 22,
+		MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIG = 0x06064b50, MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIZE = 56,
+		MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIG = 0x07064b50, MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE = 20,
+		// End of central directory offsets
+		MZ_ZIP_ECDH_NUM_THIS_DISK_OFS = 4, MZ_ZIP_ECDH_NUM_DISK_CDIR_OFS = 6, MZ_ZIP_ECDH_CDIR_NUM_ENTRIES_ON_DISK_OFS = 8,
+		MZ_ZIP_ECDH_CDIR_TOTAL_ENTRIES_OFS = 10, MZ_ZIP_ECDH_CDIR_SIZE_OFS = 12, MZ_ZIP_ECDH_CDIR_OFS_OFS = 16, MZ_ZIP_ECDH_COMMENT_SIZE_OFS = 20,
+		MZ_ZIP64_ECDL_ECDH_OFS_OFS = 8, MZ_ZIP64_ECDH_SIZE = 4, MZ_ZIP64_ECDH_NUM_THIS_DISK_OFS = 16, MZ_ZIP64_ECDH_NUM_DISK_CDIR_OFS = 20,
+		MZ_ZIP64_ECDH_CDIR_NUM_ENTRIES_ON_DISK_OFS = 24, MZ_ZIP64_ECDH_CDIR_TOTAL_ENTRIES_OFS = 32, MZ_ZIP64_ECDH_CDIR_SIZE_OFS = 40, MZ_ZIP64_ECDH_CDIR_OFS_OFS = 48,
 		// Central directory header record offsets
-		MZ_ZIP_CDH_SIG_OFS = 0, MZ_ZIP_CDH_VERSION_MADE_BY_OFS = 4, MZ_ZIP_CDH_VERSION_NEEDED_OFS = 6, MZ_ZIP_CDH_BIT_FLAG_OFS = 8,
+		MZ_ZIP_CDH_VERSION_MADE_BY_OFS = 4, MZ_ZIP_CDH_VERSION_NEEDED_OFS = 6, MZ_ZIP_CDH_BIT_FLAG_OFS = 8,
 		MZ_ZIP_CDH_METHOD_OFS = 10, MZ_ZIP_CDH_FILE_TIME_OFS = 12, MZ_ZIP_CDH_FILE_DATE_OFS = 14, MZ_ZIP_CDH_CRC32_OFS = 16,
 		MZ_ZIP_CDH_COMPRESSED_SIZE_OFS = 20, MZ_ZIP_CDH_DECOMPRESSED_SIZE_OFS = 24, MZ_ZIP_CDH_FILENAME_LEN_OFS = 28, MZ_ZIP_CDH_EXTRA_LEN_OFS = 30,
 		MZ_ZIP_CDH_COMMENT_LEN_OFS = 32, MZ_ZIP_CDH_DISK_START_OFS = 34, MZ_ZIP_CDH_INTERNAL_ATTR_OFS = 36, MZ_ZIP_CDH_EXTERNAL_ATTR_OFS = 38, MZ_ZIP_CDH_LOCAL_HEADER_OFS = 42,
@@ -1422,9 +1430,6 @@ struct zipDriveImpl
 		MZ_ZIP_LDH_SIG_OFS = 0, MZ_ZIP_LDH_VERSION_NEEDED_OFS = 4, MZ_ZIP_LDH_BIT_FLAG_OFS = 6, MZ_ZIP_LDH_METHOD_OFS = 8, MZ_ZIP_LDH_FILE_TIME_OFS = 10,
 		MZ_ZIP_LDH_FILE_DATE_OFS = 12, MZ_ZIP_LDH_CRC32_OFS = 14, MZ_ZIP_LDH_COMPRESSED_SIZE_OFS = 18, MZ_ZIP_LDH_DECOMPRESSED_SIZE_OFS = 22,
 		MZ_ZIP_LDH_FILENAME_LEN_OFS = 26, MZ_ZIP_LDH_EXTRA_LEN_OFS = 28,
-		// End of central directory offsets
-		MZ_ZIP_ECDH_SIG_OFS = 0, MZ_ZIP_ECDH_NUM_THIS_DISK_OFS = 4, MZ_ZIP_ECDH_NUM_DISK_CDIR_OFS = 6, MZ_ZIP_ECDH_CDIR_NUM_ENTRIES_ON_DISK_OFS = 8,
-		MZ_ZIP_ECDH_CDIR_TOTAL_ENTRIES_OFS = 10, MZ_ZIP_ECDH_CDIR_SIZE_OFS = 12, MZ_ZIP_ECDH_CDIR_OFS_OFS = 16, MZ_ZIP_ECDH_COMMENT_SIZE_OFS = 20,
 	};
 
 	zipDriveImpl(DOS_File* _zip, bool enter_solo_root_dir) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF), archive(_zip), total_decomp_size(0)
@@ -1434,42 +1439,49 @@ struct zipDriveImpl
 			return;
 
 		// Find the end of central directory record by scanning the file from the end towards the beginning.
-		Bit8u  buf[4096];
-		Bit32u cur_file_ofs = (archive.size < (Bit32u)sizeof(buf) ? 0 : archive.size - (Bit32u)sizeof(buf));
-		for (;;)
+		Bit8u buf[4096];
+		Bit64u ecdh_ofs = (archive.size < sizeof(buf) ? 0 : archive.size - sizeof(buf));
+		for (;; ecdh_ofs = MZ_MAX(ecdh_ofs - (sizeof(buf) - 3), 0))
 		{
-			int i, n = (int)MZ_MIN(sizeof(buf), archive.size - cur_file_ofs);
-			if (archive.Read(cur_file_ofs, buf, n) != (Bit32u)n)
-				return;
-			for (i = n - 4; i >= 0; --i)
-				if (MZ_READ_LE32(buf + i) == MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG)
-					break;
-			if (i >= 0) { cur_file_ofs += i; break; }
-			if ((!cur_file_ofs) || ((archive.size - cur_file_ofs) >= (0xFFFF + MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)))
-				return;
-			cur_file_ofs = MZ_MAX(cur_file_ofs - ((Bit32u)sizeof(buf) - 3), 0);
+			Bit32u i, n = (Bit32u)MZ_MIN(sizeof(buf), archive.size - ecdh_ofs);
+			if (archive.Read(ecdh_ofs, buf, n) != n) return;
+			for (i = n - 4; i >= 0; --i) { if (MZ_READ_LE32(buf + i) == MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG) break; }
+			if (i >= 0) { ecdh_ofs += i; break; }
+			if (!ecdh_ofs || (archive.size - ecdh_ofs) >= (0xFFFF + MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)) return;
 		}
 
 		// Read and verify the end of central directory record.
-		if (archive.Read(cur_file_ofs, buf, MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE) != MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
+		if (archive.Read(ecdh_ofs, buf, MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE) != MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
 			return;
 
-		Bit32u total_files     = MZ_READ_LE16(buf + MZ_ZIP_ECDH_CDIR_TOTAL_ENTRIES_OFS);
-		Bit32u num_this_disk   = MZ_READ_LE16(buf + MZ_ZIP_ECDH_NUM_THIS_DISK_OFS);
-		Bit32u cdir_disk_index = MZ_READ_LE16(buf + MZ_ZIP_ECDH_NUM_DISK_CDIR_OFS);
-		Bit32u cdir_size       = MZ_READ_LE32(buf + MZ_ZIP_ECDH_CDIR_SIZE_OFS);
-		Bit32u cdir_ofs        = MZ_READ_LE32(buf + MZ_ZIP_ECDH_CDIR_OFS_OFS);
+		Bit64u total_files = MZ_READ_LE16(buf + MZ_ZIP_ECDH_CDIR_TOTAL_ENTRIES_OFS);
+		Bit64u cdir_size   = MZ_READ_LE32(buf + MZ_ZIP_ECDH_CDIR_SIZE_OFS);
+		Bit64u cdir_ofs    = MZ_READ_LE32(buf + MZ_ZIP_ECDH_CDIR_OFS_OFS);
+
+		if ((cdir_ofs == 0xFFFFFFFF || cdir_size == 0xFFFFFFFF || total_files == 0xFFFF)
+			&& ecdh_ofs >= (MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE + MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIZE)
+			&& archive.Read(ecdh_ofs - MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE, buf, MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE) == MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIZE
+			&& MZ_READ_LE32(buf) == MZ_ZIP64_END_OF_CENTRAL_DIR_LOCATOR_SIG)
+		{
+			Bit64u ecdh64_ofs = MZ_READ_LE64(buf + MZ_ZIP64_ECDL_ECDH_OFS_OFS);
+			if (ecdh64_ofs <= (archive.size - MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIZE)
+				&& archive.Read(ecdh64_ofs, buf, MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIZE) == MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIZE
+				&& MZ_READ_LE32(buf) == MZ_ZIP64_END_OF_CENTRAL_DIR_HEADER_SIG)
+			{
+				total_files = MZ_READ_LE64(buf + MZ_ZIP64_ECDH_CDIR_TOTAL_ENTRIES_OFS);
+				cdir_size   = MZ_READ_LE64(buf + MZ_ZIP64_ECDH_CDIR_SIZE_OFS);
+				cdir_ofs    = MZ_READ_LE64(buf + MZ_ZIP64_ECDH_CDIR_OFS_OFS);
+			}
+		}
 
 		if (!total_files
-			|| (MZ_READ_LE32(buf + MZ_ZIP_ECDH_SIG_OFS) != MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG)
-			|| (total_files != MZ_READ_LE16(buf + MZ_ZIP_ECDH_CDIR_NUM_ENTRIES_ON_DISK_OFS))
-			|| (((num_this_disk | cdir_disk_index) != 0) && ((num_this_disk != 1) || (cdir_disk_index != 1)))
+			|| (cdir_size >= 0x10000000) // limit to 256MB content directory
 			|| (cdir_size < total_files * MZ_ZIP_CENTRAL_DIR_HEADER_SIZE)
 			|| ((cdir_ofs + cdir_size) > archive.size)
 			) return;
 
-		void* m_central_dir = malloc(cdir_size);
-		if (archive.Read(cdir_ofs, m_central_dir, cdir_size) != cdir_size)
+		void* m_central_dir = malloc((size_t)cdir_size);
+		if (archive.Read(cdir_ofs, m_central_dir, (Bit32u)cdir_size) != cdir_size)
 		{
 			free(m_central_dir);
 			return;
@@ -1498,23 +1510,53 @@ struct zipDriveImpl
 		p = cdir_start;
 		for (Bit32u i = 0, total_header_size; i < total_files && p >= cdir_start && p < cdir_end && MZ_READ_LE32(p) == MZ_ZIP_CENTRAL_DIR_HEADER_SIG; i++, p += total_header_size)
 		{
-			Bit32u comp_size        = MZ_READ_LE32(p + MZ_ZIP_CDH_COMPRESSED_SIZE_OFS);
-			Bit32u decomp_size      = MZ_READ_LE32(p + MZ_ZIP_CDH_DECOMPRESSED_SIZE_OFS);
-			Bit32u disk_index       = MZ_READ_LE16(p + MZ_ZIP_CDH_DISK_START_OFS);
+			Bit32u bit_flag         = MZ_READ_LE16(p + MZ_ZIP_CDH_BIT_FLAG_OFS);
+			Bit32u method           = MZ_READ_LE16(p + MZ_ZIP_CDH_METHOD_OFS);
 			Bit16u file_time        = MZ_READ_LE16(p + MZ_ZIP_CDH_FILE_TIME_OFS);
 			Bit16u file_date        = MZ_READ_LE16(p + MZ_ZIP_CDH_FILE_DATE_OFS);
+			Bit64u comp_size        = MZ_READ_LE32(p + MZ_ZIP_CDH_COMPRESSED_SIZE_OFS);
+			Bit64u decomp_size      = MZ_READ_LE32(p + MZ_ZIP_CDH_DECOMPRESSED_SIZE_OFS);
 			Bit32u filename_len     = MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS);
-			Bit32u method           = MZ_READ_LE16(p + MZ_ZIP_CDH_METHOD_OFS);
-			Bit32u bit_flag         = MZ_READ_LE16(p + MZ_ZIP_CDH_BIT_FLAG_OFS);
-			Bit32u local_header_ofs = MZ_READ_LE32(p + MZ_ZIP_CDH_LOCAL_HEADER_OFS);
-			total_header_size = MZ_ZIP_CENTRAL_DIR_HEADER_SIZE + filename_len + MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS) + MZ_READ_LE16(p + MZ_ZIP_CDH_COMMENT_LEN_OFS);
+			Bit32s extra_len        = MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS);
+			Bit64u local_header_ofs = MZ_READ_LE32(p + MZ_ZIP_CDH_LOCAL_HEADER_OFS);
+			total_header_size = MZ_ZIP_CENTRAL_DIR_HEADER_SIZE + filename_len + extra_len + MZ_READ_LE16(p + MZ_ZIP_CDH_COMMENT_LEN_OFS);
 
 			if (!ZIP_Unpacker::MethodSupported(method)
-				|| (((!method) && (decomp_size != comp_size)) || (decomp_size && !comp_size) || (decomp_size == 0xFFFFFFFF) || (comp_size == 0xFFFFFFFF))
-				|| ((disk_index != num_this_disk) && (disk_index != 1))
-				|| ((local_header_ofs + MZ_ZIP_LOCAL_DIR_HEADER_SIZE + comp_size) > archive.size)
 				|| (p + total_header_size > cdir_end)
 				|| (bit_flag & (1 | 32)) // Encryption and patch files are not supported.
+				) { invalid_cdh: continue; }
+
+			if (decomp_size == 0xFFFFFFFF || comp_size == 0xFFFFFFFF || local_header_ofs == 0xFFFFFFFF)
+			{
+				for (const Bit8u *x = p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE + filename_len, *xEnd = x + extra_len; (x + (sizeof(Bit16u) * 2)) < xEnd;)
+				{
+					const Bit8u *field = x + (sizeof(Bit16u) * 2), *fieldEnd = field + MZ_READ_LE16(x + 2);
+					if (MZ_READ_LE16(x) != 0x0001 || fieldEnd > xEnd) { x = fieldEnd; continue; } // Not Zip64 extended information extra field
+					if (decomp_size == 0xFFFFFFFF)
+					{
+						if (fieldEnd - field < sizeof(Bit64u)) goto invalid_cdh;
+						decomp_size = MZ_READ_LE64(field);
+						field += sizeof(Bit64u);
+					}
+					if (comp_size == 0xFFFFFFFF)
+					{
+						if (fieldEnd - field < sizeof(Bit64u)) goto invalid_cdh;
+						comp_size = MZ_READ_LE64(field);
+						field += sizeof(Bit64u);
+					}
+					if (local_header_ofs == 0xFFFFFFFF)
+					{
+						if (fieldEnd - field < sizeof(Bit64u)) goto invalid_cdh;
+						local_header_ofs = MZ_READ_LE64(field);
+						field += sizeof(Bit64u);
+					}
+					break;
+				}
+			}
+
+			if (((!method) && (decomp_size != comp_size)) || (decomp_size && !comp_size)
+				|| (decomp_size > 0xFFFFFFFF) || (comp_size > 0xFFFFFFFF) // not supported on DOS file systems
+				|| ((local_header_ofs + MZ_ZIP_LOCAL_DIR_HEADER_SIZE + comp_size) > archive.size)
 				) continue;
 
 			total_decomp_size += decomp_size;
@@ -1549,7 +1591,7 @@ struct zipDriveImpl
 						else if (baseLen >= 5 && p_dos[j+2] && p_dos[j+2] < '~') p_dos[j+2]++;
 						else goto skip_zip_entry;
 					}
-					zfile = new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, local_header_ofs, comp_size, decomp_size, (Bit16u)bit_flag, (Bit8u)method);
+					zfile = new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, local_header_ofs, (Bit32u)comp_size, (Bit32u)decomp_size, (Bit16u)bit_flag, (Bit8u)method);
 					parent->entries.Put(p_dos, zfile);
 					skip_zip_entry:
 					break;
@@ -1746,10 +1788,12 @@ bool zipDrive::GetFileAttr(char * name, Bit16u * attr)
 
 bool zipDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)
 {
-	// return dummy numbers
+	// return dummy numbers (up to almost 4 GB of total decomp size)
+	Bit32u show_size = (impl->total_decomp_size > (0xffffffff-(512*224-1)) ? (0xffffffff-(512*224-1)) : (Bit32u)impl->total_decomp_size);
+	Bit8u sectors = (Bit8u)(show_size > (32<<24) ? (show_size>>29<<5): 32);
 	*_bytes_sector = 512;
-	*_sectors_cluster = 32;
-	*_total_clusters = (impl->total_decomp_size + 16383) / 16384;
+	*_sectors_cluster = sectors;
+	*_total_clusters = (Bit16u)(((Bit64u)show_size + (512 * sectors - 1)) / (512 * sectors));
 	*_free_clusters = 0;
 	return true;
 }
