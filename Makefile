@@ -200,7 +200,7 @@ else
   LDFLAGS  += -O2
 endif
 
-CFLAGS  += $(CPUFLAGS) -std=gnu++11 -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
+CFLAGS  += $(CPUFLAGS) -std=gnu++11 -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch -Wno-psabi
 ifneq ($(STATIC_LINKING), 1)
   CFLAGS  += -fpic
 else
