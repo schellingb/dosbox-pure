@@ -1324,16 +1324,12 @@ struct Zip_Handle : public DOS_File
 		//printf("[] [%s] READING %d BYTES\n", name, *size);
 		if (!OPEN_IS_READING(flags)) return FALSE_SET_DOSERR(ACCESS_DENIED);
 		if (!src->unpacker) return FALSE_SET_DOSERR(INVALID_HANDLE);
-		Bit32u want = *size;
-		if (!want) return true;
-		if (ofs + want > src->uncomp_size)
-		{
-			want = (Bit16u)(src->uncomp_size - ofs);
-			if (!want) { *size = 0; return true; }
-		}
+		if (!*size) return true;
+		if (ofs >= (Bit32u)src->uncomp_size) { *size = 0; return true; }
+		Bit32u left = (src->uncomp_size - ofs), want = (left < *size ? left : *size);
 		Bit32u read = src->unpacker->Read(*src, ofs, data, want);
 		ofs += read;
-		*size = read;
+		*size = (Bit16u)read;
 		if (!read && want) return FALSE_SET_DOSERR(INVALID_DRIVE);
 
 		// TODO ....
@@ -1355,7 +1351,7 @@ struct Zip_Handle : public DOS_File
 	virtual bool Seek(Bit32u* pos, Bit32u type)
 	{
 		//printf("[] [%s] SEEKING %d (type: %d)\n", name, *pos, type);
-		Bit32s seekto=0;
+		Bit32s seekto;
 		switch(type)
 		{
 			case DOS_SEEK_SET: seekto = (Bit32s)*pos; break;
@@ -1364,7 +1360,6 @@ struct Zip_Handle : public DOS_File
 			default: return FALSE_SET_DOSERR(FUNCTION_NUMBER_INVALID);
 		}
 		if (seekto < 0) seekto = 0;
-		if ((Bit32u)seekto > src->uncomp_size) seekto = src->uncomp_size;
 		*pos = ofs = (Bit32u)seekto;
 		//printf("[] [%s]    SEEKED TO %d\n", name, *pos, type);
 		return true;
