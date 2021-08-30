@@ -586,6 +586,7 @@ static void DBP_Shutdown()
 	}
 	dbp_event_queue_write_cursor = dbp_event_queue_read_cursor = 0;
 	dbp_state = DBPSTATE_SHUTDOWN;
+	exit(0);
 }
 
 static void DBP_LockThread(bool lock)
