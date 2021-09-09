@@ -633,28 +633,6 @@ void PIC_Init(Section* sec) {
 void DBPSerialize_PIC(DBPArchive& ar)
 {
 	DBP_ASSERT(!InEventService);
-	float pic_indices[PIC_QUEUESIZE];
-	Bitu pic_values[PIC_QUEUESIZE];
-	PIC_EventHandler pic_events[PIC_QUEUESIZE];
-	Bit16u pic_count = 0;
-	if (ar.mode == DBPArchive::MODE_MAXSIZE)
-	{
-		pic_count = PIC_QUEUESIZE;
-	}
-	else if (ar.mode != DBPArchive::MODE_LOAD)
-	{
-		for (PICEntry* it = pic_queue.next_entry; it; it = it->next)
-		{
-			pic_indices[pic_count] = it->index;
-			pic_values[pic_count] = it->value;
-			pic_events[pic_count] = it->pic_event;
-			pic_count++;
-		}
-	}
-
-	ar.SerializeArray(pics).Serialize(PIC_Ticks).Serialize(PIC_IRQCheck).Serialize(pic_count);
-	ar.SerializeBytes(pic_indices, pic_count * sizeof(*pic_indices));
-	ar.SerializeBytes(pic_values, pic_count * sizeof(*pic_values));
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, VGA);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, VGA_Draw);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, SERIAL);
@@ -667,6 +645,31 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, TIMER);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, MOUSE);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, unionDrive);
+
+	float pic_indices[PIC_QUEUESIZE];
+	Bitu pic_values[PIC_QUEUESIZE];
+	PIC_EventHandler pic_events[PIC_QUEUESIZE];
+	Bit16u pic_count = 0;
+	if (ar.mode == DBPArchive::MODE_MAXSIZE)
+	{
+		pic_count = PIC_QUEUESIZE;
+	}
+	else if (ar.mode != DBPArchive::MODE_LOAD)
+	{
+		for (PICEntry* it = pic_queue.next_entry; it; it = it->next)
+		{
+			// skip storing state irrelevant union drive event which has a pointer in its value
+			if (it->pic_event == DBPSerializePIC_EventHandlerunionDrivePtrs[0]) continue;
+			pic_indices[pic_count] = it->index;
+			pic_values[pic_count] = it->value;
+			pic_events[pic_count] = it->pic_event;
+			pic_count++;
+		}
+	}
+
+	ar.SerializeArray(pics).Serialize(PIC_Ticks).Serialize(PIC_IRQCheck).Serialize(pic_count);
+	ar.SerializeBytes(pic_indices, pic_count * sizeof(*pic_indices));
+	ar.SerializeBytes(pic_values, pic_count * sizeof(*pic_values));
 	ar.SerializePointers((void**)pic_events, pic_count, false, 12,
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, VGA),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, VGA_Draw),
@@ -691,11 +694,13 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
 		for (Bit16u i = 0; i != PIC_QUEUESIZE-1; i++) pic_queue.entries[i].next = &pic_queue.entries[i+1];
-		for (Bit16u i = 0; i != pic_count; i++)
+		for (Bit16u i = 0, iMax = pic_count, fix = 0; i != iMax; i++)
 		{
-			pic_queue.entries[i].index     = pic_indices[i];
-			pic_queue.entries[i].value     = pic_values[i];
-			pic_queue.entries[i].pic_event = pic_events[i];
+			// skip loading state irrelevant union drive event from old saves which has a pointer in its value
+			if (pic_events[i] == DBPSerializePIC_EventHandlerunionDrivePtrs[0]) { pic_count--; fix++; continue; }
+			pic_queue.entries[i-fix].index     = pic_indices[i];
+			pic_queue.entries[i-fix].value     = pic_values[i];
+			pic_queue.entries[i-fix].pic_event = pic_events[i];
 		}
 		pic_queue.entries[PIC_QUEUESIZE-1].next = NULL;
 		pic_queue.free_entry = (pic_count != PIC_QUEUESIZE ? &pic_queue.entries[pic_count] : NULL);
