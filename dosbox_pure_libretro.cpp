@@ -310,8 +310,12 @@ static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
 	vfprintf(stderr, fmt, va);
 	va_end(va);
 }
+static retro_time_t time_in_microseconds()
+{
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+}
 static retro_log_printf_t         log_cb = retro_fallback_log;
-static retro_perf_get_time_usec_t time_cb;
+static retro_perf_get_time_usec_t time_cb = time_in_microseconds;
 static retro_environment_t        environ_cb;
 static retro_video_refresh_t      video_cb;
 static retro_audio_sample_batch_t audio_batch_cb;
@@ -2132,6 +2136,144 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 	JOYSTICK_Enable(1, useJoy2);
 }
 
+static void set_variables(bool force_midi_scan)
+{
+	static std::vector<std::string> dynstr;
+	dynstr.clear();
+	bool use_midi_cache = false;
+	std::string path, subdir;
+	const char *system_dir = NULL;
+	struct retro_vfs_interface_info vfs = { 3, NULL };
+	retro_time_t scan_start = time_cb();
+	if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
+	{
+		std::vector<std::string> subdirs;
+		subdirs.push_back(std::string());
+		while (subdirs.size())
+		{
+			std::swap(subdir, subdirs.back());
+			subdirs.pop_back();
+			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
+			if (!dir) continue;
+			while (vfs.iface->readdir(dir))
+			{
+				const char* entry_name = vfs.iface->dirent_get_name(dir);
+				size_t entry_len = strlen(entry_name);
+				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
+					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				else if ((entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
+						|| (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
+				{
+					dynstr.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+					dynstr.push_back(entry_name[entry_len-1] == '2' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] == '2' ? 4 : 12));
+				}
+				else if (entry_len == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
+				{
+					FILE* f = fopen_wrap(path.assign(system_dir).append("/").append(entry_name).c_str(), "rb");
+					if (!f) continue;
+					fseek(f, 0, SEEK_END);
+					size_t fsize = ftell(f);
+					fseek(f, 0, SEEK_SET);
+					char* cache = new char[fsize + 1];
+					if (!fread(cache, fsize, 1, f)) { DBP_ASSERT(0); fsize = 0;}
+					fclose(f);
+					cache[fsize] = '\0';
+					dynstr.clear();
+					for (char *pLine = cache, *pEnd = cache + fsize + 1, *p = cache; p != pEnd; p++)
+					{
+						if (*p >= ' ') continue;
+						if (p == pLine) { pLine++; continue; }
+						dynstr.push_back(path.assign(pLine, p - pLine));
+						pLine = p + 1;
+					}
+					delete [] cache;
+					if (dynstr.size() & 1) dynstr.pop_back();
+					use_midi_cache = true;
+					subdirs.clear();
+					break;
+				}
+			}
+			vfs.iface->closedir(dir);
+		}
+	}
+	if (force_midi_scan || (!use_midi_cache && time_cb() - scan_start > 2000000 && system_dir))
+	{
+		FILE* f = fopen_wrap(path.assign(system_dir).append("/").append("DOSBoxPureMidiCache.txt").c_str(), "w");
+		if (f)
+		{
+			for (const std::string& s : dynstr) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
+			fclose(f);
+		}
+	}
+
+	#include "core_options.h"
+	for (retro_core_option_v2_definition& def : option_defs)
+	{
+		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
+		size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 : dynstr.size());
+		for (size_t f = 0; f != numfiles; f += 2)
+			if (dynstr[f].back() == '2')
+				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
+		for (size_t f = 0; f != numfiles; f += 2)
+			if (dynstr[f].back() != '2')
+				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
+		def.values[i++] = { "disabled", "Disabled" };
+		def.values[i++] = { "frontend", "Frontend MIDI driver" };
+		if (use_midi_cache)
+			def.values[i++] = { "scan", "Scan System directory for soundfonts (open this menu again after)" };
+		else if (force_midi_scan)
+			def.values[i++] = { "scan", "System directory scan finished" };
+		def.values[i] = { 0, 0 };
+		def.default_value = def.values[0].value;
+		break;
+	}
+
+	unsigned options_ver = 0;
+	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
+	if (options_ver >= 2)
+	{
+		// Category options support, skip the first 'Show Advanced Options' entry
+		static const struct retro_core_options_v2 options = { option_cats, option_defs+1 };
+		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, (void*)&options);
+	}
+	else if (options_ver == 1)
+	{
+		// Convert options to V1 format, keep first 'Show Advanced Options' entry
+		static std::vector<retro_core_option_definition> v1defs;
+		for (const retro_core_option_v2_definition& v2def : option_defs)
+		{
+			if (v2def.category_key)
+			{
+				// Build desc string "CATEGORY > V2DESC"
+				dynstr.push_back(v2def.category_key);
+				dynstr.back().append(" > ").append(v2def.desc);
+			}
+			v1defs.push_back({ v2def.key, (v2def.category_key ? dynstr.back().c_str() : v2def.desc), v2def.info, {}, v2def.default_value });
+			memcpy(v1defs.back().values, v2def.values, sizeof(v2def.values));
+		}
+		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, (void*)&v1defs[0]);
+	}
+	else
+	{
+		// Convert options to legacy format, skip the first 'Show Advanced Options' entry
+		static std::vector<retro_variable> v0defs;
+		for (const retro_core_option_v2_definition& v2def : option_defs)
+		{
+			if (!v2def.desc) { v0defs.push_back({0,0}); break; }
+			dynstr.resize(dynstr.size() + 1);
+			if (v2def.category_key)
+				dynstr.back().append(v2def.category_key).append(" > ");
+			dynstr.back().append(v2def.desc).append("; ").append(v2def.default_value);
+			for (const retro_core_option_value& v2val : v2def.values)
+				if (v2val.value && strcmp(v2def.default_value, v2val.value))
+					dynstr.back().append("|").append(v2val.value);
+			v0defs.push_back({ v2def.key, dynstr.back().c_str() });
+		}
+		environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)&v0defs[1]);
+	}
+}
+
 static bool check_variables()
 {
 	struct Variables
@@ -2315,9 +2457,14 @@ static bool check_variables()
 
 	std::string soundfontpath;
 	const char* midi = Variables::RetroGet("dosbox_pure_midi", "");
+	if (!strcmp(midi, "scan"))
+	{
+		set_variables(true);
+		midi = Variables::RetroGet("dosbox_pure_midi", "");
+	}
 	if (!*midi) midi = Variables::RetroGet("dosbox_pure_soundfont", ""); // old option name
-	if (!strcasecmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
-	else if (*midi && strcasecmp(midi, "frontend"))
+	if (!strcmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
+	else if (*midi && strcmp(midi, "frontend") && strcmp(midi, "scan"))
 	{
 		const char *system_dir = NULL;
 		environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir);
@@ -2359,11 +2506,6 @@ static bool check_variables()
 	dbp_joy_analog_deadzone = (int)((float)atoi(Variables::RetroGet("dosbox_pure_joystick_analog_deadzone", "15")) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 
 	return visibility_changed;
-}
-
-static retro_time_t time_in_microseconds()
-{
-	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 }
 
 static bool init_dosbox(const char* path, bool firsttime)
@@ -2668,103 +2810,15 @@ void retro_init(void) //#3
 	};
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
-
-	static std::vector<std::string> dynstr;
-	const char *system_dir = NULL;
-	struct retro_vfs_interface_info vfs = { 3, NULL };
-	if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
-	{
-		std::string path, subdir;
-		std::vector<std::string> subdirs;
-		subdirs.push_back(std::string());
-		while (subdirs.size())
-		{
-			std::swap(subdir, subdirs.back());
-			subdirs.pop_back();
-			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
-			if (!dir) continue;
-			while (vfs.iface->readdir(dir))
-			{
-				const char* entry_name = vfs.iface->dirent_get_name(dir);
-				size_t entry_len = strlen(entry_name);
-				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
-					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-				else if ((entry_len > 4 && !strcasecmp(entry_name + entry_len - 4, ".sf2"))
-						|| (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
-				{
-					dynstr.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-					dynstr.push_back(entry_name[entry_len-1] == '2' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
-					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] == '2' ? 4 : 12));
-				}
-			}
-			vfs.iface->closedir(dir);
-		}
-	}
-
-	#include "core_options.h"
-	for (retro_core_option_v2_definition& def : option_defs)
-	{
-		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
-		size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-2)*2 : dynstr.size());
-		for (size_t f = 0; f != numfiles; f += 2)
-			if (dynstr[f].back() == '2')
-				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
-		for (size_t f = 0; f != numfiles; f += 2)
-			if (dynstr[f].back() != '2')
-				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
-		def.values[i  ] = { "disabled", "Disabled" };
-		def.values[i+1] = { "frontend", "Frontend MIDI driver" };
-		def.default_value = def.values[0].value;
-		break;
-	}
-
-	unsigned options_ver = 0;
-	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
-	if (options_ver >= 2)
-	{
-		// Category options support, skip the first 'Show Advanced Options' entry
-		static const struct retro_core_options_v2 options = { option_cats, option_defs+1 };
-		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, (void*)&options);
-	}
-	else if (options_ver == 1)
-	{
-		// Convert options to V1 format, keep first 'Show Advanced Options' entry
-		static std::vector<retro_core_option_definition> v1defs;
-		for (const retro_core_option_v2_definition& v2def : option_defs)
-		{
-			if (v2def.category_key)
-			{
-				// Build desc string "CATEGORY > V2DESC"
-				dynstr.push_back(v2def.category_key);
-				dynstr.back().append(" > ").append(v2def.desc);
-			}
-			v1defs.push_back({ v2def.key, (v2def.category_key ? dynstr.back().c_str() : v2def.desc), v2def.info, {}, v2def.default_value });
-			memcpy(v1defs.back().values, v2def.values, sizeof(v2def.values));
-		}
-		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS, (void*)&v1defs[0]);
-	}
-	else
-	{
-		// Convert options to legacy format, skip the first 'Show Advanced Options' entry
-		static std::vector<retro_variable> v0defs;
-		for (const retro_core_option_v2_definition& v2def : option_defs)
-		{
-			if (!v2def.desc) { v0defs.push_back({0,0}); break; }
-			dynstr.resize(dynstr.size() + 1);
-			if (v2def.category_key)
-				dynstr.back().append(v2def.category_key).append(" > ");
-			dynstr.back().append(v2def.desc).append("; ").append(v2def.default_value);
-			for (const retro_core_option_value& v2val : v2def.values)
-				if (v2val.value && strcmp(v2def.default_value, v2val.value))
-					dynstr.back().append("|").append(v2val.value);
-			v0defs.push_back({ v2def.key, dynstr.back().c_str() });
-		}
-		environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)&v0defs[1]);
-	}
+	
+	struct retro_perf_callback perf;
+	if (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) && perf.get_time_usec) time_cb = perf.get_time_usec;
 
 	// Set default ports
 	dbp_port_devices[0] = (DBP_Port_Device)DBP_DEVICE_DefaultJoypad;
 	dbp_port_devices[1] = (DBP_Port_Device)DBP_DEVICE_DefaultJoypad;
+
+	set_variables(false);
 }
 
 bool retro_load_game(const struct retro_game_info *info) //#4
@@ -2775,9 +2829,6 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
 		return false;
 	}
-
-	struct retro_perf_callback perf;
-	time_cb = (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) ? perf.get_time_usec : &time_in_microseconds);
 
 	//// RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK crashes RetroArch with the XAudio driver when launching from the command line
 	//// Also it explicitly doesn't support save state rewinding when used so give up on this for now.
