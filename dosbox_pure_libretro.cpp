@@ -2359,34 +2359,34 @@ static bool check_variables()
 		visibility_changed = true;
 	}
 
-	if (dbp_state == DBPSTATE_BOOT)
-	{
-		const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
-		dbp_last_machine = machine[0];
-		if (!strcmp(machine, "svga"))
-			machine = Variables::RetroGet("dosbox_pure_svga", "svga_s3");
-		else if (!strcmp(machine, "vga"))
-			machine = "vgaonly";
-		Variables::DosBoxSet("dosbox", "machine", machine);
+	dbp_auto_mapping_mode = Variables::RetroGet("dosbox_pure_auto_mapping", "true")[0];
 
-		const char* audiorate = Variables::RetroGet("dosbox_pure_audiorate", DBP_DEFAULT_SAMPLERATE_STRING);
-		Variables::DosBoxSet("mixer",    "rate",      audiorate);
-		Variables::DosBoxSet("sblaster", "oplrate",   audiorate);
-		Variables::DosBoxSet("speaker",  "pcrate",    audiorate);
-		Variables::DosBoxSet("speaker",  "tandyrate", audiorate);
-
-		dbp_auto_mapping_mode = Variables::RetroGet("dosbox_pure_auto_mapping", "true")[0];
-
-		// initiate audio buffer, we don't need SDL specific behavior, so just set a large enough buffer
-		Variables::DosBoxSet("mixer", "prebuffer", "0");
-		Variables::DosBoxSet("mixer", "blocksize", "2048");
-	}
+	const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
+	if (!strcmp(machine, "svga")) machine = Variables::RetroGet("dosbox_pure_svga", "svga_s3");
+	else if (!strcmp(machine, "vga")) machine = "vgaonly";
+	Variables::DosBoxSet("dosbox", "machine", machine, false, true);
 
 	const char* mem = Variables::RetroGet("dosbox_pure_memory_size", "16");
 	bool mem_use_extended = (atoi(mem) > 0);
 	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
 	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
 	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "16"), false, true);
+
+	const char* audiorate = Variables::RetroGet("dosbox_pure_audiorate", DBP_DEFAULT_SAMPLERATE_STRING);
+	Variables::DosBoxSet("mixer", "rate", audiorate, false, true);
+
+	if (dbp_state == DBPSTATE_BOOT)
+	{
+		dbp_last_machine = machine[0];
+
+		Variables::DosBoxSet("sblaster", "oplrate",   audiorate);
+		Variables::DosBoxSet("speaker",  "pcrate",    audiorate);
+		Variables::DosBoxSet("speaker",  "tandyrate", audiorate);
+
+		// initiate audio buffer, we don't need SDL specific behavior, so just set a large enough buffer
+		Variables::DosBoxSet("mixer", "prebuffer", "0");
+		Variables::DosBoxSet("mixer", "blocksize", "2048");
+	}
 
 	// handle setting strings like on/yes/true/savestate or rewind
 	const char* savestate = Variables::RetroGet("dosbox_pure_savestate", "false");
@@ -2407,7 +2407,6 @@ static bool check_variables()
 	Variables::DosBoxSet("cpu", "core",    Variables::RetroGet("dosbox_pure_cpu_core", "auto"), false, true);
 	Variables::DosBoxSet("cpu", "cputype", Variables::RetroGet("dosbox_pure_cpu_type", "auto"), false, true);
 
-	const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
 	if (dbp_last_machine != machine[0])
 	{
 		dbp_last_machine = machine[0];
