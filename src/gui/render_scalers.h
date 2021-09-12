@@ -22,6 +22,12 @@
 //#include "render.h"
 #include "video.h"
 
+#ifdef C_DBP_LIBRETRO
+#define SCALER_MAXWIDTH       1280 
+#define SCALER_MAXHEIGHT      1024
+#define SCALER_MAX_MUL_HEIGHT 1
+#define SCALER_MAX_MUL_WIDTH  1
+#else
 #define SCALER_MAX_MUL_WIDTH  3
 #define SCALER_MAX_MUL_HEIGHT 3
 
@@ -40,6 +46,7 @@
 #define SCALER_MAXLINE_WIDTH SCALER_MAXX
 #else 
 #define SCALER_MAXLINE_WIDTH (SCALER_MAX_MUL_WIDTH * SCALER_MAXWIDTH)
+#endif
 #endif
 
 
