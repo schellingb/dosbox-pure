@@ -41,7 +41,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Save States Support", NULL,
 		"Make sure to test it in each game before using it. Complex late era DOS games might have problems." "\n"
 		"Be aware that states saved with different video, CPU or memory settings are not loadable." "\n"
-		"Rewind support comes at a high performance cost, setting it requires a full core restart." "\n"
+		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer." "\n"
 		"Save states might not be compatible with new versions of this core." "\n\n", NULL, //end of top section
 		NULL,
 		{

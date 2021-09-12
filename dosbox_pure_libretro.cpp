@@ -95,6 +95,7 @@ static Bit32u dbp_last_run;
 static Bit32u dbp_min_sleep;
 static DBP_State dbp_state;
 static DBP_SerializeMode dbp_serializemode;
+static size_t dbp_serializesize;
 static char dbp_menu_time;
 static bool dbp_timing_tamper;
 static bool dbp_fast_forward;
@@ -2956,6 +2957,7 @@ void retro_reset(void)
 	dbp_state = DBPSTATE_BOOT;
 	dbp_fast_forward = false;
 	dbp_game_running = false;
+	dbp_serializesize = 0;
 	dbp_disk_mount_letter = 0;
 	dbp_gfx_intercept = NULL;
 	dbp_input_intercept = NULL;
@@ -3238,17 +3240,19 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 	if (dbp_serializemode == DBPSERIALIZE_DISABLED) return false;
 	DBP_LockThread(true);
 	DBPSerialize_All(ar, (dbp_state == DBPSTATE_RUNNING), dbp_game_running);
+	//log_cb(RETRO_LOG_WARN, "[SERIALIZE] [%d] [%s] %u\n", (dbp_state == DBPSTATE_RUNNING && dbp_game_running), (ar.mode == DBPArchive::MODE_LOAD ? "LOAD" : ar.mode == DBPArchive::MODE_SAVE ? "SAVE" : ar.mode == DBPArchive::MODE_SIZE ? "SIZE" : ar.mode == DBPArchive::MODE_MAXSIZE ? "MAXX" : ar.mode == DBPArchive::MODE_ZERO ? "ZERO" : "???????"), (Bit32u)ar.GetOffset());
 	if (dbp_game_running && ar.mode == DBPArchive::MODE_LOAD) dbp_lastmenuticks = DBP_GetTicks(); // force show menu on immediate emulation crash
 	if (unlock_thread) DBP_LockThread(false);
 	if (ar.had_error && (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE))
 	{
 		static const char* machine_names[MCH_VGA+1] = { "hercules", "cga", "tandy", "pcjr", "ega", "vga" };
-		static Bit8u lastErrorHad;
-		static Bit32u lastErrorTick;
+		static Bit32u lastErrorId, lastErrorTick;
 		Bit32u ticks = DBP_GetTicks();
-		if ((ticks - lastErrorTick) < 5000U) return true; // don't spam errors (especially when doing rewind)
+		Bit32u errorId = (ar.mode << 8) | ar.had_error;
+		if (lastErrorId == errorId && (ticks - lastErrorTick) < 5000U) return false; // don't spam errors (especially when doing rewind)
+		lastErrorId = errorId;
 		lastErrorTick = ticks;
-		switch (lastErrorHad = ar.had_error)
+		switch (ar.had_error)
 		{
 			case DBPArchive::ERR_LAYOUT:
 				retro_notify(0, RETRO_LOG_ERROR, "%s%s", "Load State Error: ", "Invalid file format");
@@ -3257,10 +3261,12 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 				retro_notify(0, RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
 			case DBPArchive::ERR_DOSNOTRUNNING:
-				retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while DOS was" : "save state while DOS is"));
+				if (dbp_serializemode != DBPSERIALIZE_REWIND)
+					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running.\nIf using rewind, make sure to modify the related core option.", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while DOS was" : "save state while DOS is"));
 				break;
 			case DBPArchive::ERR_GAMENOTRUNNING:
-				retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while game was" : "save state while game is"));
+				if (dbp_serializemode != DBPSERIALIZE_REWIND)
+					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running.\nIf using rewind, make sure to modify the related core option.", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while game was" : "save state while game is"));
 				break;
 			case DBPArchive::ERR_WRONGMACHINECONFIG:
 				retro_notify(0, RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
@@ -3287,23 +3293,28 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 
 size_t retro_serialize_size(void)
 {
-	static size_t previous_size;
-	if (dbp_lockthreadstate) return previous_size;
-	DBPArchiveCounter ar(dbp_state != DBPSTATE_RUNNING);
-	return (previous_size = (retro_serialize_all(ar, false) ? ar.count : 0));
+	bool rewind = (dbp_state != DBPSTATE_RUNNING || dbp_serializemode == DBPSERIALIZE_REWIND);
+	if ((rewind || dbp_lockthreadstate) && dbp_serializesize) return dbp_serializesize;
+	DBPArchiveCounter ar(rewind);
+	return dbp_serializesize = (retro_serialize_all(ar, false) ? ar.count : 0);
 }
 
 bool retro_serialize(void *data, size_t size)
 {
 	DBPArchiveWriter ar(data, size);
-	return retro_serialize_all(ar, true);
+	if (!retro_serialize_all(ar, true) && ((ar.had_error != DBPArchive::ERR_DOSNOTRUNNING && ar.had_error != DBPArchive::ERR_GAMENOTRUNNING) || dbp_serializemode != DBPSERIALIZE_REWIND)) return false;
+	memset(ar.ptr, 0, ar.end - ar.ptr);
+	return true;
 }
 
 bool retro_unserialize(const void *data, size_t size)
 {
 	dbp_overload_count = 0; // don't show overload warning immediately after loading
 	DBPArchiveReader ar(data, size);
-	return retro_serialize_all(ar, true);
+	bool res = retro_serialize_all(ar, true);
+	if ((ar.had_error != DBPArchive::ERR_DOSNOTRUNNING && ar.had_error != DBPArchive::ERR_GAMENOTRUNNING) || dbp_serializemode != DBPSERIALIZE_REWIND) return res;
+	if (dbp_state != DBPSTATE_RUNNING || dbp_game_running) retro_reset();
+	return true;
 }
 
 // Unused features
