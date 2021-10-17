@@ -762,7 +762,7 @@ void DBPSerialize_Render(DBPArchive& ar)
 	Bit8u* current_pixels = NULL;
 	Bitu current_pitch = 0;
 	GFX_StartUpdate(current_pixels, current_pitch);
-	Bit32u render_offset = (current_pixels && render.scale.outWrite ? render.scale.outWrite - current_pixels : 0);
+	Bit32u render_offset = (render.scale.outWrite > current_pixels && render.scale.outWrite < current_pixels + render.src.width * 4 * render.src.height ? (render.scale.outWrite - current_pixels) : 0);
 	Bit8u loaded_src[sizeof(render.src)];
 
 	ar
@@ -785,9 +785,13 @@ void DBPSerialize_Render(DBPArchive& ar)
 			memcpy(&render.src, loaded_src, sizeof(render.src));
 			RENDER_Reset();
 		}
-		else if (current_pixels)
+		else if (current_pixels && render_offset && render_offset < render.src.width * 4 * render.src.height)
 		{
 			render.scale.outWrite = current_pixels + render_offset;
+		}
+		else
+		{
+			RENDER_Reset();
 		}
 		render.scale.clearCache = true;
 		render.scale.cacheRead = (Bit8u*)&scalerSourceCache + cache_offset;

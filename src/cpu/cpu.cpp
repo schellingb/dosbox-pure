@@ -2157,6 +2157,7 @@ void CPU_Disable_SkipAutoAdjust(void) {
 #endif
 
 
+#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
 extern Bit32s ticksDone;
 extern Bit32u ticksScheduled;
 
@@ -2165,6 +2166,7 @@ void CPU_Reset_AutoAdjust(void) {
 	ticksDone = 0;
 	ticksScheduled = 0;
 }
+#endif
 
 class CPU: public Module_base {
 private:
@@ -2240,6 +2242,10 @@ public:
 
 		Prop_multival* p = section->Get_multival("cycles");
 		std::string type = p->GetSection()->Get_string("type");
+#ifdef C_DBP_LIBRETRO // use our custom cycle scaling
+		void DBP_CPU_ModifyCycles(const char*);
+		DBP_CPU_ModifyCycles(type.c_str());
+#else
 		std::string str ;
 		CommandLine cmd(0,p->GetSection()->Get_string("parameters"));
 		if (type=="max") {
@@ -2313,7 +2319,7 @@ public:
 			}
 			CPU_CycleAutoAdjust=false;
 		}
-
+#endif // C_DBP_LIBRETRO
 		CPU_CycleUp=section->Get_int("cycleup");
 		CPU_CycleDown=section->Get_int("cycledown");
 		std::string core(section->Get_string("core"));
@@ -2476,13 +2482,13 @@ void DBPSerialize_CPU(DBPArchive& ar)
 		.Serialize(Segs)
 		.Serialize(CPU_Cycles)
 		.Serialize(CPU_CycleLeft)
-		.Serialize(CPU_IODelayRemoved)
+		.Serialize(CPU_IODelayRemoved) // not relevant to the state, cleared on load below (should be removed from serialized data)
 		.Serialize(cpu_tss)
 		.Serialize(lastint)
 		.Serialize(lflags);
 
 	typedef CPU_Decoder* CPU_DecoderPtr;
-	DBP_SERIALIZE_STATIC_POINTER_LIST(CPU_DecoderPtr, CPU, 
+	DBP_SERIALIZE_STATIC_POINTER_LIST(CPU_DecoderPtr, CPU,
 		&CPU_Core_Full_Run,
 		&CPU_Core_Normal_Run,
 		&CPU_Core_Prefetch_Run,
@@ -2519,4 +2525,7 @@ void DBPSerialize_CPU(DBPArchive& ar)
 	void DBPSerialize_CPU_Core_Dynrec(DBPArchive& ar);
 	DBPSerialize_CPU_Core_Dynrec(ar);
 	#endif
+
+	if (ar.mode == DBPArchive::MODE_LOAD)
+		CPU_IODelayRemoved = 0;
 }

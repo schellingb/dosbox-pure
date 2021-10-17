@@ -279,7 +279,8 @@ static Bitu DOS_21Handler(void) {
 			Bit8u handle=RealHandle(STDIN);
 			if (handle!=0xFF && Files[handle] && Files[handle]->IsName("CON")) {
 				Bit8u c;Bit16u n;
-				while (DOS_GetSTDINStatus()) {
+				extern bool DBP_IsShuttingDown(); // DBP: Added exit check to support shutdown/restart
+				while (DOS_GetSTDINStatus() && !DBP_IsShuttingDown()) {
 					n=1;	DOS_ReadFile(STDIN,&c,&n);
 				}
 			}

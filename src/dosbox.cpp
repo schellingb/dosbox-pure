@@ -128,6 +128,7 @@ static LoopHandler * loop;
 bool SDLNetInited;
 #endif
 
+#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
 static Bit32u ticksRemain;
 static Bit32u ticksLast;
 static Bit32u ticksAdded;
@@ -136,6 +137,7 @@ Bit32u ticksScheduled;
 bool ticksLocked;
 bool DBP_CPUOverload;
 void increaseticks();
+#endif
 
 static Bitu Normal_Loop(void) {
 	Bits ret;
@@ -152,15 +154,36 @@ static Bitu Normal_Loop(void) {
 			if (DEBUG_ExitLoop()) return 0;
 #endif
 		} else {
+#ifdef C_DBP_CUSTOMTIMING
+extern bool dbp_new_timing;
+if (dbp_new_timing)
+{
+			static bool doTick;
+			if (doTick) {doTick=false;TIMER_AddTick();}
+			else {doTick=true;GFX_Events();return 0;}
+}
+#ifndef DBP_REMOVE_OLD_TIMING
+else
+{
 			GFX_Events();
 			if (ticksRemain>0) {
 				TIMER_AddTick();
 				ticksRemain--;
 			} else {increaseticks();return 0;}
+}
+#endif
+#else
+			GFX_Events();
+			if (ticksRemain>0) {
+				TIMER_AddTick();
+				ticksRemain--;
+			} else {increaseticks();return 0;}
+#endif
 		}
 	}
 }
 
+#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
 //For trying other delays
 #ifdef C_DBP_USE_SDL
 #define wrap_delay(a) SDL_Delay(a)
@@ -318,6 +341,7 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 			CPU_CycleMax = CPU_CYCLES_LOWER_LIMIT;
 	} //if (ticksScheduled >= 250 || ticksDone >= 250 || (ticksAdded > 15 && ticksScheduled >= 5) )
 }
+#endif
 
 void DOSBOX_SetLoop(LoopHandler * handler) {
 	loop=handler;
@@ -362,9 +386,11 @@ static void DOSBOX_RealInit(Section * sec) {
 	Section_prop * section=static_cast<Section_prop *>(sec);
 	/* Initialize some dosbox internals */
 
+#ifndef DBP_REMOVE_OLD_TIMING
 	ticksRemain=0;
 	ticksLast=GetTicks();
 	ticksLocked = false;
+#endif
 	DOSBOX_SetLoop(&Normal_Loop);
 	MSG_Init(section);
 
@@ -848,11 +874,14 @@ void DBP_DOSBOX_ForceShutdown(const Bitu)
 	/* end all execution and return to the top of the stack */
 	struct ShutdownCPU { static Bitu Loop(void) { return 1; } };
 	DOSBOX_SetLoop(ShutdownCPU::Loop);
+#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
 	ticksRemain = 0;
+#endif
 	CPU_CycleLeft = CPU_Cycles = 0;
 	first_shell->exit = true;
 }
 
+#ifndef DBP_REMOVE_OLD_TIMING
 void DBP_DOSBOX_ResetTickTimer()
 {
 	/* Reset any auto cycle guessing */
@@ -861,25 +890,4 @@ void DBP_DOSBOX_ResetTickTimer()
 	ticksDone = 0;
 	ticksScheduled = 0;
 }
-
-void DBP_DOSBOX_Unlock(bool unlock, int start_frame_skip = 0)
-{
-	ticksLocked = unlock;
-	render.frameskip.max = (unlock ? start_frame_skip : 0);
-	static Bit32s old_max;
-	static bool old_pmode;
-	if (unlock)
-	{
-		old_max = CPU_CycleMax;
-		old_pmode = cpu.pmode;
-		CPU_CycleMax = (cpu.pmode ? 30000 : 10000);
-	}
-	else if (old_max)
-	{
-		// If we switched to protected mode while locked (likely at startup) with auto adjust cycles on, choose a reasonable base rate
-		CPU_CycleMax = (old_pmode != cpu.pmode && cpu.pmode && CPU_CycleAutoAdjust ? 200000 : old_max);
-		old_max = 0;
-	}
-	CPU_CycleLeft = CPU_Cycles = 0;
-	DBP_DOSBOX_ResetTickTimer();
-}
+#endif

@@ -70,6 +70,7 @@
 
 // ----- Enabled new features
 #define C_DBP_LIBRETRO
+#define C_DBP_CUSTOMTIMING
 #define C_DBP_HAVE_FPATH_NOCASE
 #define C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 #define C_DBP_SUPPORT_DISK_MOUNT_DOSFILE

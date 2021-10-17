@@ -18,10 +18,11 @@
 
 static retro_core_option_v2_category option_cats[] =
 {
+	{ "Emulation",   "Emulation Options",   "Core specific settings (latency, save states, start menu)." },
 	{ "Input",       "Input Options",       "Keyboard, mouse and joystick settings." },
 	{ "Performance", "Performance Options", "Adjust the performance of the emulated CPU." },
 	{ "Video",       "Video Options",       "Settings for the emulated graphics card and aspect ratio." },
-	{ "System",      "System Options",      "Other system settings for RAM, CPU type and start menu behavior." },
+	{ "System",      "System Options",      "Other system settings for emulatred RAM and CPU." },
 	{ "Audio",       "Audio Options",       "MIDI, SoundBlaster and other audio settings." },
 	{ NULL, NULL, NULL }
 };
@@ -36,20 +37,109 @@ static retro_core_option_v2_definition option_defs[] =
 		{ { "false", "Off" }, { "true", "On" } },
 		"false"
 	},
+	// Emulation
+#ifndef DBP_REMOVE_OLD_TIMING
+	{
+		"dosbox_pure_experimental_timing_mode",
+		"Timing Mode (restart required)", NULL,
+		"[Experimental] This option will hopefully go away with only 'New Mode' remaining." "\n"
+		"Old Mode: Emulates in background, frontend has no control over frame timing." "\n"
+		"New Mode: Frontend times frame drawing, improves frame timing and syncing.", NULL,
+		"Emulation",
+		{
+			{ "legacy", "Old Mode" },
+			{ "new", "New Mode" },
+		},
+		"legacy"
+	},
+#endif
+	{
+		"dosbox_pure_force60fps",
+		"Force 60 FPS Output", NULL,
+		"Enable this to force output at 60FPS. Use this if you encounter screen tearing or vsync issues.", NULL,
+		"Emulation",
+		{
+			{ "false", "Off" },
+			{ "true", "On" },
+		},
+		"false"
+	},
+	{
+		"dosbox_pure_perfstats",
+		"Show Performance Statistics", NULL,
+		"Enable this to show statistics about performance and framerate and check if emulation runs at full speed.", NULL,
+		"Emulation",
+		{
+			{ "none",     "Disabled" },
+			{ "simple",   "Simple" },
+			{ "detailed", "Detailed information" },
+		},
+		"none"
+	},
 	{
 		"dosbox_pure_savestate",
 		"Save States Support", NULL,
 		"Make sure to test it in each game before using it. Complex late era DOS games might have problems." "\n"
 		"Be aware that states saved with different video, CPU or memory settings are not loadable." "\n"
 		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer." "\n"
-		"Save states might not be compatible with new versions of this core." "\n\n", NULL, //end of top section
-		NULL,
+		"Save states might not be compatible with new versions of this core.", NULL,
+		"Emulation",
 		{
 			{ "on",       "Enable save states" },
 			{ "rewind",   "Enable save states with rewind" },
 			{ "disabled", "Disabled" },
 		},
 		"on"
+	},
+	{
+		"dosbox_pure_menu_time",
+		"Start Menu", NULL,
+		"Set the behavior of the start menu before and after launching a game." "\n"
+		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'." "\n\n", NULL, //end of Emulation section
+		"Emulation",
+		{
+#ifndef STATIC_LINKING
+			{ "5", "Show at start, shut down core 5 seconds after auto started game exit" },
+			{ "3", "Show at start, shut down core 3 seconds after auto started game exit" },
+			{ "0", "Show at start, shut down core immediately after auto started game exit" },
+#else
+			{ "5", "Show at start, show again after game exit (default)" },
+#endif
+			{ "-1", "Always show menu on startup and after game exit, ignore auto start setting" },
+		},
+		"5"
+	},
+	{
+		"dosbox_pure_latency",
+		"Advanced > Input Latency", NULL,
+		"By default the core operates in a high performance mode with good input latency." "\n"
+		"There is a special mode available which minimizes input latency further requiring manual tweaking.", NULL,
+		"Emulation",
+		{
+			{ "default", "Default" },
+			{ "low", "Lowest latency - See CPU usage setting below!" },
+		},
+		"default"
+	},
+	{
+		"dosbox_pure_auto_target",
+		"Advanced > Low latency CPU usage", NULL,
+		"In low latency mode when emulating DOS as fast as possible, how much time per frame should be used by the emulation." "\n"
+		"If the video is stuttering, lower this or improve render performance in the frontend (for example by disabling vsync or video processing)." "\n"
+		"Use the performance statistics to easily find the maximum that still hits the emulated target framerate." "\n\n", NULL, //end of Emulation > Advanced section
+		"Emulation",
+		{
+			//{ "0.2", "20%" }, { "0.21", "21%" }, { "0.22", "22%" }, { "0.23", "23%" }, { "0.24", "24%" }, { "0.25", "25%" }, { "0.26", "26%" }, { "0.27", "27%" }, { "0.28", "28%" }, { "0.29", "29%" },
+			//{ "0.3", "30%" }, { "0.31", "31%" }, { "0.32", "32%" }, { "0.33", "33%" }, { "0.34", "34%" }, { "0.35", "35%" }, { "0.36", "36%" }, { "0.37", "37%" }, { "0.38", "38%" }, { "0.39", "39%" },
+			//{ "0.4", "40%" }, { "0.41", "41%" }, { "0.42", "42%" }, { "0.43", "43%" }, { "0.44", "44%" }, { "0.45", "45%" }, { "0.46", "46%" }, { "0.47", "47%" }, { "0.48", "48%" }, { "0.49", "49%" },
+			{ "0.5", "50%" }, { "0.51", "51%" }, { "0.52", "52%" }, { "0.53", "53%" }, { "0.54", "54%" }, { "0.55", "55%" }, { "0.56", "56%" }, { "0.57", "57%" }, { "0.58", "58%" }, { "0.59", "59%" },
+			{ "0.6", "60%" }, { "0.61", "61%" }, { "0.62", "62%" }, { "0.63", "63%" }, { "0.64", "64%" }, { "0.65", "65%" }, { "0.66", "66%" }, { "0.67", "67%" }, { "0.68", "68%" }, { "0.69", "69%" },
+			{ "0.7", "70%" }, { "0.71", "71%" }, { "0.72", "72%" }, { "0.73", "73%" }, { "0.74", "74%" }, { "0.75", "75%" }, { "0.76", "76%" }, { "0.77", "77%" }, { "0.78", "78%" }, { "0.79", "79%" },
+			{ "0.8", "80%" }, { "0.81", "81%" }, { "0.82", "82%" }, { "0.83", "83%" }, { "0.84", "84%" }, { "0.85", "85%" }, { "0.86", "86%" }, { "0.87", "87%" }, { "0.88", "88%" }, { "0.89", "89%" },
+			{ "0.9", "90%" }, { "0.91", "91%" }, { "0.92", "92%" }, { "0.93", "93%" }, { "0.94", "94%" }, { "0.95", "95%" }, { "0.96", "96%" }, { "0.97", "97%" }, { "0.98", "98%" }, { "0.99", "99%" },
+			{ "1.0", "100%" },
+		},
+		"0.9",
 	},
 
 	// Input
@@ -364,24 +454,6 @@ static retro_core_option_v2_definition option_defs[] =
 		#else
 		"normal"
 		#endif
-	},
-	{
-		"dosbox_pure_menu_time",
-		"Advanced > Start Menu", NULL,
-		"Set the behavior of the start menu before and after launching a game." "\n"
-		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'." "\n\n", NULL, //end of System > Advanced section
-		"System",
-		{
-#ifndef STATIC_LINKING
-			{ "5", "Show at start, shut down core 5 seconds after auto started game exit" },
-			{ "3", "Show at start, shut down core 3 seconds after auto started game exit" },
-			{ "0", "Show at start, shut down core immediately after auto started game exit" },
-#else
-			{ "5", "Show at start, show again after game exit (default)" },
-#endif
-			{ "-1", "Always show menu on startup and after game exit, ignore auto start setting" },
-		},
-		"5"
 	},
 
 	// Audio
