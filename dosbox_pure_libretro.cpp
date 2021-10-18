@@ -789,13 +789,14 @@ bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 	DBP_Buffer& buf = dbp_buffers[buffer_active^1];
 	pixels = (Bit8u*)buf.video;
 	pitch = render.src.width * 4;
-	if (render.src.width != buf.width || render.src.height != buf.height)
+	float ratio = (render.aspect ? (float)render.src.ratio : (float)render.src.width / render.src.height);
+	if (ratio < 1) ratio *= 2; //because render.src.dblw is not reliable
+	if (ratio > 2) ratio /= 2; //because render.src.dblh is not reliable
+	if (buf.width != render.src.width || buf.height != render.src.height || buf.ratio != ratio)
 	{
 		buf.width = (Bit32u)render.src.width;
 		buf.height = (Bit32u)render.src.height;
-		buf.ratio = (float)buf.width / buf.height;
-		if (buf.ratio < 1) buf.ratio *= 2; //because render.src.dblw is not reliable
-		if (buf.ratio > 2) buf.ratio /= 2; //because render.src.dblh is not reliable
+		buf.ratio = ratio;
 	}
 	return true;
 }
@@ -955,10 +956,10 @@ static bool GFX_Events_AdvanceFrame()
 	}
 
 	// Skip evaluating the performance of this frame if the display mode has changed
-	double modeHash = render.src.ratio * render.src.fps * render.src.width * render.src.height * (double)vga.mode;
+	double modeHash = render.src.fps * render.src.width * render.src.height * (double)vga.mode;
 	if (modeHash != St.LastModeHash)
 	{
-		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS@%4d] NEW VIDEO MODE %f|%f|%d|%d|%d|%d|\n", St.HistoryCursor, render.src.ratio, render.src.fps, (int)render.src.width, (int)render.src.height, (int)vga.mode);
+		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS@%4d] NEW VIDEO MODE %f|%d|%d|%d|%d|\n", St.HistoryCursor, render.src.fps, (int)render.src.width, (int)render.src.height, (int)vga.mode);
 		St.LastModeHash = modeHash;
 		St.HistoryEmulator[HISTORY_SIZE-1] = 0;
 		St.HistoryCursor = 0;
