@@ -428,14 +428,11 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			semDoContinue.Post();
 			return;
 		case TCM_SHUTDOWN:
-			DBP_ThreadControl(TCM_PAUSE_FRAME);
+			dbp_pause_events = true;
+			semDidPause.Wait();
+			dbp_pause_events = dbp_frame_pending = false;
 			DBP_DOSBOX_ForceShutdown();
-			DBP_ThreadControl(TCM_RESUME_FRAME);
-			while (dbp_state != DBPSTATE_EXITED)
-			{
-				semDoContinue.Post();
-				semDidPause.Wait();
-			}
+			do { semDoContinue.Post(); semDidPause.Wait(); } while (dbp_state != DBPSTATE_EXITED);
 			return;
 	}
 }
