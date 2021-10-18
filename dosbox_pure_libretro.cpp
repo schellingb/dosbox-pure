@@ -2743,7 +2743,7 @@ static bool check_variables()
 
 	// Emulation options
 #ifndef DBP_REMOVE_OLD_TIMING
-	bool experimental_new_timing = (Variables::RetroGet("dosbox_pure_experimental_timing_mode", "legacy")[0] == 'n'); static bool lastent; if (experimental_new_timing != lastent) { retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart"); lastent^=1; }
+	bool experimental_new_timing = (Variables::RetroGet("dosbox_pure_experimental_timing_mode", "legacy")[0] == 'n'); static bool lastent, seenent; if (!seenent) { seenent = true; lastent = experimental_new_timing; } else if (experimental_new_timing != lastent) { retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart"); lastent^=1; }
 	Variables::RetroVisibility("dosbox_pure_force60fps", experimental_new_timing);
 	Variables::RetroVisibility("dosbox_pure_latency", experimental_new_timing);
 	Variables::RetroVisibility("dosbox_pure_auto_target", experimental_new_timing);
