@@ -924,6 +924,9 @@ static bool GFX_Events_AdvanceFrame()
 	if (!dbp_new_timing) return true;
 #endif
 
+	// With certain keyboard layouts, we can end up here during startup which we don't want to do anything further
+	if (dbp_state == DBPSTATE_BOOT) return true;
+
 	retro_time_t time_before = time_cb() - St.Paused;
 	St.Paused = 0;
 
