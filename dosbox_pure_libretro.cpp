@@ -2097,6 +2097,8 @@ static void DBP_StartOnScreenKeyboard()
 				case DBPET_MOUSESETSPEED: osk.mspeed = (val > 0 ? 4.f : 1.f); break;
 				case DBPET_MOUSERESETSPEED: osk.mspeed = 2.f; break;
 				case DBPET_ONSCREENKEYBOARD: case_CLOSEOSK:
+					osk.pressed_key = KBD_NONE;
+					memset(osk.held, 0, sizeof(osk.held));
 					DBP_KEYBOARD_ReleaseKeys();
 					dbp_gfx_intercept = NULL;
 					dbp_input_intercept = NULL;
