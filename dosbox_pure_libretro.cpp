@@ -789,7 +789,8 @@ bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 	DBP_Buffer& buf = dbp_buffers[buffer_active^1];
 	pixels = (Bit8u*)buf.video;
 	pitch = render.src.width * 4;
-	float ratio = (render.aspect ? (float)render.src.ratio : (float)render.src.width / render.src.height);
+	float ratio = (float)render.src.width / render.src.height;
+	if (render.aspect) ratio /= (float)render.src.ratio;
 	if (ratio < 1) ratio *= 2; //because render.src.dblw is not reliable
 	if (ratio > 2) ratio /= 2; //because render.src.dblh is not reliable
 	if (buf.width != render.src.width || buf.height != render.src.height || buf.ratio != ratio)
