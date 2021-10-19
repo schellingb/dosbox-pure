@@ -396,6 +396,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 	switch (m)
 	{
 		case TCM_PAUSE_FRAME:
+			DBP_ASSERT(!dbp_pause_events);
 			if (!dbp_frame_pending || dbp_pause_events) return;
 			dbp_pause_events = true;
 			#ifdef DBP_ENABLE_WAITSTATS
@@ -428,9 +429,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			semDoContinue.Post();
 			return;
 		case TCM_SHUTDOWN:
-			dbp_pause_events = true;
-			semDidPause.Wait();
-			dbp_pause_events = dbp_frame_pending = false;
+			if (dbp_frame_pending) { dbp_pause_events = true; semDidPause.Wait(); dbp_pause_events = dbp_frame_pending = false; }
 			DBP_DOSBOX_ForceShutdown();
 			do { semDoContinue.Post(); semDidPause.Wait(); } while (dbp_state != DBPSTATE_EXITED);
 			return;
