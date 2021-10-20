@@ -2129,7 +2129,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.19";
+	info->library_version  = "0.20";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
