@@ -825,11 +825,11 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	// Tell dosbox to draw the next frame completely, not just the scanlines that changed (could also issue GFX_CallBackRedraw)
 	render.scale.clearCache = true;
 
+	// frameskip is best to be modified in this function (otherwise it can be off by one)
+	dbp_framecount += 1 + render.frameskip.max;
+
 	if (dbp_new_timing)
 	{
-		// frameskip is best to be modified in this function
-		dbp_framecount += 1 + render.frameskip.max;
-
 		static unsigned last_throttle_mode;
 		if (last_throttle_mode != dbp_throttle.mode)
 		{
