@@ -73,65 +73,25 @@ struct Semaphore { Semaphore() : v(0) {} __inline void Post() { m.Lock(); v = 1;
 static retro_system_av_info av_info;
 
 // DOSBOX STATE
-enum DBP_State : Bit8u
-{
-	DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_FIRST_FRAME,
-#ifndef DBP_REMOVE_OLD_TIMING
-	DBPSTATE_WAIT_FIRST_EVENTS, DBPSTATE_WAIT_FIRST_RUN,
-#endif
-	DBPSTATE_RUNNING
-};
-enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND };
-#if !defined(DBP_REMOVE_OLD_TIMING) || !defined(DBP_REMOVE_NEW_TIMING)
-bool dbp_new_timing = true;
-#endif
-static retro_throttle_state dbp_throttle;
-#ifndef DBP_REMOVE_NEW_TIMING
-static Semaphore semDoContinue, semDidPause;
-static bool dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps;
-static enum { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
+static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
+static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
+static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
+static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps;
+static char dbp_menu_time;
 static float dbp_auto_target, dbp_targetrefreshrate;
-static Bit32u dbp_perf_uniquedraw, dbp_perf_count, dbp_perf_emutime, dbp_perf_totaltime, dbp_framecount, dbp_serialize_time;
+static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_serialize_time;
+static Semaphore semDoContinue, semDidPause;
+static retro_throttle_state dbp_throttle;
 static retro_time_t dbp_lastrun;
-static enum { DBP_PERF_NONE, DBP_PERF_SIMPLE, DBP_PERF_DETAILED } dbp_perf;
-//#define DBP_ENABLE_WAITSTATS
-#ifdef DBP_ENABLE_WAITSTATS
-static Bit32u dbp_wait_pause, dbp_wait_finish, dbp_wait_paused, dbp_wait_continue;
-#endif
-#endif
 static std::string dbp_crash_message;
 static std::string dbp_content_path;
 static std::string dbp_content_name;
 static retro_time_t dbp_boot_time;
-static Bit32u dbp_lastmenuticks;
-static DBP_State dbp_state;
-static DBP_SerializeMode dbp_serializemode;
 static size_t dbp_serializesize;
-static char dbp_menu_time;
-static bool dbp_game_running;
-#ifndef DBP_REMOVE_OLD_TIMING
-static Mutex dbp_audiomutex;
-static Mutex dbp_lockthreadmtx[2];
-static Bit32u dbp_last_run;
-static Bit32u dbp_min_sleep;
-static bool dbp_timing_tamper;
-static bool dbp_lockthreadstate;
-static void dbp_calculate_min_sleep() { dbp_min_sleep = (uint32_t)(1000 / (render.src.fps > av_info.timing.fps ? render.src.fps : av_info.timing.fps)); }
-static Bit32u dbp_retro_activity;
-static Bit32u dbp_wait_activity;
-static Bit32u dbp_overload_count;
-static retro_usec_t dbp_frame_time;
-#define old_DBP_DEFAULT_FPS 60.0f
-#endif
 
 // DOSBOX AUDIO/VIDEO
-struct DBP_Buffer
-{
-	Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT];
-	Bit32u width, height; float ratio;
-};
-static DBP_Buffer dbp_buffers[2];
 static Bit8u buffer_active;
+static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], width, height; float ratio; } dbp_buffers[2];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static void(*dbp_gfx_intercept)(DBP_Buffer& buf);
@@ -196,9 +156,6 @@ static const char* dbp_auto_mapping_title;
 // DOSBOX EVENTS
 enum DBP_Event_Type
 {
-#ifndef DBP_REMOVE_OLD_TIMING
-	DBPETOLD_SET_VARIABLE, DBPETOLD_MOUNT, _DBPETOLD_EXT_MAX, DBPETOLD_UNMOUNT, DBPETOLD_SET_FASTFORWARD, DBPETOLD_LOCKTHREAD, DBPETOLD_SHUTDOWN, _DBPETOLD_INPUT_FIRST,
-#endif
 	DBPET_JOY1X, DBPET_JOY1Y, DBPET_JOY2X, DBPET_JOY2Y, DBPET_JOYMX, DBPET_JOYMY,
 	_DBPET_JOY_AXIS_MAX,
 
@@ -221,27 +178,10 @@ enum DBP_Event_Type
 	_DBPET_MAX
 };
 static const char* DBP_Event_Type_Names[] = {
-#ifndef DBP_REMOVE_OLD_TIMING
-	"SET_VARIABLE", "MOUNT", "EXT_MAX", "UNMOUNT", "SET_FASTFORWARD", "LOCKTHREAD", "SHUTDOWN", "INPUT_FIRST",
-#endif
 	"JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "JOY_AXIS_MAX", "MOUSEXY", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT",
-	"JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "AXIS_TO_KEY",
-#ifndef DBP_REMOVE_NEW_TIMING
-	"CHANGEMOUNTS",
-#endif
-	"MAX" };
-struct DBP_Event
-{
-	DBP_Event_Type type;
-#ifndef DBP_REMOVE_OLD_TIMING
-	struct Ext { Section* section; std::string cmd; };
-	union { struct { int val, val2; }; Ext* ext; };
-#else
-	int val, val2;
-#endif
-};
+	"JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "AXIS_TO_KEY", "CHANGEMOUNTS", "MAX" };
 enum { DBP_EVENT_QUEUE_SIZE = 256, DBP_DOWN_BY_KEYBOARD = 128 };
-static DBP_Event dbp_event_queue[DBP_EVENT_QUEUE_SIZE];
+static struct DBP_Event { DBP_Event_Type type; int val, val2; } dbp_event_queue[DBP_EVENT_QUEUE_SIZE];
 static int dbp_event_queue_write_cursor;
 static int dbp_event_queue_read_cursor;
 static int dbp_keys_down_count;
@@ -265,9 +205,6 @@ static void DBP_QueueEvent(DBP_Event& evt)
 				if (je.type != ie.type) continue;
 				else if (ie.type >= DBPET_JOY1X && ie.type <= _DBPET_JOY_AXIS_MAX) ie.val += je.val;
 				else if (ie.type == DBPET_MOUSEXY) { ie.val += je.val; ie.val2 += je.val2; }
-#ifndef DBP_REMOVE_OLD_TIMING
-				else if (ie.ext != je.ext) continue;
-#endif
 				cur = j;
 				goto remove_element_at_cur;
 			}
@@ -285,9 +222,6 @@ static void DBP_QueueEvent(DBP_Event& evt)
 		// remove element at cur and shift everything up to next one down
 		remove_element_at_cur:
 		next = ((next + DBP_EVENT_QUEUE_SIZE - 1) % DBP_EVENT_QUEUE_SIZE);
-#ifndef DBP_REMOVE_OLD_TIMING
-		if (dbp_event_queue[cur].type <= _DBPETOLD_EXT_MAX) { delete dbp_event_queue[cur].ext; dbp_event_queue[cur].ext = NULL; }
-#endif
 		for (int n = cur; (n = ((n + 1) % DBP_EVENT_QUEUE_SIZE)) != next; cur = n)
 			dbp_event_queue[cur] = dbp_event_queue[n];
 	}
@@ -314,16 +248,6 @@ static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
 	DBP_Event evt = { type, val, val2 };
 	DBP_QueueEvent(evt);
 }
-#ifndef DBP_REMOVE_OLD_TIMING
-static void DBPOld_QueueEvent(DBP_Event_Type type, std::string& swappable_cmd, Section* section = NULL)
-{
-	DBP_Event evt = { type };
-	evt.ext = new DBP_Event::Ext();
-	evt.ext->section = section;
-	std::swap(evt.ext->cmd, swappable_cmd);
-	DBP_QueueEvent(evt);
-}
-#endif
 
 // LIBRETRO CALLBACKS
 static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
@@ -349,6 +273,14 @@ static retro_video_refresh_t      video_cb;
 static retro_audio_sample_batch_t audio_batch_cb;
 static retro_input_poll_t         input_poll_cb;
 static retro_input_state_t        input_state_cb;
+
+// PERF OVERLAY
+static enum DBP_Perf : Bit8u { DBP_PERF_NONE, DBP_PERF_SIMPLE, DBP_PERF_DETAILED } dbp_perf;
+static Bit32u dbp_perf_uniquedraw, dbp_perf_count, dbp_perf_emutime, dbp_perf_totaltime;
+//#define DBP_ENABLE_WAITSTATS
+#ifdef DBP_ENABLE_WAITSTATS
+static Bit32u dbp_wait_pause, dbp_wait_finish, dbp_wait_paused, dbp_wait_continue;
+#endif
 
 // PERF FPS COUNTERS
 //#define DBP_ENABLE_FPS_COUNTERS
@@ -485,16 +417,6 @@ static void DBP_UnlockSpeed(bool unlock, int start_frame_skip = 0)
 		CPU_CycleMax = (old_pmode != cpu.pmode && cpu.pmode && CPU_CycleAutoAdjust ? 200000 : old_max);
 		render.frameskip.max = old_max = 0;
 	}
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		extern bool ticksLocked;
-		ticksLocked = unlock;
-		CPU_CycleLeft = CPU_Cycles = 0;
-		void DBP_DOSBOX_ResetTickTimer();
-		DBP_DOSBOX_ResetTickTimer();
-	}
-#endif
 }
 
 static void DBP_AppendImage(const char* entry, bool sorted)
@@ -682,17 +604,7 @@ static void DBP_Shutdown()
 	if (dbp_state != DBPSTATE_EXITED && dbp_state != DBPSTATE_SHUTDOWN)
 	{
 		dbp_state = DBPSTATE_RUNNING;
-		if (dbp_new_timing)
-		{
-			DBP_ThreadControl(TCM_SHUTDOWN);
-		}
-#ifndef DBP_REMOVE_OLD_TIMING
-		if (!dbp_new_timing)
-		{
-			DBP_QueueEvent(DBPETOLD_SHUTDOWN);
-			while (dbp_state != DBPSTATE_EXITED) retro_sleep(50);
-		}
-#endif
+		DBP_ThreadControl(TCM_SHUTDOWN);
 	}
 	if (!dbp_crash_message.empty())
 	{
@@ -705,18 +617,6 @@ static void DBP_Shutdown()
 		delete control;
 		control = NULL;
 	}
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		for (DBP_Event& e : dbp_event_queue)
-		{
-			if (e.type > _DBPETOLD_EXT_MAX) continue;
-			delete e.ext;
-			e.ext = NULL;
-		}
-		dbp_event_queue_write_cursor = dbp_event_queue_read_cursor = 0;
-	}
-#endif
 	dbp_state = DBPSTATE_SHUTDOWN;
 }
 
@@ -745,40 +645,6 @@ void DBP_MidiDelay(Bit32u ms)
 	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD) return;
 	retro_sleep(ms);
 }
-
-#ifndef DBP_REMOVE_OLD_TIMING
-void DBP_DelayTicks(Bit32u ms)
-{
-	retro_sleep(ms);
-}
-
-static void DBP_LockThread(bool lock)
-{
-	if (lock && !dbp_lockthreadstate)
-	{
-		dbp_lockthreadstate = true;
-		dbp_lockthreadmtx[0].Lock();
-		DBP_QueueEvent(DBPETOLD_LOCKTHREAD);
-		dbp_lockthreadmtx[1].Lock();
-	}
-	else if (!lock && dbp_lockthreadstate)
-	{
-		dbp_lockthreadmtx[0].Unlock();
-		dbp_lockthreadmtx[1].Unlock();
-		dbp_lockthreadstate = false;
-	}
-}
-
-void DBP_LockAudio()
-{
-	dbp_audiomutex.Lock();
-}
-
-void DBP_UnlockAudio()
-{
-	dbp_audiomutex.Unlock();
-}
-#endif
 
 bool DBP_IsKeyDown(KBD_KEYS key)
 {
@@ -810,12 +676,6 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 	// Make sure DOSbox is not using any scalers that would waste performance
 	DBP_ASSERT(render.src.width == width && render.src.height == height);
 	if (width > SCALER_MAXWIDTH || height > SCALER_MAXHEIGHT) { DBP_ASSERT(false); return 0; }
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		dbp_calculate_min_sleep();
-	}
-#endif
 	//const char* VGAModeNames[] { "M_CGA2","M_CGA4","M_EGA","M_VGA","M_LIN4","M_LIN8","M_LIN15","M_LIN16","M_LIN32","M_TEXT","M_HERC_GFX","M_HERC_TEXT","M_CGA16","M_TANDY2","M_TANDY4","M_TANDY16","M_TANDY_TEXT","M_ERROR"};
 	//log_cb(RETRO_LOG_INFO, "[DOSBOX SIZE] Width: %u - Height: %u - Ratio: %f (%f) - DBLH: %d - DBLW: %d - BPP: %u - Mode: %s (%d)\n",
 	//	(unsigned)width, (unsigned)height, (float)((width * scalex) / (height * scaley)), render.src.ratio, render.src.dblh, render.src.dblw, render.src.bpp, VGAModeNames[vga.mode], vga.mode);
@@ -868,60 +728,32 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	// frameskip is best to be modified in this function (otherwise it can be off by one)
 	dbp_framecount += 1 + render.frameskip.max;
 
-	if (dbp_new_timing)
+	static unsigned last_throttle_mode;
+	if (last_throttle_mode != dbp_throttle.mode)
 	{
-		static unsigned last_throttle_mode;
-		if (last_throttle_mode != dbp_throttle.mode)
-		{
-			if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD)
-				DBP_UnlockSpeed(true, 10);
-			else if (last_throttle_mode == RETRO_THROTTLE_FAST_FORWARD)
-				DBP_UnlockSpeed(false);
-			last_throttle_mode = dbp_throttle.mode;
-		}
-
-		if (dbp_state == DBPSTATE_FIRST_FRAME && render.frameskip.max)
+		if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD)
+			DBP_UnlockSpeed(true, 10);
+		else if (last_throttle_mode == RETRO_THROTTLE_FAST_FORWARD)
 			DBP_UnlockSpeed(false);
-
-		render.frameskip.max = 0;
-		if (dbp_throttle.rate < render.src.fps - 1 && dbp_throttle.rate > 10 && dbp_latency != DBP_LATENCY_VARIABLE &&
-			dbp_throttle.mode != RETRO_THROTTLE_FRAME_STEPPING && dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.mode != RETRO_THROTTLE_SLOW_MOTION && dbp_throttle.mode != RETRO_THROTTLE_REWINDING)
-		{
-			static float accum;
-			accum += (render.src.fps - dbp_throttle.rate);
-			if (accum >= dbp_throttle.rate)
-			{
-				//log_cb(RETRO_LOG_INFO, "[GFX_EndUpdate] SKIP 1 AT %u\n", dbp_framecount);
-				render.frameskip.max = 1;
-				accum -= dbp_throttle.rate;
-			}
-		}
+		last_throttle_mode = dbp_throttle.mode;
 	}
 
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
+	if (dbp_state == DBPSTATE_FIRST_FRAME && render.frameskip.max)
+		DBP_UnlockSpeed(false);
+
+	render.frameskip.max = 0;
+	if (dbp_throttle.rate < render.src.fps - 1 && dbp_throttle.rate > 10 && dbp_latency != DBP_LATENCY_VARIABLE &&
+		dbp_throttle.mode != RETRO_THROTTLE_FRAME_STEPPING && dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.mode != RETRO_THROTTLE_SLOW_MOTION && dbp_throttle.mode != RETRO_THROTTLE_REWINDING)
 	{
-		if (dbp_state == DBPSTATE_FIRST_FRAME)
-			dbp_state = DBPSTATE_WAIT_FIRST_EVENTS;
-	
-		// When pausing the frontend we need to make sure CycleAutoAdjust is only re-activated after normal rendering has resumed
-		extern bool CPU_SkipCycleAutoAdjust;
-		static Bit8u stall_frames, resume_frames;
-		static Bit32u last_retro_activity;
-		if (dbp_retro_activity != last_retro_activity)
+		static float accum;
+		accum += (render.src.fps - dbp_throttle.rate);
+		if (accum >= dbp_throttle.rate)
 		{
-			last_retro_activity = dbp_retro_activity;
-			if (stall_frames) stall_frames = 0;
-			if (resume_frames && resume_frames++ > 4) { CPU_SkipCycleAutoAdjust = false; resume_frames = 0; }
-		}
-		else if ((dbp_timing_tamper || stall_frames++ > 4) && dbp_state == DBPSTATE_RUNNING && !first_shell->exit)
-		{
-			stall_frames = resume_frames = 1;
-			CPU_SkipCycleAutoAdjust = true;
-			dbp_wait_activity = last_retro_activity;
+			//log_cb(RETRO_LOG_INFO, "[GFX_EndUpdate] SKIP 1 AT %u\n", dbp_framecount);
+			render.frameskip.max = 1;
+			accum -= dbp_throttle.rate;
 		}
 	}
-#endif
 }
 
 static bool GFX_Events_AdvanceFrame()
@@ -950,10 +782,6 @@ static bool GFX_Events_AdvanceFrame()
 	Bit32u finishedticks = St.FrameTicks;
 	St.LastFrameCount = dbp_framecount;
 	St.FrameTicks = 0;
-
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing) return true;
-#endif
 
 	// With certain keyboard layouts, we can end up here during startup which we don't want to do anything further
 	if (dbp_state == DBPSTATE_BOOT) return true;
@@ -1121,84 +949,19 @@ void GFX_Events()
 
 	bool wasFrameEnd = GFX_Events_AdvanceFrame();
 
-#ifndef DBP_REMOVE_OLD_TIMING
-	bool wait_until_activity = !!dbp_wait_activity;
-	bool wait_until_run = (dbp_state == DBPSTATE_WAIT_FIRST_EVENTS);
-
-	check_new_events:
-#endif
-
 	static bool mouse_speed_up, mouse_speed_down;
 	static int mouse_joy_x, mouse_joy_y, hatbits;
 	for (;dbp_event_queue_read_cursor != dbp_event_queue_write_cursor; dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE))
 	{
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
 		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [@%6d] %s %08x%s\n", DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_input_intercept && e.type >= _DBPETOLD_INPUT_FIRST ? " [INTERCEPTED]" : ""));
-		if (dbp_input_intercept
-#ifndef DBP_REMOVE_OLD_TIMING
-				&& e.type >= _DBPETOLD_INPUT_FIRST
-#endif
-			)
+		if (dbp_input_intercept)
 		{
 			dbp_input_intercept(e.type, e.val, e.val2);
 			if (!DBP_IS_RELEASE_EVENT(e.type)) continue;
 		}
 		switch (e.type)
 		{
-#ifndef DBP_REMOVE_OLD_TIMING
-			case DBPETOLD_SET_VARIABLE:
-				if (!memcmp(e.ext->cmd.c_str(), "midiconfig=", 11) && MIDI_TSF_SwitchSF2(e.ext->cmd.c_str() + 11))
-				{
-					// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
-					e.ext->section->HandleInputline(e.ext->cmd);
-				}
-				else if (!memcmp(e.ext->cmd.c_str(), "cycles=", 7))
-				{
-					// Set cycles value without Destroy/Init (because that can cause FPU overflow crashes)
-					DBP_CPU_ModifyCycles(e.ext->cmd.c_str() + 7);
-					e.ext->section->HandleInputline(e.ext->cmd);
-				}
-				else
-				{
-					e.ext->section->ExecuteDestroy(false);
-					e.ext->section->HandleInputline(e.ext->cmd);
-					e.ext->section->ExecuteInit(false);
-				}
-				delete e.ext;
-				dbp_event_queue[dbp_event_queue_read_cursor].ext = NULL;
-				break;
-
-			case DBPETOLD_MOUNT:
-				if (!Drives['A'-'A'] && !Drives['D'-'A'])
-					DBP_Mount(e.ext->cmd.c_str(), false, false);
-				delete e.ext;
-				dbp_event_queue[dbp_event_queue_read_cursor].ext = NULL;
-				break;
-
-			case DBPETOLD_UNMOUNT:
-				if (dbp_disk_mount_letter && Drives[dbp_disk_mount_letter-'A'] && Drives[dbp_disk_mount_letter-'A']->UnMount() == 0)
-				{
-					Drives[dbp_disk_mount_letter-'A'] = 0;
-					mem_writeb(Real2Phys(dos.tables.mediaid)+(dbp_disk_mount_letter-'A')*9,0);
-				}
-				break;
-
-			case DBPETOLD_SET_FASTFORWARD: 
-				DBP_UnlockSpeed(!!e.val, 10);
-				break;
-
-			case DBPETOLD_LOCKTHREAD:
-				dbp_lockthreadmtx[1].Unlock();
-				dbp_lockthreadmtx[0].Lock();
-				dbp_lockthreadmtx[1].Lock();
-				dbp_lockthreadmtx[0].Unlock();
-				break;
-
-			case DBPETOLD_SHUTDOWN:
-				DBP_DOSBOX_ForceShutdown();
-				goto abort_gfx_events;
-#endif
-
 			case DBPET_KEYDOWN: KEYBOARD_AddKey((KBD_KEYS)e.val, true);  break;
 			case DBPET_KEYUP:   KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
 
@@ -1243,34 +1006,6 @@ void GFX_Events()
 		}
 	}
 
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		if (wait_until_activity)
-		{
-			if (dbp_wait_activity == dbp_retro_activity && dbp_state == DBPSTATE_RUNNING && !first_shell->exit)
-			{
-				retro_sleep(1);
-				goto check_new_events;
-			}
-			dbp_wait_activity = 0;
-			void DBP_DOSBOX_ResetTickTimer();
-			DBP_DOSBOX_ResetTickTimer();
-		}
-
-		if (wait_until_run)
-		{
-			if (dbp_state == DBPSTATE_WAIT_FIRST_EVENTS) dbp_state = DBPSTATE_WAIT_FIRST_RUN;
-			if (dbp_state == DBPSTATE_WAIT_FIRST_RUN && !first_shell->exit)
-			{
-				retro_sleep(1);
-				goto check_new_events;
-			}
-			DBP_UnlockSpeed(dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD, 10); // also resets tick timer
-		}
-	}
-#endif
-
 	if (wasFrameEnd)
 	{
 		if ((mouse_joy_x || mouse_joy_y) && (abs(mouse_joy_x) > 5 || abs(mouse_joy_y) > 5))
@@ -1288,9 +1023,6 @@ void GFX_Events()
 		}
 	}
 
-#ifndef DBP_REMOVE_OLD_TIMING
-	abort_gfx_events:
-#endif
 	GFX_EVENTS_RECURSIVE = false;
 }
 
@@ -2673,34 +2405,25 @@ static bool check_variables()
 			str += new_value;
 			if (reInitSection)
 			{
-				if (dbp_new_timing)
+				DBP_ThreadControl(TCM_PAUSE_FRAME);
+				if (!memcmp(str.c_str(), "midiconfig=", 11) && MIDI_TSF_SwitchSF2(str.c_str() + 11))
 				{
-					DBP_ThreadControl(TCM_PAUSE_FRAME);
-					if (!memcmp(str.c_str(), "midiconfig=", 11) && MIDI_TSF_SwitchSF2(str.c_str() + 11))
-					{
-						// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
-						section->HandleInputline(str);
-					}
-					else if (!memcmp(str.c_str(), "cycles=", 7))
-					{
-						// Set cycles value without Destroy/Init (because that can cause FPU overflow crashes)
-						DBP_CPU_ModifyCycles(str.c_str() + 7);
-						section->HandleInputline(str);
-					}
-					else
-					{
-						section->ExecuteDestroy(false);
-						section->HandleInputline(str);
-						section->ExecuteInit(false);
-					}
-					DBP_ThreadControl(TCM_RESUME_FRAME);
+					// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
+					section->HandleInputline(str);
 				}
-#ifndef DBP_REMOVE_OLD_TIMING
-				if (!dbp_new_timing)
+				else if (!memcmp(str.c_str(), "cycles=", 7))
 				{
-					DBPOld_QueueEvent(DBPETOLD_SET_VARIABLE, str, section);
+					// Set cycles value without Destroy/Init (because that can cause FPU overflow crashes)
+					DBP_CPU_ModifyCycles(str.c_str() + 7);
+					section->HandleInputline(str);
 				}
-#endif
+				else
+				{
+					section->ExecuteDestroy(false);
+					section->HandleInputline(str);
+					section->ExecuteInit(false);
+				}
+				DBP_ThreadControl(TCM_RESUME_FRAME);
 			}
 			else
 			{
@@ -2783,13 +2506,6 @@ static bool check_variables()
 	}
 
 	// Emulation options
-#ifndef DBP_REMOVE_OLD_TIMING
-	bool experimental_new_timing = (Variables::RetroGet("dosbox_pure_experimental_timing_mode", "legacy")[0] == 'n'); static bool lastent, seenent; if (!seenent) { seenent = true; lastent = experimental_new_timing; } else if (experimental_new_timing != lastent) { retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart"); lastent^=1; }
-	Variables::RetroVisibility("dosbox_pure_force60fps", experimental_new_timing);
-	Variables::RetroVisibility("dosbox_pure_latency", experimental_new_timing);
-	Variables::RetroVisibility("dosbox_pure_auto_target", experimental_new_timing);
-	Variables::RetroVisibility("dosbox_pure_perfstats", experimental_new_timing);
-#endif
 	dbp_force60fps = (Variables::RetroGet("dosbox_pure_force60fps", "default")[0] == 't');
 
 	const char latency = Variables::RetroGet("dosbox_pure_latency", "none")[0];
@@ -3039,14 +2755,6 @@ static bool init_dosbox(const char* path, bool firsttime)
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
 	if (force_start_menu) dbp_menu_time = (char)-1;
 
-	retro_variable var;
-	var.key = "dosbox_pure_experimental_timing_mode";
-	environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
-	dbp_new_timing = (var.value && var.value[0] == 'n');
-#ifdef DBP_REMOVE_OLD_TIMING
-	dbp_new_timing = true;
-#endif
-
 	struct Local
 	{
 		static Thread::RET_t THREAD_CC ThreadDOSBox(void*)
@@ -3056,45 +2764,19 @@ static bool init_dosbox(const char* path, bool firsttime)
 			semDidPause.Post();
 			return 0;
 		}
-#ifndef DBP_REMOVE_OLD_TIMING
-		static Thread::RET_t THREAD_CC ThreadDOSBoxOld(void*)
-		{
-			dbp_lockthreadmtx[1].Lock();
-			control->StartUp();
-			dbp_lockthreadmtx[1].Unlock();
-			dbp_state = DBPSTATE_EXITED;
-			return 0;
-		}
-#endif
 	};
 
 	// Start DOSBox and wait until the shell has fully started
 	DBP_ASSERT(DOS_GetDefaultDrive() == ('Z'-'A')); // Shell must start with Z:\AUTOEXEC.BAT
 	dbp_lastmenuticks = (Bit32u)-1;
-	if (dbp_new_timing)
-	{
-		dbp_frame_pending = true;
-		Thread::StartDetached(Local::ThreadDOSBox);
-	}
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		Thread::StartDetached(Local::ThreadDOSBoxOld);
-	}
-#endif
+	dbp_frame_pending = true;
+	Thread::StartDetached(Local::ThreadDOSBox);
 	while (dbp_lastmenuticks == (Bit32u)-1)
 	{
 		if (dbp_state == DBPSTATE_EXITED) { DBP_Shutdown(); return false; }
 		retro_sleep(1);
 	}
 	dbp_state = DBPSTATE_FIRST_FRAME;
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		dbp_last_run = DBP_GetTicks();
-		dbp_retro_activity = 1;
-	}
-#endif
 	dbp_menu_time = org_menu_time;
 	return true;
 }
@@ -3159,55 +2841,27 @@ void retro_init(void) //#3
 			}
 		}
 
-#ifndef DBP_REMOVE_OLD_TIMING
-		static void RETRO_CALLCONV retro_frame_time(retro_usec_t usec)
-		{
-			if (dbp_new_timing) return;
-			dbp_frame_time = usec;
-			dbp_timing_tamper = (usec == 0 && dbp_state == DBPSTATE_RUNNING);
-			bool variable_update = false;
-			// because usec is > 0 when the menu is active even though retro_run is paused we always check variables here, too
-			if (/*dbp_timing_tamper && */environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variable_update) && variable_update)
-				check_variables();
-		}
-#endif
-
 		static bool RETRO_CALLCONV set_eject_state(bool ejected)
 		{
 			if (dbp_images.size() == 0) { dbp_disk_eject_state = true; return ejected; }
 			if (dbp_disk_eject_state == ejected) return true;
-			if (dbp_new_timing)
+			DBP_ThreadControl(TCM_PAUSE_FRAME);
+			if (ejected)
 			{
-				DBP_ThreadControl(TCM_PAUSE_FRAME);
-				if (ejected)
+				if (dbp_disk_mount_letter && Drives[dbp_disk_mount_letter-'A'] && Drives[dbp_disk_mount_letter-'A']->UnMount() == 0)
 				{
-					if (dbp_disk_mount_letter && Drives[dbp_disk_mount_letter-'A'] && Drives[dbp_disk_mount_letter-'A']->UnMount() == 0)
-					{
-						Drives[dbp_disk_mount_letter-'A'] = 0;
-						mem_writeb(Real2Phys(dos.tables.mediaid)+(dbp_disk_mount_letter-'A')*9,0);
-					}
-				}
-				else
-				{
-					if (!Drives['A'-'A'] && !Drives['D'-'A'])
-					{
-						DBP_Mount(dbp_images[dbp_disk_image_index].c_str(), false, false);
-					}
-				}
-				DBP_ThreadControl(TCM_RESUME_FRAME);
-			}
-#ifndef DBP_REMOVE_OLD_TIMING
-			if (!dbp_new_timing)
-			{
-				if (ejected)
-					DBP_QueueEvent(DBPETOLD_UNMOUNT);
-				else
-				{
-					std::string swappable = dbp_images[dbp_disk_image_index];
-					DBPOld_QueueEvent(DBPETOLD_MOUNT, swappable);
+					Drives[dbp_disk_mount_letter-'A'] = 0;
+					mem_writeb(Real2Phys(dos.tables.mediaid)+(dbp_disk_mount_letter-'A')*9,0);
 				}
 			}
-#endif
+			else
+			{
+				if (!Drives['A'-'A'] && !Drives['D'-'A'])
+				{
+					DBP_Mount(dbp_images[dbp_disk_image_index].c_str(), false, false);
+				}
+			}
+			DBP_ThreadControl(TCM_RESUME_FRAME);
 			DBP_QueueEvent(DBPET_CHANGEMOUNTS);
 			dbp_disk_eject_state = ejected;
 			return true;
@@ -3295,11 +2949,6 @@ void retro_init(void) //#3
 
 	static const struct retro_keyboard_callback kc = { CallBacks::keyboard_event };
 	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, (void*)&kc);
-
-#ifndef DBP_REMOVE_OLD_TIMING
-	static const struct retro_frame_time_callback rftc = { CallBacks::retro_frame_time, 0 };
-	environ_cb(RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK, (void*)&rftc);
-#endif
 
 	static const struct retro_core_options_update_display_callback coudc = { CallBacks::options_update_display };
 	dbp_optionsupdatecallback = environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK, (void*)&coudc);
@@ -3423,34 +3072,15 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
 	av_info.geometry.max_width = SCALER_MAXWIDTH;
 	av_info.geometry.max_height = SCALER_MAXHEIGHT;
-	if (dbp_new_timing)
-	{
-		// More accurate then render.src.fps would be (1000.0 / vga.draw.delay.vtotal)
-		DBP_ThreadControl(TCM_FINISH_FRAME);
-		DBP_ASSERT(render.src.fps > 10.0); // validate initialized video mode after first frame
-		const DBP_Buffer& buf = dbp_buffers[buffer_active];
-		av_info.geometry.base_width = buf.width;
-		av_info.geometry.base_height = buf.height;
-		av_info.geometry.aspect_ratio = buf.ratio;
-		av_info.timing.fps = DBP_GetFPS();
-	}
+	// More accurate then render.src.fps would be (1000.0 / vga.draw.delay.vtotal)
+	DBP_ThreadControl(TCM_FINISH_FRAME);
+	DBP_ASSERT(render.src.fps > 10.0); // validate initialized video mode after first frame
+	const DBP_Buffer& buf = dbp_buffers[buffer_active];
+	av_info.geometry.base_width = buf.width;
+	av_info.geometry.base_height = buf.height;
+	av_info.geometry.aspect_ratio = buf.ratio;
+	av_info.timing.fps = DBP_GetFPS();
 	av_info.timing.sample_rate = DBP_MIXER_GetFrequency();
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		av_info.geometry.base_width = 320;
-		av_info.geometry.base_height = 200;
-		av_info.geometry.aspect_ratio = 4.0f / 3.0f;
-		av_info.timing.fps = old_DBP_DEFAULT_FPS;
-		if (environ_cb)
-		{
-			float refresh_rate = (float)old_DBP_DEFAULT_FPS;
-			if (environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &refresh_rate))
-				av_info.timing.fps = refresh_rate;
-		}
-		dbp_calculate_min_sleep();
-	}
-#endif
 	*info = av_info;
 }
 
@@ -3503,17 +3133,6 @@ void retro_run(void)
 	}
 	#endif
 
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		dbp_retro_activity++;
-
-		// serialize_size got called but was never followed by serialize or unserialize
-		if (dbp_lockthreadstate)
-			DBP_LockThread(false);
-	}
-#endif
-
 	if (dbp_state < DBPSTATE_RUNNING)
 	{
 		if (dbp_state == DBPSTATE_EXITED || dbp_state == DBPSTATE_SHUTDOWN)
@@ -3540,39 +3159,16 @@ void retro_run(void)
 			return;
 		}
 
-		if (dbp_new_timing)
+		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME);
+		DBP_ThreadControl(TCM_FINISH_FRAME);
+		if (MIDI_Retro_HasOutputIssue())
+			retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
+		dbp_state = DBPSTATE_RUNNING;
+		if (dbp_latency == DBP_LATENCY_VARIABLE)
 		{
-			DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME);
-			DBP_ThreadControl(TCM_FINISH_FRAME);
-			if (MIDI_Retro_HasOutputIssue())
-				retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
-			dbp_state = DBPSTATE_RUNNING;
-			if (dbp_latency == DBP_LATENCY_VARIABLE)
-			{
-				DBP_ThreadControl(TCM_NEXT_FRAME);
-				dbp_targetrefreshrate = 0; // force refresh this because only in retro_run RetroArch will return the correct value
-			}
+			DBP_ThreadControl(TCM_NEXT_FRAME);
+			dbp_targetrefreshrate = 0; // force refresh this because only in retro_run RetroArch will return the correct value
 		}
-#ifndef DBP_REMOVE_OLD_TIMING
-		if (!dbp_new_timing)
-		{
-			if (MIDI_Retro_HasOutputIssue())
-				retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
-
-			float refresh_rate = (float)av_info.timing.fps;
-			if (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &refresh_rate) && refresh_rate != (float)av_info.timing.fps)
-			{
-				av_info.timing.fps = refresh_rate;
-				environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
-				dbp_calculate_min_sleep();
-			}
-
-			// first frame
-			DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
-			for (int n = 0; n++ != 5000 && dbp_state != DBPSTATE_WAIT_FIRST_RUN;) retro_sleep(1);
-			if (dbp_state == DBPSTATE_WAIT_FIRST_RUN) dbp_state = DBPSTATE_RUNNING;
-		}
-#endif
 	}
 
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_THROTTLE_STATE, &dbp_throttle))
@@ -3595,33 +3191,6 @@ void retro_run(void)
 	bool variable_update = false;
 	if (!dbp_optionsupdatecallback && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variable_update) && variable_update)
 		check_variables();
-
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		static bool last_fast_forward;
-		if (last_fast_forward != (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD))
-			DBP_QueueEvent(DBPETOLD_SET_FASTFORWARD, (int)(last_fast_forward ^= 1));
-
-		extern bool DBP_CPUOverload;
-		if (DBP_CPUOverload)
-		{
-			static Bit32u first_overload, last_overload_msg;
-			if (!dbp_overload_count) first_overload = DBP_GetTicks();
-			if (dbp_retro_activity < 10 || dbp_timing_tamper || last_fast_forward) dbp_overload_count = 0;
-			else if (dbp_overload_count++ >= 200)
-			{
-				Bit32u ticks = DBP_GetTicks();
-				if ((ticks - first_overload) < 10000 && (!last_overload_msg || (ticks - last_overload_msg) >= 60000))
-				{
-					retro_notify(0, RETRO_LOG_WARN, "Emulated CPU is overloaded, try reducing the emulated performance in the core options");
-					last_overload_msg = ticks;
-				}
-				dbp_overload_count = 0;
-			}
-		}
-	}
-#endif
 
 	// Use fixed mappings using only port 0 to use in the menu and the on-screen keyboard
 	static DBP_InputBind intercept_binds[] =
@@ -3745,90 +3314,87 @@ void retro_run(void)
 		}
 	}
 
-	if (dbp_new_timing)
+	switch (dbp_latency)
 	{
-		switch (dbp_latency)
-		{
-			case DBP_LATENCY_DEFAULT:
-				DBP_ThreadControl(TCM_FINISH_FRAME);
-				break;
-			case DBP_LATENCY_LOW:
-				if (!dbp_frame_pending) DBP_ThreadControl(TCM_NEXT_FRAME);
-				DBP_ThreadControl(TCM_FINISH_FRAME);
-				break;
-			case DBP_LATENCY_VARIABLE:
-				dbp_lastrun = time_cb();
-				break;
-		}
+		case DBP_LATENCY_DEFAULT:
+			DBP_ThreadControl(TCM_FINISH_FRAME);
+			break;
+		case DBP_LATENCY_LOW:
+			if (!dbp_frame_pending) DBP_ThreadControl(TCM_NEXT_FRAME);
+			DBP_ThreadControl(TCM_FINISH_FRAME);
+			break;
+		case DBP_LATENCY_VARIABLE:
+			dbp_lastrun = time_cb();
+			break;
+	}
 
-		Bit32u tpfActual = 0, tpfTarget = 0, tpfDraws = 0;
+	Bit32u tpfActual = 0, tpfTarget = 0, tpfDraws = 0;
+	#ifdef DBP_ENABLE_WAITSTATS
+	Bit32u waitPause = 0, waitFinish = 0, waitPaused = 0, waitContinue = 0;
+	#endif
+	if (dbp_perf && dbp_perf_totaltime > 1000000)
+	{
+		tpfActual = dbp_perf_totaltime / dbp_perf_count;
+		tpfTarget = (Bit32u)(1000000.f / render.src.fps);
+		tpfDraws = dbp_perf_uniquedraw;
 		#ifdef DBP_ENABLE_WAITSTATS
-		Bit32u waitPause = 0, waitFinish = 0, waitPaused = 0, waitContinue = 0;
+		waitPause = dbp_wait_pause / dbp_perf_count, waitFinish = dbp_wait_finish / dbp_perf_count, waitPaused = dbp_wait_paused / dbp_perf_count, waitContinue = dbp_wait_continue / dbp_perf_count;
+		dbp_wait_pause = dbp_wait_finish = dbp_wait_paused = dbp_wait_continue = 0;
 		#endif
-		if (dbp_perf && dbp_perf_totaltime > 1000000)
+		dbp_perf_uniquedraw = dbp_perf_count = dbp_perf_emutime = dbp_perf_totaltime = 0;
+	}
+
+	// mix audio
+	Bit32u numSamples, haveSamples = DBP_MIXER_DoneSamplesCount();
+	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
+		numSamples = haveSamples;
+	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.rate < 1)
+		numSamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
+	else
+		numSamples = (Bit32u)(av_info.timing.sample_rate / dbp_throttle.rate);
+	if (numSamples && haveSamples)
+	{
+		numSamples = (numSamples > DBP_MAX_SAMPLES ? DBP_MAX_SAMPLES : (numSamples > haveSamples ? haveSamples : numSamples));
+		if (dbp_latency == DBP_LATENCY_VARIABLE)
 		{
-			tpfActual = dbp_perf_totaltime / dbp_perf_count;
-			tpfTarget = (Bit32u)(1000000.f / render.src.fps);
-			tpfDraws = dbp_perf_uniquedraw;
-			#ifdef DBP_ENABLE_WAITSTATS
-			waitPause = dbp_wait_pause / dbp_perf_count, waitFinish = dbp_wait_finish / dbp_perf_count, waitPaused = dbp_wait_paused / dbp_perf_count, waitContinue = dbp_wait_continue / dbp_perf_count;
-			dbp_wait_pause = dbp_wait_finish = dbp_wait_paused = dbp_wait_continue = 0;
-			#endif
-			dbp_perf_uniquedraw = dbp_perf_count = dbp_perf_emutime = dbp_perf_totaltime = 0;
+			if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME); // can be paused by serialize
+			while (DBP_MIXER_DoneSamplesCount() < numSamples * 12 / 10) { dbp_lastrun = time_cb(); retro_sleep(0); } // buffer ahead a bit
+			DBP_ThreadControl(TCM_PAUSE_FRAME); 
 		}
-
-		// mix audio
-		Bit32u numSamples, haveSamples = DBP_MIXER_DoneSamplesCount();
-		if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
-			numSamples = haveSamples;
-		else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.rate < 1)
-			numSamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
-		else
-			numSamples = (Bit32u)(av_info.timing.sample_rate / dbp_throttle.rate);
-		if (numSamples && haveSamples)
+		MIXER_CallBack(0, (Bit8u*)dbp_audio, numSamples * 4);
+		if (dbp_latency == DBP_LATENCY_VARIABLE)
 		{
-			numSamples = (numSamples > DBP_MAX_SAMPLES ? DBP_MAX_SAMPLES : (numSamples > haveSamples ? haveSamples : numSamples));
-			if (dbp_latency == DBP_LATENCY_VARIABLE)
-			{
-				if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME); // can be paused by serialize
-				while (DBP_MIXER_DoneSamplesCount() < numSamples * 12 / 10) { dbp_lastrun = time_cb(); retro_sleep(0); } // buffer ahead a bit
-				DBP_ThreadControl(TCM_PAUSE_FRAME); 
-			}
-			MIXER_CallBack(0, (Bit8u*)dbp_audio, numSamples * 4);
-			if (dbp_latency == DBP_LATENCY_VARIABLE)
-			{
-				DBP_ThreadControl(TCM_RESUME_FRAME);
-			}
-		}
-
-		if (dbp_latency == DBP_LATENCY_DEFAULT)
-		{
-			DBP_ThreadControl(TCM_NEXT_FRAME);
-		}
-
-		// submit audio
-		audio_batch_cb(dbp_audio, numSamples);
-
-		if (tpfActual)
-		{
-			if (dbp_perf == DBP_PERF_DETAILED)
-				retro_notify(-1500, RETRO_LOG_INFO, "Speed: %4.1f%%, DOS: %dx%d@%4.2ffps, Actual: %4.2ffps, Drawn: %dfps, Cycles: %u"
-					#ifdef DBP_ENABLE_WAITSTATS
-					", Waits: p%u|f%u|z%u|c%u"
-					#endif
-					, ((float)tpfTarget / (float)tpfActual * 100), (int)render.src.width, (int)render.src.height, render.src.fps, (1000000.f / tpfActual), tpfDraws, CPU_CycleMax
-					#ifdef DBP_ENABLE_WAITSTATS
-					, waitPause, waitFinish, waitPaused, waitContinue
-					#endif
-					);
-			else
-				retro_notify(-1500, RETRO_LOG_INFO, "Emulation Speed: %4.1f%%",
-					((float)tpfTarget / (float)tpfActual * 100));
+			DBP_ThreadControl(TCM_RESUME_FRAME);
 		}
 	}
 
+	if (dbp_latency == DBP_LATENCY_DEFAULT)
+	{
+		DBP_ThreadControl(TCM_NEXT_FRAME);
+	}
+
+	// submit audio
+	audio_batch_cb(dbp_audio, numSamples);
+
+	if (tpfActual)
+	{
+		if (dbp_perf == DBP_PERF_DETAILED)
+			retro_notify(-1500, RETRO_LOG_INFO, "Speed: %4.1f%%, DOS: %dx%d@%4.2ffps, Actual: %4.2ffps, Drawn: %dfps, Cycles: %u"
+				#ifdef DBP_ENABLE_WAITSTATS
+				", Waits: p%u|f%u|z%u|c%u"
+				#endif
+				, ((float)tpfTarget / (float)tpfActual * 100), (int)render.src.width, (int)render.src.height, render.src.fps, (1000000.f / tpfActual), tpfDraws, CPU_CycleMax
+				#ifdef DBP_ENABLE_WAITSTATS
+				, waitPause, waitFinish, waitPaused, waitContinue
+				#endif
+				);
+		else
+			retro_notify(-1500, RETRO_LOG_INFO, "Emulation Speed: %4.1f%%",
+				((float)tpfTarget / (float)tpfActual * 100));
+	}
+
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];
-	double targetfps = (dbp_new_timing ? DBP_GetFPS() : av_info.timing.fps);
+	double targetfps = DBP_GetFPS();
 
 	// handle video mode changes
 	if (av_info.geometry.base_width != buf.width || av_info.geometry.base_height != buf.height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
@@ -3844,65 +3410,20 @@ void retro_run(void)
 		environ_cb((newfps ? RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO : RETRO_ENVIRONMENT_SET_GEOMETRY), &av_info);
 	}
 
-	if (dbp_new_timing)
-	{
-		// submit video
-		video_cb(buf.video, buf.width, buf.height, buf.width * 4);
-	}
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing)
-	{
-		// submit video
-		video_cb(buf.video, buf.width, buf.height, buf.width * 4);
-
-		// process and submit audio
-		static Bit32u mix_missed;
-		if (!dbp_frame_time) dbp_frame_time = (retro_usec_t)(150000.0 + 500000.0 / render.src.fps);
-		Bit32u numSamples = (uint32_t)(av_info.timing.sample_rate / 1000000.0 * dbp_frame_time + .499999);
-		if (numSamples || mix_missed)
-		{
-			Bit32u mix_samples_need = numSamples;
-			numSamples += mix_missed;
-			if (numSamples > sizeof(dbp_audio)/4) numSamples = sizeof(dbp_audio) / 4;
-			if (numSamples > DBP_MIXER_DoneSamplesCount()) numSamples = DBP_MIXER_DoneSamplesCount();
-			if (mix_samples_need != numSamples)
-			{
-				if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD) mix_missed = 0;
-				else mix_missed += (mix_samples_need - numSamples);
-			}
-			if (numSamples)
-			{
-				dbp_audiomutex.Lock();
-				MIXER_CallBack(0, (Bit8u*)dbp_audio, numSamples * 4);
-				dbp_audiomutex.Unlock();
-				audio_batch_cb(dbp_audio, numSamples);
-			}
-		}
-
-		// keep frontend UI thread from running at 100% cpu
-		uint32_t this_run = DBP_GetTicks(), run_sleep = dbp_min_sleep - (this_run - dbp_last_run);
-		if (run_sleep < dbp_min_sleep) { retro_sleep(run_sleep); this_run += run_sleep; }
-		dbp_last_run = this_run;
-	}
-#endif
+	// submit video
+	video_cb(buf.video, buf.width, buf.height, buf.width * 4);
 }
 
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 {
 	if (dbp_serializemode == DBPSERIALIZE_DISABLED) return false;
-	if (dbp_new_timing && !dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing) DBP_LockThread(true);
-#endif
+	if (!dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
 	retro_time_t timeStart = time_cb();
 	DBPSerialize_All(ar, (dbp_state == DBPSTATE_RUNNING), dbp_game_running);
 	dbp_serialize_time += (Bit32u)(time_cb() - timeStart);
 	//log_cb(RETRO_LOG_WARN, "[SERIALIZE] [%d] [%s] %u\n", (dbp_state == DBPSTATE_RUNNING && dbp_game_running), (ar.mode == DBPArchive::MODE_LOAD ? "LOAD" : ar.mode == DBPArchive::MODE_SAVE ? "SAVE" : ar.mode == DBPArchive::MODE_SIZE ? "SIZE" : ar.mode == DBPArchive::MODE_MAXSIZE ? "MAXX" : ar.mode == DBPArchive::MODE_ZERO ? "ZERO" : "???????"), (Bit32u)ar.GetOffset());
 	if (dbp_game_running && ar.mode == DBPArchive::MODE_LOAD) dbp_lastmenuticks = DBP_GetTicks(); // force show menu on immediate emulation crash
-	if (dbp_new_timing && unlock_thread) DBP_ThreadControl(TCM_RESUME_FRAME);
-#ifndef DBP_REMOVE_OLD_TIMING
-	if (!dbp_new_timing && unlock_thread) DBP_LockThread(false);
-#endif
+	if (unlock_thread) DBP_ThreadControl(TCM_RESUME_FRAME);
 
 	if (ar.had_error && (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE))
 	{
@@ -3955,11 +3476,7 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 size_t retro_serialize_size(void)
 {
 	bool rewind = (dbp_state != DBPSTATE_RUNNING || dbp_serializemode == DBPSERIALIZE_REWIND);
-	if ((rewind
-#ifndef DBP_REMOVE_OLD_TIMING
-		|| dbp_lockthreadstate
-#endif
-	) && dbp_serializesize) return dbp_serializesize;
+	if (rewind && dbp_serializesize) return dbp_serializesize;
 	DBPArchiveCounter ar(rewind);
 	return dbp_serializesize = (retro_serialize_all(ar, false) ? ar.count : 0);
 }
@@ -3974,9 +3491,6 @@ bool retro_serialize(void *data, size_t size)
 
 bool retro_unserialize(const void *data, size_t size)
 {
-#ifndef DBP_REMOVE_OLD_TIMING
-	dbp_overload_count = 0; // don't show overload warning immediately after loading
-#endif
 	DBPArchiveReader ar(data, size);
 	bool res = retro_serialize_all(ar, true);
 	if ((ar.had_error != DBPArchive::ERR_DOSNOTRUNNING && ar.had_error != DBPArchive::ERR_GAMENOTRUNNING) || dbp_serializemode != DBPSERIALIZE_REWIND) return res;

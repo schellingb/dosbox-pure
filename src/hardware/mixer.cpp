@@ -69,16 +69,7 @@
 #define TICK_NEXT ( 1 << TICK_SHIFT)
 #define TICK_MASK (TICK_NEXT -1)
 
-#ifndef DBP_REMOVE_OLD_TIMING
 #ifndef C_DBP_USE_SDL
-extern bool dbp_new_timing;
-void DBP_LockAudio();
-void DBP_UnlockAudio();
-#define SDL_LockAudio() (!dbp_new_timing ? DBP_LockAudio() : (void)0)
-#define SDL_UnlockAudio() (!dbp_new_timing ? DBP_UnlockAudio() : (void)0)
-#define SDL_PauseAudio(a)
-#endif
-#else
 #define SDL_LockAudio()
 #define SDL_UnlockAudio()
 #define SDL_PauseAudio(a)

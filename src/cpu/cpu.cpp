@@ -2157,7 +2157,7 @@ void CPU_Disable_SkipAutoAdjust(void) {
 #endif
 
 
-#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
+#ifndef C_DBP_CUSTOMTIMING
 extern Bit32s ticksDone;
 extern Bit32u ticksScheduled;
 

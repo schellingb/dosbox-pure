@@ -38,21 +38,6 @@ static retro_core_option_v2_definition option_defs[] =
 		"false"
 	},
 	// Emulation
-#ifndef DBP_REMOVE_OLD_TIMING
-	{
-		"dosbox_pure_experimental_timing_mode",
-		"Timing Mode (restart required)", NULL,
-		"[Experimental] This option will hopefully go away with only 'New Mode' remaining." "\n"
-		"Old Mode: Emulates in background, frontend has no control over frame timing." "\n"
-		"New Mode: Frontend times frame drawing, improves frame timing and syncing.", NULL,
-		"Emulation",
-		{
-			{ "legacy", "Old Mode" },
-			{ "new", "New Mode" },
-		},
-		"legacy"
-	},
-#endif
 	{
 		"dosbox_pure_force60fps",
 		"Force 60 FPS Output", NULL,

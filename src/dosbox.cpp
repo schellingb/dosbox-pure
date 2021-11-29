@@ -128,7 +128,7 @@ static LoopHandler * loop;
 bool SDLNetInited;
 #endif
 
-#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
+#ifndef C_DBP_CUSTOMTIMING
 static Bit32u ticksRemain;
 static Bit32u ticksLast;
 static Bit32u ticksAdded;
@@ -155,23 +155,9 @@ static Bitu Normal_Loop(void) {
 #endif
 		} else {
 #ifdef C_DBP_CUSTOMTIMING
-extern bool dbp_new_timing;
-if (dbp_new_timing)
-{
 			static bool doTick;
 			if (doTick) {doTick=false;TIMER_AddTick();}
 			else {doTick=true;GFX_Events();return 0;}
-}
-#ifndef DBP_REMOVE_OLD_TIMING
-else
-{
-			GFX_Events();
-			if (ticksRemain>0) {
-				TIMER_AddTick();
-				ticksRemain--;
-			} else {increaseticks();return 0;}
-}
-#endif
 #else
 			GFX_Events();
 			if (ticksRemain>0) {
@@ -183,7 +169,7 @@ else
 	}
 }
 
-#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
+#ifndef C_DBP_CUSTOMTIMING
 //For trying other delays
 #ifdef C_DBP_USE_SDL
 #define wrap_delay(a) SDL_Delay(a)
@@ -386,7 +372,7 @@ static void DOSBOX_RealInit(Section * sec) {
 	Section_prop * section=static_cast<Section_prop *>(sec);
 	/* Initialize some dosbox internals */
 
-#ifndef DBP_REMOVE_OLD_TIMING
+#ifndef C_DBP_CUSTOMTIMING
 	ticksRemain=0;
 	ticksLast=GetTicks();
 	ticksLocked = false;
@@ -874,20 +860,9 @@ void DBP_DOSBOX_ForceShutdown(const Bitu)
 	/* end all execution and return to the top of the stack */
 	struct ShutdownCPU { static Bitu Loop(void) { return 1; } };
 	DOSBOX_SetLoop(ShutdownCPU::Loop);
-#if !defined(C_DBP_CUSTOMTIMING) || !defined(DBP_REMOVE_OLD_TIMING)
+#ifndef C_DBP_CUSTOMTIMING
 	ticksRemain = 0;
 #endif
 	CPU_CycleLeft = CPU_Cycles = 0;
 	first_shell->exit = true;
 }
-
-#ifndef DBP_REMOVE_OLD_TIMING
-void DBP_DOSBOX_ResetTickTimer()
-{
-	/* Reset any auto cycle guessing */
-	ticksLast = GetTicks();
-	ticksAdded = 0;
-	ticksDone = 0;
-	ticksScheduled = 0;
-}
-#endif
