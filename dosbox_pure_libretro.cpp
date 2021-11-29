@@ -88,9 +88,11 @@ bool dbp_new_timing = true;
 static retro_throttle_state dbp_throttle;
 #ifndef DBP_REMOVE_NEW_TIMING
 static Semaphore semDoContinue, semDidPause;
-static bool dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_lowlatency, dbp_force60fps;
-static float dbp_auto_target = .8f;
+static bool dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps;
+static enum { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
+static float dbp_auto_target, dbp_targetrefreshrate;
 static Bit32u dbp_perf_uniquedraw, dbp_perf_count, dbp_perf_emutime, dbp_perf_totaltime, dbp_framecount, dbp_serialize_time;
+static retro_time_t dbp_lastrun;
 static enum { DBP_PERF_NONE, DBP_PERF_SIMPLE, DBP_PERF_DETAILED } dbp_perf;
 //#define DBP_ENABLE_WAITSTATS
 #ifdef DBP_ENABLE_WAITSTATS
@@ -126,11 +128,12 @@ static retro_usec_t dbp_frame_time;
 struct DBP_Buffer
 {
 	Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT];
-	int16_t audio[4096 * 2]; // mixer blocksize * 2 (96khz @ 30 fps max)
-	Bit32u width, height, samples; float ratio;
+	Bit32u width, height; float ratio;
 };
 static DBP_Buffer dbp_buffers[2];
 static Bit8u buffer_active;
+enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
+static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static void(*dbp_gfx_intercept)(DBP_Buffer& buf);
 
 // DOSBOX DISC MANAGEMENT
@@ -390,9 +393,10 @@ int MSCDEX_RemoveDrive(char driveLetter);
 bool MIDI_TSF_SwitchSF2(const char*);
 bool MIDI_Retro_HasOutputIssue();
 
-enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_FINISH_FRAME, TCM_RESUME_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN };
+enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_ON_PAUSE_FRAME, TCM_RESUME_FRAME, TCM_FINISH_FRAME, TCM_ON_FINISH_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN };
 static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 {
+	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
 	switch (m)
 	{
 		case TCM_PAUSE_FRAME:
@@ -406,6 +410,23 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			#endif
 			dbp_pause_events = dbp_frame_pending = dbp_paused_midframe;
 			return;
+		case TCM_ON_PAUSE_FRAME:
+			DBP_ASSERT(dbp_pause_events && !dbp_paused_midframe);
+			dbp_paused_midframe = true;
+			semDidPause.Post();
+			#ifdef DBP_ENABLE_WAITSTATS
+			{ retro_time_t t = time_cb(); semDoContinue.Wait(); dbp_wait_paused += (Bit32u)(time_cb() - t); }
+			#else
+			semDoContinue.Wait();
+			#endif
+			dbp_paused_midframe = false;
+			return;
+		case TCM_RESUME_FRAME:
+			if (!dbp_frame_pending) return;
+			DBP_ASSERT(dbp_pause_events);
+			dbp_pause_events = false;
+			semDoContinue.Post();
+			return;
 		case TCM_FINISH_FRAME:
 			if (!dbp_frame_pending) return;
 			if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME);
@@ -417,11 +438,13 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			DBP_ASSERT(!dbp_paused_midframe);
 			dbp_frame_pending = false;
 			return;
-		case TCM_RESUME_FRAME:
-			if (!dbp_frame_pending) return;
-			DBP_ASSERT(dbp_pause_events);
-			dbp_pause_events = false;
-			semDoContinue.Post();
+		case TCM_ON_FINISH_FRAME:
+			semDidPause.Post();
+			#ifdef DBP_ENABLE_WAITSTATS
+			{ retro_time_t t = time_cb(); semDoContinue.Wait(); dbp_wait_continue += (Bit32u)(time_cb() - t); }
+			#else
+			semDoContinue.Wait();
+			#endif
 			return;
 		case TCM_NEXT_FRAME:
 			DBP_ASSERT(!dbp_frame_pending);
@@ -438,20 +461,29 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 
 static void DBP_UnlockSpeed(bool unlock, int start_frame_skip = 0)
 {
-	render.frameskip.max = (unlock ? start_frame_skip : 0);
 	static Bit32s old_max;
 	static bool old_pmode;
 	if (unlock)
 	{
 		old_max = CPU_CycleMax;
 		old_pmode = cpu.pmode;
-		CPU_CycleMax = (cpu.pmode ? 30000 : 10000);
+		if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate && dbp_state == DBPSTATE_RUNNING)
+		{
+			// If fast forwarding at a desired rate, apply custom frameskip and max cycle rules
+			render.frameskip.max = (int)(dbp_throttle.rate / av_info.timing.fps * 1.5f + .4f);
+			CPU_CycleMax = (Bit32s)(old_max / (CPU_CycleAutoAdjust ? dbp_throttle.rate / av_info.timing.fps : 1.0f));
+		}
+		else
+		{
+			render.frameskip.max = start_frame_skip;
+			CPU_CycleMax = (cpu.pmode ? 30000 : 10000);
+		}
 	}
 	else if (old_max)
 	{
 		// If we switched to protected mode while locked (likely at startup) with auto adjust cycles on, choose a reasonable base rate
 		CPU_CycleMax = (old_pmode != cpu.pmode && cpu.pmode && CPU_CycleAutoAdjust ? 200000 : old_max);
-		old_max = 0;
+		render.frameskip.max = old_max = 0;
 	}
 #ifndef DBP_REMOVE_OLD_TIMING
 	if (!dbp_new_timing)
@@ -688,6 +720,14 @@ static void DBP_Shutdown()
 	dbp_state = DBPSTATE_SHUTDOWN;
 }
 
+static double DBP_GetFPS()
+{
+	if (dbp_force60fps) return 60;
+	if (dbp_latency != DBP_LATENCY_VARIABLE) return render.src.fps;
+	if (!dbp_targetrefreshrate && (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &dbp_targetrefreshrate) || dbp_targetrefreshrate < 1)) dbp_targetrefreshrate = 60.0f;
+	return dbp_targetrefreshrate;
+}
+
 void DBP_Crash(const char* msg)
 {
 	log_cb(RETRO_LOG_WARN, "[DOSBOX] Crash: %s\n", msg);
@@ -700,11 +740,6 @@ Bit32u DBP_GetTicks()
 	return (Bit32u)((time_cb() - dbp_boot_time) / 1000);
 }
 
-void DBP_DelayTicks(Bit32u ms)
-{
-	retro_sleep(ms);
-}
-
 void DBP_MidiDelay(Bit32u ms)
 {
 	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD) return;
@@ -712,6 +747,11 @@ void DBP_MidiDelay(Bit32u ms)
 }
 
 #ifndef DBP_REMOVE_OLD_TIMING
+void DBP_DelayTicks(Bit32u ms)
+{
+	retro_sleep(ms);
+}
+
 static void DBP_LockThread(bool lock)
 {
 	if (lock && !dbp_lockthreadstate)
@@ -844,7 +884,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 			DBP_UnlockSpeed(false);
 
 		render.frameskip.max = 0;
-		if (dbp_throttle.rate < render.src.fps - 1 && dbp_throttle.rate > 10 &&
+		if (dbp_throttle.rate < render.src.fps - 1 && dbp_throttle.rate > 10 && dbp_latency != DBP_LATENCY_VARIABLE &&
 			dbp_throttle.mode != RETRO_THROTTLE_FRAME_STEPPING && dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.mode != RETRO_THROTTLE_SLOW_MOTION && dbp_throttle.mode != RETRO_THROTTLE_REWINDING)
 		{
 			static float accum;
@@ -889,7 +929,7 @@ static bool GFX_Events_AdvanceFrame()
 	enum { HISTORY_STEP = 4, HISTORY_SIZE = HISTORY_STEP * 2 };
 	static struct
 	{
-		retro_time_t TimeLast;
+		retro_time_t TimeLast, TimeSleepUntil;
 		double LastModeHash;
 		Bit32u LastFrameCount, FrameTicks, Paused, HistoryCycles[HISTORY_SIZE], HistoryEmulator[HISTORY_SIZE], HistoryFrame[HISTORY_SIZE], HistoryCursor;
 	} St;
@@ -900,14 +940,7 @@ static bool GFX_Events_AdvanceFrame()
 		if (dbp_pause_events)
 		{
 			retro_time_t time_before_pause = time_cb();
-			dbp_paused_midframe = true;
-			semDidPause.Post();
-			#ifdef DBP_ENABLE_WAITSTATS
-			{ retro_time_t t = time_cb(); semDoContinue.Wait(); dbp_wait_paused += (Bit32u)(time_cb() - t); }
-			#else
-			semDoContinue.Wait();
-			#endif
-			dbp_paused_midframe = false;
+			DBP_ThreadControl(TCM_ON_PAUSE_FRAME);
 			St.Paused += (Bit32u)(time_cb() - time_before_pause);
 		}
 		return false;
@@ -928,23 +961,31 @@ static bool GFX_Events_AdvanceFrame()
 	retro_time_t time_before = time_cb() - St.Paused;
 	St.Paused = 0;
 
-	DBP_Buffer& buf = dbp_buffers[buffer_active];
-
-	if (dbp_throttle.rate < render.src.fps - 1 && dbp_throttle.rate > 10)
-		buf.samples = (Bit32u)(av_info.timing.sample_rate / dbp_throttle.rate + .9999);
-	else
-		buf.samples = DBP_MIXER_DoneSamplesCount();
-	if (buf.samples > 4096) buf.samples = 4096;
-	if (buf.samples) MIXER_CallBack(0, (uint8_t*)buf.audio, buf.samples * 4);
-
-	semDidPause.Post();
-	#ifdef DBP_ENABLE_WAITSTATS
-	{ retro_time_t t = time_cb(); semDoContinue.Wait(); dbp_wait_continue += (Bit32u)(time_cb() - t); }
-	#else
-	semDoContinue.Wait();
-	#endif
+	if (dbp_latency != DBP_LATENCY_VARIABLE || dbp_state == DBPSTATE_FIRST_FRAME)
+	{
+		DBP_ThreadControl(TCM_ON_FINISH_FRAME);
+	}
 
 	retro_time_t time_after = time_cb();
+	if (dbp_latency == DBP_LATENCY_VARIABLE)
+	{
+		while (time_after > dbp_lastrun + 100000 && !dbp_pause_events) retro_sleep(0); // paused or frame stepping
+		if (dbp_pause_events) DBP_ThreadControl(TCM_ON_PAUSE_FRAME);
+		if (dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.rate > .1f)
+		{
+			Bit32u frameTime = (Bit32u)(1000000.0 / render.src.fps * (((dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION) && dbp_throttle.rate > .1f) ? av_info.timing.fps / dbp_throttle.rate : 1.0));
+			if (St.TimeSleepUntil <= time_after - frameTime * 2)
+				St.TimeSleepUntil = time_after;
+			else
+				St.TimeSleepUntil += frameTime;
+			while ((Bit32s)(St.TimeSleepUntil - time_after) > 0)
+			{
+				retro_sleep(((St.TimeSleepUntil - time_after) > 1500 ? 1 : 0)); // double brackets because of missing brackets in macro...
+				if (dbp_pause_events) DBP_ThreadControl(TCM_ON_PAUSE_FRAME);
+				time_after = time_cb();
+			}
+		}
+	}
 	retro_time_t time_last = St.TimeLast;
 	St.TimeLast = time_after;
 
@@ -2750,9 +2791,20 @@ static bool check_variables()
 	Variables::RetroVisibility("dosbox_pure_perfstats", experimental_new_timing);
 #endif
 	dbp_force60fps = (Variables::RetroGet("dosbox_pure_force60fps", "default")[0] == 't');
-	dbp_lowlatency = (Variables::RetroGet("dosbox_pure_latency", "default")[0] == 'l');
-	Variables::RetroVisibility("dosbox_pure_auto_target", dbp_lowlatency);
-	dbp_auto_target = (dbp_lowlatency ? (float)atof(Variables::RetroGet("dosbox_pure_auto_target", "1.0")) : 1.0f);
+
+	const char latency = Variables::RetroGet("dosbox_pure_latency", "none")[0];
+	bool toggled_variable = (dbp_state != DBPSTATE_BOOT && (dbp_latency == DBP_LATENCY_VARIABLE) != (latency == 'v'));
+	if (toggled_variable) DBP_ThreadControl(TCM_PAUSE_FRAME);
+	switch (latency)
+	{
+		case 'l': dbp_latency = DBP_LATENCY_LOW;      break;
+		case 'v': dbp_latency = DBP_LATENCY_VARIABLE; break;
+		default:  dbp_latency = DBP_LATENCY_DEFAULT;  break;
+	}
+	if (toggled_variable) DBP_ThreadControl(dbp_pause_events ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
+	Variables::RetroVisibility("dosbox_pure_auto_target", (dbp_latency == DBP_LATENCY_LOW));
+	dbp_auto_target = (dbp_latency == DBP_LATENCY_LOW ? (float)atof(Variables::RetroGet("dosbox_pure_auto_target", "0.8")) : 1.0f);
+
 	switch (Variables::RetroGet("dosbox_pure_perfstats", "none")[0])
 	{
 		case 's': dbp_perf = DBP_PERF_SIMPLE; break;
@@ -3380,7 +3432,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 		av_info.geometry.base_width = buf.width;
 		av_info.geometry.base_height = buf.height;
 		av_info.geometry.aspect_ratio = buf.ratio;
-		av_info.timing.fps = (dbp_force60fps ? 60.0 : render.src.fps);
+		av_info.timing.fps = DBP_GetFPS();
 	}
 	av_info.timing.sample_rate = DBP_MIXER_GetFrequency();
 #ifndef DBP_REMOVE_OLD_TIMING
@@ -3481,9 +3533,10 @@ void retro_run(void)
 			}
 
 			// submit last frame
-			memset(buf.audio, 0, buf.samples * 4);
+			Bit32u numEmptySamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
+			memset(dbp_audio, 0, numEmptySamples * 4);
+			audio_batch_cb(dbp_audio, numEmptySamples);
 			video_cb(buf.video, buf.width, buf.height, buf.width * 4);
-			audio_batch_cb(buf.audio, buf.samples);
 			return;
 		}
 
@@ -3494,6 +3547,11 @@ void retro_run(void)
 			if (MIDI_Retro_HasOutputIssue())
 				retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
 			dbp_state = DBPSTATE_RUNNING;
+			if (dbp_latency == DBP_LATENCY_VARIABLE)
+			{
+				DBP_ThreadControl(TCM_NEXT_FRAME);
+				dbp_targetrefreshrate = 0; // force refresh this because only in retro_run RetroArch will return the correct value
+			}
 		}
 #ifndef DBP_REMOVE_OLD_TIMING
 		if (!dbp_new_timing)
@@ -3689,20 +3747,20 @@ void retro_run(void)
 
 	if (dbp_new_timing)
 	{
-		DBP_ThreadControl(TCM_FINISH_FRAME);
-
-		if (dbp_lowlatency)
+		switch (dbp_latency)
 		{
-			DBP_ThreadControl(TCM_NEXT_FRAME);
-			DBP_ThreadControl(TCM_FINISH_FRAME);
+			case DBP_LATENCY_DEFAULT:
+				DBP_ThreadControl(TCM_FINISH_FRAME);
+				break;
+			case DBP_LATENCY_LOW:
+				if (!dbp_frame_pending) DBP_ThreadControl(TCM_NEXT_FRAME);
+				DBP_ThreadControl(TCM_FINISH_FRAME);
+				break;
+			case DBP_LATENCY_VARIABLE:
+				dbp_lastrun = time_cb();
+				break;
 		}
-	}
 
-	const DBP_Buffer& buf = dbp_buffers[buffer_active];
-
-	if (dbp_new_timing)
-	{
-		double targetfps = (dbp_force60fps ? 60.0 : render.src.fps);
 		Bit32u tpfActual = 0, tpfTarget = 0, tpfDraws = 0;
 		#ifdef DBP_ENABLE_WAITSTATS
 		Bit32u waitPause = 0, waitFinish = 0, waitPaused = 0, waitContinue = 0;
@@ -3719,10 +3777,37 @@ void retro_run(void)
 			dbp_perf_uniquedraw = dbp_perf_count = dbp_perf_emutime = dbp_perf_totaltime = 0;
 		}
 
-		if (!dbp_lowlatency)
+		// mix audio
+		Bit32u numSamples, haveSamples = DBP_MIXER_DoneSamplesCount();
+		if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
+			numSamples = haveSamples;
+		else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.rate < 1)
+			numSamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
+		else
+			numSamples = (Bit32u)(av_info.timing.sample_rate / dbp_throttle.rate);
+		if (numSamples && haveSamples)
+		{
+			numSamples = (numSamples > DBP_MAX_SAMPLES ? DBP_MAX_SAMPLES : (numSamples > haveSamples ? haveSamples : numSamples));
+			if (dbp_latency == DBP_LATENCY_VARIABLE)
+			{
+				if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME); // can be paused by serialize
+				while (DBP_MIXER_DoneSamplesCount() < numSamples * 12 / 10) { dbp_lastrun = time_cb(); retro_sleep(0); } // buffer ahead a bit
+				DBP_ThreadControl(TCM_PAUSE_FRAME); 
+			}
+			MIXER_CallBack(0, (Bit8u*)dbp_audio, numSamples * 4);
+			if (dbp_latency == DBP_LATENCY_VARIABLE)
+			{
+				DBP_ThreadControl(TCM_RESUME_FRAME);
+			}
+		}
+
+		if (dbp_latency == DBP_LATENCY_DEFAULT)
 		{
 			DBP_ThreadControl(TCM_NEXT_FRAME);
 		}
+
+		// submit audio
+		audio_batch_cb(dbp_audio, numSamples);
 
 		if (tpfActual)
 		{
@@ -3740,34 +3825,29 @@ void retro_run(void)
 				retro_notify(-1500, RETRO_LOG_INFO, "Emulation Speed: %4.1f%%",
 					((float)tpfTarget / (float)tpfActual * 100));
 		}
-
-		// handle timing changes
-		if (av_info.timing.fps != targetfps)
-		{
-			av_info.timing.fps = targetfps;
-			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
-		}
 	}
 
-	// handle audio/video mode changes
-	if (av_info.geometry.base_width != buf.width || av_info.geometry.base_height != buf.height || av_info.geometry.aspect_ratio != buf.ratio)
+	const DBP_Buffer& buf = dbp_buffers[buffer_active];
+	double targetfps = (dbp_new_timing ? DBP_GetFPS() : av_info.timing.fps);
+
+	// handle video mode changes
+	if (av_info.geometry.base_width != buf.width || av_info.geometry.base_height != buf.height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
 	{
 		log_cb(RETRO_LOG_INFO, "[DOSBOX] Resolution changed %ux%u @ %.3fHz AR: %.5f => %ux%u @ %.3fHz AR: %.5f\n",
 			av_info.geometry.base_width, av_info.geometry.base_height, av_info.timing.fps, av_info.geometry.aspect_ratio,
 			buf.width, buf.height, av_info.timing.fps, buf.ratio);
-
+		bool newfps = (av_info.timing.fps != targetfps);
 		av_info.geometry.base_width = buf.width;
 		av_info.geometry.base_height = buf.height;
 		av_info.geometry.aspect_ratio = buf.ratio;
-
-		if (!environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &av_info)) log_cb(RETRO_LOG_WARN, "[DOSBOX] SET_GEOMETRY failed\n");
+		av_info.timing.fps = targetfps;
+		environ_cb((newfps ? RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO : RETRO_ENVIRONMENT_SET_GEOMETRY), &av_info);
 	}
 
 	if (dbp_new_timing)
 	{
-		// submit video and audio
+		// submit video
 		video_cb(buf.video, buf.width, buf.height, buf.width * 4);
-		audio_batch_cb(buf.audio, buf.samples);
 	}
 #ifndef DBP_REMOVE_OLD_TIMING
 	if (!dbp_new_timing)
@@ -3777,26 +3857,25 @@ void retro_run(void)
 
 		// process and submit audio
 		static Bit32u mix_missed;
-		DBP_Buffer& audbuf = (DBP_Buffer&)buf;
 		if (!dbp_frame_time) dbp_frame_time = (retro_usec_t)(150000.0 + 500000.0 / render.src.fps);
-		audbuf.samples = (uint32_t)(av_info.timing.sample_rate / 1000000.0 * dbp_frame_time + .499999);
-		if (audbuf.samples || mix_missed)
+		Bit32u numSamples = (uint32_t)(av_info.timing.sample_rate / 1000000.0 * dbp_frame_time + .499999);
+		if (numSamples || mix_missed)
 		{
-			Bit32u mix_samples_need = audbuf.samples;
-			audbuf.samples += mix_missed;
-			if (audbuf.samples > sizeof(audbuf.audio)/4) audbuf.samples = sizeof(audbuf.audio) / 4;
-			if (audbuf.samples > DBP_MIXER_DoneSamplesCount()) audbuf.samples = DBP_MIXER_DoneSamplesCount();
-			if (mix_samples_need != audbuf.samples)
+			Bit32u mix_samples_need = numSamples;
+			numSamples += mix_missed;
+			if (numSamples > sizeof(dbp_audio)/4) numSamples = sizeof(dbp_audio) / 4;
+			if (numSamples > DBP_MIXER_DoneSamplesCount()) numSamples = DBP_MIXER_DoneSamplesCount();
+			if (mix_samples_need != numSamples)
 			{
 				if (dbp_retro_activity < 10 || dbp_timing_tamper || dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD) mix_missed = 0;
-				else mix_missed += (mix_samples_need - audbuf.samples);
+				else mix_missed += (mix_samples_need - numSamples);
 			}
-			if (audbuf.samples)
+			if (numSamples)
 			{
 				dbp_audiomutex.Lock();
-				MIXER_CallBack(0, (Bit8u*)audbuf.audio, audbuf.samples * 4);
+				MIXER_CallBack(0, (Bit8u*)dbp_audio, numSamples * 4);
 				dbp_audiomutex.Unlock();
-				audio_batch_cb(audbuf.audio, audbuf.samples);
+				audio_batch_cb(dbp_audio, numSamples);
 			}
 		}
 
@@ -3811,7 +3890,7 @@ void retro_run(void)
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 {
 	if (dbp_serializemode == DBPSERIALIZE_DISABLED) return false;
-	if (dbp_new_timing) DBP_ThreadControl(TCM_PAUSE_FRAME);
+	if (dbp_new_timing && !dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
 #ifndef DBP_REMOVE_OLD_TIMING
 	if (!dbp_new_timing) DBP_LockThread(true);
 #endif

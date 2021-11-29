@@ -118,6 +118,7 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			{ "default", "Default" },
 			{ "low", "Lowest latency - See CPU usage setting below!" },
+			{ "variable", "Irregular latency - Might improve performance on low-end devices" },
 		},
 		"default"
 	},
