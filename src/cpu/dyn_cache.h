@@ -68,6 +68,12 @@ static inline int nxmunmap(void *addr, size_t)
 }
 #endif
 
+#ifdef WIIU
+// WiiU has just shy of 8MiB RWX RAM available using the current method
+#define WUP_RWX_MEM_BASE 0x00802000
+#define WUP_RWX_MEM_END 0x01000000
+#endif
+
 class CodePageHandlerDynRec;	// forward
 
 // basic cache block representation
@@ -205,7 +211,7 @@ public:
 		if (host_readb(hostmem+addr)==(Bit8u)val) return;
 		host_writeb(hostmem+addr,val);
 		// see if there's code where we are writing to
-		if (!host_readb(&write_map[addr])) {
+		if (!write_map[addr]) {
 			if (active_blocks) return;		// still some blocks in this page
 			active_count--;
 			if (!active_count) Release();	// delay page releasing until active_count is zero
@@ -226,7 +232,7 @@ public:
 		if (host_readw(hostmem+addr)==(Bit16u)val) return;
 		host_writew(hostmem+addr,val);
 		// see if there's code where we are writing to
-		if (!host_readw(&write_map[addr])) {
+		if (!*(Bit16u*)&write_map[addr]) {
 			if (active_blocks) return;		// still some blocks in this page
 			active_count--;
 			if (!active_count) Release();	// delay page releasing until active_count is zero
@@ -235,7 +241,7 @@ public:
 			invalidation_map=(Bit8u*)malloc(4096);
 			memset(invalidation_map,0,4096);
 		}
-#if defined(WORDS_BIGENDIAN) || !defined(C_UNALIGNED_MEMORY)
+#if !defined(C_UNALIGNED_MEMORY)
 		host_writew(&invalidation_map[addr],
 			host_readw(&invalidation_map[addr])+0x101);
 #else
@@ -252,7 +258,7 @@ public:
 		if (host_readd(hostmem+addr)==(Bit32u)val) return;
 		host_writed(hostmem+addr,val);
 		// see if there's code where we are writing to
-		if (!host_readd(&write_map[addr])) {
+		if (!*(Bit32u*)&write_map[addr]) {
 			if (active_blocks) return;		// still some blocks in this page
 			active_count--;
 			if (!active_count) Release();	// delay page releasing until active_count is zero
@@ -261,7 +267,7 @@ public:
 			invalidation_map=(Bit8u*)malloc(4096);
 			memset(invalidation_map,0,4096);
 		}
-#if defined(WORDS_BIGENDIAN) || !defined(C_UNALIGNED_MEMORY)
+#if !defined(C_UNALIGNED_MEMORY)
 		host_writed(&invalidation_map[addr],
 			host_readd(&invalidation_map[addr])+0x1010101);
 #else
@@ -305,7 +311,7 @@ public:
 		addr&=4095;
 		if (host_readw(hostmem+addr)==(Bit16u)val) return false;
 		// see if there's code where we are writing to
-		if (!host_readw(&write_map[addr])) {
+		if (!*(Bit16u*)&write_map[addr]) {
 			if (!active_blocks) {
 				// no blocks left in this page, still delay the page releasing a bit
 				active_count--;
@@ -316,7 +322,7 @@ public:
 				invalidation_map=(Bit8u*)malloc(4096);
 				memset(invalidation_map,0,4096);
 			}
-#if defined(WORDS_BIGENDIAN) || !defined(C_UNALIGNED_MEMORY)
+#if !defined(C_UNALIGNED_MEMORY)
 			host_writew(&invalidation_map[addr],
 				host_readw(&invalidation_map[addr])+0x101);
 #else
@@ -338,7 +344,7 @@ public:
 		addr&=4095;
 		if (host_readd(hostmem+addr)==(Bit32u)val) return false;
 		// see if there's code where we are writing to
-		if (!host_readd(&write_map[addr])) {
+		if (!*(Bit32u*)&write_map[addr]) {
 			if (!active_blocks) {
 				// no blocks left in this page, still delay the page releasing a bit
 				active_count--;
@@ -349,7 +355,7 @@ public:
 				invalidation_map=(Bit8u*)malloc(4096);
 				memset(invalidation_map,0,4096);
 			}
-#if defined(WORDS_BIGENDIAN) || !defined(C_UNALIGNED_MEMORY)
+#if !defined(C_UNALIGNED_MEMORY)
 			host_writed(&invalidation_map[addr],
 				host_readd(&invalidation_map[addr])+0x1010101);
 #else
@@ -672,6 +678,10 @@ static INLINE void cache_addq(Bit64u val) {
 static void dyn_return(BlockReturn retcode,bool ret_exception);
 static void dyn_run_code(void);
 
+#ifdef WORDS_BIGENDIAN
+static void cache_block_before_close(void);
+static void cache_block_closing(const Bit8u* block_start,Bitu block_size);
+#endif
 
 /* Define temporary pagesize so the MPROTECT case and the regular case share as much code as possible */
 #if (C_HAVE_MPROTECT)
@@ -718,6 +728,9 @@ static void cache_init(bool enable) {
 				ret = sceKernelOpenVMDomain();
 				if (ret < 0) cache_code_start_ptr = NULL;
 			}
+#elif defined(WIIU)
+			cache_code_start_ptr=(Bit8u*)WUP_RWX_MEM_BASE;
+			//memset(cache_code_start_ptr, 0, (WUP_RWX_MEM_END - WUP_RWX_MEM_BASE));
 #else
 			cache_code_start_ptr=(Bit8u*)malloc(CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #endif
@@ -742,6 +755,7 @@ static void cache_init(bool enable) {
 		}
 		// setup the default blocks for block linkage returns
 		cache.pos=&cache_code_link_blocks[0];
+#ifndef WORDS_BIGENDIAN
 		link_blocks[0].cache.start=cache.pos;
 		// link code that returns with a special return code
 		dyn_return(BR_Link1,false);
@@ -755,6 +769,29 @@ static void cache_init(bool enable) {
 		core_dynrec.runcode=(BlockReturn (*)(const Bit8u*))cache.pos;
 //		link_blocks[1].cache.start=cache.pos;
 		dyn_run_code();
+#endif
+#else
+		core_dynrec.runcode=(BlockReturn (*)(const Bit8u*))cache.pos;
+		// can use op to PAGESIZE_TEMP-64 bytes
+		dyn_run_code();
+		cache_block_before_close();
+		cache_block_closing(cache_code_link_blocks, cache.pos-cache_code_link_blocks);
+
+		cache.pos=&cache_code_link_blocks[PAGESIZE_TEMP-64];
+		link_blocks[0].cache.start=cache.pos;
+		// link code that returns with a special return code
+		// must be less than 32 bytes
+		dyn_return(BR_Link1,false);
+		cache_block_before_close();
+		cache_block_closing(link_blocks[0].cache.start, cache.pos-link_blocks[0].cache.start);
+
+		cache.pos=&cache_code_link_blocks[PAGESIZE_TEMP-32];
+		link_blocks[1].cache.start=cache.pos;
+		// link code that returns with a special return code
+		// must be less than 32 bytes
+		dyn_return(BR_Link2,false);
+		cache_block_before_close();
+		cache_block_closing(link_blocks[1].cache.start, cache.pos-link_blocks[1].cache.start);
 #endif
 
 		cache.free_pages=0;
@@ -793,6 +830,7 @@ static void cache_close(void) {
 #elif defined (VITA)
 		sceKernelFreeMemBlock(sceBlock);
 		sceBlock = 0;
+#elif defined(WIIU)
 #else
 		free(cache_code_start_ptr);
 #endif

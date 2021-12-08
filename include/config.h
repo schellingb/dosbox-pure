@@ -112,6 +112,10 @@
 #define C_DYNREC 1
 #define C_UNALIGNED_MEMORY 1
 #define C_TARGETCPU MIPSEL
+#elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__) || defined(__POWERPC__) || defined(__ppc__) || defined(__PPC__) || defined(_ARCH_PPC)
+// DYNREC crashes on WiiU so this is disabled for now
+//#define C_DYNREC 1
+//#define C_TARGETCPU POWERPC
 #endif
 
 // ----- HEADERS: Define if headers exist in build environment
