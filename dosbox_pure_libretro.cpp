@@ -2487,6 +2487,7 @@ static bool check_variables()
 	dbp_auto_mapping_mode = Variables::RetroGet("dosbox_pure_auto_mapping", "true")[0];
 
 	const char* machine = Variables::RetroGet("dosbox_pure_machine", "svga");
+	bool machine_is_svga = !strcmp(machine, "svga"), machine_is_cga = !strcmp(machine, "cga"), machine_is_hercules = !strcmp(machine, "hercules");
 	if (!strcmp(machine, "svga")) machine = Variables::RetroGet("dosbox_pure_svga", "svga_s3");
 	else if (!strcmp(machine, "vga")) machine = "vgaonly";
 	Variables::DosBoxSet("dosbox", "machine", machine, false, true);
@@ -2563,10 +2564,8 @@ static bool check_variables()
 		visibility_changed = true;
 	}
 
-	bool machine_is_svga = !strcmp(machine, "svga");
 	Variables::RetroVisibility("dosbox_pure_svga", machine_is_svga);
 
-	bool machine_is_cga = !strcmp(machine, "cga");
 	Variables::RetroVisibility("dosbox_pure_cga", machine_is_cga);
 	if (machine_is_cga)
 	{
@@ -2578,7 +2577,6 @@ static bool check_variables()
 		DBP_CGA_SetModelAndComposite(cga_new_model, (!cga_mode || cga_mode[0] == 'a' ? 0 : ((cga_mode[0] == 'o' && cga_mode[1] == 'n') ? 1 : 2)));
 	}
 
-	bool machine_is_hercules = !strcmp(machine, "hercules");
 	Variables::RetroVisibility("dosbox_pure_hercules", machine_is_hercules);
 	if (machine_is_hercules)
 	{
