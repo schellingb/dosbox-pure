@@ -171,6 +171,7 @@ struct Handler : public Adlib::Handler {
 }
 
 
+
 #define RAW_SIZE 1024
 #endif /* C_DBP_ENABLE_OLDOPL */
 
@@ -823,11 +824,8 @@ Module::Module( Section* configuration ) : Module_base(configuration) {
 	//Used to be 2.0, which was measured to be too high. Exact value depends on card/clone.
 	mixerChan->SetScale( 1.5f );  
 
-	if (oplemu == "fast") {
-		handler = new DBOPL::Handler();
-	}
 #ifdef C_DBP_ENABLE_OLDOPL
-	else if (oplemu == "compat") {
+	if (oplemu == "compat") {
 		if ( oplmode == OPL_opl2 ) {
 			handler = new OPL2::Handler();
 		} else {
@@ -842,14 +840,18 @@ Module::Module( Section* configuration ) : Module_base(configuration) {
 			handler = new MAMEOPL3::Handler();
 		}
 	}
+	else
 #endif
 #ifdef C_DBP_ENABLE_NUKEDOPL3
-	else if (oplemu == "nuked") {
+	if (oplemu == "nuked") {
 		handler = new NukedOPL::Handler();
 	}
+	else
 #endif
-	else {
-		handler = new DBOPL::Handler();
+	//Fall back to dbop, will also catch auto
+	if (oplemu == "fast" || 1) {
+		const bool opl3Mode = oplmode >= OPL_opl3;
+		handler = new DBOPL::Handler( opl3Mode );
 	}
 	handler->Init( rate );
 	bool single = false;
