@@ -40,7 +40,7 @@ ifneq ($(ISWIN),)
   COMMONFLAGS += -pthread
 else ifneq (,$(findstring ios,$(platform)))
   ifeq ($(IOSSDK),)
-     IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
+    IOSSDK := $(shell xcodebuild -version -sdk iphoneos Path)
   endif
   OUTNAME := dosbox_pure_libretro_ios.dylib
   MINVERSION :=
@@ -59,7 +59,7 @@ endif
   COMMONFLAGS += $(MINVERSION)
 else ifeq ($(platform),tvos-arm64)
   ifeq ($(IOSSDK),)
-     IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
+    IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
   endif
   OUTNAME := dosbox_pure_libretro_tvos.dylib
   CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
@@ -70,17 +70,14 @@ else ifneq ($(ISMAC),)
   CXX     ?= c++
   LDFLAGS := -Wl,-dead_strip
   COMMONFLAGS += -pthread
-
-   ifeq ($(CROSS_COMPILE),1)
-	COMMONFLAGS  += -DDISABLE_DYNAREC=1
-	TARGET_RULE   = -target $(LIBRETRO_APPLE_PLATFORM) -isysroot $(LIBRETRO_APPLE_ISYSROOT)
-	COMMONFLAGS   += $(TARGET_RULE)
-	LDFLAGS       += $(TARGET_RULE)
+  ifeq ($(CROSS_COMPILE),1)
+    COMMONFLAGS  += -DDISABLE_DYNAREC=1
+    TARGET_RULE   = -target $(LIBRETRO_APPLE_PLATFORM) -isysroot $(LIBRETRO_APPLE_ISYSROOT)
+    COMMONFLAGS   += $(TARGET_RULE)
+    LDFLAGS       += $(TARGET_RULE)
    endif
-
    COMMONFLAGS  += $(ARCHFLAGS)
    LDFLAGS      += $(ARCHFLAGS)
-
 else ifeq ($(platform),windows) # For MSYS2 only
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
@@ -114,14 +111,14 @@ else ifeq ($(platform),wii)
   CXX     := $(DEVKITPPC)/bin/powerpc-eabi-g++
   AR      := $(DEVKITPPC)/bin/powerpc-eabi-ar
   COMMONFLAGS += -DGEKKO -mrvl -mcpu=750 -meabi -mhard-float -fpermissive
-  COMMONFLAGS += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1
+  COMMONFLAGS += -U__INT32_TYPE__ -U__UINT32_TYPE__ -D__INT32_TYPE__=int -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1
   STATIC_LINKING = 1
 else ifeq ($(platform),wiiu)
   OUTNAME := dosbox_pure_libretro_wiiu.a
   CXX     := $(DEVKITPPC)/bin/powerpc-eabi-g++
   AR      := $(DEVKITPPC)/bin/powerpc-eabi-ar
-  COMMONFLAGS += -DGEKKO -DWIIU -DHW_RVL -mcpu=750 -meabi -mhard-float -I./deps/include/
-  COMMONFLAGS += -U__INT32_TYPE__ -U __UINT32_TYPE__ -D__INT32_TYPE__=int -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1
+  COMMONFLAGS += -DGEKKO -DWIIU -DHW_RVL -mcpu=750 -meabi -mhard-float
+  COMMONFLAGS += -U__INT32_TYPE__ -U__UINT32_TYPE__ -D__INT32_TYPE__=int -D__POWERPC__ -D__ppc__ -DMSB_FIRST -DWORDS_BIGENDIAN=1 -DGX_PTHREAD_LEGACY
   STATIC_LINKING = 1
 else ifeq ($(platform),libnx)
   OUTNAME := dosbox_pure_libretro_libnx.a
