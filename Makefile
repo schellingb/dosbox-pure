@@ -56,7 +56,7 @@ ifeq ($(platform),$(filter $(platform),ios9 ios-arm64))
 else
   MINVERSION = -miphoneos-version-min=5.0
 endif
-  COMMONFLAGS += $(MINVERSION)
+  COMMONFLAGS += $(MINVERSION) -Wno-ignored-optimization-argument -Wno-unknown-warning-option
 else ifeq ($(platform),tvos-arm64)
   ifeq ($(IOSSDK),)
     IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
@@ -64,12 +64,12 @@ else ifeq ($(platform),tvos-arm64)
   OUTNAME := dosbox_pure_libretro_tvos.dylib
   CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
   LDFLAGS := -Wl,-dead_strip
-  COMMONFLAGS += -DDISABLE_DYNAREC=1
+  COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= c++
   LDFLAGS := -Wl,-dead_strip
-  COMMONFLAGS += -pthread
+  COMMONFLAGS += -pthread -Wno-unknown-warning-option
   ifeq ($(CROSS_COMPILE),1)
     COMMONFLAGS  += -DDISABLE_DYNAREC=1
     TARGET_RULE   = -target $(LIBRETRO_APPLE_PLATFORM) -isysroot $(LIBRETRO_APPLE_ISYSROOT)
