@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2021 Bernhard Schelling
+ *  Copyright (C) 2020-2022 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ static retro_core_option_v2_category option_cats[] =
 	{ "Input",       "Input Options",       "Keyboard, mouse and joystick settings." },
 	{ "Performance", "Performance Options", "Adjust the performance of the emulated CPU." },
 	{ "Video",       "Video Options",       "Settings for the emulated graphics card and aspect ratio." },
-	{ "System",      "System Options",      "Other system settings for emulatred RAM and CPU." },
+	{ "System",      "System Options",      "Other system settings for the emulated RAM and CPU." },
 	{ "Audio",       "Audio Options",       "MIDI, SoundBlaster and other audio settings." },
 	{ NULL, NULL, NULL }
 };
