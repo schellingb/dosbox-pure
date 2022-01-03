@@ -102,6 +102,7 @@ static Bit8u buffer_active;
 static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], width, height; float ratio; } dbp_buffers[2];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
+static double dbp_audio_remain;
 static void(*dbp_gfx_intercept)(DBP_Buffer& buf);
 
 // DOSBOX DISC MANAGEMENT
@@ -3351,27 +3352,28 @@ void retro_run(void)
 	}
 
 	// mix audio
-	Bit32u numSamples, haveSamples = DBP_MIXER_DoneSamplesCount();
+	Bit32u haveSamples = DBP_MIXER_DoneSamplesCount(), mixSamples = 0; double numSamples;
 	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
 		numSamples = haveSamples;
 	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.rate < 1)
-		numSamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
+		numSamples = (av_info.timing.sample_rate / av_info.timing.fps) + dbp_audio_remain;
 	else
-		numSamples = (Bit32u)(av_info.timing.sample_rate / dbp_throttle.rate);
+		numSamples = (av_info.timing.sample_rate / dbp_throttle.rate) + dbp_audio_remain;
 	if (numSamples && haveSamples)
 	{
-		numSamples = (numSamples > DBP_MAX_SAMPLES ? DBP_MAX_SAMPLES : (numSamples > haveSamples ? haveSamples : numSamples));
+		mixSamples = (numSamples > DBP_MAX_SAMPLES ? DBP_MAX_SAMPLES : (numSamples > haveSamples ? haveSamples : (Bit32u)numSamples));
 		if (dbp_latency == DBP_LATENCY_VARIABLE)
 		{
 			if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME); // can be paused by serialize
-			while (DBP_MIXER_DoneSamplesCount() < numSamples * 12 / 10) { dbp_lastrun = time_cb(); retro_sleep(0); } // buffer ahead a bit
+			while (DBP_MIXER_DoneSamplesCount() < mixSamples * 12 / 10) { dbp_lastrun = time_cb(); retro_sleep(0); } // buffer ahead a bit
 			DBP_ThreadControl(TCM_PAUSE_FRAME); 
 		}
-		MIXER_CallBack(0, (Bit8u*)dbp_audio, numSamples * 4);
+		MIXER_CallBack(0, (Bit8u*)dbp_audio, mixSamples * 4);
 		if (dbp_latency == DBP_LATENCY_VARIABLE)
 		{
 			DBP_ThreadControl(TCM_RESUME_FRAME);
 		}
+		dbp_audio_remain = (numSamples > mixSamples ? (numSamples - mixSamples) : 0);
 	}
 
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
@@ -3380,7 +3382,7 @@ void retro_run(void)
 	}
 
 	// submit audio
-	audio_batch_cb(dbp_audio, numSamples);
+	if (mixSamples) audio_batch_cb(dbp_audio, mixSamples);
 
 	if (tpfActual)
 	{
