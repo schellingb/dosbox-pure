@@ -1099,12 +1099,12 @@ static void DBP_PureMenuProgram(Program** make)
 	struct Menu : Program
 	{
 		Menu() : result(0), sel(0), exe_count(0), fs_count(0), scroll(0), mousex(0), mousey(0), joyx(0), joyy(0), init_autosel(0), init_autoskip(0), autoskip(0),
-			have_autoboot(false), use_autoboot(false), multidrive(false), open_ticks(DBP_GetTicks()) { }
+			have_autoboot(false), have_dosboxbat(false), use_autoboot(false), multidrive(false), open_ticks(DBP_GetTicks()) { }
 
 		~Menu() {}
 
 		int result, sel, exe_count, fs_count, scroll, mousex, mousey, joyx, joyy, init_autosel, init_autoskip, autoskip;
-		bool have_autoboot, use_autoboot, multidrive;
+		bool have_autoboot, have_dosboxbat, use_autoboot, multidrive;
 		Bit32u open_ticks;
 		std::vector<std::string> list;
 
@@ -1183,6 +1183,10 @@ static void DBP_PureMenuProgram(Program** make)
 				memcpy(autostr, "C:\\", 3);
 				safe_strncpy(autostr + 3, strrchr(dbp_content_path.c_str(), '#') + 1, DOS_PATHLENGTH + 16);
 			}
+			else if (have_dosboxbat)
+			{
+				memcpy(autostr, "C:\\DOSBOX.BAT", sizeof("C:\\DOSBOX.BAT"));
+			}
 			if (autostr[0])
 			{
 				for (std::string& name : list)
@@ -1226,6 +1230,7 @@ static void DBP_PureMenuProgram(Program** make)
 				delete insfile;
 				if (cmdlen != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) return;
 			}
+			if (isEXE && m->sel == ('C'-'A') && !memcmp(path, "DOSBOX.BAT", sizeof("DOSBOX.BAT"))) m->have_dosboxbat = true;
 			(isEXE ? m->exe_count : m->fs_count)++;
 
 			int insert_index;
