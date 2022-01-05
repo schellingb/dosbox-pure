@@ -13,6 +13,6 @@ struct MAPBucket
 	Bit32u mappings_action_offset;
 };
 
-enum { MAP_TABLE_SIZE = 4096, MAP_BUCKETS = 4 };
+enum { MAP_TABLE_SIZE = 4240, MAP_BUCKETS = 4 };
 extern const Bit32u map_keys[MAP_TABLE_SIZE];
 extern const MAPBucket map_buckets[MAP_BUCKETS];

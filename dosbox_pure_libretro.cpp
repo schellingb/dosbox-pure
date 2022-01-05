@@ -122,6 +122,7 @@ enum DBP_Port_Device
 {
 	DBP_DEVICE_Disabled                = RETRO_DEVICE_NONE,
 	DBP_DEVICE_DefaultJoypad           = RETRO_DEVICE_JOYPAD,
+	DBP_DEVICE_DefaultAnalog           = RETRO_DEVICE_ANALOG,
 	DBP_DEVICE_BindGenericKeyboard     = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 0),
 	DBP_DEVICE_MouseLeftAnalog         = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 1),
 	DBP_DEVICE_MouseRightAnalog        = RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 2),
@@ -2046,6 +2047,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 				binds = BindsMouseRightAnalog;
 				break;
 			case DBP_DEVICE_DefaultJoypad:
+			case DBP_DEVICE_DefaultAnalog:
 				if (port == 0)
 				{
 					if (dbp_auto_mapping)
@@ -2168,7 +2170,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 		if ((dbp_port_devices[port] & RETRO_DEVICE_MASK) == RETRO_DEVICE_KEYBOARD)
 			continue;
 
-		if (port == 0 && dbp_auto_mapping && dbp_port_devices[0] == DBP_DEVICE_DefaultJoypad)
+		if (port == 0 && dbp_auto_mapping && (dbp_port_devices[0] == DBP_DEVICE_DefaultJoypad || dbp_port_devices[0] == DBP_DEVICE_DefaultAnalog))
 			continue;
 
 		if (!dbp_bind_unused && dbp_port_devices[port] != DBP_DEVICE_BindGenericKeyboard)
@@ -2715,7 +2717,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 
 				for (Bit32u idx = hash;; idx++)
 				{
-					if (!map_keys[idx &= (MAP_TABLE_SIZE-1)]) break;
+					if (!map_keys[idx %= MAP_TABLE_SIZE]) break;
 					if (map_keys[idx] != hash) continue;
 
 					static std::vector<Bit8u> static_buf;
