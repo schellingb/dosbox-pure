@@ -153,7 +153,8 @@ static bool dbp_optionsupdatecallback;
 static bool dbp_last_hideadvanced;
 static char dbp_last_machine;
 static char dbp_auto_mapping_mode;
-static int16_t dbp_bind_mousewheel;
+static Bit16s dbp_bind_mousewheel;
+static Bit16s dbp_content_year;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
 static float dbp_mouse_speed = 1;
 static float dbp_mouse_speed_x = 1;
@@ -664,6 +665,15 @@ bool DBP_IsKeyDown(KBD_KEYS key)
 bool DBP_IsShuttingDown()
 {
 	return (!first_shell || first_shell->exit);
+}
+
+Bit32s DBP_GetRealModeCycles()
+{
+	if (dbp_content_year <= 1970) return 3000; // Unknown year, dosbox default
+	if (dbp_content_year < 1981) return 500; // Very early 8086/8088 CPU
+	if (dbp_content_year > 1994) return 77000; // Pentium 100 MHz
+	static const Bit16u Cycles1981to1994[1+1994-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 21000, 27000, 44000, 60000 };
+	return Cycles1981to1994[dbp_content_year - 1981];
 }
 
 bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
@@ -2700,8 +2710,8 @@ static bool init_dosbox(const char* path, bool firsttime)
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}
 
-	// Detect auto mapping
-	if (firsttime && dbp_auto_mapping_mode != 'f')
+	// Detect content year and auto mapping
+	if (firsttime)
 	{
 		struct Local
 		{
@@ -2734,8 +2744,12 @@ static bool init_dosbox(const char* path, bool firsttime)
 					const Bit16u map_offset = (ident[1]<<8) + ident[2];
 					const char* map_title = (char*)buf + (MAP_TABLE_SIZE/MAP_BUCKETS) * 5 + (ident[3]<<8) + ident[4];
 
+					dbp_content_year = (Bit16s)(1970 + (Bit8u)map_title[0]);
+					if (dbp_auto_mapping_mode == 'f')
+						return;
+
 					static_title = "Detected Automatic Key Mapping: ";
-					static_title += map_title;
+					static_title += map_title + 1;
 					dbp_auto_mapping_title = static_title.c_str();
 
 					static_buf.resize(mappings_bk.mappings_size_uncompressed);
@@ -2751,10 +2765,25 @@ static bool init_dosbox(const char* path, bool firsttime)
 				}
 			}
 		};
-		for (int i = 0; i != ('Z'-'A'); i++)
-			if (Drives[i] && !dbp_auto_mapping)
+		for (int i = 0; i != ('Z'-'A') && !dbp_content_year; i++)
+			if (Drives[i])
 				DriveFileIterator(Drives[i], Local::FileIter);
 	}
+
+	if (!dbp_content_year)
+	{
+		// Try to find a year somewhere in the content path, i.e. "Game (1993).zip" or "/DOS/1993/Game.zip"
+		for (const char *p = path + strlen(path), *pMin = path + 5; p >= pMin; p--)
+		{
+			while (p >= pMin && *p != ')' && *p != '/' && *p != '\\') p--;
+			if (p < pMin || (p[-5] != '(' && p[-5] != '/' && p[-5] != '\\')) continue;
+			int year = (int)atoi(p-4) * ((p[-2]|0x20) == 'x' ? 100 : ((p[-1]|0x20) == 'x' ? 10 : 1));
+			if (year > 1970 && year < 2100) { dbp_content_year = (Bit16s)year; break; }
+		}
+	}
+
+	// Initialize cycles based on content year
+	CPU_CycleMax = DBP_GetRealModeCycles();
 
 	// Always launch puremenu, to tell us the shell was fully started
 	control->GetSection("autoexec")->ExecuteDestroy();
@@ -3380,7 +3409,7 @@ void retro_run(void)
 		{
 			DBP_ThreadControl(TCM_RESUME_FRAME);
 		}
-		dbp_audio_remain = (numSamples <= mixSamples || numSamples > haveSamples || numSamples > DBP_MAX_SAMPLES ? 0.0 : (numSamples - mixSamples));
+		dbp_audio_remain = ((numSamples <= mixSamples || numSamples > haveSamples || numSamples > DBP_MAX_SAMPLES) ? 0.0 : (numSamples - mixSamples));
 	}
 
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
