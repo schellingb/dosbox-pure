@@ -3380,7 +3380,7 @@ void retro_run(void)
 		{
 			DBP_ThreadControl(TCM_RESUME_FRAME);
 		}
-		dbp_audio_remain = (numSamples > mixSamples ? (numSamples - mixSamples) : 0);
+		dbp_audio_remain = (numSamples <= mixSamples || numSamples > haveSamples || numSamples > DBP_MAX_SAMPLES ? 0.0 : (numSamples - mixSamples));
 	}
 
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
