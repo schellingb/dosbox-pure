@@ -671,9 +671,9 @@ Bit32s DBP_GetRealModeCycles()
 {
 	if (dbp_content_year <= 1970) return 3000; // Unknown year, dosbox default
 	if (dbp_content_year < 1981) return 500; // Very early 8086/8088 CPU
-	if (dbp_content_year > 1994) return 77000; // Pentium 100 MHz
-	static const Bit16u Cycles1981to1994[1+1994-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 21000, 27000, 44000, 60000 };
-	return Cycles1981to1994[dbp_content_year - 1981];
+	if (dbp_content_year > 1993) return 60000; // Pentium 90 MHz
+	static const Bit16u Cycles1981to1993[1+1993-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 21000, 27000, 44000 };
+	return Cycles1981to1993[dbp_content_year - 1981];
 }
 
 bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
