@@ -401,6 +401,29 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 	}
 }
 
+void DBP_SetRealModeCycles()
+{
+	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || render.frameskip.max > 1) return;
+
+	static const Bit16u Cycles1981to1993[1+1993-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 21000, 27000, 44000 };
+	int year = (dbp_game_running ? dbp_content_year : 0);
+	CPU_CycleMax = 
+		(year <= 1970 ?  3000 : // Unknown year, dosbox default
+		(year <  1981 ?   500 : // Very early 8086/8088 CPU
+		(year >  1993 ? 60000 : // Pentium 90 MHz
+		Cycles1981to1993[year - 1981]))); // Matching speed for year
+
+	// Switch to dynamic core for newer real mode games 
+	if (CPU_CycleMax >= 8192 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
+	{
+		#if (C_DYNAMIC_X86)
+		if (cpudecoder != CPU_Core_Dyn_X86_Run) { void CPU_Core_Dyn_X86_Cache_Init(bool); CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = CPU_Core_Dyn_X86_Run; }
+		#elif (C_DYNREC)
+		if (cpudecoder != CPU_Core_Dynrec_Run)  { void CPU_Core_Dynrec_Cache_Init(bool);  CPU_Core_Dynrec_Cache_Init(true);  cpudecoder = CPU_Core_Dynrec_Run;  }
+		#endif
+	}
+}
+
 static void DBP_UnlockSpeed(bool unlock, int start_frame_skip = 0)
 {
 	static Bit32s old_max;
@@ -424,8 +447,9 @@ static void DBP_UnlockSpeed(bool unlock, int start_frame_skip = 0)
 	else if (old_max)
 	{
 		// If we switched to protected mode while locked (likely at startup) with auto adjust cycles on, choose a reasonable base rate
-		CPU_CycleMax = (old_pmode != cpu.pmode && cpu.pmode && CPU_CycleAutoAdjust ? 200000 : old_max);
+		CPU_CycleMax = (old_pmode == cpu.pmode || !CPU_CycleAutoAdjust ? old_max : 20000);
 		render.frameskip.max = old_max = 0;
+		DBP_SetRealModeCycles();
 	}
 }
 
@@ -678,15 +702,6 @@ bool DBP_IsKeyDown(KBD_KEYS key)
 bool DBP_IsShuttingDown()
 {
 	return (!first_shell || first_shell->exit);
-}
-
-Bit32s DBP_GetRealModeCycles()
-{
-	if (dbp_content_year <= 1970) return 3000; // Unknown year, dosbox default
-	if (dbp_content_year < 1981) return 500; // Very early 8086/8088 CPU
-	if (dbp_content_year > 1993) return 60000; // Pentium 90 MHz
-	static const Bit16u Cycles1981to1993[1+1993-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 21000, 27000, 44000 };
-	return Cycles1981to1993[dbp_content_year - 1981];
 }
 
 bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
@@ -2782,10 +2797,6 @@ static bool init_dosbox(const char* path, bool firsttime)
 			if (year > 1970 && year < 2100) { dbp_content_year = (Bit16s)year; break; }
 		}
 	}
-
-	// Initialize cycles based on content year
-	if (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES)
-		CPU_CycleMax = DBP_GetRealModeCycles();
 
 	// Always launch puremenu, to tell us the shell was fully started
 	control->GetSection("autoexec")->ExecuteDestroy();

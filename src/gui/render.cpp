@@ -566,6 +566,7 @@ void RENDER_SetSize(Bitu width,Bitu height,Bitu bpp,float fps,double ratio,bool 
 	RENDER_Reset( );
 }
 
+#ifdef C_DBP_ENABLE_MAPPER
 extern void GFX_SetTitle(Bit32s cycles, int frameskip,bool paused);
 static void IncreaseFrameSkip(bool pressed) {
 	if (!pressed)
@@ -594,6 +595,7 @@ static void ChangeScaler(bool pressed) {
 	}
 	RENDER_CallBack( GFX_CallBackReset );
 } */
+#endif
 
 bool RENDER_GetForceUpdate(void) {
 	return render.forceUpdate;
@@ -751,8 +753,8 @@ void RENDER_Init(Section * sec) {
 #ifdef C_DBP_ENABLE_MAPPER
 	MAPPER_AddHandler(DecreaseFrameSkip,MK_f7,MMOD1,"decfskip","Dec Fskip");
 	MAPPER_AddHandler(IncreaseFrameSkip,MK_f8,MMOD1,"incfskip","Inc Fskip");
-#endif
 	GFX_SetTitle(-1,render.frameskip.max,false);
+#endif
 }
 
 #include <dbp_serialize.h>

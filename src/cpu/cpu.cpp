@@ -2439,15 +2439,14 @@ void DBP_CPU_ModifyCycles(const char* val)
 		CPU_CycleAutoAdjust = true;
 		CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT));
 	} else if (val[0] == 'a') { // auto
-		Bit32s DBP_GetRealModeCycles();
 		if (cpu.pmode) {
 			CPU_AutoDetermineMode |= (CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT);
-			CPU_OldCycleMax = DBP_GetRealModeCycles();
 			CPU_CycleAutoAdjust = true;
 		} else {
 			CPU_AutoDetermineMode |= CPU_AUTODETERMINE_CYCLES;
-			CPU_CycleMax = DBP_GetRealModeCycles();
 			CPU_CycleAutoAdjust = false;
+			void DBP_SetRealModeCycles();
+			DBP_SetRealModeCycles();
 		}
 	} else {
 		CPU_CycleAutoAdjust = false;

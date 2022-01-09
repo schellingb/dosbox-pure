@@ -487,7 +487,7 @@ void DBPSerialize_CPU_Core_Dyn_X86(DBPArchive& ar)
 	{
 		if (stored_initialized && cache_initialized) DBPSerialize_cache_reset();
 		else if (stored_initialized && !cache_initialized) cache_init(true);
-		else if (!stored_initialized && cache_initialized) cache_close();
+		else if (!stored_initialized && cache_initialized) { cache_close(); gen_init(); }
 	}
 }
 

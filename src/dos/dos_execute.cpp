@@ -101,6 +101,10 @@ void DOS_UpdatePSPName(void) {
 	}
 	RunningProgram = name;
 	GFX_SetTitle(-1,-1,false);
+#ifdef C_DBP_CUSTOMTIMING
+	void DBP_SetRealModeCycles();
+	DBP_SetRealModeCycles();
+#endif
 }
 
 void DOS_Terminate(Bit16u pspseg,bool tsr,Bit8u exitcode) {
@@ -154,6 +158,10 @@ void DOS_Terminate(Bit16u pspseg,bool tsr,Bit8u exitcode) {
 		CPU_CycleLeft=0;
 		CPU_Cycles=0;
 	}
+#endif
+#ifdef C_DBP_CUSTOMTIMING
+	void DBP_SetRealModeCycles();
+	DBP_SetRealModeCycles();
 #endif
 
 	return;
