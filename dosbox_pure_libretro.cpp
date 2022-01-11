@@ -2347,8 +2347,8 @@ static void set_variables(bool force_midi_scan)
 			fclose(f);
 		}
 	}
-
 	#include "core_options.h"
+size_t xsdjkshdkjas = sizeof(option_defs);
 	for (retro_core_option_v2_definition& def : option_defs)
 	{
 		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
@@ -2563,7 +2563,6 @@ static bool check_variables()
 	}
 	if (toggled_variable) DBP_ThreadControl(dbp_pause_events ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
 	Variables::RetroVisibility("dosbox_pure_auto_target", (dbp_latency == DBP_LATENCY_LOW));
-	dbp_auto_target = (dbp_latency == DBP_LATENCY_LOW ? (float)atof(Variables::RetroGet("dosbox_pure_auto_target", "0.8")) : 1.0f);
 
 	switch (Variables::RetroGet("dosbox_pure_perfstats", "none")[0])
 	{
@@ -2583,12 +2582,17 @@ static bool check_variables()
 	const char* cycles = Variables::RetroGet("dosbox_pure_cycles", "auto");
 	bool cycles_numeric = (cycles[0] >= '0' && cycles[0] <= '9');
 	Variables::RetroVisibility("dosbox_pure_cycles_scale", cycles_numeric);
+	Variables::RetroVisibility("dosbox_pure_cycle_limit", !cycles_numeric);
 	if (cycles_numeric)
 	{
 		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(Variables::RetroGet("dosbox_pure_cycles_scale", "1.0")) + .499));
 		cycles = buf;
 	}
 	visibility_changed |= Variables::DosBoxSet("cpu", "cycles", cycles);
+
+	dbp_auto_target =
+		(dbp_latency == DBP_LATENCY_LOW ? (float)atof(Variables::RetroGet("dosbox_pure_auto_target", "0.8")) : 1.0f)
+		* (cycles_numeric ? 1.0f : (float)atof(Variables::RetroGet("dosbox_pure_cycle_limit", "1.0")));
 
 	Variables::DosBoxSet("cpu", "core",    Variables::RetroGet("dosbox_pure_cpu_core", "auto"), true);
 	Variables::DosBoxSet("cpu", "cputype", Variables::RetroGet("dosbox_pure_cpu_type", "auto"), true);
