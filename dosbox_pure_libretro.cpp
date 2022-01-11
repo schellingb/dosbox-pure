@@ -1943,7 +1943,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.24";
+	info->library_version  = "0.25";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|m3u|m3u8";
@@ -2347,8 +2347,8 @@ static void set_variables(bool force_midi_scan)
 			fclose(f);
 		}
 	}
+
 	#include "core_options.h"
-size_t xsdjkshdkjas = sizeof(option_defs);
 	for (retro_core_option_v2_definition& def : option_defs)
 	{
 		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
