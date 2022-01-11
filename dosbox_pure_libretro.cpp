@@ -2787,7 +2787,7 @@ static bool init_dosbox(const char* path, bool firsttime)
 				DriveFileIterator(Drives[i], Local::FileIter);
 	}
 
-	if (!dbp_content_year)
+	if (!dbp_content_year && path)
 	{
 		// Try to find a year somewhere in the content path, i.e. "Game (1993).zip" or "/DOS/1993/Game.zip"
 		for (const char *p = path + strlen(path), *pMin = path + 5; p >= pMin; p--)
