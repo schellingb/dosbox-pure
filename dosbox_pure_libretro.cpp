@@ -2426,9 +2426,10 @@ static bool check_variables()
 			Section* section = control->GetSection(section_name);
 			DBP_ASSERT(section);
 			std::string str = var_name;
-			std::string old_val = section->GetPropValue(str);
-			DBP_ASSERT(old_val != "PROP_NOT_EXIST");
-			if (!section || old_val == new_value) return false;
+			Property* prop = section->GetProp(str);
+			DBP_ASSERT(prop);
+			std::string old_val = prop->GetValue().ToString();
+			if (!section || old_val == new_value || prop->getChange() == Property::Changeable::OnlyByConfigProgram) return false;
 
 			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
 			if (disallow_in_game && dbp_game_running)
@@ -2589,8 +2590,8 @@ static bool check_variables()
 	}
 	visibility_changed |= Variables::DosBoxSet("cpu", "cycles", cycles);
 
-	Variables::DosBoxSet("cpu", "core",    Variables::RetroGet("dosbox_pure_cpu_core", "auto"), false, true);
-	Variables::DosBoxSet("cpu", "cputype", Variables::RetroGet("dosbox_pure_cpu_type", "auto"), false, true);
+	Variables::DosBoxSet("cpu", "core",    Variables::RetroGet("dosbox_pure_cpu_core", "auto"), true);
+	Variables::DosBoxSet("cpu", "cputype", Variables::RetroGet("dosbox_pure_cpu_type", "auto"), true);
 
 	if (dbp_last_machine != machine[0])
 	{

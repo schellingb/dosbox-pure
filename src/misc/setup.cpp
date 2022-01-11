@@ -705,6 +705,7 @@ bool Section_prop::HandleInputline(string const& gegevens){
 	return false;
 }
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 void Section_prop::PrintData(FILE* outfile) const {
 	/* Now print out the individual section entries */
 	size_t len = 0;
@@ -720,6 +721,7 @@ void Section_prop::PrintData(FILE* outfile) const {
 		fprintf(outfile,"%-*s = %s\n", intlen, (*tel)->propname.c_str(), (*tel)->GetValue().ToString().c_str());
 	}
 }
+#endif
 
 string Section_prop::GetPropValue(string const& _property) const {
 	for(const_it tel = properties.begin();tel != properties.end();++tel){
@@ -730,15 +732,28 @@ string Section_prop::GetPropValue(string const& _property) const {
 	return NO_SUCH_PROPERTY;
 }
 
+#ifdef C_DBP_LIBRETRO
+Property* Section_prop::GetProp(std::string const& _property) const {
+	for(const_it tel = properties.begin();tel != properties.end();++tel){
+		if (!strcasecmp((*tel)->propname.c_str(),_property.c_str())){
+			return *tel;
+		}
+	}
+	return NULL;
+}
+#endif
+
 bool Section_line::HandleInputline(string const& line) {
 	if (!data.empty()) data += "\n"; //Add return to previous line in buffer
 	data += line;
 	return true;
 }
 
+#ifdef C_DBP_NATIVE_CONFIGFILE
 void Section_line::PrintData(FILE* outfile) const {
 	fprintf(outfile,"%s",data.c_str());
 }
+#endif
 
 string Section_line::GetPropValue(string const& /* _property*/) const {
 	return NO_SUCH_PROPERTY;

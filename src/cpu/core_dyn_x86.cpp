@@ -459,6 +459,8 @@ void CPU_Core_Dyn_X86_Cache_Init(bool enable_cache) {
 
 void CPU_Core_Dyn_X86_Cache_Close(void) {
 	cache_close();
+	//DBP: gen_init needs to be called to reset gen_runcode, otherwise DOSBox crashes once cache is used again
+	gen_init();
 }
 
 void CPU_Core_Dyn_X86_SetFPUMode(bool dh_fpu) {

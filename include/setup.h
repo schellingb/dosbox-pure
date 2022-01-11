@@ -126,7 +126,11 @@ private:
 
 class Property {
 public:
+#ifndef C_DBP_LIBRETRO
 	struct Changeable { enum Value {Always, WhenIdle,OnlyAtStart};};
+#else
+	struct Changeable { enum Value {Always, WhenIdle, OnlyAtStart, OnlyByConfigProgram};};
+#endif
 	const std::string propname;
 
 	Property(std::string const& _propname, Changeable::Value when):propname(_propname),change(when) { }
@@ -145,6 +149,9 @@ public:
 	virtual const std::vector<Value>& GetValues() const;
 	Value::Etype Get_type(){return default_value.type;}
 	Changeable::Value getChange() {return change;}
+#ifdef C_DBP_LIBRETRO
+	void OnChangedByConfigProgram(){const_cast<Changeable::Value&>(change)=Changeable::OnlyByConfigProgram;}
+#endif
 
 protected:
 	//Set interval value to in or default if in is invalid. force always sets the value.
@@ -271,7 +278,12 @@ public:
 
 	virtual std::string GetPropValue(std::string const& _property) const =0;
 	virtual bool HandleInputline(std::string const& _line)=0;
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	virtual void PrintData(FILE* outfile) const =0;
+#endif
+#ifdef C_DBP_LIBRETRO
+	virtual Property* GetProp(std::string const& _property) const =0;
+#endif
 	virtual ~Section() { /*Children must call executedestroy ! */}
 };
 
@@ -308,8 +320,13 @@ public:
 	Prop_multival* Get_multival(std::string const& _propname) const;
 	Prop_multival_remain* Get_multivalremain(std::string const& _propname) const;
 	bool HandleInputline(std::string const& gegevens);
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	void PrintData(FILE* outfile) const;
+#endif
 	virtual std::string GetPropValue(std::string const& _property) const;
+#ifdef C_DBP_LIBRETRO
+	virtual Property* GetProp(std::string const& _property) const;
+#endif
 	//ExecuteDestroy should be here else the destroy functions use destroyed properties
 	virtual ~Section_prop();
 };
@@ -343,8 +360,13 @@ public:
 	Section_line(std::string const& _sectionname):Section(_sectionname){}
 	~Section_line(){ExecuteDestroy(true);}
 	bool HandleInputline(std::string const& gegevens);
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	void PrintData(FILE* outfile) const;
+#endif
 	virtual std::string GetPropValue(std::string const& _property) const;
+#ifdef C_DBP_LIBRETRO
+	virtual Property* GetProp(std::string const& _property) const {return NULL;}
+#endif
 	std::string data;
 };
 

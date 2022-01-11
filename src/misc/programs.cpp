@@ -268,10 +268,12 @@ bool Program::SetEnv(const char * entry,const char * new_string) {
 #ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 bool MSG_Write(const char *);
 void restart_program(std::vector<std::string> & parameters);
+#endif
 
 class CONFIG : public Program {
 public:
 	void Run(void);
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 private:
 	void restart(const char* useconfig);
 	
@@ -296,18 +298,26 @@ private:
 		}
 		return false;
 	}
+#endif
 };
 
 void CONFIG::Run(void) {
 	static const char* const params[] = {
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		"-r", "-wcp", "-wcd", "-wc", "-writeconf", "-l", "-rmconf",
 		"-h", "-help", "-?", "-axclear", "-axadd", "-axtype",
 		"-avistart","-avistop",
 		"-startmapper",
+#endif
 		"-get", "-set",
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		"-writelang", "-wl", "-securemode", "" };
+#else
+		"" };
+#endif
 	enum prs {
 		P_NOMATCH, P_NOPARAMS, // fixed return values for GetParameterFromList
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		P_RESTART,
 		P_WRITECONF_PORTABLE, P_WRITECONF_DEFAULT, P_WRITECONF, P_WRITECONF2,
 		P_LISTCONF,	P_KILLCONF,
@@ -315,9 +325,12 @@ void CONFIG::Run(void) {
 		P_AUTOEXEC_CLEAR, P_AUTOEXEC_ADD, P_AUTOEXEC_TYPE,
 		P_REC_AVI_START, P_REC_AVI_STOP,
 		P_START_MAPPER,
+#endif
 		P_GETPROP, P_SETPROP,
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		P_WRITELANG, P_WRITELANG2,
 		P_SECURE
+#endif
 	} presult = P_NOMATCH;
 	
 	bool first = true;
@@ -327,6 +340,7 @@ void CONFIG::Run(void) {
 		presult = (enum prs)cmd->GetParameterFromList(params, pvars);
 		switch(presult) {
 		
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		case P_RESTART:
 			if (securemode_check()) return;
 			if (pvars.size() == 0) restart_program(control->startup_params);
@@ -397,6 +411,7 @@ void CONFIG::Run(void) {
 				else WriteOut(MSG_Get("PROGRAM_CONFIG_NOCONFIGFILE"));
 			}
 			break;
+#endif
 
 		case P_NOPARAMS:
 			if (!first) break;
@@ -405,6 +420,7 @@ void CONFIG::Run(void) {
 			WriteOut(MSG_Get("PROGRAM_CONFIG_USAGE"));
 			return;
 
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		case P_HELP: case P_HELP2: case P_HELP3: {
 			switch(pvars.size()) {
 			case 0:
@@ -560,6 +576,7 @@ void CONFIG::Run(void) {
 			if (securemode_check()) return;
 			MAPPER_Run(false);
 			break;
+#endif
 		case P_GETPROP: {
 			// "section property"
 			// "property"
@@ -753,9 +770,16 @@ void CONFIG::Run(void) {
 			bool change_success = tsec->HandleInputline(inputline.c_str());
 			if (!change_success) WriteOut(MSG_Get("PROGRAM_CONFIG_VALUE_ERROR"),
 				value.c_str(),pvars[1].c_str());
+#ifdef C_DBP_LIBRETRO
+			else {
+				Property* p = tsec->GetProp(pvars[1]);
+				if (p) p->OnChangedByConfigProgram();
+			}
+#endif
 			tsec->ExecuteInit(false);
 			return;
 		}
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		case P_WRITELANG: case P_WRITELANG2:
 			// In secure mode don't allow a new languagefile to be created
 			// Who knows which kind of file we would overwrite.
@@ -775,6 +799,7 @@ void CONFIG::Run(void) {
 			control->SwitchToSecureMode();
 			WriteOut(MSG_Get("PROGRAM_CONFIG_SECURE_ON"));
 			return;
+#endif
 
 		default:
 			E_Exit("bug");
@@ -789,7 +814,6 @@ void CONFIG::Run(void) {
 static void CONFIG_ProgramStart(Program * * make) {
 	*make=new CONFIG;
 }
-#endif
 
 //DBP: memory cleanup
 static void PROGRAMS_ShutDown(Section* /*sec*/) {
@@ -801,9 +825,9 @@ void PROGRAMS_Init(Section* sec) {
 	/* Setup a special callback to start virtual programs */
 	call_program=CALLBACK_Allocate();
 	CALLBACK_Setup(call_program,&PROGRAMS_Handler,CB_RETF,"internal program");
-#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 	PROGRAMS_MakeFile("CONFIG.COM",CONFIG_ProgramStart);
 
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 	// listconf
 	MSG_Add("PROGRAM_CONFIG_NOCONFIGFILE","No config file loaded!\n");
 	MSG_Add("PROGRAM_CONFIG_PRIMARY_CONF","Primary config file: \n%s\n");
@@ -813,8 +837,10 @@ void PROGRAMS_Init(Section* sec) {
 	// writeconf
 	MSG_Add("PROGRAM_CONFIG_FILE_ERROR","\nCan't open file %s\n");
 	MSG_Add("PROGRAM_CONFIG_FILE_WHICH","Writing config file %s");
+#endif
 	
 	// help
+#ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 	MSG_Add("PROGRAM_CONFIG_USAGE","Config tool:\n"\
 		"-writeconf or -wc without parameter: write to primary loaded config file.\n"\
 		"-writeconf or -wc with filename: write file to config directory.\n"\
@@ -844,6 +870,11 @@ void PROGRAMS_Init(Section* sec) {
 
 	MSG_Add("PROGRAM_CONFIG_SECURE_ON","Switched to secure mode.\n");
 	MSG_Add("PROGRAM_CONFIG_SECURE_DISALLOW","This operation is not permitted in secure mode.\n");
+#else
+	MSG_Add("PROGRAM_CONFIG_USAGE","Config tool:\n"\
+		"-get \"section property\" returns the value of the property.\n"\
+		"-set \"section property=value\" sets the value." );
+#endif
 	MSG_Add("PROGRAM_CONFIG_SECTION_ERROR","Section %s doesn't exist.\n");
 	MSG_Add("PROGRAM_CONFIG_VALUE_ERROR","\"%s\" is not a valid value for property %s.\n");
 	MSG_Add("PROGRAM_CONFIG_PROPERTY_ERROR","No such section or property.\n");
@@ -852,5 +883,4 @@ void PROGRAMS_Init(Section* sec) {
 	MSG_Add("PROGRAM_CONFIG_GET_SYNTAX","Correct syntax: config -get \"section property\".\n");
 	MSG_Add("PROGRAM_CONFIG_PRINT_STARTUP","\nDOSBox was started with the following command line parameters:\n%s");
 	MSG_Add("PROGRAM_CONFIG_MISSINGPARAM","Missing parameter.");
-#endif
 }
