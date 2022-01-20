@@ -1672,7 +1672,8 @@ public:
 		} else if (fstype == "none") {
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 			Bit32u imagesize;
-			DOS_File *newDisk = FindAndOpenDosFile(temp_line.c_str(), &imagesize);
+			bool writable;
+			DOS_File *newDisk = FindAndOpenDosFile(temp_line.c_str(), &imagesize, &writable);
 			if (!newDisk) {
 				WriteOut(MSG_Get("PROGRAM_IMGMOUNT_INVALID_IMAGE"));
 				return;
