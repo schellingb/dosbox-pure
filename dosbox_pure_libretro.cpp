@@ -758,6 +758,8 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	//DBP_ASSERT((Bit8u*)buf.video == render.scale.outWrite - render.scale.outPitch * render.src.height); // this assert can fail after loading a save game
 	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)buf.video+ sizeof(buf.video));
 
+	if (dbp_gfx_intercept) dbp_gfx_intercept(buf);
+
 	if (
 		#ifndef DBP_ENABLE_FPS_COUNTERS
 		dbp_perf == DBP_PERF_DETAILED &&
@@ -767,8 +769,6 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		DBP_FPSCOUNT(dbp_fpscount_gfxend)
 		dbp_perf_uniquedraw++;
 	}
-
-	if (dbp_gfx_intercept) dbp_gfx_intercept(buf);
 
 	// Tell dosbox to draw the next frame completely, not just the scanlines that changed (could also issue GFX_CallBackRedraw)
 	render.scale.clearCache = true;
