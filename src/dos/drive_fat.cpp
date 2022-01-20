@@ -728,6 +728,8 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 	}
 
 	if(is_hdd) {
+		/* DBP: Avoid crash */
+		if (bytesector > sizeof(mbrData)) bytesector = (Bit32u)sizeof(mbrData);
 		/* Set user specified harddrive parameters */
 		loadedDisk->Set_Geometry(headscyl, cylinders,cylsector, bytesector);
 

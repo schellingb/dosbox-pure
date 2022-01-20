@@ -1270,10 +1270,6 @@ public:
 		dos.internal_output=false;
 	}
 	~DOS(){
-		//DBP: Cleanup memory (need to make sure this is called before drives are deleted (may contain disks mounted from files managed by drives)
-		void BIOS_ShutdownDisks(void);
-		BIOS_ShutdownDisks();
-
 		for (Bit16u i=0;i<DOS_DRIVES;i++) delete Drives[i];
 
 		//DBP: Cleanup memory

@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2021  Bernhard Schelling
+ *  Copyright (C) 2020-2022  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #include "drives.h"
 #include "mapper.h"
 #include "support.h"
+#include "setup.h"
 
 bool WildFileCmp(const char * file, const char * wild) 
 {
@@ -243,8 +244,29 @@ void DriveManager::Init(Section* /* sec */) {
 //	MAPPER_AddHandler(&CycleDrive, MK_f3, MMOD2, "cycledrive", "Cycle Drv");
 }
 
+//DBP: memory cleanup for restart
+static void DRIVES_ShutDown(Section* /*sec*/) {
+	// this needs to run before MSCDEX_ShutDown and DOS_ShutDown
+	bool MSCDEX_HasDrive(char);
+	DBP_ASSERT(MSCDEX_HasDrive(-1) == false); // this fails had mscdex already shut down (confirm MSCDEX_ShutDown not yet called)
+	DBP_ASSERT(Drives['Z'-'A']->TestDir("")); // virtual drive still needs to exist (confirm DOS_ShutDown not yet called)
+
+	// need to make sure this is called before drives are deleted as it may contain disks mounted from files managed by drives
+	void BIOS_ShutdownDisks(void);
+	BIOS_ShutdownDisks();
+
+	// unmount image file based drives first (they could be mounted from other mounted drives)
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i] && (dynamic_cast<fatDrive*>(Drives[i]) || dynamic_cast<isoDrive*>(Drives[i])) && DriveManager::UnmountDrive(i) == 0)
+			Drives[i] = NULL;
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i] && DriveManager::UnmountDrive(i) == 0)
+			Drives[i] = NULL;
+}
+
 void DRIVES_Init(Section* sec) {
 	DriveManager::Init(sec);
+	sec->AddDestroyFunction(&DRIVES_ShutDown,false);
 }
 
 //DBP: Added these helper utility functions
