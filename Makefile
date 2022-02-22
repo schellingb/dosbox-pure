@@ -209,7 +209,8 @@ CFLAGS  += -D__LIBRETRO__ -Iinclude -D_FILE_OFFSET_BITS=64
 CFLAGS  += $(COMMONFLAGS)
 #CFLAGS  += -fdata-sections #saves around 32 bytes on most platforms but wrongfully adds up to 60MB on msys2
 
-LDFLAGS += $(CPUFLAGS) -lpthread -shared
+LDLIBS  := -lpthread
+LDFLAGS += $(CPUFLAGS) -shared
 #LDFLAGS += -static-libstdc++ -static-libgcc #adds 1MB to output and still dynamically links against libc and libm
 
 .PHONY: all clean
@@ -234,7 +235,7 @@ ifeq ($(STATIC_LINKING), 1)
 	$(AR) rcs $@ $^
 else
 	$(info Linking $@ ...)
-	$(CXX) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 ifneq ($(BUILD),DEBUG)
 	@-/opt/gcw0-toolchain/usr/mipsel-gcw0-linux-uclibc/bin/strip --strip-all $@ $(PIPETONULL);true # gcw0
 	@-strip --strip-all $@ $(PIPETONULL);true # others
