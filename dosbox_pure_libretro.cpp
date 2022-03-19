@@ -110,6 +110,7 @@ static std::vector<std::string> dbp_images;
 static unsigned dbp_disk_image_index;
 static bool dbp_disk_eject_state;
 static char dbp_disk_mount_letter;
+static bool dbp_legacy_save;
 
 // DOSBOX INPUT
 struct DBP_InputBind
@@ -479,12 +480,12 @@ static void DBP_AppendImage(const char* entry, bool sorted)
 	dbp_images.insert(dbp_images.begin() + insert_index, entry);
 }
 
-static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_name)
+static bool DBP_ExtractPathInfo(const char* path, const char ** out_path_file = NULL, size_t* out_namelen = NULL, const char ** out_ext = NULL, const char ** out_fragment = NULL, char* out_letter = NULL)
 {
 	const char *last_slash = strrchr(path, '/'), *last_bslash = strrchr(path, '\\');
 	const char *path_file = (last_slash && last_slash > last_bslash ? last_slash + 1 : (last_bslash ? last_bslash + 1 : path));
 	const char *ext = strrchr(path_file, '.');
-	if (!ext) return NULL;
+	if (!ext) return false;
 
 	const char *fragment = strrchr(path_file, '#');
 	if (fragment && ext > fragment) // check if 'FOO.ZIP#BAR.EXE'
@@ -502,14 +503,22 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 	else if (p_fra_drive && (*p_fra_drive >= 'a' && *p_fra_drive <= 'z')) letter = *p_fra_drive - 0x20;
 	else if (p_dot_drive && (*p_dot_drive >= 'A' && *p_dot_drive <= 'Z')) letter = *p_dot_drive;
 	else if (p_dot_drive && (*p_dot_drive >= 'a' && *p_dot_drive <= 'z')) letter = *p_dot_drive - 0x20;
+
+	if (out_path_file) *out_path_file = path_file;
+	if (out_namelen) *out_namelen = (p_dot_drive ? p_dot_drive - 1 : ext) - path_file;
+	if (out_ext) *out_ext = ext;
+	if (out_fragment) *out_fragment = fragment;
+	if (out_letter) *out_letter = letter;
+	return true;
+}
+
+static DOS_Drive* DBP_Mount(const char* path, bool is_boot = false)
+{
+	const char *path_file, *ext, *fragment; char letter;
+	DBP_ExtractPathInfo(path, &path_file, NULL, &ext, &fragment, &letter);
+
 	if (!is_boot && dbp_disk_mount_letter) letter = dbp_disk_mount_letter;
 	if (letter && Drives[letter-'A']) { DBP_ASSERT(0); return NULL; }
-
-	if (set_content_name)
-	{
-		dbp_content_path = path;
-		dbp_content_name = std::string(path_file, (p_dot_drive ? p_dot_drive - 1 : ext) - path_file);
-	}
 
 	std::string path_no_fragment;
 	if (fragment)
@@ -531,7 +540,7 @@ static DOS_Drive* DBP_Mount(const char* path, bool is_boot, bool set_content_nam
 			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "ZIP", path);
 			return NULL;
 		}
-		res = new zipDrive(new rawFile(zip_file_h, false), true);
+		res = new zipDrive(new rawFile(zip_file_h, false), dbp_legacy_save);
 
 		// Use zip filename as drive label, cut off at file extension, the first occurence of a ( or [ character or right white space.
 		char lbl[11+1], *lblend = lbl + (ext - path_file > 11 ? 11 : ext - path_file);
@@ -1178,7 +1187,7 @@ static void DBP_PureMenuProgram(Program** make)
 			{
 				dbp_disk_eject_state = false;
 				dbp_disk_image_index = 0;
-				DBP_Mount(dbp_images[0].c_str(), false, false);
+				DBP_Mount(dbp_images[0].c_str());
 			}
 			for (sel = 0; sel != ('Z'-'A'); sel++)
 			{
@@ -1467,7 +1476,7 @@ static void DBP_PureMenuProgram(Program** make)
 					{
 						dbp_disk_eject_state = false;
 						dbp_disk_image_index = image_index;
-						DBP_Mount(dbp_images[image_index].c_str(), false, false);
+						DBP_Mount(dbp_images[image_index].c_str());
 					}
 					menu->result = 0;
 					menu->RefreshFileList(false);
@@ -1689,7 +1698,7 @@ static void DBP_PureRemountProgram(Program** make)
 				Drives[drive1-'A']->UnMount();
 				Drives[drive1-'A'] = 0;
 				dbp_disk_mount_letter = drive2;
-				DBP_Mount(dbp_images[dbp_disk_image_index].c_str(), false, false);
+				DBP_Mount(dbp_images[dbp_disk_image_index].c_str());
 			}
 			if (drive1 == DOS_GetDefaultDrive()) DOS_SetDrive(drive2-'A');
 			for (std::string& img : dbp_images) if (img[0] == '$' && img[1] == drive1) img[1] = drive2;
@@ -2704,25 +2713,33 @@ static bool init_dosbox(const char* path, bool firsttime)
 	PROGRAMS_MakeFile("LABEL.COM", DBP_PureLabelProgram);
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
 
-	DOS_Drive* union_underlay = (path ? DBP_Mount(path, true, true) : NULL);
+	const char* path_file; size_t path_namelen;
+	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen))
+	{
+		dbp_content_path = path;
+		dbp_content_name = std::string(path_file, path_namelen);
+	}
+
+	dbp_legacy_save = false;
+	std::string save_file;
+	const char *env_save_dir = NULL;
+	environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &env_save_dir);
+	if (env_save_dir)
+	{
+		save_file.assign(env_save_dir).append(1, '/').append(dbp_content_name.empty() ? "DOSBox-pure" : dbp_content_name.c_str());
+		if (FILE* fSave = fopen_wrap(save_file.append(".pure.zip").c_str(), "rb")) { fclose(fSave); } // new save exists!
+		else if (FILE* fSave = fopen_wrap(save_file.replace(save_file.length()-8, 3, "sav", 3).c_str(), "rb")) { dbp_legacy_save = true; fclose(fSave); }
+		else save_file.replace(save_file.length()-8, 3, "pur", 3); // use new save
+	}
+
+	DOS_Drive* union_underlay = (path ? DBP_Mount(path, true) : NULL);
 
 	if (!dbp_disk_eject_state && dbp_disk_image_index < dbp_images.size() && !Drives['A'-'A'] && !Drives['D'-'A'])
-		DBP_Mount(dbp_images[dbp_disk_image_index].c_str(), false, false);
+		DBP_Mount(dbp_images[dbp_disk_image_index].c_str());
 
 	if (!Drives['C'-'A'])
 	{
 		if (!union_underlay) union_underlay = new memoryDrive();
-
-		std::string save_file;
-		const char *env_save_dir = NULL;
-		environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &env_save_dir);
-		if (env_save_dir)
-		{
-			save_file = env_save_dir;
-			save_file += '/';
-			save_file += (dbp_content_name.empty() ? "DOSBox-pure" : dbp_content_name.c_str());
-			save_file += ".save.zip";
-		}
 
 		unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true);
 		Drives['C'-'A'] = uni;
@@ -2919,7 +2936,7 @@ void retro_init(void) //#3
 			{
 				if (!Drives['A'-'A'] && !Drives['D'-'A'])
 				{
-					DBP_Mount(dbp_images[dbp_disk_image_index].c_str(), false, false);
+					DBP_Mount(dbp_images[dbp_disk_image_index].c_str());
 				}
 			}
 			DBP_ThreadControl(TCM_RESUME_FRAME);
