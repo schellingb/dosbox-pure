@@ -1692,6 +1692,11 @@ static void DBP_PureRemountProgram(Program** make)
 					Bit8u subUnit;
 					MSCDEX_AddDrive(drive2, "", subUnit);
 				}
+
+				// If the currently running batch file is placed on the remounted drive, make sure it now points to the new drive
+				if (BatchFile* bf = first_shell->bf)
+					if (bf->filename.length() > 2 && bf->filename[0] == drive1 && bf->filename[1] == ':')
+						bf->filename[0] = drive2;
 			}
 			else if (!dbp_disk_eject_state && dbp_disk_image_index < dbp_images.size())
 			{
