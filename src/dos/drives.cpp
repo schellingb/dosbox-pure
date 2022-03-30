@@ -408,7 +408,14 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; nDir = ++n)
 		{
 			while (*n != '/' && *n != '\\' && n != nEnd) n++;
-			if (n == nDir) continue;
+			if (n == nDir || (nDir[0] == '.' && n == nDir + 1)) continue;
+			if (nDir[0] == '.' && nDir[1] == '.' && n == nDir + 2)
+			{
+				// Remove the last parent directory in dos_path on ..
+				if (p_dos == dos_path) continue;
+				for (p_dos--; p_dos > dos_path && p_dos[-1] != '\\'; p_dos--) {}
+				continue;
+			}
 
 			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
 			p_dos += DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, (Bit32u)(n - nDir));
