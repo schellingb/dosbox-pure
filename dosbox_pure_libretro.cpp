@@ -3455,6 +3455,9 @@ void retro_run(void)
 		}
 	}
 
+	// Read buffer_active before waking up emulation thread
+	const DBP_Buffer& buf = dbp_buffers[buffer_active];
+
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
 	{
 		DBP_ThreadControl(skip_emulate ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
@@ -3481,10 +3484,8 @@ void retro_run(void)
 				((float)tpfTarget / (float)tpfActual * 100));
 	}
 
-	const DBP_Buffer& buf = dbp_buffers[buffer_active];
-	double targetfps = DBP_GetFPS();
-
 	// handle video mode changes
+	double targetfps = DBP_GetFPS();
 	if (av_info.geometry.base_width != buf.width || av_info.geometry.base_height != buf.height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
 	{
 		log_cb(RETRO_LOG_INFO, "[DOSBOX] Resolution changed %ux%u @ %.3fHz AR: %.5f => %ux%u @ %.3fHz AR: %.5f\n",
