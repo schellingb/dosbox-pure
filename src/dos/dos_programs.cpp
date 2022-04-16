@@ -709,6 +709,11 @@ private:
 		dos_sec->HandleInputline(test);
 		strcpy(test,"ems=false");
 		dos_sec->HandleInputline(test);
+#ifdef C_DBP_LIBRETRO
+		dos_sec->GetProp("umb")->OnChangedByConfigProgram();
+		dos_sec->GetProp("xms")->OnChangedByConfigProgram();
+		dos_sec->GetProp("ems")->OnChangedByConfigProgram();
+#endif
 		dos_sec->ExecuteInit(false);
      }
 
@@ -777,9 +782,11 @@ public:
 					continue;
 				}
 				
+#ifdef C_DBP_ENABLE_DISKSWAP
 				if ( i >= MAX_SWAPPABLE_DISKS ) {
 					return; //TODO give a warning.
 				}
+#endif
 				WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_OPEN"), temp_line.c_str());
 				Bit32u rombytesize;
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
@@ -788,6 +795,7 @@ public:
 				FILE *usefile = getFSFile(temp_line.c_str(), &floppysize, &rombytesize);
 #endif
 				if(usefile != NULL) {
+#ifdef C_DBP_ENABLE_DISKSWAP
 					if(diskSwap[i] != NULL) delete diskSwap[i];
 					diskSwap[i] = new imageDisk(usefile, temp_line.c_str(), floppysize, false);
 					if (usefile_1==NULL) {
@@ -806,6 +814,24 @@ public:
 #endif
 						rombytesize_2=rombytesize;
 					}
+#else
+					imageDisk* disk = new imageDisk(usefile, temp_line.c_str(), floppysize, false);
+					if (usefile_1==NULL) {
+						first_img_path = temp_line;
+						usefile_1=disk;
+						rombytesize_1=rombytesize;
+						if (imageDiskList[0]) delete imageDiskList[0];
+						imageDiskList[0]=disk;
+					} else if (usefile_2==NULL) {
+						usefile_2=disk;
+						rombytesize_2=rombytesize;
+						if (imageDiskList[1]) delete imageDiskList[1];
+						imageDiskList[1]=disk;
+					} else {
+						delete disk;
+					}
+#endif
+
 				} else {
 					WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_NOT_OPEN"), temp_line.c_str());
 					return;
@@ -815,9 +841,11 @@ public:
 			i++;
 		}
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 		swapPosition = 0;
 
 		swapInDisks();
+#endif
 
 		if(imageDiskList[drive-65]==NULL) {
 			WriteOut(MSG_Get("PROGRAM_BOOT_UNABLE"), drive);
@@ -861,6 +889,7 @@ public:
 						} else {
 							WriteOut(MSG_Get("PROGRAM_BOOT_CART_NO_CMDS"));
 						}
+#ifdef C_DBP_ENABLE_DISKSWAP
 						for(Bitu dct=0;dct<MAX_SWAPPABLE_DISKS;dct++) {
 							if(diskSwap[dct]!=NULL) {
 								delete diskSwap[dct];
@@ -868,6 +897,10 @@ public:
 							}
 						}
 						//fclose(usefile_1); //delete diskSwap closes the file
+#else
+						if (usefile_1) delete usefile_1; // clears imageDiskList[0]
+						if (usefile_2) delete usefile_2; // clears imageDiskList[1]
+#endif
 						return;
 					} else {
 						while (clen!=0) {
@@ -893,6 +926,7 @@ public:
 							} else {
 								WriteOut(MSG_Get("PROGRAM_BOOT_CART_NO_CMDS"));
 							}
+#ifdef C_DBP_ENABLE_DISKSWAP
 							for(Bitu dct=0;dct<MAX_SWAPPABLE_DISKS;dct++) {
 								if(diskSwap[dct]!=NULL) {
 									delete diskSwap[dct];
@@ -900,6 +934,10 @@ public:
 								}
 							}
 							//fclose(usefile_1); //Delete diskSwap closes the file
+#else
+							if (usefile_1) delete usefile_1; // clears imageDiskList[0]
+							if (usefile_2) delete usefile_2; // clears imageDiskList[1]
+#endif
 							return;
 						}
 					}
@@ -979,12 +1017,17 @@ public:
 				for(i=0;i<rombytesize_1-0x200;i++) phys_writeb((romseg<<4)+i,rombuf[i]);
 
 				//Close cardridges
+#ifdef C_DBP_ENABLE_DISKSWAP
 				for(Bitu dct=0;dct<MAX_SWAPPABLE_DISKS;dct++) {
 					if(diskSwap[dct]!=NULL) {
 						delete diskSwap[dct];
 						diskSwap[dct]=NULL;
 					}
 				}
+#else
+				if (usefile_1) delete usefile_1; // clears imageDiskList[0]
+				if (usefile_2) delete usefile_2; // clears imageDiskList[1]
+#endif
 
 
 				if (cart_cmd=="") {

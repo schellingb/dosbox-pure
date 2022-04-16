@@ -33,7 +33,9 @@
 /* The Section handling Bios Disk Access */
 #define BIOS_MAX_DISK 10
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 #define MAX_SWAPPABLE_DISKS 20
+#endif
 struct diskGeo {
 	Bit32u ksize;  /* Size in kilobytes */
 	Bit16u secttrack; /* Sectors per track */
@@ -88,14 +90,18 @@ void incrementFDD(void);
 #define MAX_DISK_IMAGES (2 + MAX_HDD_IMAGES)
 
 extern imageDisk *imageDiskList[MAX_DISK_IMAGES];
+#ifdef C_DBP_ENABLE_DISKSWAP
 extern imageDisk *diskSwap[MAX_SWAPPABLE_DISKS];
 extern Bit32s swapPosition;
+#endif
 extern Bit16u imgDTASeg; /* Real memory location of temporary DTA pointer for fat image disk access */
 extern RealPt imgDTAPtr; /* Real memory location of temporary DTA pointer for fat image disk access */
 extern DOS_DTA *imgDTA;
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 void swapInDisks(void);
 void swapInNextDisk(void);
+#endif
 bool getSwapRequest(void);
 
 #endif

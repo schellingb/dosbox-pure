@@ -67,6 +67,7 @@
 //#define C_DBP_ENABLE_CONFIG_PROGRAM
 //#define C_DBP_ENABLE_MESSAGEFILE
 //#define C_DBP_ENABLE_AUTOLOCK
+//#define C_DBP_ENABLE_DISKSWAP
 
 // ----- Enabled new features
 #define C_DBP_LIBRETRO

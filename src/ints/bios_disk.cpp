@@ -58,8 +58,10 @@ void BIOS_SetEquipment(Bit16u equipment);
 
 /* 2 floppys and 2 harddrives, max */
 imageDisk *imageDiskList[MAX_DISK_IMAGES];
+#ifdef C_DBP_ENABLE_DISKSWAP
 imageDisk *diskSwap[MAX_SWAPPABLE_DISKS];
 Bit32s swapPosition;
+#endif
 
 void updateDPT(void) {
 	Bit32u tmpheads, tmpcyl, tmpsect, tmpsize;
@@ -99,6 +101,7 @@ void incrementFDD(void) {
 	BIOS_SetEquipment(equipment);
 }
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 void swapInDisks(void) {
 	bool allNull = true;
 	Bit32s diskcount = 0;
@@ -127,6 +130,7 @@ void swapInDisks(void) {
 		if(swapPos>=MAX_SWAPPABLE_DISKS) swapPos=0;
 	}
 }
+#endif
 
 bool getSwapRequest(void) {
 	bool sreq=swapping_requested;
@@ -134,6 +138,7 @@ bool getSwapRequest(void) {
 	return sreq;
 }
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 void swapInNextDisk(bool pressed) {
 	if (!pressed)
 		return;
@@ -148,6 +153,7 @@ void swapInNextDisk(bool pressed) {
 	swapInDisks();
 	swapping_requested = true;
 }
+#endif
 
 
 Bit8u imageDisk::Read_Sector(Bit32u head,Bit32u cylinder,Bit32u sector,void * data) {
@@ -242,9 +248,11 @@ imageDisk::~imageDisk()
 		if (dos_file->IsOpen()) dos_file->Close();
 		if (dos_file->RemoveRef() <= 0) delete dos_file;
 	}
+#ifdef C_DBP_ENABLE_DISKSWAP
 	for(int i=0;i<MAX_SWAPPABLE_DISKS;i++)
 		if (diskSwap[i] == this)
 			diskSwap[i] = NULL;
+#endif
 	for(int i=0;i<MAX_DISK_IMAGES;i++)
 		if (imageDiskList[i] == this)
 			imageDiskList[i] = NULL;
@@ -638,13 +646,17 @@ void BIOS_SetupDisks(void) {
 		imageDiskList[i] = NULL;
 	}
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 	for(i=0;i<MAX_SWAPPABLE_DISKS;i++) {
 		diskSwap[i] = NULL;
 	}
+#endif
 
 	diskparm0 = CALLBACK_Allocate();
 	diskparm1 = CALLBACK_Allocate();
+#ifdef C_DBP_ENABLE_DISKSWAP
 	swapPosition = 0;
+#endif
 
 	RealSetVec(0x41,CALLBACK_RealPointer(diskparm0));
 	RealSetVec(0x46,CALLBACK_RealPointer(diskparm1));
@@ -670,6 +682,7 @@ void BIOS_SetupDisks(void) {
 
 //DBP: Memory cleanup
 void BIOS_ShutdownDisks(void) {
+#ifdef C_DBP_ENABLE_DISKSWAP
 	for (int i = 0; i != MAX_SWAPPABLE_DISKS + MAX_DISK_IMAGES; i++) {
 		imageDisk* id = (i < MAX_SWAPPABLE_DISKS ? diskSwap[i] : imageDiskList[i - MAX_SWAPPABLE_DISKS]);
 		if (!id) continue;
@@ -679,7 +692,23 @@ void BIOS_ShutdownDisks(void) {
 			if (jd == id) jd = NULL;
 		}
 	}
+#else
+	for (int i = 0; i != MAX_DISK_IMAGES; i++) {
+		imageDisk* id = imageDiskList[i];
+		if (!id) continue;
+		delete id;
+		for (int j = 0; j != MAX_DISK_IMAGES; j++) {
+			imageDisk*& jd = imageDiskList[j];
+			if (jd == id) jd = NULL;
+		}
+	}
+#endif
 	imgDTASeg = 0;
 	imgDTAPtr = 0;
 	if (imgDTA) { delete imgDTA; imgDTA = NULL; }
+}
+
+void DBP_SetMountSwappingRequested()
+{
+	swapping_requested = true;
 }

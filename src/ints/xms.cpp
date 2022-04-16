@@ -461,6 +461,10 @@ public:
 			umb_available=false;
 		}
 
+		//DBP: Added cleanup for restart support (needs to be before Get_bool("xms") check)
+		extern bool DBP_IsShuttingDown();
+		if (DBP_IsShuttingDown()) xms_callback=0;
+
 		if (!section->Get_bool("xms")) return;
 		/* Undo biosclearing */
 		BIOS_ZeroExtendedSize(false);
@@ -471,10 +475,6 @@ public:
 		/* Free used memory while skipping the 0 handle */
 		for (Bitu i = 1;i<XMS_HANDLES;i++) 
 			if(!xms_handles[i].free) XMS_FreeMemory(i);
-
-		//DBP: Added cleanup for restart support
-		extern bool DBP_IsShuttingDown();
-		if (DBP_IsShuttingDown()) xms_callback=0;
 	}
 
 };
