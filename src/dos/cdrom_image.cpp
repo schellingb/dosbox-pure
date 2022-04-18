@@ -649,22 +649,8 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	bool success;
 	bool canAddTrack = false;
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-	Bit32u cuefilesize;
-	DOS_File* df = FindAndOpenDosFile(cuefile, &cuefilesize);
-	if (!df) return false;
-	if (!cuefilesize || cuefilesize > 1024*1024) { df->Close(); delete df; return false; }
-
 	std::string dosfilebuf;
-	dosfilebuf.resize(cuefilesize + 1);
-	dosfilebuf[cuefilesize] = '\0';
-	Bit8u* buf = (Bit8u*)&dosfilebuf[0];
-	for (Bit16u read; cuefilesize; cuefilesize -= read, buf += read)
-	{
-		read = (Bit16u)(cuefilesize > 0xFFFF ? 0xFFFF : cuefilesize);
-		if (!df->Read(buf, &read)) { DBP_ASSERT(0); }
-	}
-	df->Close();
-	delete df;
+	if (!FindAndReadDosFile(cuefile, dosfilebuf)) return false;
 	istringstream inString(dosfilebuf);
 	istream& in = (istream&)inString;
 #else

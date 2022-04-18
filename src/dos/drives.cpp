@@ -460,6 +460,36 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	return dos_file;
 }
 
+bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize, char const* relative_to)
+{
+	Bit32u filesize;
+	DOS_File* df = FindAndOpenDosFile(filename, &filesize, NULL, relative_to);
+	if (!df) return false;
+	if (!filesize || filesize > maxsize) { df->Close(); delete df; return false; }
+	out.resize(filesize + 1);
+	out[filesize] = '\0';
+	Bit8u* buf = (Bit8u*)&out[0];
+	for (Bit16u read; filesize; filesize -= read, buf += read)
+	{
+		read = (Bit16u)(filesize > 0xFFFF ? 0xFFFF : filesize);
+		if (!df->Read(buf, &read)) { DBP_ASSERT(0); }
+	}
+	df->Close();
+	delete df;
+	return true;
+}
+
+Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes)
+{
+	DOS_File *df = nullptr;
+	Drives['C'-'A']->FileOpen(&df, (char*)path, OPEN_READ);
+	df->AddRef();
+	if (!df->Read(outbuf, &numbytes)) numbytes = 0;
+	df->Close();
+	delete df;
+	return numbytes;
+}
+
 //DBP: utility function to evaluate an entire drives filesystem
 void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
 {

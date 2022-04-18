@@ -515,6 +515,7 @@ static AUTOEXEC* test;
 //DBP: memory cleanup
 static void AUTOEXEC_ShutDown(Section* /*sec*/) {
 	delete test;
+	VFILE_Remove("AUTOEXEC.BAT");
 }
 
 void AUTOEXEC_Init(Section * sec) {
