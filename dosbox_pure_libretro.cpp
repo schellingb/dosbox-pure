@@ -3258,6 +3258,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 	control = new Config();
 	DOSBOX_Init();
 	check_variables();
+	Section* autoexec = control->GetSection("autoexec");
 	if (dosboxconf)
 	{
 		std::string line; Section* section = NULL; std::string::size_type loc;
@@ -3273,6 +3274,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 					continue;
 				default:
 					if (!section || !section->HandleInputline(line)) continue;
+					if (section == autoexec) autoexec = NULL; // skip our default autoexec
 					if ((loc = line.find('=')) == std::string::npos) continue;
 					trim(line.erase(loc));
 					if (Property* p = section->GetProp(line)) p->OnChangedByConfigProgram();
@@ -3455,9 +3457,8 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 	JOYSTICK_Enable(1, true);
 
 	DBP_ASSERT(DOS_GetDefaultDrive() == ('Z'-'A')); // Shell must start with Z:\AUTOEXEC.BAT
-	if (!dosboxconf)
+	if (autoexec)
 	{
-		Section* autoexec = control->GetSection("autoexec");
 		autoexec->ExecuteDestroy();
 		if (!force_start_menu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
 		{
