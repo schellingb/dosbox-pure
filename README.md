@@ -17,13 +17,16 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Keyboard emulation](#keyboard-emulation)
     * [Joystick emulation](#joystick-emulation)
     * [On-screen keyboard](#on-screen-keyboard)
+    * [Gamepad mapper](#gamepad-mapper)
     * [MIDI playback with SoundFonts](#midi-playback-with-soundfonts)
     * [Cheats support](#cheats-support)
     * [Save states](#save-states)
     * [Rewind support](#rewind-support)
+    * [Booter games](#booter-games)
     * [Loading M3U8 files](#loading-m3u8-files)
 * [Tips](#tips)
     * [Playing with keyboard and mouse](#playing-with-keyboard-and-mouse)
+    * [Loading a dosbox.conf file](#loading-a-dosboxconf-file)
     * [ZIP files can be renamed to DOSZ](#zip-files-can-be-renamed-to-dosz)
     * [Force opening the start menu](#force-opening-the-start-menu)
     * [Mount ZIP as A or D drive](#mount-zip-as-a-or-d-drive)
@@ -31,7 +34,6 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Keyboard layout defaults to US](#keyboard-layout-defaults-to-us)
     * [Save file handling](#save-file-handling)
 * [Features not yet implemented](#features-not-yet-implemented)
-    * [Load dosbox.conf](#load-dosboxconf)
     * [Store ZIP seek index into save file](#store-zip-seek-index-into-save-file)
 * [Unsupported features](#unsupported-features)
 * [Building](#building)
@@ -57,8 +59,8 @@ DOSBox Pure can load games directly from ZIP files without the need to extract t
 Changes made to a loaded ZIP file will be stored as a separate ZIP file into the libretro saves directory.  
 If a game is loaded directly without using a ZIP file the saves directory is not used.
 
-### Mount disc images from inside ZIP files
-CD images (ISO or CUE) and floppy disk images (IMG/IMA/VHD) can be mounted directly from inside ZIP files.  
+### Mount disk images from inside ZIP files
+CD images (ISO or CUE) and floppy disk images (IMG/IMA/VHD/JRC/TC) can be mounted directly from inside ZIP files.  
 The system will automatically mount the first found disk image as the A: or D: drive.  
 Additional disks can be loaded or swapped by using the `Disc Control` menu in RetroArch.  
 The start menu also offers the option to mount or unmount an image.
@@ -113,6 +115,18 @@ the move speed.
 If the cursor is moved above the middle of the screen the keyboard will move to the top.
 The button can be remapped in the controls menu and there is also a core options to disable it entirely.
 
+### Gamepad mapper
+![Gamepad mapper](images/padmapper.png)
+
+If you need even more customization of the controls than provided by the [Automated controller mappings](#automated-controller-mappings),
+or the various presets for [mouse](#mouse-emulation), [keyboard](#keyboard-emulation) and [joysticks](#joystick-emulation) you can use
+the gamepad mapper.
+
+To open it, click the "PAD MAPPER" button in the [On-screen keyboard](#on-screen-keyboard).
+
+It is available any time in-game and changes are immediately saved and applied when closing the mapper. Up to 4 functions can be mapped
+for any button/direction of the gamepad. A mapping can be to any function of the 3 emulated input devices: keyboard, mouse or joystick.
+
 ### MIDI playback with SoundFonts
 If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
 can be selected via the `Audio > MIDI SoundFont` core option.  
@@ -134,6 +148,14 @@ Save states might not be compatible across different versions of DOSBox Pure.
 Using the core option `Save States Support`, rewinding can be enabled.  
 Keep in mind that rewind support comes at a high performance cost.
 
+### Booter games
+When loading a ZIP file which contains a floppy or hard-disk image or loading such a disk image directly,
+the [start menu](#start-menu-with-auto-start) will show an additional option `[BOOT IMAGE FILE]`.
+When selected, a list of system modes (emulated graphics card) will be shown and once a mode is selected,
+DOSBox Pure will try to boot from the mounted image.
+While running a booter game, the mounted disk can be easily swapped with the
+[Disc Control menu](#mount-disk-images-from-inside-zip-files) or hotkeys set in the frontend.
+
 ### Loading M3U8 files
 If the core gets loaded with a `.m3u8` file, all files listed in it will be added to the
 disc swap menu. The first image will automatically get mounted as A: or D: drive depending
@@ -146,6 +168,12 @@ To play not with a gamepad but with keyboard and mouse, be sure to use the 'Game
 mode available in RetroArch. By default you can toggle game focus by pressing the
 scroll lock key. While game focus is active, the hotkeys are disabled and keyboard will
 not cause retro pad button presses (which could cause multiple keys to be pressed at once).
+
+### Loading a dosbox.conf file
+If a file named `dosbox.conf` exists in the loaded game directory (for example inside the ZIP file),
+DOSBox Pure will load the settings in that file and run the autoexec lines from it (if set).
+It is also possible to load a .conf file directly with the core and it will mount the directory
+of that file as the C: drive and then load it the same way.
 
 ### ZIP files can be renamed to DOSZ
 If your libretro frontend wants to load the content of `.ZIP` files instead of sending it to
@@ -186,11 +214,6 @@ Up to 1MB of total save data, it will be written out 2 seconds after the last fi
 Then gradually until at max 59MB and more, it will be written out 60 seconds after the last file modification.
 
 ## Features not yet implemented
-
-### Load dosbox.conf
-It would be nice to be able to load a `dosbox.conf` file if it exists in the loaded
-game directory (for example inside the ZIP file). Ideally this would then hide all the options that
-have been overwritten by that `.conf` file in the core options list.
 
 ### Store ZIP seek index into save file
 When a DOS games opens a large file and wants to read some data from near the end of the file,
