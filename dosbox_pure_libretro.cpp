@@ -544,11 +544,12 @@ static bool DBP_ExtractPathInfo(const char* path, const char ** out_path_file = 
 	// A drive letter can be specified either by naming the mount file '.<letter>.<extension>' or by loading a path with an added '#<letter>' suffix.
 	char letter = 0;
 	const char *p_fra_drive = (fragment && fragment[1] && !fragment[2] ? fragment + 1 : NULL);
-	const char *p_dot_drive = (ext - path > 3 && ext[-3] == '.' ? ext - 2 : NULL);
+	const char *p_dot_drive = (ext - path > 3 && ext[-3] == '.' && !p_fra_drive ? ext - 2 : NULL);
 	if      (p_fra_drive && (*p_fra_drive >= 'A' && *p_fra_drive <= 'Z')) letter = *p_fra_drive;
 	else if (p_fra_drive && (*p_fra_drive >= 'a' && *p_fra_drive <= 'z')) letter = *p_fra_drive - 0x20;
 	else if (p_dot_drive && (*p_dot_drive >= 'A' && *p_dot_drive <= 'Z')) letter = *p_dot_drive;
 	else if (p_dot_drive && (*p_dot_drive >= 'a' && *p_dot_drive <= 'z')) letter = *p_dot_drive - 0x20;
+	else p_dot_drive = NULL;
 
 	if (out_path_file) *out_path_file = path_file;
 	if (out_namelen) *out_namelen = (p_dot_drive ? p_dot_drive : ext) - 1 - path_file;
