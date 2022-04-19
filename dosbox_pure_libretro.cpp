@@ -1795,6 +1795,13 @@ static void DBP_PureMenuProgram(Program** make)
 				}
 				else if (menu->result == IT_BOOTSELECTMACHINE)
 				{
+					if (control->GetSection("dosbox")->GetProp("machine")->getChange() == Property::Changeable::OnlyByConfigProgram)
+					{
+						// Machine property was fixed by DOSBOX.CONF and cannot be modified here, so automatically boot the image as is
+						dbp_disk_image_autoboot = dbp_disk_image_index + 1;
+						menu->result = IT_BOOT;
+						return;
+					}
 					menu->list.clear();
 					menu->list.push_back({ IT_NONE, 0, "Select Boot System Mode" });
 					menu->list.push_back({ IT_NONE });
@@ -1906,6 +1913,7 @@ static void DBP_PureMenuProgram(Program** make)
 				result = IT_NONE;
 			}
 
+			// Show menu on image auto boot when there are EXE files (some games need to run a FIX.EXE before booting)
 			if (on_boot && dbp_disk_image_autoboot && exe_count == 0)
 				result = IT_BOOT;
 			else if (on_boot && !always_show_menu && ((exe_count == 1 && fs_count <= 1) || use_autoboot))
