@@ -1489,15 +1489,12 @@ static void DBP_PureMenuProgram(Program** make)
 			switch (location++)
 			{
 				case 0:
-					memcpy(line + 0, "@ :\n", 5);
-					line[1] = p[0];
-					break;
-				case 1:
+					DOS_SetDrive(p[0]-'A');
 					memcpy(line + 0, "@cd ", 4);
 					memcpy(line + 4, p + 2, (f - (f == p + 3 ? 0 : 1) - p - 2));
 					memcpy(line + 4 + (f - (f == p + 3 ? 0 : 1) - p - 2), "\n", 2);
 					break;
-				case 2:
+				case 1:
 				{
 					bool isbat = ((fext = strrchr(f, '.')) && !strcasecmp(fext, ".bat"));
 					int call_cmd_len = (isbat ? 5 : 0), flen = (int)strlen(f);
@@ -1507,8 +1504,8 @@ static void DBP_PureMenuProgram(Program** make)
 					memcpy(line+call_cmd_len+1+flen, "\n", 2);
 					break;
 				}
-				case 3:
-					memcpy(line, "@Z:PUREMENU -FINISH\n", 21);
+				case 2:
+					memcpy(line, "@Z:PUREMENU", 11); memcpy(line+11, " -FINISH\n", 10);
 					delete this;
 					break;
 			}
@@ -1524,7 +1521,7 @@ static void DBP_PureMenuProgram(Program** make)
 			if (location++)
 			{
 				if (Drives['C'-'A'] && Drives['E'-'A']) { DBP_Remount('C', 'D'); DBP_Remount('E', 'C'); }
-				memcpy(line, "@Z:PUREMENU -FINISH\n", 21);
+				memcpy(line, "@Z:PUREMENU", 11); memcpy(line+11, " -FINISH\n", 10);
 				delete this;
 				return true;
 			}
@@ -1978,10 +1975,7 @@ static void DBP_PureMenuProgram(Program** make)
 			else if (result == IT_EXIT)
 				first_shell->exit = true;
 			else if (result == IT_COMMANDLINE)
-			{
-				DOS_SetDrive('C'-'A');
 				WriteOut("Type 'PUREMENU' to return to the start menu\n");
-			}
 			dbp_lastmenuticks = DBP_GetTicks();
 		}
 	};
@@ -3457,33 +3451,31 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 		DBP_PadMapping::Load();
 	}
 
-	// 'Insert' the first found disc image, or reinsert it on core restart
-	if (!dbp_disk_eject_state && dbp_disk_image_index < dbp_images.size() && !Drives['A'-'A'] && !Drives['D'-'A'])
-		DBP_Mount(dbp_disk_image_index);
-
 	// Some games always want the joystick port to respond, so enable them always
 	JOYSTICK_Enable(0, true);
 	JOYSTICK_Enable(1, true);
 
-	DBP_ASSERT(DOS_GetDefaultDrive() == ('Z'-'A')); // Shell must start with Z:\AUTOEXEC.BAT
+	// If mounted, always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
+	DBP_ASSERT(DOS_GetDefaultDrive() == ('Z'-'A')); // Shell is expected to start with Z:\AUTOEXEC.BAT
+	DOS_SetDrive('C'-'A');
+
 	if (autoexec)
 	{
 		autoexec->ExecuteDestroy();
 		if (!force_start_menu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
 		{
-			static_cast<Section_line*>(autoexec)->data += "@C:\n@DOSBOX.BAT\n";
+			static_cast<Section_line*>(autoexec)->data += "@DOSBOX.BAT\n";
 		}
 		else
 		{
-			// Always launch puremenu, to tell us the shell was fully started
-			((static_cast<Section_line*>(autoexec)->data += "@PUREMENU") += (force_start_menu ? "" : " -BOOT")) += '\n';
+			// 'Insert' the first found disc image, or reinsert it on core restart
+			if (!dbp_disk_eject_state && dbp_disk_image_index < dbp_images.size() && !Drives['A'-'A'] && !Drives['D'-'A'])
+				DBP_Mount(dbp_disk_image_index);
+
+			// Boot into puremenu, it will take care of further auto start options
+			((static_cast<Section_line*>(autoexec)->data += "@Z:PUREMENU") += (force_start_menu ? "" : " -BOOT")) += '\n';
 		}
 		autoexec->ExecuteInit();
-	}
-	else
-	{
-		// switch to the mounted local file system path to run the autoexec of the dosbox conf
-		DOS_SetDrive('C'-'A');
 	}
 
 	struct Local
