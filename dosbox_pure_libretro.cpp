@@ -3329,7 +3329,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 	{
 		bool haveconf1 = Drives['C'-'A']->FileExists("$C:\\DOSBOX.CON"+4); //8.3 filename in ZIPs
 		bool haveconf2 = Drives['C'-'A']->FileExists("$C:\\DOSBOX~1.CON"+4); //8.3 filename in local file systems
-		if (haveconf1 || haveconf2 || !strcasecmp(path_ext, "CONF"))
+		if (haveconf1 || haveconf2 || (path && !strcasecmp(path_ext, "CONF")))
 		{
 			std::string content;
 			FindAndReadDosFile((haveconf1 ? "$C:\\DOSBOX.CON" : haveconf2 ? "$C:\\DOSBOX~1.CON" : path), content);
