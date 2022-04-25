@@ -2242,7 +2242,11 @@ static void DBP_StartMapper()
 			if ((result == IT_EXEC || result == IT_DEL) && edit)
 			{
 				Bit16u bind_key = list[sel].info;
-				if (edit->device == RETRO_DEVICE_ANALOG) // Binding to an axis
+				if (bind_key == 0) // deleting entry
+				{
+					dbp_input_binds.erase(dbp_input_binds.begin() + (edit - &dbp_input_binds[0]));
+				}
+				else if (edit->device == RETRO_DEVICE_ANALOG) // Binding to an axis
 				{
 					if (edit->evt != DBPET_AXISMAPPAIR && edit->evt != _DBPET_MAX) DBP_PadMapping::ForceAxisMapPair(*edit);
 					edit->evt = DBPET_AXISMAPPAIR;
@@ -2259,8 +2263,6 @@ static void DBP_StartMapper()
 					edit->evt = DBP_SPECIALMAPPING(bind_key).evt;
 					edit->meta = DBP_SPECIALMAPPING(bind_key).meta;
 				}
-				if (edit->meta == 0)
-					dbp_input_binds.erase(dbp_input_binds.begin() + (edit - &dbp_input_binds[0]));
 				changed = true;
 				menu_top();
 			}
