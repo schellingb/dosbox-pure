@@ -561,7 +561,11 @@ static Bitu INT2E_Handler(void) {
 static char const * const path_string="PATH=Z:\\";
 static char const * const comspec_string="COMSPEC=Z:\\COMMAND.COM";
 static char const * const full_name="Z:\\COMMAND.COM";
+#ifdef C_DBP_LIBRETRO
+static char const * const init_line="/INIT Z:\\AUTOEXEC.BAT";
+#else
 static char const * const init_line="/INIT AUTOEXEC.BAT";
+#endif
 
 void SHELL_Init() {
 	/* Add messages */

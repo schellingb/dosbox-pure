@@ -710,7 +710,10 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 	bool writable;
 	diskfile = FindAndOpenDosFile(sysFilename, &filesize, &writable);
 	if(!diskfile) {created_successfully = false;return;}
-	if (cylinders == 0 && bytesector && cylsector && headscyl) cylinders = filesize / (bytesector * cylsector * headscyl);
+	bool detectcylsector = !cylsector, detectheadscyl = !headscyl, detectcylinders = !cylinders;
+	if(detectcylsector) cylsector = 63;
+	if(detectheadscyl) headscyl = 16;
+	if(detectcylinders && bytesector && cylsector && headscyl) cylinders = filesize / (bytesector * cylsector * headscyl);
 	filesize /= 1024;
 	#else
 	diskfile = fopen_wrap(sysFilename, "rb+");
@@ -777,6 +780,15 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 	bootbuffer.headcount = var_read(&bootbuffer.headcount);
 	bootbuffer.hiddensectorcount = var_read(&bootbuffer.hiddensectorcount);
 	bootbuffer.totalsecdword = var_read(&bootbuffer.totalsecdword);
+
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	if (is_hdd && ((detectcylsector && bootbuffer.sectorspertrack != cylsector) || (detectheadscyl && bootbuffer.headcount != headscyl))) {
+		if (detectcylsector) cylsector = bootbuffer.sectorspertrack;
+		if (detectheadscyl) headscyl = bootbuffer.headcount;
+		if (detectcylinders) cylinders = filesize * 1024 / (bytesector * cylsector * headscyl);
+		loadedDisk->Set_Geometry(headscyl, cylinders, cylsector, bytesector);
+	}
+	#endif
 
 	if (!is_hdd) {
 		/* Identify floppy format */
