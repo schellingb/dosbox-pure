@@ -171,7 +171,7 @@ static const char* dbp_auto_mapping_title;
 	((float)((V > dbp_joy_analog_deadzone) ? (V - dbp_joy_analog_deadzone) : (V + dbp_joy_analog_deadzone)) / (float)(DBP_JOY_ANALOG_RANGE - dbp_joy_analog_deadzone)))
 
 // DOSBOX EVENTS
-enum DBP_Event_Type
+enum DBP_Event_Type : Bit8u
 {
 	DBPET_JOY1X, DBPET_JOY1Y, DBPET_JOY2X, DBPET_JOY2Y, DBPET_JOYMX, DBPET_JOYMY,
 	_DBPET_JOY_AXIS_MAX,
@@ -239,8 +239,24 @@ static unsigned char dbp_keys_down[KBD_LAST+1];
 static unsigned short dbp_keymap_dos2retro[KBD_LAST];
 static unsigned char dbp_keymap_retro2dos[RETROK_LAST];
 static void(*dbp_input_intercept)(DBP_Event_Type, int, int);
-static void DBP_QueueEvent(DBP_Event& evt)
+static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
 {
+	switch (type)
+	{
+		case DBPET_KEYDOWN:
+			if (!val || ((++dbp_keys_down[val]) & 127) > 1) return;
+			dbp_keys_down_count++;
+			break;
+		case DBPET_KEYUP:
+			if (((dbp_keys_down[val]) & 127) == 0 || ((--dbp_keys_down[val]) & 127) > 0) return;
+			dbp_keys_down[val] = 0;
+			dbp_keys_down_count--;
+			break;
+		case DBPET_MOUSEDOWN: case DBPET_JOY1DOWN: case DBPET_JOY2DOWN: dbp_keys_down[KBD_LAST] = 1; break;
+		case DBPET_MOUSEUP:   case DBPET_JOY1UP:   case DBPET_JOY2UP:   dbp_keys_down[KBD_LAST] = 0; break;
+		default:;
+	}
+	DBP_Event evt = { type, val, val2 };
 	DBP_ASSERT(evt.type != DBPET_AXISMAPPAIR);
 	int cur = dbp_event_queue_write_cursor, next = ((cur + 1) % DBP_EVENT_QUEUE_SIZE);
 	if (next == dbp_event_queue_read_cursor)
@@ -278,26 +294,6 @@ static void DBP_QueueEvent(DBP_Event& evt)
 	}
 	dbp_event_queue[cur] = evt;
 	dbp_event_queue_write_cursor = next;
-}
-static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
-{
-	switch (type)
-	{
-		case DBPET_KEYDOWN:
-			if (!val || ((++dbp_keys_down[val]) & 127) > 1) return;
-			dbp_keys_down_count++;
-			break;
-		case DBPET_KEYUP:
-			if (((dbp_keys_down[val]) & 127) == 0 || ((--dbp_keys_down[val]) & 127) > 0) return;
-			dbp_keys_down[val] = 0;
-			dbp_keys_down_count--;
-			break;
-		case DBPET_MOUSEDOWN: case DBPET_JOY1DOWN: case DBPET_JOY2DOWN: dbp_keys_down[KBD_LAST] = 1; break;
-		case DBPET_MOUSEUP:   case DBPET_JOY1UP:   case DBPET_JOY2UP:   dbp_keys_down[KBD_LAST] = 0; break;
-		default:;
-	}
-	DBP_Event evt = { type, val, val2 };
-	DBP_QueueEvent(evt);
 }
 
 // LIBRETRO CALLBACKS
@@ -1392,10 +1388,11 @@ struct DBP_MenuState
 	enum ItemType : Bit8u { IT_NONE, IT_EXEC, IT_EXIT, IT_MOUNT, IT_BOOTSELECTMACHINE, IT_BOOT, IT_COMMANDLINE, IT_EDIT, IT_ADD, IT_DEL, IT_DEVICE } result;
 	int sel, scroll, mousex, mousey, joyx, joyy;
 	Bit32u open_ticks;
+	DBP_Event_Type held_event; KBD_KEYS held_key; Bit32u held_ticks;
 	struct Item { ItemType type; Bit16s info; std::string str; };
 	std::vector<Item> list;
 
-	DBP_MenuState() : result(IT_NONE), sel(0), scroll(0), mousex(0), mousey(0), joyx(0), joyy(0), open_ticks(DBP_GetTicks()) { }
+	DBP_MenuState() : result(IT_NONE), sel(0), scroll(0), mousex(0), mousey(0), joyx(0), joyy(0), open_ticks(DBP_GetTicks()), held_event(_DBPET_MAX) { }
 
 	bool ProcessInput(DBP_Event_Type type, int val, int val2, int* p_x_change = NULL)
 	{
@@ -1421,6 +1418,7 @@ struct DBP_MenuState
 					case KBD_enter: case KBD_kpenter: result = IT_EXEC; break;
 					case KBD_esc:                     result = IT_EXIT; break;
 				}
+				if (held_event == DBPET_KEYDOWN) held_event = _DBPET_MAX;
 				break;
 			case DBPET_MOUSEXY:
 				mousex += val;
@@ -1434,11 +1432,13 @@ struct DBP_MenuState
 			case DBPET_JOY1X: case DBPET_JOY2X:
 				if (joyy <  16000 && val >=  16000) x_change++;
 				if (joyy > -16000 && val <= -16000) x_change--;
+				if (held_event == type && val > -16000 && val < 16000) held_event = _DBPET_MAX;
 				joyx = val;
 				break;
 			case DBPET_JOY1Y: case DBPET_JOY2Y:
 				if (joyy <  16000 && val >=  16000) sel_change++;
 				if (joyy > -16000 && val <= -16000) sel_change--;
+				if (held_event == type && val > -16000 && val < 16000) held_event = _DBPET_MAX;
 				joyy = val;
 				break;
 			case DBPET_JOY1DOWN: case DBPET_JOY2DOWN: if (val == 0) result = IT_EXEC; break; // B/Y button
@@ -1449,6 +1449,19 @@ struct DBP_MenuState
 			result = IT_NONE; // ignore already pressed buttons when opening
 
 		if (x_change && !p_x_change) sel_change = x_change * 12;
+
+		if ((sel_change || x_change) && !val2)
+		{
+			held_event = type;
+			held_ticks = DBP_GetTicks() + 300;
+			if      (sel_change ==  -1) held_key = KBD_up;
+			else if (sel_change ==   1) held_key = KBD_down;
+			else if (sel_change == -12) held_key = KBD_pageup;
+			else if (sel_change ==  12) held_key = KBD_pagedown;
+			else if (x_change   ==  -1) held_key = KBD_left;
+			else if (x_change   ==   1) held_key = KBD_right;
+			else held_event = _DBPET_MAX;
+		}
 
 		DBP_ASSERT(list.size());
 		for (int count = (int)list.size(); !result && sel_change;)
@@ -1473,6 +1486,15 @@ struct DBP_MenuState
 		if (scroll == -1) { scroll = sel - rows/2; scroll = (scroll < 0 ? 0 : scroll > count - rows ? count - rows : scroll); return; }
 		if (sel < scroll+     4) scroll = (sel <         4 ?            0 : sel -        4);
 		if (sel > scroll+rows-5) scroll = (sel > count - 5 ? count - rows : sel - rows + 5);
+	}
+
+	void UpdateHeld(void(*input)(DBP_Event_Type, int, int))
+	{
+		if (held_event == _DBPET_MAX) return;
+		Bit32u t = DBP_GetTicks();
+		if ((Bit32s)(t - held_ticks) < 60) return;
+		held_ticks = (t - held_ticks > 120 ? t : held_ticks + 60);
+		input(DBPET_KEYDOWN, (int)held_key, 1);
 	}
 };
 
@@ -1863,6 +1885,7 @@ static void DBP_PureMenuProgram(Program** make)
 			while (!result && !first_shell->exit)
 			{
 				CALLBACK_Idle();
+				if (input_intercept == HandleInput) UpdateHeld(HandleInput);
 				if (tick_limit && DBP_GetTicks() >= tick_limit) first_shell->exit = true;
 			}
 			dbp_input_intercept = NULL;
@@ -2306,6 +2329,7 @@ static void DBP_StartMapper()
 	{
 		static void gfx(DBP_Buffer& buf)
 		{
+			mp.UpdateHeld(input);
 			int lh = (buf.height >= 400 ? 16 : 8), w = buf.width / 8, h = buf.height / lh;
 			int l = w/2 - 18, r = l + 36, u = 4, d = h - 4, rows = (int)d - u, count = (int)mp.list.size();
 			bool scrollbar = (count > rows);
