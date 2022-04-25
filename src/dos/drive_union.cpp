@@ -835,9 +835,9 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 		while (s.step < 2)
 		{
 			const char* dotted = (s.step++ ? ".." : ".");
-			if (!WildFileCmp(dotted, pattern)) continue;
+			if (!WildFileCmp(dotted, pattern) || !s.dir_len) continue;
 			FileStat_Block stat;
-			if (s.step == 1 || !s.dir_len) // current dir '.' (step is now 1 because of step++)
+			if (s.step == 1) // current dir '.' (step is now 1 because of step++)
 			{
 				FileStat(s.dir, &stat);
 			}

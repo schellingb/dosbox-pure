@@ -367,7 +367,7 @@ bool memoryDrive::FindNext(DOS_DTA & dta)
 	while (s.index < 2)
 	{
 		const char* dotted = (s.index++ ? ".." : ".");
-		if (!WildFileCmp(dotted, pattern)) continue;
+		if (!WildFileCmp(dotted, pattern) || (s.dir->attr & DOS_ATTR_VOLUME)) continue;
 		if (~attr & (Bit8u)s.dir->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 		dta.SetResult(dotted, 0, s.dir->date, s.dir->time, (Bit8u)s.dir->attr);
 		return true;
