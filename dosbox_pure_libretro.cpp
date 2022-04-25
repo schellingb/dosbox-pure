@@ -159,6 +159,7 @@ static bool dbp_last_hideadvanced;
 static char dbp_last_machine;
 static char dbp_reboot_machine;
 static char dbp_auto_mapping_mode;
+static Bit8u dbp_alphablend_base;
 static Bit16s dbp_bind_mousewheel;
 static Bit16s dbp_content_year;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
@@ -2097,6 +2098,8 @@ struct DBP_BufferDrawing
 
 	static void AlphaBlendFillRect(DBP_Buffer& buf, int x, int y, int w, int h, Bit32u col)
 	{
+		Bit32u alpha = ((col & 0xFF000000) >> 24) + (dbp_alphablend_base ? dbp_alphablend_base : 0x80);
+		col = ((alpha > 0xFF ? 0xFF : alpha) << 24) | (col & 0xFFFFFF);
 		for (Bit32u *py = buf.video + buf.width * y + x; h--; py += buf.width)
 			for (Bit32u *p = py, *pEnd = p + w; p != pEnd; p++)
 				AlphaBlend(p, col);
@@ -2344,14 +2347,14 @@ static void DBP_StartMapper()
 			mp.UpdateScroll(rows);
 
 			int yStart = u*lh-5, yEnd = d*lh+5, yNum = yEnd-yStart, xStart = l*8-5, xNum = 5+(r-l)*8+5, xEnd = xStart + xNum;
-			AlphaBlendFillRect(buf, xStart, yStart, xNum, yNum, 0x90AA0000);
+			AlphaBlendFillRect(buf, xStart, yStart, xNum, yNum, 0xAA0000);
 			DrawRect(buf, xStart-1, yStart-1, xNum+2, yNum+2, 0xFFFFFFFF);
 			DrawRect(buf, xStart-2, yStart-2, xNum+4, yNum+4, 0x00000000);
 
-			AlphaBlendFillRect(buf, xStart, (u + mp.sel - mp.scroll) * lh, xNum - (scrollbar ? 12 : 0), lh, 0x80F08080);
+			AlphaBlendFillRect(buf, xStart, (u + mp.sel - mp.scroll) * lh, xNum - (scrollbar ? 12 : 0), lh, 0xF08080);
 
 			if (scrollbar)
-				AlphaBlendFillRect(buf, xEnd-10, yStart + yNum * mp.scroll / count, 8, yNum * rows / count, 0x80F08080);
+				AlphaBlendFillRect(buf, xEnd-10, yStart + yNum * mp.scroll / count, 8, yNum * rows / count, 0xF08080);
 
 			for (int i = mp.scroll; i != count && i != (mp.scroll + rows); i++)
 				Print(buf, lh, l+2, u + i - mp.scroll, mp.list[i].str.c_str());
@@ -2471,10 +2474,10 @@ static void DBP_StartOnScreenKeyboard()
 					KBD_KEYS kbd_key = keyboard_keys[row][k - keyboard_rows[row]];
 					if (hovered) osk.hovered_key = kbd_key;
 
-					Bit32u col = (osk.pressed_key == kbd_key ? 0x808888FF : 
-							(osk.held[kbd_key] ? 0x80A0A000 :
-							(hovered ? 0x800000FF :
-							0x80FF0000)));
+					Bit32u col = (osk.pressed_key == kbd_key ? 0x8888FF : 
+							(osk.held[kbd_key] ? 0xA0A000 :
+							(hovered ? 0x0000FF :
+							0xFF0000)));
 
 					AlphaBlendFillRect(buf, rl, rt, rr-rl, rb-rt, col);
 					for (int kx = rl-1; kx <= rr; kx++) { AlphaBlend(buf.video + (rt-1) * buf.width + kx, 0xA0000000); AlphaBlend(buf.video + rb * buf.width + kx, 0xA0000000); }
@@ -3280,7 +3283,7 @@ static bool check_variables()
 		dbp_bind_mousewheel = bind_mousewheel;
 		if (dbp_state > DBPSTATE_SHUTDOWN) refresh_input_binds();
 	}
-
+	dbp_alphablend_base = (Bit8u)((atoi(Variables::RetroGet("dosbox_pure_menu_transparency", "50")) * 0xFF + 50) / 100);
 	dbp_mouse_speed = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor", "1.0"));
 	dbp_mouse_speed_x = (float)atof(Variables::RetroGet("dosbox_pure_mouse_speed_factor_x", "1.0"));
 

@@ -252,6 +252,16 @@ static retro_core_option_v2_definition option_defs[] =
 		"us"
 	},
 	{
+		"dosbox_pure_menu_transparency",
+		"Advanced > Menu Transparency", NULL,
+		"Set the transparency level of the On Screen Keyboard and the Gamepad Mapper.", NULL,
+		"Input",
+		{
+			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
+		},
+		"50"
+	},
+	{
 		"dosbox_pure_joystick_analog_deadzone",
 		"Advanced > Joystick Analog Deadzone", NULL,
 		"Set the deadzone of the joystick analog sticks. May be used to eliminate drift caused by poorly calibrated joystick hardware.", NULL,
