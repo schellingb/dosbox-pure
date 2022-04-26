@@ -782,7 +782,7 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 	bootbuffer.totalsecdword = var_read(&bootbuffer.totalsecdword);
 
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	if (is_hdd && ((detectcylsector && bootbuffer.sectorspertrack != cylsector) || (detectheadscyl && bootbuffer.headcount != headscyl))) {
+	if (is_hdd && ((detectcylsector && bootbuffer.sectorspertrack && bootbuffer.sectorspertrack != cylsector) || (detectheadscyl && bootbuffer.headcount && bootbuffer.headcount != headscyl))) {
 		if (detectcylsector) cylsector = bootbuffer.sectorspertrack;
 		if (detectheadscyl) headscyl = bootbuffer.headcount;
 		if (detectcylinders) cylinders = filesize * 1024 / (bytesector * cylsector * headscyl);
