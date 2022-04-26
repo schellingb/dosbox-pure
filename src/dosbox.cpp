@@ -858,8 +858,9 @@ void DOSBOX_Init(void) {
 void DBP_DOSBOX_ForceShutdown(const Bitu)
 {
 	/* end all execution and return to the top of the stack */
-	struct ShutdownCPU { static Bitu Loop(void) { return 1; } };
+	struct ShutdownCPU { static Bitu Loop(void) { return 1; } static Bits CPUDecoder(void) { return -1; } };
 	DOSBOX_SetLoop(ShutdownCPU::Loop);
+	cpudecoder = ShutdownCPU::CPUDecoder;
 #ifndef C_DBP_CUSTOMTIMING
 	ticksRemain = 0;
 #endif
