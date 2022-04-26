@@ -258,10 +258,11 @@ imageDisk::~imageDisk()
 			imageDiskList[i] = NULL;
 }
 
-imageDisk::imageDisk(DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk) {
+imageDisk::imageDisk(DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk)
 #else
-imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk) {
+imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk)
 #endif
+{
 	heads = 0;
 	cylinders = 0;
 	sectors = 0;
@@ -372,6 +373,31 @@ static bool driveInactive(Bit8u driveNum) {
 	return false;
 }
 
+#ifdef C_DBP_LIBRETRO // added implementation of INT13 extensions from Taewoong's Daum branch
+struct DAP {
+	Bit8u sz;
+	Bit8u res;
+	Bit16u num;
+	Bit16u off;
+	Bit16u seg;
+	Bit32u sector;
+};
+
+static void readDAP(Bit16u seg, Bit16u off, DAP& dap) {
+	dap.sz = real_readb(seg,off++);
+	dap.res = real_readb(seg,off++);
+	dap.num = real_readw(seg,off); off += 2;
+	dap.off = real_readw(seg,off); off += 2;
+	dap.seg = real_readw(seg,off); off += 2;
+
+	/* Although sector size is 64-bit, 32-bit 2TB limit should be more than enough */
+	dap.sector = real_readd(seg,off); off +=4;
+
+	if (real_readd(seg,off)) {
+		E_Exit("INT13: 64-bit sector addressing not supported");
+	}
+}
+#endif
 
 static Bitu INT13_DiskHandler(void) {
 	Bit16u segat, bufptr;
@@ -626,6 +652,129 @@ static Bitu INT13_DiskHandler(void) {
 		reg_ah = 0x00;
 		CALLBACK_SCF(false);
 		break;
+#ifdef C_DBP_LIBRETRO // added implementation of INT13 extensions from Taewoong's Daum branch
+	case 0x41: /* Check Extensions Present */
+		if ((reg_bx == 0x55aa) && !(driveInactive(drivenum))) {
+			LOG_MSG("INT13: Check Extensions Present for drive: 0x%x", reg_dl);
+			reg_ah=0x1;	/* 1.x extension supported */
+			reg_bx=0xaa55;	/* Extensions installed */
+			reg_cx=0x1;	/* Extended disk access functions (AH=42h-44h,47h,48h) supported */
+			CALLBACK_SCF(false);
+			break;
+		}
+		LOG_MSG("INT13: AH=41h, Function not supported 0x%x for drive: 0x%x", reg_bx, reg_dl);
+		CALLBACK_SCF(true);
+		break;
+	case 0x42: /* Extended Read Sectors From Drive */
+		/* Read Disk Address Packet */
+		DAP dap;
+		readDAP(SegValue(ds),reg_si,dap);
+
+		if (dap.num==0) {
+			reg_ah = 0x01;
+			CALLBACK_SCF(true);
+			return CBRET_NONE;
+		}
+		if (!any_images) {
+			// Inherit the Earth cdrom (uses it as disk test)
+			if (((reg_dl&0x80)==0x80) && (reg_dh==0) && ((reg_cl&0x3f)==1)) {
+				reg_ah = 0;
+				CALLBACK_SCF(false);
+				return CBRET_NONE;
+			}
+		}
+		if (driveInactive(drivenum)) {
+			reg_ah = 0xff;
+			CALLBACK_SCF(true);
+			return CBRET_NONE;
+		}
+
+		segat = dap.seg;
+		bufptr = dap.off;
+		for(i=0;i<dap.num;i++) {
+			last_status = imageDiskList[drivenum]->Read_AbsoluteSector(dap.sector+i, sectbuf);
+
+			//// DBP: Omitted for now
+			//IDE_EmuINT13DiskReadByBIOS_LBA(reg_dl,dap.sector+i);
+
+			if((last_status != 0x00) || (killRead)) {
+				LOG_MSG("Error in disk read");
+				killRead = false;
+				reg_ah = 0x04;
+				CALLBACK_SCF(true);
+				return CBRET_NONE;
+			}
+			for(t=0;t<512;t++) {
+				real_writeb(segat,bufptr,sectbuf[t]);
+				bufptr++;
+			}
+		}
+		reg_ah = 0x00;
+		CALLBACK_SCF(false);
+		break;
+	case 0x43: /* Extended Write Sectors to Drive */
+		if(driveInactive(drivenum)) {
+			reg_ah = 0xff;
+			CALLBACK_SCF(true);
+			return CBRET_NONE;
+		}
+
+		/* Read Disk Address Packet */
+		readDAP(SegValue(ds),reg_si,dap);
+		bufptr = dap.off;
+		for(i=0;i<dap.num;i++) {
+			for(t=0;t<imageDiskList[drivenum]->getSectSize();t++) {
+				sectbuf[t] = real_readb(dap.seg,bufptr);
+				bufptr++;
+			}
+
+			last_status = imageDiskList[drivenum]->Write_AbsoluteSector(dap.sector+i, &sectbuf[0]);
+			if(last_status != 0x00) {
+				CALLBACK_SCF(true);
+				return CBRET_NONE;
+			}
+		}
+		reg_ah = 0x00;
+		CALLBACK_SCF(false);
+		break;
+	case 0x48: { /* get drive parameters */
+		uint16_t bufsz;
+
+		if(driveInactive(drivenum)) {
+			reg_ah = 0xff;
+			CALLBACK_SCF(true);
+			return CBRET_NONE;
+		}
+
+		segat = SegValue(ds);
+		bufptr = reg_si;
+		bufsz = real_readw(segat,bufptr+0);
+		if (bufsz < 0x1A) {
+			reg_ah = 0xff;
+			CALLBACK_SCF(true);
+			return CBRET_NONE;
+		}
+		if (bufsz > 0x1E) bufsz = 0x1E;
+		else bufsz = 0x1A;
+
+		Bit32u tmpheads, tmpcyl, tmpsect, tmpsize;
+		imageDiskList[drivenum]->Get_Geometry(&tmpheads, &tmpcyl, &tmpsect, &tmpsize);
+
+		real_writew(segat,bufptr+0x00,bufsz);
+		real_writew(segat,bufptr+0x02,0x0003);	/* C/H/S valid, DMA boundary errors handled */
+		real_writed(segat,bufptr+0x04,tmpcyl);
+		real_writed(segat,bufptr+0x08,tmpheads);
+		real_writed(segat,bufptr+0x0C,tmpsect);
+		real_writed(segat,bufptr+0x10,tmpcyl*tmpheads*tmpsect);
+		real_writed(segat,bufptr+0x14,0);
+		real_writew(segat,bufptr+0x18,512);
+		if (bufsz >= 0x1E)
+			real_writed(segat,bufptr+0x1A,0xFFFFFFFF); /* no EDD information available */
+
+		reg_ah = 0x00;
+		CALLBACK_SCF(false);
+		} break;
+#endif
 	default:
 		LOG(LOG_BIOS,LOG_ERROR)("INT13: Function %x called on drive %x (dos drive %d)", reg_ah,  reg_dl, drivenum);
 		reg_ah=0xff;
