@@ -738,8 +738,8 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, const char* boot = NU
 
 static void DBP_Unmount(char drive)
 {
-	MSCDEX_RemoveDrive(drive);
 	if (Drives[drive-'A'] && Drives[drive-'A']->UnMount() != 0) { DBP_ASSERT(false); return; }
+	MSCDEX_RemoveDrive(drive);
 	Drives[drive-'A'] = NULL;
 	if (drive < 'A'+MAX_DISK_IMAGES)
 		if (imageDisk*& dsk = imageDiskList[drive-'A'])
