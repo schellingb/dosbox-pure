@@ -106,7 +106,12 @@ struct PF_Entry {
 	Bitu mpl;
 };
 
+#ifdef C_DBP_LIBRETRO
+// Increased to survive longer in Windows 9x
+#define PF_QUEUESIZE 384
+#else
 #define PF_QUEUESIZE 16
+#endif
 static struct {
 	Bitu used;
 	PF_Entry entries[PF_QUEUESIZE];
@@ -145,6 +150,7 @@ void PAGING_PageFault(PhysPt lin_addr,Bitu page_addr,Bitu faultcode) {
 	old_cpudecoder=cpudecoder;
 	cpudecoder=&PageFaultCore;
 	paging.cr2=lin_addr;
+	DBP_ASSERT(pf_queue.used < PF_QUEUESIZE);
 	PF_Entry * entry=&pf_queue.entries[pf_queue.used++];
 	LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] queue %d",lin_addr,faultcode,pf_queue.used);
 //	LOG_MSG("EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
@@ -910,7 +916,13 @@ void DBPSerialize_Paging(DBPArchive& ar)
 	ar.SerializeSparse(paging.links.entries, sizeof(paging.links.entries));
 	ar.SerializeArray(paging.firstmb);
 	ar.Serialize(paging.enabled);
-	ar.Serialize(pf_queue);
+	if (ar.version <= 3)
+		ar.SerializeBytes(&pf_queue, sizeof(pf_queue) - sizeof(pf_queue.entries) + sizeof(pf_queue.entries[0]) * 16);
+	else
+	{
+		ar.Serialize(pf_queue.used);
+		ar.SerializeBytes(&pf_queue.entries, pf_queue.used * sizeof(pf_queue.entries[0]));
+	}
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 		PAGING_InitTLB();
