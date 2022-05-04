@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2021 Bernhard Schelling
+ *  Copyright (C) 2020-2022 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -768,6 +768,20 @@ bool unionDrive::MakeDir(char* dir_path)
 bool unionDrive::RemoveDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
+	bool not_empty = false;
+	RealPt save_dta = dos.dta();
+	dos.dta(dos.tables.tempdta);
+	DOS_DTA dta(dos.dta());
+	dta.SetupSearch(255, (Bit8u)(0xffff & ~DOS_ATTR_VOLUME), (char*)"*.*");
+	for (bool more = FindFirst(dir_path, dta); more; more = FindNext(dta))
+	{
+		char dta_name[DOS_NAMELENGTH_ASCII]; Bit32u dta_size; Bit16u dta_date, dta_time; Bit8u dta_attr;
+		dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
+		if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
+		not_empty = true;
+	}
+	dos.dta(save_dta);
+	if (not_empty) return FALSE_SET_DOSERR(ACCESS_DENIED); // not empty
 	return impl->UnionUnlink(this, dir_path, Union_Modification::TDIR);
 }
 
@@ -875,7 +889,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				}
 				dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
 				if (dta_attr & DOS_ATTR_VOLUME) continue;
-				if ((dta_attr & DOS_ATTR_DIRECTORY) && dta_name[0] == '.' && (dta_name[1] == '\0' || (dta_name[1] == '.' && dta_name[2] == '\0'))) continue;
+				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
 				if (impl->over.FileExists(dta_path) || impl->over.TestDir(dta_path)) continue;
 				if (impl->modifications.Get(dta_name, DOS_NAMELENGTH_ASCII, s.dir_hash)) continue;
 				dta.SetDirID(my_dir_id);
@@ -899,7 +913,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				}
 				dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
 				if (dta_attr & DOS_ATTR_VOLUME) continue;
-				if ((dta_attr & DOS_ATTR_DIRECTORY) && dta_name[0] == '.' && (dta_name[1] == '\0' || (dta_name[1] == '.' && dta_name[2] == '\0'))) continue;
+				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
 				dta.SetDirID(my_dir_id);
 				return true;
 			}
