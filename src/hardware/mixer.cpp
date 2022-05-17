@@ -636,8 +636,8 @@ MIXER_CallBack(void * /*userdata*/, uint8_t *stream, int len) {
 	if( Mixer_irq_important() )
 		mixer.tick_add = calc_tickadd(mixer.freq);
 
-	mixer.done -= reduce;
-	mixer.needed -= reduce;
+	mixer.done = (mixer.done>reduce) ? mixer.done-reduce : 0;
+	mixer.needed = (mixer.needed>reduce) ? mixer.needed-reduce : 0;
 	pos = mixer.pos;
 	mixer.pos = (mixer.pos + reduce) & MIXER_BUFMASK;
 	if(need != reduce) {
