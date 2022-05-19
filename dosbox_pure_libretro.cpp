@@ -444,7 +444,7 @@ void DBP_SetRealModeCycles()
 {
 	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || render.frameskip.max > 1) return;
 
-	static const Bit16u Cycles1981to1993[1+1993-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 21000, 27000, 44000 };
+	static const Bit16u Cycles1981to1993[1+1993-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000 };
 	int year = (dbp_game_running ? dbp_content_year : 0);
 	CPU_CycleMax = 
 		(year <= 1970 ?  3000 : // Unknown year, dosbox default
@@ -564,7 +564,7 @@ static bool DBP_IsMounted(char drive)
 static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, const char* boot = NULL)
 {
 	const char *path = (boot ? boot : dbp_images[disk_image_index].c_str()), *path_file, *ext, *fragment; char letter;
-	DBP_ExtractPathInfo(path, &path_file, NULL, &ext, &fragment, &letter);
+	if (!DBP_ExtractPathInfo(path, &path_file, NULL, &ext, &fragment, &letter)) return NULL;
 
 	if (!boot && dbp_disk_mount_letter) letter = dbp_disk_mount_letter;
 	if (letter && DBP_IsMounted(letter)) { DBP_ASSERT(0); return NULL; }
