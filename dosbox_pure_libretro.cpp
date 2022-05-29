@@ -2453,10 +2453,9 @@ static void DBP_StartOnScreenKeyboard()
 			};
 
 			int thickness = (buf.width < (KWIDTH + 10) ? 1 : ((int)buf.width - 10) / KWIDTH);
-			float ar = (float)buf.width / buf.height;
 			float fx = (buf.width < KWIDTH ? (buf.width - 10) / (float)KWIDTH : (float)thickness);
-			float fy = fx * ar * buf.height / buf.width;
-			int thicknessy = (int)(thickness * (fy / fx + .4f)); if (thicknessy < 1) thicknessy = 1;
+			float fy = fx * buf.ratio * buf.height / buf.width; if (fy < 1) fy = 1;
+			int thicknessy = (int)(fy + .95f);
 			int oskx = (int)(buf.width / fx / 2) - (KWIDTH / 2);
 			int osky = (osk.my && osk.my < (buf.height / fy / 2) ? 3 : (int)(buf.height / fy) - 3 - 65);
 
