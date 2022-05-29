@@ -66,8 +66,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Save States Support", NULL,
 		"Make sure to test it in each game before using it. Complex late era DOS games might have problems." "\n"
 		"Be aware that states saved with different video, CPU or memory settings are not loadable." "\n"
-		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer." "\n"
-		"Save states might not be compatible with new versions of this core.", NULL,
+		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer.", NULL,
 		"Emulation",
 		{
 			{ "on",       "Enable save states" },
@@ -77,10 +76,22 @@ static retro_core_option_v2_definition option_defs[] =
 		"on"
 	},
 	{
+		"dosbox_pure_conf",
+		"Loading of dosbox.conf", NULL,
+		"DOSBox Pure is meant to be configured via core options but optionally supports loading of legacy .conf files." "\n\n", NULL, //end of Emulation section
+		"Emulation",
+		{
+			{ "false", "Disabled conf support (default)" },
+			{ "inside", "Try 'dosbox.conf' in the loaded content (ZIP or folder)" },
+			{ "outside", "Try '.conf' with same name as loaded content (next to ZIP or folder)" },
+		},
+		"default"
+	},
+	{
 		"dosbox_pure_menu_time",
-		"Start Menu", NULL,
+		"Advanced > Start Menu", NULL,
 		"Set the behavior of the start menu before and after launching a game." "\n"
-		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'." "\n\n", NULL, //end of Emulation section
+		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'.", NULL,
 		"Emulation",
 		{
 #ifndef STATIC_LINKING

@@ -86,7 +86,7 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps;
-static char dbp_menu_time;
+static char dbp_menu_time, dbp_conf_loading;
 static float dbp_auto_target, dbp_targetrefreshrate;
 static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_serialize_time, dbp_last_throttle_mode;
 static Semaphore semDoContinue, semDidPause;
@@ -525,13 +525,19 @@ static void DBP_AppendImage(const char* entry, bool sorted)
 
 static bool DBP_ExtractPathInfo(const char* path, const char ** out_path_file = NULL, size_t* out_namelen = NULL, const char ** out_ext = NULL, const char ** out_fragment = NULL, char* out_letter = NULL)
 {
-	const char *last_slash = strrchr(path, '/'), *last_bslash = strrchr(path, '\\');
-	const char *path_file = (last_slash && last_slash > last_bslash ? last_slash + 1 : (last_bslash ? last_bslash + 1 : path));
+	if (!path || !*path) return false;
+	// Skip any slashes at the very end of path, then find the next slash as the start of the loaded file/directory name
+	const char *path_end = path + strlen(path), *path_file = path_end;
+	for (bool had_other = false; path_file > path; path_file--)
+	{
+		bool is_slash = (path_file[-1] == '/' || path_file[-1] == '\\');
+		if (is_slash) { if (had_other) break; path_end = path_file - 1; } else had_other = true;
+	}
 	const char *ext = strrchr(path_file, '.');
-	if (!ext++) return false;
+	if (ext) ext++; else ext = path_end;
 
 	const char *fragment = strrchr(path_file, '#');
-	if (fragment && ext > fragment) // check if 'FOO.ZIP#BAR.EXE'
+	if (fragment && ext && ext > fragment) // check if 'FOO.ZIP#BAR.EXE'
 	{
 		const char* real_ext = fragment - (fragment - 3 > path_file && fragment[-3] == '.' ? 3 : 4);
 		if (real_ext > path_file && *real_ext == '.') ext = real_ext+1;
@@ -668,11 +674,14 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, const char* boot = NU
 			return NULL;
 		}
 	}
-	else if (!strcasecmp(ext, "EXE") || !strcasecmp(ext, "COM") || !strcasecmp(ext, "BAT") || !strcasecmp(ext, "CONF"))
+	else if (!strcasecmp(ext, "EXE") || !strcasecmp(ext, "COM") || !strcasecmp(ext, "BAT") || !strcasecmp(ext, "conf") || ext[-1] != '.')
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
-		drive = new localDrive(std::string(path, path_file - path).c_str(), 512, 32, 32765, 16000, 0xF8);
+		std::string dir; dir.assign(path, (ext[-1] == '.' ? path_file : ext) - path).append(ext[-1] == '.' ? "" : "/"); // must end with slash
+		strreplace((char*)dir.c_str(), (CROSS_FILESPLIT == '\\' ? '/' : '\\'), CROSS_FILESPLIT); // required by localDrive
+		drive = new localDrive(dir.c_str(), 512, 32, 32765, 16000, 0xF8);
 		drive->label.SetLabel("PURE", false, true);
+		if (ext[-1] == '.' && (ext[2]|0x20) == 'n') dbp_conf_loading = 'o'; // conf loading mode set to 'o'utside will load the requested .conf file
 		path = NULL; // don't treat as disk image, but always register with Drives even if is_boot
 	}
 	else if (!strcasecmp(ext, "M3U") || !strcasecmp(ext, "M3U8"))
@@ -3177,6 +3186,7 @@ static bool check_variables()
 		default: dbp_serializemode = DBPSERIALIZE_STATES; break;
 	}
 	DBPArchive::accomodate_delta_encoding = (dbp_serializemode == DBPSERIALIZE_REWIND);
+	dbp_conf_loading = Variables::RetroGet("dosbox_pure_conf", "false")[0];
 	dbp_menu_time = (char)atoi(Variables::RetroGet("dosbox_pure_menu_time", "5"));
 
 	const char* cycles = Variables::RetroGet("dosbox_pure_cycles", "auto");
@@ -3337,8 +3347,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 	dbp_legacy_save = false;
 	std::string save_file;
 	const char *env_save_dir = NULL;
-	environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &env_save_dir);
-	if (env_save_dir)
+	if (environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &env_save_dir) && env_save_dir)
 	{
 		save_file.assign(env_save_dir).append(1, '/').append(dbp_content_name.empty() ? "DOSBox-pure" : dbp_content_name.c_str());
 		if (FILE* fSave = fopen_wrap(save_file.append(".pure.zip").c_str(), "rb")) { fclose(fSave); } // new save exists!
@@ -3362,16 +3371,22 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
 
-	if (!force_start_menu && !dosboxconf && Drives['C'-'A'])
+	if (dbp_conf_loading != 'f' && !force_start_menu && !dosboxconf)
 	{
-		bool haveconf1 = Drives['C'-'A']->FileExists("$C:\\DOSBOX.CON"+4); //8.3 filename in ZIPs
-		bool haveconf2 = Drives['C'-'A']->FileExists("$C:\\DOSBOX~1.CON"+4); //8.3 filename in local file systems
-		if (haveconf1 || haveconf2 || (path && !strcasecmp(path_ext, "CONF")))
+		const char* confpath = NULL; std::string strconfpath, confcontent;
+		if (dbp_conf_loading == 'i' && Drives['C'-'A']) // load confs 'i'nside content
 		{
-			std::string content;
-			FindAndReadDosFile((haveconf1 ? "$C:\\DOSBOX.CON" : haveconf2 ? "$C:\\DOSBOX~1.CON" : path), content);
+			if (Drives['C'-'A']->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
+			else if (Drives['C'-'A']->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+		}
+		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
+		{
+			confpath = ((strconfpath.assign(path, path_ext - path) += (path_ext[-1] == '.' ? "" : ".")) += "conf").c_str();
+		}
+		if (confpath && FindAndReadDosFile(confpath, confcontent))
+		{
 			delete control;
-			return init_dosbox(path, firsttime, &content);
+			return init_dosbox(path, firsttime, &confcontent);
 		}
 	}
 
