@@ -2659,7 +2659,7 @@ void retro_set_environment(retro_environment_t cb) //#2
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &allow_no_game);
 }
 
-static void refresh_input_binds(unsigned refresh_min_port = 0)
+static void refresh_input_binds(bool set_controller_info = false, unsigned refresh_min_port = 0)
 {
 	if (refresh_min_port < 2)
 	{
@@ -2777,7 +2777,7 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 				break;
 			case DBP_DEVICE_DefaultJoypad:
 			case DBP_DEVICE_DefaultAnalog:
-				if (port > 1) continue;
+				if (port > 1) break;
 				else if (port == 1) binds = BindsBasicJoystick2;
 				else if (dbp_auto_mapping) mapping = dbp_auto_mapping;
 				else binds = BindsGravisGamepad;
@@ -2899,6 +2899,42 @@ static void refresh_input_binds(unsigned refresh_min_port = 0)
 	// We used to enable sticks only when mapped, but some games always want the joystick port active (if used, this also needs to be done in init_dosbox())
 	//JOYSTICK_Enable(0, useJoy1);
 	//JOYSTICK_Enable(1, useJoy2);
+
+	if (set_controller_info)
+	{
+		unsigned port, port_first_cd[3];
+		struct retro_controller_info ports[DBP_MAX_PORTS+1] = {{0}};
+		static std::vector<retro_controller_description> controller_descriptions; // descriptions must be static data
+		controller_descriptions.clear();
+		for (port = 0; port != 3; port++)
+		{
+			const DBP_Port_Device gravis_device = (port != 0 || dbp_auto_mapping ? DBP_DEVICE_GravisGamepad : DBP_DEVICE_DefaultJoypad);
+			const DBP_Port_Device secondjoystick_device = (port != 1 ? DBP_DEVICE_BasicJoystick2 : DBP_DEVICE_DefaultJoypad);
+			const DBP_Port_Device generickeyboard_device = (port < 2 ? DBP_DEVICE_BindGenericKeyboard : DBP_DEVICE_DefaultJoypad);
+			port_first_cd[port] = (unsigned)controller_descriptions.size();
+			controller_descriptions.push_back({ "Disabled",                                             (unsigned)DBP_DEVICE_Disabled                });
+			if (port == 0 && dbp_auto_mapping)
+				controller_descriptions.push_back({ dbp_auto_mapping_title,                             (unsigned)DBP_DEVICE_DefaultJoypad           });
+			controller_descriptions.push_back({ "Generic Keyboard Bindings",                            (unsigned)generickeyboard_device             });
+			controller_descriptions.push_back({ "Mouse with Left Analog Stick",                         (unsigned)DBP_DEVICE_MouseLeftAnalog         });
+			controller_descriptions.push_back({ "Mouse with Right Analog Stick",                        (unsigned)DBP_DEVICE_MouseRightAnalog        });
+			controller_descriptions.push_back({ "Gravis GamePad (1 D-Pad, 4 Buttons)",                  (unsigned)gravis_device                      });
+			controller_descriptions.push_back({ "First DOS joystick (2 Axes, 2 Buttons)",               (unsigned)DBP_DEVICE_BasicJoystick1          });
+			controller_descriptions.push_back({ "Second DOS joystick (2 Axes, 2 Buttons)",              (unsigned)secondjoystick_device              });
+			controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", (unsigned)DBP_DEVICE_ThrustMasterFlightStick });
+			controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       (unsigned)DBP_DEVICE_BothDOSJoysticks        });
+			controller_descriptions.push_back({ "Custom Keyboard Bindings",                             (unsigned)DBP_DEVICE_BindCustomKeyboard      });
+			controller_descriptions.push_back({ "Custom Keyboard + Mouse on Left Stick and B/A/X",      (unsigned)DBP_DEVICE_KeyboardMouseLeftStick  });
+			controller_descriptions.push_back({ "Custom Keyboard + Mouse on Right Stick and L/R/X",     (unsigned)DBP_DEVICE_KeyboardMouseRightStick });
+			ports[port].num_types = (unsigned)controller_descriptions.size() - port_first_cd[port];
+			if (!dbp_custom_mapping.empty() && port == 0)
+				for (retro_controller_description& rcd : controller_descriptions)
+					rcd.desc = "From Gamepad Mapper";
+		}
+		for (port = 0; port != 3; port++) ports[port].types = &controller_descriptions[port_first_cd[port]];
+		for (; port != DBP_MAX_PORTS; port++) ports[port] = ports[2];
+		environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
+	}
 }
 
 static void set_variables(bool force_midi_scan)
@@ -3833,36 +3869,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	bool support_achievements = true;
 	environ_cb(RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS, &support_achievements);
 
-	unsigned port, port_first_cd[3];
-	struct retro_controller_info ports[DBP_MAX_PORTS+1] = {{0}};
-	static std::vector<retro_controller_description> controller_descriptions; // descriptions must be static data
-	controller_descriptions.clear();
-	for (port = 0; port != 3; port++)
-	{
-		const DBP_Port_Device gravis_device = (port != 0 || dbp_auto_mapping ? DBP_DEVICE_GravisGamepad : DBP_DEVICE_DefaultJoypad);
-		const DBP_Port_Device secondjoystick_device = (port != 1 ? DBP_DEVICE_BasicJoystick2 : DBP_DEVICE_DefaultJoypad);
-		port_first_cd[port] = (unsigned)controller_descriptions.size();
-		controller_descriptions.push_back({ "Disabled",                                             (unsigned)DBP_DEVICE_Disabled                });
-		if (port == 0 && dbp_auto_mapping)
-			controller_descriptions.push_back({ dbp_auto_mapping_title,                             (unsigned)DBP_DEVICE_DefaultJoypad           });
-		controller_descriptions.push_back({ "Generic Keyboard Bindings",                            (unsigned)DBP_DEVICE_BindGenericKeyboard     });
-		controller_descriptions.push_back({ "Mouse with Left Analog Stick",                         (unsigned)DBP_DEVICE_MouseLeftAnalog         });
-		controller_descriptions.push_back({ "Mouse with Right Analog Stick",                        (unsigned)DBP_DEVICE_MouseRightAnalog        });
-		controller_descriptions.push_back({ "Gravis GamePad (1 D-Pad, 4 Buttons)",                  (unsigned)gravis_device                      });
-		controller_descriptions.push_back({ "First DOS joystick (2 Axes, 2 Buttons)",               (unsigned)DBP_DEVICE_BasicJoystick1          });
-		controller_descriptions.push_back({ "Second DOS joystick (2 Axes, 2 Buttons)",              (unsigned)secondjoystick_device              });
-		controller_descriptions.push_back({ "ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)", (unsigned)DBP_DEVICE_ThrustMasterFlightStick });
-		controller_descriptions.push_back({ "Control both DOS joysticks (4 axes, 4 buttons)",       (unsigned)DBP_DEVICE_BothDOSJoysticks        });
-		controller_descriptions.push_back({ "Custom Keyboard Bindings",                             (unsigned)DBP_DEVICE_BindCustomKeyboard      });
-		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Left Stick and B/A/X",      (unsigned)DBP_DEVICE_KeyboardMouseLeftStick  });
-		controller_descriptions.push_back({ "Custom Keyboard + Mouse on Right Stick and L/R/X",     (unsigned)DBP_DEVICE_KeyboardMouseRightStick });
-		ports[port].num_types = (unsigned)controller_descriptions.size() - port_first_cd[port];
-	}
-	for (port = 0; port != 3; port++) ports[port].types = &controller_descriptions[port_first_cd[port]];
-	for (; port != DBP_MAX_PORTS; port++) ports[port] = ports[2];
-	environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
-
-	refresh_input_binds();
+	refresh_input_binds(true);
 
 	return true;
 }
@@ -3894,7 +3901,7 @@ void retro_set_controller_port_device(unsigned port, unsigned device) //#5
 	if (port >= DBP_MAX_PORTS || dbp_port_devices[port] == (DBP_Port_Device)device) return;
 	//log_cb(RETRO_LOG_INFO, "[DOSBOX] Plugging device %u into port %u.\n", device, port);
 	dbp_port_devices[port] = (DBP_Port_Device)device;
-	if (dbp_state > DBPSTATE_SHUTDOWN) refresh_input_binds(port);
+	if (dbp_state > DBPSTATE_SHUTDOWN) refresh_input_binds(false, port);
 }
 
 void retro_reset(void)
@@ -4036,7 +4043,7 @@ void retro_run(void)
 		if (dbp_input_binds_modified)
 		{
 			dbp_input_binds_modified = false;
-			refresh_input_binds();
+			refresh_input_binds(true);
 		}
 	}
 	DBP_InputBind *binds = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *binds_end = binds + dbp_input_binds.size();
