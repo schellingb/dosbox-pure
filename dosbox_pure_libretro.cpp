@@ -49,7 +49,7 @@
 #define THREAD_CC WINAPI
 struct Thread { typedef DWORD RET_t; typedef RET_t (THREAD_CC *FUNC_t)(LPVOID); static void StartDetached(FUNC_t f, void* p = NULL) { HANDLE h = CreateThread(0,DBP_STACK_SIZE,f,p,0,0); CloseHandle(h); } };
 struct Mutex { Mutex() : h(CreateMutexA(0,0,0)) {} ~Mutex() { CloseHandle(h); } __inline void Lock() { WaitForSingleObject(h,INFINITE); } __inline void Unlock() { ReleaseMutex(h); } private:HANDLE h;Mutex(const Mutex&);Mutex& operator=(const Mutex&);};
-struct Semaphore { Semaphore() : h(CreateSemaphoreA(0,0,32768,0)) {} ~Semaphore() { CloseHandle(h); } __inline void Post() { ReleaseSemaphore(h, 1, 0); } __inline void Wait() { WaitForSingleObject(h,INFINITE); } private:HANDLE h;Semaphore(const Semaphore&);Semaphore& operator=(const Semaphore&);};
+struct Semaphore { Semaphore() : h(CreateSemaphoreA(0,0,1,0)) {} ~Semaphore() { CloseHandle(h); } __inline void Post() { BOOL r = ReleaseSemaphore(h, 1, 0); DBP_ASSERT(r); } __inline void Wait() { WaitForSingleObject(h,INFINITE); } private:HANDLE h;Semaphore(const Semaphore&);Semaphore& operator=(const Semaphore&);};
 #else
 #if defined(WIIU)
 #include "libretro-common/rthreads/wiiu_pthread.h"
@@ -373,10 +373,10 @@ int MSCDEX_RemoveDrive(char driveLetter);
 bool MIDI_TSF_SwitchSF2(const char*);
 bool MIDI_Retro_HasOutputIssue();
 
-enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_ON_PAUSE_FRAME, TCM_RESUME_FRAME, TCM_FINISH_FRAME, TCM_ON_FINISH_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN };
+enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_ON_PAUSE_FRAME, TCM_RESUME_FRAME, TCM_FINISH_FRAME, TCM_ON_FINISH_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN, TCM_ON_SHUTDOWN };
 static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 {
-	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
+	DBP_ASSERT(dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
 	switch (m)
 	{
 		case TCM_PAUSE_FRAME:
@@ -432,8 +432,13 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			return;
 		case TCM_SHUTDOWN:
 			if (dbp_frame_pending) { dbp_pause_events = true; semDidPause.Wait(); dbp_pause_events = dbp_frame_pending = false; }
+			if (dbp_state == DBPSTATE_EXITED) return;
 			DBP_DOSBOX_ForceShutdown();
 			do { semDoContinue.Post(); semDidPause.Wait(); } while (dbp_state != DBPSTATE_EXITED);
+			return;
+		case TCM_ON_SHUTDOWN:
+			dbp_state = DBPSTATE_EXITED;
+			semDidPause.Post();
 			return;
 	}
 }
@@ -1013,16 +1018,14 @@ struct DBP_PadMapping
 
 static void DBP_Shutdown()
 {
-	if (dbp_state != DBPSTATE_EXITED && dbp_state != DBPSTATE_SHUTDOWN)
-	{
-		dbp_state = DBPSTATE_RUNNING;
-		DBP_ThreadControl(TCM_SHUTDOWN);
-	}
+	if (dbp_state == DBPSTATE_SHUTDOWN || dbp_state == DBPSTATE_BOOT) return;
+	DBP_ThreadControl(TCM_SHUTDOWN);
 	if (!dbp_crash_message.empty())
 	{
 		retro_notify(0, RETRO_LOG_ERROR, "DOS crashed: %s", dbp_crash_message.c_str());
 		dbp_crash_message.clear();
 	}
+	DBP_ASSERT(control);
 	if (control)
 	{
 		DBP_ASSERT(!first_shell); //should have been properly cleaned up
@@ -3188,13 +3191,11 @@ static bool check_variables()
 	char mchar;
 	if (dbp_reboot_machine)
 		mchar = dbp_reboot_machine, dbp_reboot_machine = 0;
-	else if (dbp_state == DBPSTATE_BOOT)
-		mchar = Variables::RetroGet("dosbox_pure_machine", "svga")[0];
 	else
-		mchar = (machine == MCH_HERC ? 'h' : machine == MCH_CGA ? 'c' : machine == MCH_TANDY ? 't' : machine == MCH_PCJR ? 'p' : machine == MCH_EGA ? 'e' : svgaCard == SVGA_None ? 'v' : 's');
+		mchar = Variables::RetroGet("dosbox_pure_machine", "svga")[0];
 
+	bool machine_is_svga = (machine == MCH_VGA && svgaCard != SVGA_None), machine_is_cga = (machine == MCH_CGA), machine_is_hercules = (machine == MCH_HERC);
 	const char* dbmachine;
-	bool machine_is_svga = false, machine_is_cga = false, machine_is_hercules = false;
 	switch (mchar)
 	{
 		case 's': dbmachine = Variables::RetroGet("dosbox_pure_svga", "svga_s3"); machine_is_svga = true; break;
@@ -3613,8 +3614,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 		static Thread::RET_t THREAD_CC ThreadDOSBox(void*)
 		{
 			control->StartUp();
-			dbp_state = DBPSTATE_EXITED;
-			semDidPause.Post();
+			DBP_ThreadControl(TCM_ON_SHUTDOWN);
 			return 0;
 		}
 	};
