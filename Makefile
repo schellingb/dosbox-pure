@@ -1,5 +1,5 @@
 #
-#  Copyright (C) 2020-2021 Bernhard Schelling
+#  Copyright (C) 2020-2022 Bernhard Schelling
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -32,7 +32,8 @@ SOURCES := \
   src/*/*.cpp \
   src/*/*/*.cpp
 
-CPUFLAGS :=
+CPUFLAGS := $(MAKE_CPUFLAGS)
+STRIPCMD := strip --strip-all
 ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
@@ -45,18 +46,19 @@ else ifneq (,$(findstring ios,$(platform)))
   OUTNAME := dosbox_pure_libretro_ios.dylib
   MINVERSION :=
   COMMONFLAGS += -DDISABLE_DYNAREC=1
-ifeq ($(platform),ios-arm64)
-  CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
-else
-  CXX     = c++ -arch armv7 -isysroot $(IOSSDK)
-endif
+  ifeq ($(platform),ios-arm64)
+    CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
+  else
+    CXX     = c++ -arch armv7 -isysroot $(IOSSDK)
+  endif
   LDFLAGS := -Wl,-dead_strip
-ifeq ($(platform),$(filter $(platform),ios9 ios-arm64))
-  MINVERSION = -miphoneos-version-min=8.0
-else
-  MINVERSION = -miphoneos-version-min=5.0
-endif
+  ifeq ($(platform),$(filter $(platform),ios9 ios-arm64))
+    MINVERSION = -miphoneos-version-min=8.0
+  else
+    MINVERSION = -miphoneos-version-min=5.0
+  endif
   COMMONFLAGS += $(MINVERSION) -Wno-ignored-optimization-argument -Wno-unknown-warning-option
+  STRIPCMD := strip -xS
 else ifeq ($(platform),tvos-arm64)
   ifeq ($(IOSSDK),)
     IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
@@ -65,6 +67,7 @@ else ifeq ($(platform),tvos-arm64)
   CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
   LDFLAGS := -Wl,-dead_strip
   COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option
+  STRIPCMD := strip -xS
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= c++
@@ -75,9 +78,10 @@ else ifneq ($(ISMAC),)
     TARGET_RULE   = -target $(LIBRETRO_APPLE_PLATFORM) -isysroot $(LIBRETRO_APPLE_ISYSROOT)
     COMMONFLAGS   += $(TARGET_RULE)
     LDFLAGS       += $(TARGET_RULE)
-   endif
-   COMMONFLAGS  += $(ARCHFLAGS)
-   LDFLAGS      += $(ARCHFLAGS)
+  endif
+  COMMONFLAGS  += $(ARCHFLAGS)
+  LDFLAGS      += $(ARCHFLAGS)
+  STRIPCMD := strip -xS
 else ifeq ($(platform),windows) # For MSYS2 only
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
@@ -127,13 +131,14 @@ else ifeq ($(platform),libnx)
   COMMONFLAGS += -I$(LIBNX)/include/ -ftls-model=local-exec -specs=$(LIBNX)/switch.specs
   COMMONFLAGS += $(INCLUDE) -D__SWITCH__ -DHAVE_LIBNX
   STATIC_LINKING = 1
-else ifeq ($(platform), gcw0)
+else ifeq ($(platform),gcw0)
   # You must used the toolchain built on or around 2014-08-20
   OUTNAME := dosbox_pure_libretro.so
   CXX     := /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
   CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
   COMMONFLAGS += -pthread
+  STRIPCMD := /opt/gcw0-toolchain/usr/mipsel-gcw0-linux-uclibc/bin/strip --strip-all
 else ifneq ($(findstring Haiku,$(shell uname -s)),)
   OUTNAME := dosbox_pure_libretro.so
   LDFLAGS := -Wl,--gc-sections -fno-ident -lroot -lnetwork
@@ -147,20 +152,24 @@ else
   CXX     ?= g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
   COMMONFLAGS += -pthread
-  # ARM optimizations
-  PROCCPU := $(shell cat /proc/cpuinfo))
-  ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
-    CPUFLAGS := -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
-  else
-    ifeq ($(CORTEX_A7), 1)
-      CPUFLAGS += -marm -mcpu=cortex-a7
-      ifeq ($(ARM_NEON), 1)
-        CPUFLAGS += -mfpu=neon-vfpv4
+  ifeq ($(CPUFLAGS),)
+    # ARM optimizations
+    PROCCPU := $(shell cat /proc/cpuinfo))
+    ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
+      CPUFLAGS := -marm -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
+    else ifeq ($(ARM_RPI4), 1)
+      CPUFLAGS := -marm -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
+    else
+      ifeq ($(CORTEX_A7), 1)
+        CPUFLAGS += -marm -mcpu=cortex-a7
+        ifeq ($(ARM_NEON), 1)
+          CPUFLAGS += -mfpu=neon-vfpv4
+        endif
+      endif
+      ifeq ($(ARM_HARDFLOAT), 1)
+        CPUFLAGS += -mfloat-abi=hard
       endif
     endif
-    ifeq ($(ARM_HARDFLOAT), 1)
-      CPUFLAGS += -mfloat-abi=hard
-     endif
   endif
   CXX_VER := $(shell $(CXX) -v 2>&1)
   ifneq ($(and $(findstring arm,$(CXX_VER)),$(findstring version 10,$(CXX_VER))),)
@@ -237,9 +246,7 @@ else
 	$(info Linking $@ ...)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 ifneq ($(BUILD),DEBUG)
-	@-/opt/gcw0-toolchain/usr/mipsel-gcw0-linux-uclibc/bin/strip --strip-all $@ $(PIPETONULL);true # gcw0
-	@-strip --strip-all $@ $(PIPETONULL);true # others
-	@-strip -xS $@ $(PIPETONULL);true # mac
+	$(STRIPCMD) $@
 endif
 endif
 
