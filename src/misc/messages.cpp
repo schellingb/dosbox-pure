@@ -25,6 +25,7 @@
 #include "support.h"
 #include "setup.h"
 #include "control.h"
+#ifdef C_DBP_ENABLE_MESSAGEFILE
 #include <list>
 #include <string>
 using namespace std;
@@ -55,7 +56,6 @@ void MSG_Add(const char * _name, const char* _val) {
 	Lang.push_back(MessageBlock(_name,_val));
 }
 
-#ifdef C_DBP_ENABLE_MESSAGEFILE
 void MSG_Replace(const char * _name, const char* _val) {
 	/* Find the message */
 	for(itmb tel=Lang.begin();tel!=Lang.end();tel++) {
@@ -112,7 +112,6 @@ static void LoadMessageFile(const char * fname) {
 	}
 	fclose(mfile);
 }
-#endif // C_DBP_ENABLE_MESSAGEFILE
 
 const char * MSG_Get(char const * msg) {
 	for(itmb tel=Lang.begin();tel!=Lang.end();tel++){	
@@ -125,7 +124,6 @@ const char * MSG_Get(char const * msg) {
 }
 
 
-#ifdef C_DBP_ENABLE_MESSAGEFILE
 bool MSG_Write(const char * location) {
 	FILE* out=fopen(location,"w+t");
 	if(out==NULL) return false;//maybe an error?
@@ -135,10 +133,8 @@ bool MSG_Write(const char * location) {
 	fclose(out);
 	return true;
 }
-#endif // C_DBP_ENABLE_MESSAGEFILE
 
 void MSG_Init(Section_prop * section) {
-#ifdef C_DBP_ENABLE_MESSAGEFILE
 	std::string file_name;
 	if (control->cmdline->FindString("-lang",file_name,true)) {
 		LoadMessageFile(file_name.c_str());
@@ -146,5 +142,36 @@ void MSG_Init(Section_prop * section) {
 		Prop_path* pathprop = section->Get_path("language");
 		if(pathprop) LoadMessageFile(pathprop->realpath.c_str());
 	}
-#endif // C_DBP_ENABLE_MESSAGEFILE
 }
+#else // C_DBP_ENABLE_MESSAGEFILE
+#include "../dos/drives.h"
+
+//DBP: Replacing list<> with hash map yields significant performance improvement especially during startup/restart
+static std::vector<char> MsgBuf;
+static StringToPointerHashMap<void> MsgOffsets;
+
+void MSG_Init(Section_prop * section) { }
+
+void MSG_Add(const char * _name, const char* _val)
+{
+	size_t bytes = strlen(_val) + 1;
+	Bit32u hash = MsgOffsets.Hash(_name);
+	size_t existing = (size_t)MsgOffsets.Get(_name, 0, hash);
+	if (existing)
+	{
+		DBP_ASSERT(!strcmp(&MsgBuf[existing-1], _val));
+		return;
+	}
+	size_t bufpos = MsgBuf.size();
+	MsgBuf.resize(bufpos + bytes);
+	memcpy(&MsgBuf[bufpos], _val, bytes);
+	MsgOffsets.Put(_name, (void*)(bufpos + 1), 0, hash);
+}
+
+const char * MSG_Get(char const * msg)
+{
+	size_t bufpos1 = (size_t)MsgOffsets.Get(msg);
+	if (bufpos1) return &MsgBuf[bufpos1-1];
+	return "Message not Found!\n";
+}
+#endif // C_DBP_ENABLE_MESSAGEFILE
