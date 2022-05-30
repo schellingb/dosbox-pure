@@ -170,10 +170,13 @@ scroll lock key. While game focus is active, the hotkeys are disabled and keyboa
 not cause retro pad button presses (which could cause multiple keys to be pressed at once).
 
 ### Loading a dosbox.conf file
-If a file named `dosbox.conf` exists in the loaded game directory (for example inside the ZIP file),
-DOSBox Pure will load the settings in that file and run the autoexec lines from it (if set).
-It is also possible to load a .conf file directly with the core and it will mount the directory
-of that file as the C: drive and then load it the same way.
+If a .conf file gets selected in the frontend, DOSBox Pure will mount the directory of that file as the C: drive and then use it.
+
+Alternatively, a .conf file can get loaded automatically depending on the 'Emulation > Loading of dosbox.conf' core option. There are two modes that can be enabled:
+- "Try 'dosbox.conf' in the loaded content (ZIP or folder)" - Will load C:\DOSBOX.CONF automatically if it exists in the mounted ZIP or path
+- "Try '.conf' with same name as loaded content (next to ZIP or folder)" - Will automatically load GAME.conf next to GAME.zip if it exists.
+
+If there is a .conf file, DOSBox Pure will load the settings in that file and run the autoexec lines from it (if set).
 
 ### ZIP files can be renamed to DOSZ
 If your libretro frontend wants to load the content of `.ZIP` files instead of sending it to
