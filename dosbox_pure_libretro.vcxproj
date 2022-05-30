@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" InitialTargets="DisplayText">
   <PropertyGroup Label="UserMacros">
     <VisualStudioYear Condition="'$(VisualStudioVersion)' == '11.0' Or '$(PlatformToolsetVersion)' == '110' Or '$(MSBuildToolsVersion)' ==  '4.0'">2012</VisualStudioYear>
@@ -6,7 +6,8 @@
     <VisualStudioYear Condition="'$(VisualStudioVersion)' == '14.0' Or '$(PlatformToolsetVersion)' == '140' Or '$(MSBuildToolsVersion)' == '14.0'">2015</VisualStudioYear>
     <VisualStudioYear Condition="'$(VisualStudioVersion)' == '15.0' Or '$(PlatformToolsetVersion)' == '141' Or '$(MSBuildToolsVersion)' == '15.0'">2017</VisualStudioYear>
     <VisualStudioYear Condition="'$(VisualStudioVersion)' == '16.0' Or '$(PlatformToolsetVersion)' == '142' Or '$(MSBuildToolsVersion)' == '16.0'">2019</VisualStudioYear>
-    <VisualStudioYear Condition="'$(VisualStudioYear)' == ''">20XX</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioVersion)' == '17.0' Or '$(PlatformToolsetVersion)' == '143' Or '$(MSBuildToolsVersion)' == '17.0'">2022</VisualStudioYear>
+    <VisualStudioYear Condition="'$(VisualStudioYear)' == ''">9999</VisualStudioYear>
   </PropertyGroup>
   <Target Name="DisplayText">
     <Message Importance="high" Text="Building configuration $(Configuration) for platform $(Platform) with Visual Studio $(VisualStudioYear) ..." />
@@ -38,10 +39,13 @@
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <PlatformToolset Condition="'$(VisualStudioYear)' == '2012'">v110_xp</PlatformToolset>
     <PlatformToolset Condition="'$(VisualStudioYear)' == '2013'">v120_xp</PlatformToolset>
-    <PlatformToolset Condition="'$(VisualStudioYear)' == '2015'">v140</PlatformToolset>
-    <PlatformToolset Condition="'$(VisualStudioYear)' == '2017'">v141</PlatformToolset>
-    <PlatformToolset Condition="'$(VisualStudioYear)' == '2019'">v142</PlatformToolset>
-    <PlatformToolset Condition="'$(VisualStudioYear)' == '20XX'">$(DefaultPlatformToolset)</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2015' And '$(ForXP)' == ''">v140</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2017' And '$(ForXP)' == ''">v141</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2019' And '$(ForXP)' == ''">v142</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2022' And '$(ForXP)' == ''">v143</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '9999' And '$(ForXP)' == ''">$(DefaultPlatformToolset)</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' == '2015' And '$(ForXP)' != ''">v140_xp</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioYear)' &gt;= '2017' And '$(ForXP)' != ''">v141_xp</PlatformToolset>
     <UseOfMfc>false</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">true</WholeProgramOptimization>
