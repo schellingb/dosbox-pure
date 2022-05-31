@@ -2886,12 +2886,12 @@ static void refresh_input_binds(bool set_controller_info = false, unsigned refre
 		}
 	}
 
-	//bool useJoy1 = false, useJoy2 = false;
+	bool useJoy1 = false, useJoy2 = false;
 	std::vector<retro_input_descriptor> input_descriptor;
 	for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(), *prev = NULL; b != bEnd; prev = b++)
 	{
-		//useJoy1 |= (b->evt == DBPET_JOY1X || b->evt == DBPET_JOY1Y || b->evt == DBPET_JOY1DOWN);
-		//useJoy2 |= (b->evt == DBPET_JOY2X || b->evt == DBPET_JOY2Y || b->evt == DBPET_JOY2DOWN || b->evt == DBPET_JOYHATSETBIT);
+		useJoy1 |= (b->evt == DBPET_JOY1X || b->evt == DBPET_JOY1Y || b->evt == DBPET_JOY1DOWN);
+		useJoy2 |= (b->evt == DBPET_JOY2X || b->evt == DBPET_JOY2Y || b->evt == DBPET_JOY2DOWN || b->evt == DBPET_JOYHATSETBIT);
 		if (b->device != RETRO_DEVICE_MOUSE && b->desc)
 			if (!prev || prev->port != b->port || prev->device != b->device || prev->index != b->index || prev->id != b->id)
 				input_descriptor.push_back( { b->port, b->device, b->index, b->id, b->desc } );
@@ -2899,9 +2899,11 @@ static void refresh_input_binds(bool set_controller_info = false, unsigned refre
 	input_descriptor.push_back( { 0 } );
 	environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, &input_descriptor[0]);
 
-	// We used to enable sticks only when mapped, but some games always want the joystick port active (if used, this also needs to be done in init_dosbox())
-	//JOYSTICK_Enable(0, useJoy1);
-	//JOYSTICK_Enable(1, useJoy2);
+	// Enable DOS joysticks only when mapped
+	// This helps for games which by default react to the joystick without calibration
+	// This can cause problems in other games that expect the joystick to respond (but hopefully these games have a setup program that can disable that)
+	JOYSTICK_Enable(0, useJoy1);
+	JOYSTICK_Enable(1, useJoy2);
 
 	if (set_controller_info)
 	{
@@ -3578,10 +3580,6 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 
 		DBP_PadMapping::Load();
 	}
-
-	// Some games always want the joystick port to respond, so enable them always
-	JOYSTICK_Enable(0, true);
-	JOYSTICK_Enable(1, true);
 
 	// If mounted, always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
 	// For DBP we modified init_line to always run Z:\AUTOEXEC.BAT and not just any AUTOEXEC.BAT of the current drive/directory
