@@ -3431,7 +3431,11 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 
 	if (!Drives['C'-'A'])
 	{
-		if (!union_underlay) { union_underlay = new memoryDrive(); DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext); }
+		if (!union_underlay)
+		{
+			union_underlay = new memoryDrive();
+			if (path) DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext);
+		}
 		unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true);
 		Drives['C'-'A'] = uni;
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
