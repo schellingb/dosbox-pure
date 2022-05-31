@@ -523,7 +523,7 @@ static unsigned DBP_AppendImage(const char* entry, bool sorted)
 		if (dbp_images[insert_index].path == entry) return insert_index;
 		if (sorted && dbp_images[insert_index].path > entry) { break; }
 	}
-	dbp_images.insert(dbp_images.begin() + insert_index, {});
+	dbp_images.insert(dbp_images.begin() + insert_index, DBP_Image());
 	dbp_images[insert_index].path = entry;
 	return insert_index;
 }
