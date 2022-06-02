@@ -687,6 +687,7 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		MOUNT_ISO:
 		if (letter < 'D') letter = 'D';
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
+		if (Drives[letter-'A']) DBP_Unmount(letter); // needs to be done before constructing isoDrive as it registers itself with MSCDEX overwriting the current drives registration
 		int error = -1;
 		drive = new isoDrive(letter, path, 0xF8, error);
 		if (error)
