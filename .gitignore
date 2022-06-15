@@ -13,3 +13,4 @@ build/
 *.dll
 *.so
 *.dylib
+.DS_Store
