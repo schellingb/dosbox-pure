@@ -5,8 +5,8 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
 
 ![Logo](images/logo.png)
 
-* [Download](#download)
-* [Install](#install)
+* [How To Use](#how-to-use)
+* [Manual Install](#manual-install)
 * [Features](#features)
     * [Load games from ZIP](#load-games-from-zip)
     * [Store modifications in separate save files](#store-modifications-in-separate-save-files)
@@ -41,11 +41,15 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Linux](#linux)
 * [License](#license)
 
-## Download
-You can find a binary download for Windows, Linux and Raspberry Pi (Arm7) under the [Releases page](https://github.com/schellingb/dosbox-pure/releases/latest).
+## How To Use
+The easiest way to use this core is with the built-in core downloader feature of RetroArch.
 
-## Install
-Locate the directory where your libretro frontend stores its cores.  
+Just [get RetroArch](https://retroarch.com/?page=platforms) and select `Online Updater` -> `Core Downloader` -> `DOS (DOSBox-Pure)` and you're ready to go!
+
+## Manual Install
+You can find a binary download of the core for Windows, Linux and Raspberry Pi (Arm7) under the [Releases page here](https://github.com/schellingb/dosbox-pure/releases/latest).
+
+To install, locate the directory where your libretro frontend stores its cores.  
 In RetroArch, you can open the main menu and go to `Configuration File` -> `Load Configuration` -> `Parent Directory` -> `cores` to find it.  
 The release ZIP contains 2 files, `dosbox_pure_libretro.dll` (or `.so` for Linux) and `dosbox_pure_libretro.info`.  
 The `.dll` or `.so` file is to be extracted into the cores directory. The `.info` file goes into the `info` directory or into `cores` if it doesn't exist.
