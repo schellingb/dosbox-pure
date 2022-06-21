@@ -19,16 +19,27 @@
 #ifndef DOSBOX_PCI_H
 #define DOSBOX_PCI_H
 
+#include "config.h"
+#ifdef C_DBP_ENABLE_VOODOO
+#define PCI_FUNCTIONALITY_ENABLED 1
+#else
 //#define PCI_FUNCTIONALITY_ENABLED 0
+#endif
 
 #if defined PCI_FUNCTIONALITY_ENABLED
 
+#ifdef C_DBP_LIBRETRO
+// Reduced to be just as much as needed
+#define PCI_MAX_PCIDEVICES		2
+#define PCI_MAX_PCIFUNCTIONS	2
+#else
 #define PCI_MAX_PCIDEVICES		10
 #define PCI_MAX_PCIFUNCTIONS	8
+#endif
 
 
 class PCI_Device {
-private:
+protected:
 	Bits pci_id, pci_subfunction;
 	Bit16u vendor_id, device_id;
 

@@ -95,6 +95,9 @@ public:
 	//Install and allocate a callback.
 	void Install(CallBack_Handler handler,Bitu type,const char* description);
 	void Install(CallBack_Handler handler,Bitu type,PhysPt addr,const char* description);
+#ifdef C_DBP_LIBRETRO
+	void InstallFixed(Bitu fix_callback, CallBack_Handler handler,Bitu type,const char* description);
+#endif
 
 	void Uninstall();
 

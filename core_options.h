@@ -410,6 +410,32 @@ static retro_core_option_v2_definition option_defs[] =
 		"s3"
 	},
 	{
+		"dosbox_pure_voodoo",
+		"3dfx Voodoo Emulation", NULL,
+		"Enables certain games with support for the Voodoo 3D accelerator." "\n"
+		"3dfx Voodoo Graphics SST-1/2 emulator by Aaron Giles and the MAME team (license: BSD-3-Clause)", NULL,
+		"Video",
+		{
+			{ "12mb", "Enabled - 12MB memory (default)" },
+			{ "4mb", "Enabled - 4MB memory" },
+			{ "off", "Disabled" },
+		},
+		"12mb",
+	},
+	{
+		"dosbox_pure_voodoo_perf",
+		"3dfx Voodoo Performance Settings", NULL,
+		"Options to tweak the behavior of the 3dfx Voodoo emulation.", NULL,
+		"Video",
+		{
+			{ "1", "Multi-threading (default)" },
+			{ "3", "Multi-threading, low quality" },
+			{ "2", "Low quality" },
+			{ "0", "None" },
+		},
+		"1",
+	},
+	{
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
 		"When enabled, the core's aspect ratio is set to what a CRT monitor would display." "\n\n", NULL, //end of Video section

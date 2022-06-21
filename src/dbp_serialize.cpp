@@ -340,6 +340,7 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_GUS         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_MPU401      ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_PCSPEAKER   ); break;
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Voodoo,  >=5); break;
 			case __LINE__: goto done; /*return;*/ default: continue;
 		}
 		size_t old_off = ar.GetOffset();

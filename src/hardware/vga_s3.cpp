@@ -550,4 +550,9 @@ void SVGA_Setup_S3Trio(void) {
 		vga.vmemsize = 4096*1024;
 		vga.s3.reg_36 = 0x1a;		// 4mb fast page mode
 	}
+
+#ifdef C_DBP_ENABLE_VOODOO
+	void PCI_AddSVGAS3_Device(void);
+	PCI_AddSVGAS3_Device();
+#endif
 }

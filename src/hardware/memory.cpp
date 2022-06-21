@@ -72,6 +72,12 @@ public:
 	Bitu readb(PhysPt addr) {
 #if C_DEBUG
 		LOG_MSG("Illegal read from %x, CS:IP %8x:%8x",addr,SegValue(cs),reg_eip);
+#elif defined(C_DBP_LIBRETRO) // Win98 on boot reads seg 0x28, Win95C setup reads seg 0xf000 (don't log)
+		static Bits lcount=0;
+		if (lcount<200 && SegValue(cs) != 0x28 && SegValue(cs) != 0xf000) {
+			lcount++;
+			LOG_MSG("Illegal read from %x, CS:IP %8x:%8x",addr,SegValue(cs),reg_eip);
+		}
 #else
 		static Bits lcount=0;
 		if (lcount<1000) {
@@ -84,6 +90,12 @@ public:
 	void writeb(PhysPt addr,Bitu val) {
 #if C_DEBUG
 		LOG_MSG("Illegal write to %x, CS:IP %8x:%8x",addr,SegValue(cs),reg_eip);
+#elif defined(C_DBP_LIBRETRO) // Win98 on boot writes seg 0x28 (don't log)
+		static Bits lcount=0;
+		if (lcount<200 && SegValue(cs) != 0x28) {
+			lcount++;
+			LOG_MSG("Illegal write to %x, CS:IP %8x:%8x",addr,SegValue(cs),reg_eip);
+		}
 #else
 		static Bits lcount=0;
 		if (lcount<1000) {
@@ -146,6 +158,13 @@ PageHandler * MEM_GetPageHandler(Bitu phys_page) {
 	} else if ((phys_page>=memory.lfb.start_page+0x01000000/4096) &&
 				(phys_page<memory.lfb.start_page+0x01000000/4096+16)) {
 		return memory.lfb.mmiohandler;
+#ifdef C_DBP_ENABLE_VOODOO
+	} else {
+		PageHandler* VOODOO_PCI_GetLFBPageHandler(Bitu);
+		if (PageHandler* vph = VOODOO_PCI_GetLFBPageHandler(phys_page)) {
+			return vph;
+		}
+#endif
 	}
 	return &illegal_page_handler;
 }

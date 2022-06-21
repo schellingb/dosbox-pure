@@ -453,6 +453,10 @@
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
       <WarningLevel>Level2</WarningLevel>
     </ClCompile>
+    <ClCompile Include="src\hardware\voodoo.cpp">
+      <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
+      <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
+    </ClCompile>
     <ClCompile Include="src\ints\bios.cpp">
       <WarningLevel>Level2</WarningLevel>
     </ClCompile>

@@ -646,6 +646,7 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, MOUSE);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, unionDrive);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, IDEController);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, Voodoo);
 
 	float pic_indices[PIC_QUEUESIZE];
 	Bitu pic_values[PIC_QUEUESIZE];
@@ -671,7 +672,7 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	ar.SerializeArray(pics).Serialize(PIC_Ticks).Serialize(PIC_IRQCheck).Serialize(pic_count);
 	ar.SerializeBytes(pic_indices, pic_count * sizeof(*pic_indices));
 	ar.SerializeBytes(pic_values, pic_count * sizeof(*pic_values));
-	ar.SerializePointers((void**)pic_events, pic_count, false, 13,
+	ar.SerializePointers((void**)pic_events, pic_count, false, 14,
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, VGA),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, VGA_Draw),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, SERIAL),
@@ -684,7 +685,8 @@ void DBPSerialize_PIC(DBPArchive& ar)
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, TIMER),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, MOUSE),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, unionDrive),
-		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, IDEController));
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, IDEController),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, Voodoo));
 
 	if (pic_count < 16)
 	{

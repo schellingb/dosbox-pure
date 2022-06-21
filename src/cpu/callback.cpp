@@ -600,6 +600,16 @@ void CALLBACK_HandlerObject::Install(CallBack_Handler handler,Bitu type,PhysPt a
 		CALLBACK_Setup(m_callback,handler,type,addr,description);
 	} else E_Exit("Callback handler object already installed");
 }
+#ifdef C_DBP_LIBRETRO
+void CALLBACK_HandlerObject::InstallFixed(Bitu fix_callback, CallBack_Handler handler,Bitu type,const char* description){
+	if(!installed && CallBack_Handlers[fix_callback]==&illegal_handler) {
+		installed=true;
+		m_type=SETUP;
+		m_callback=fix_callback;
+		CALLBACK_Setup(m_callback,handler,type,description);
+	} else E_Exit("Callback handler object already installed");
+}
+#endif
 
 void CALLBACK_HandlerObject::Allocate(CallBack_Handler handler,const char* description) {
 	if(!installed) {

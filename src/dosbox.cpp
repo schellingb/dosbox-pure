@@ -678,6 +678,12 @@ void DOSBOX_Init(void) {
 
 #if defined(PCI_FUNCTIONALITY_ENABLED)
 	secprop=control->AddSection_prop("pci",&PCI_Init,false); //PCI bus
+#ifdef C_DBP_ENABLE_VOODOO
+	void VOODOO_Init(Section*);
+	secprop->AddInitFunction(&VOODOO_Init,false);
+	secprop->Add_string("voodoo",Property::Changeable::OnlyAtStart,"12mb");
+	secprop->Add_int("voodoo_perf",Property::Changeable::OnlyAtStart,1);
+#endif
 #endif
 
 
