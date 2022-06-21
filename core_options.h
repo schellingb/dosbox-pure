@@ -519,7 +519,7 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "A240 I5 D1 H5",  "Port 0x240, IRQ 5, 8-Bit DMA 1, 16-bit DMA 5"  },
 			{ "A240 I10 D3 H7", "Port 0x240, IRQ 10, 8-Bit DMA 3, 16-bit DMA 7" },
 			{ "A280 I10 D0 H6", "Port 0x280, IRQ 10, 8-Bit DMA 0, 16-bit DMA 6" },
-			{ "A210 I5 D1 H5",  "Port 0x210, IRQ 5, 8-Bit DMA 1, 16-bit DMA 5"  },
+			{ "A280 I5 D1 H5",  "Port 0x280, IRQ 5, 8-Bit DMA 1, 16-bit DMA 5"  },
 		},
 		"A220 I7 D1 H5"
 	},
