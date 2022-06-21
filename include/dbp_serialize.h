@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2021 Bernhard Schelling
+ *  Copyright (C) 2020-2022 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ struct DBPArchive
 		MODE_ZERO,
 	};
 
-	DBPArchive(EMode _mode) : mode(_mode), had_error(ERR_NONE), warnings(WARN_NONE) {}
+	DBPArchive(EMode _mode) : mode(_mode), flags(FLAG_NONE), had_error(ERR_NONE), warnings(WARN_NONE) {}
 	virtual DBPArchive& SerializeByte(void* p) = 0;
 	virtual DBPArchive& SerializeBytes(void* p, size_t sz) = 0;
 	virtual DBPArchive& Discard(size_t sz);
@@ -70,8 +70,13 @@ struct DBPArchive
 		WARN_WRONGDEVICES = 1<<1,
 		WARN_WRONGPROGRAM = 1<<2,
 	};
+	enum EFlag : Bit8u
+	{
+		FLAG_NONE            = 0,
+		FLAG_NORESETINPUT = 1<<0,
+	};
 
-	Bit8u mode, version, had_error, warnings, error_info;
+	Bit8u mode, version, flags, had_error, warnings, error_info;
 
 	// If this is set to true, the serializer will attempt have the same
 	// output size and data layout on successively stored states.

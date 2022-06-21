@@ -51,7 +51,7 @@ else
   LDFLAGS  += -O2
 endif
 
-CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fno-exceptions -fno-non-call-exceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
+CFLAGS  += $(CPUFLAGS) -std=c++11 -fpic -fomit-frame-pointer -fexceptions -Wno-address-of-packed-member -Wno-format -Wno-switch
 CFLAGS  += -fvisibility=hidden -ffunction-sections -fdata-sections
 CFLAGS  += -pthread -D__LIBRETRO__ -Iinclude
 

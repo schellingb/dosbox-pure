@@ -209,3 +209,20 @@ void CPU_Core_Normal_Init(void) {
 
 }
 
+#include <dbp_serialize.h>
+
+void DBPSerialize_CPU_Core_Normal(DBPArchive& ar)
+{
+	// Because this always runs outside of CPU_Core_Normal_Run we don't need to serialize things that are reset upon entering that function:
+	//ar.Serialize(core.opcode_index);
+	//ar.Serialize(core.cseip);
+	//ar.Serialize(core.base_ds);
+	//ar.Serialize(core.base_ss);
+	//ar.Serialize(core.base_val_ds);
+	ar.Serialize(core.rep_zero);
+	//ar.Serialize(core.prefixes);
+	//Bit16u ea_table_idx = (Bit16u)(core.ea_table - EATable);
+	//ar.Serialize(ea_table_idx);
+	//if (ar.mode == DBPArchive::MODE_LOAD)
+	//	core.ea_table = &EATable[ea_table_idx];
+}

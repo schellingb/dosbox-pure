@@ -433,10 +433,18 @@ void DBPSerialize_Keyboard(DBPArchive& ar)
 		.Serialize(port_61_data);
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
-		KEYBOARD_ClrBuffer();
-		bool DBP_IsKeyDown(KBD_KEYS key);
-		for (Bit8u k = (KBD_NONE + 1); k != KBD_LAST; k++)
-			if (keyb.down[k>>3] & (1<<(k&7)) && !DBP_IsKeyDown((KBD_KEYS)k))
-				KEYBOARD_AddKey((KBD_KEYS)k, false);
+		if (!(ar.flags & DBPArchive::FLAG_NORESETINPUT))
+		{
+			KEYBOARD_ClrBuffer();
+			bool DBP_IsKeyDown(KBD_KEYS key);
+			for (Bit8u k = (KBD_NONE + 1); k != KBD_LAST; k++)
+				if (keyb.down[k>>3] & (1<<(k&7)) && !DBP_IsKeyDown((KBD_KEYS)k))
+					KEYBOARD_AddKey((KBD_KEYS)k, false);
+		}
+		else if (keyb.scheduled)
+		{
+			PIC_RemoveEvents(KEYBOARD_TransferBuffer);
+			PIC_AddEvent(KEYBOARD_TransferBuffer,KEYDELAY);
+		}
 	}
 }

@@ -139,6 +139,72 @@ bool DBP_CPUOverload;
 void increaseticks();
 #endif
 
+#include "shell.h"
+struct DBP_ShutdownCPU
+{
+	static Bitu Loop(void) { return 1; }
+	static Bits CPUDecoder(void) { return -1; }
+	static void Shutdown()
+	{
+		DOSBOX_SetLoop(DBP_ShutdownCPU::Loop);
+		cpudecoder = DBP_ShutdownCPU::CPUDecoder;
+		#ifndef C_DBP_CUSTOMTIMING
+		ticksRemain = 0;
+		#endif
+		CPU_CycleLeft = CPU_Cycles = 0;
+	}
+};
+
+#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
+#include "dbp_serialize.h"
+static struct DBPArchiveWipe : DBPArchive
+{
+	DBPArchiveWipe() : DBPArchive(MODE_SAVE), start(NULL), end(NULL), ptr(NULL) { }
+	void Grow() { size_t oldp = ptr-start, newsz = (end ? (end-start)*2 : 1024*1024); start = (Bit8u*)realloc(start, newsz); end = start + newsz; ptr = start + oldp; }
+	virtual DBPArchive& SerializeByte(void* p) { if (ptr == end) Grow(); *(ptr++) = *(Bit8u*)p; return *this; }
+	virtual DBPArchive& SerializeBytes(void* p, size_t sz) { while (ptr + sz > end) Grow(); memcpy(ptr, p, sz); ptr += sz; return *this; }
+	virtual size_t GetOffset() { return (ptr - start); }
+	Bit8u *start, *end, *ptr;
+} wipear;
+bool DOSBOX_IsWipingPageFaultQueue;
+
+void DOSBOX_WipePageFaultQueue()
+{
+	/* go back to the first recursion of DOSBOX_RunMachine and wipe the page fault queue */
+	if (!DOSBOX_IsWipingPageFaultQueue)
+	{
+		DOSBOX_IsWipingPageFaultQueue = true;
+		wipear.ptr = wipear.start;
+		wipear.flags |= DBPArchive::FLAG_NORESETINPUT;
+		DBPSerialize_All(wipear, true, true);
+	}
+	DBP_ShutdownCPU::Shutdown();
+}
+
+void DOSBOX_ResetCPUDecoder()
+{
+	void CPU_ResetCPUDecoder(const std::string& core);
+	CPU_ResetCPUDecoder(static_cast<Section_prop *>(control->GetSection("cpu"))->Get_string("core"));
+}
+
+static void DOSBOX_RestorePageFaultWipe()
+{
+	DBPArchiveReader arr(wipear.start, wipear.ptr - wipear.start);
+	arr.flags |= DBPArchive::FLAG_NORESETINPUT;
+	DBPSerialize_All(arr, true, true);
+	DOSBOX_IsWipingPageFaultQueue = false;
+	DOSBOX_ResetCPUDecoder();
+	DOSBOX_SetNormalLoop();
+}
+
+static void DBP_FreePageFaultWipe()
+{
+	if (!wipear.start) return;
+	free(wipear.start);
+	wipear.start = wipear.end = wipear.ptr = NULL;
+}
+#endif
+
 static Bitu Normal_Loop(void) {
 	Bits ret;
 	while (1) {
@@ -338,10 +404,39 @@ void DOSBOX_SetNormalLoop() {
 }
 
 void DOSBOX_RunMachine(void){
+#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
+	restartloop:
+	static Bit32u looprecursion;
+	looprecursion++;
+#endif
+	restartloop2:
+	try
+	{
+
 	Bitu ret;
 	do {
 		ret=(*loop)();
 	} while (!ret);
+
+	}
+	catch (GuestPageFaultException& pf) {
+		paging_prevent_exception_jump = true;
+		CPU_Exception(EXCEPTION_PF,pf.faultcode);
+		paging_prevent_exception_jump = false;
+		goto restartloop2;
+	}
+
+#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
+	if (--looprecursion == 0)
+	{
+		if (DOSBOX_IsWipingPageFaultQueue && !first_shell->exit)
+		{
+			DOSBOX_RestorePageFaultWipe();
+			goto restartloop;
+		}
+		DBP_FreePageFaultWipe();
+	}
+#endif
 }
 
 #ifdef C_DBP_ENABLE_MAPPER
@@ -563,6 +658,7 @@ void DOSBOX_Init(void) {
 
 	Pstring = Pmulti_remain->GetSection()->Add_string("parameters",Property::Changeable::Always,"");
 
+#ifdef C_DBP_ENABLE_MAPPER
 	Pint = secprop->Add_int("cycleup",Property::Changeable::Always,10);
 	Pint->SetMinMax(1,1000000);
 	Pint->Set_help("Amount of cycles to decrease/increase with keycombos.(CTRL-F11/CTRL-F12)");
@@ -570,6 +666,7 @@ void DOSBOX_Init(void) {
 	Pint = secprop->Add_int("cycledown",Property::Changeable::Always,20);
 	Pint->SetMinMax(1,1000000);
 	Pint->Set_help("Setting it lower than 100 will be a percentage.");
+#endif
 
 #if C_FPU
 	secprop->AddInitFunction(&FPU_Init);
@@ -854,16 +951,9 @@ void DOSBOX_Init(void) {
 	control->SetStartUp(&SHELL_Init);
 }
 
-#include "shell.h"
 void DBP_DOSBOX_ForceShutdown(const Bitu)
 {
 	/* end all execution and return to the top of the stack */
-	struct ShutdownCPU { static Bitu Loop(void) { return 1; } static Bits CPUDecoder(void) { return -1; } };
-	DOSBOX_SetLoop(ShutdownCPU::Loop);
-	cpudecoder = ShutdownCPU::CPUDecoder;
-#ifndef C_DBP_CUSTOMTIMING
-	ticksRemain = 0;
-#endif
-	CPU_CycleLeft = CPU_Cycles = 0;
+	DBP_ShutdownCPU::Shutdown();
 	first_shell->exit = true;
 }

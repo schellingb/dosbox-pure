@@ -334,12 +334,16 @@ void CPU_Core_Dynrec_Init(void) {
 
 void CPU_Core_Dynrec_Cache_Init(bool enable_cache) {
 	// Initialize code cache and dynamic blocks
-	cache_init(enable_cache);
+	//DBP: Fix turning dynamic core on and off
+	//cache_init(enable_cache);
+	if (enable_cache && cache_initialized) DBPSerialize_cache_reset();
+	else if (enable_cache && !cache_initialized) cache_init(true);
+	else if (!enable_cache && cache_initialized) cache_close();
 }
 
-void CPU_Core_Dynrec_Cache_Close(void) {
-	cache_close();
-}
+//void CPU_Core_Dynrec_Cache_Close(void) {
+//	cache_close();
+//}
 
 #include <dbp_serialize.h>
 
@@ -353,11 +357,7 @@ void DBPSerialize_CPU_Core_Dynrec(DBPArchive& ar)
 		.SerializeArray(core_dynrec.protected_regs);
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
-	{
-		if (stored_initialized && cache_initialized) DBPSerialize_cache_reset();
-		else if (stored_initialized && !cache_initialized) cache_init(true);
-		else if (!stored_initialized && cache_initialized) cache_close();
-	}
+		CPU_Core_Dynrec_Cache_Init(stored_initialized);
 }
 
 #endif

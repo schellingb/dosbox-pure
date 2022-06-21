@@ -32,7 +32,7 @@
 //#undef OS2
 #endif
 
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || _M_IX86 || defined(__x86_64__) || _M_AMD64
 #define C_UNALIGNED_MEMORY 1 /* Define to 1 to use a unaligned memory access */
 #endif
 
@@ -73,6 +73,7 @@
 // ----- Enabled new features
 #define C_DBP_LIBRETRO
 #define C_DBP_CUSTOMTIMING
+#define C_DBP_PAGE_FAULT_QUEUE_WIPE
 #define C_DBP_HAVE_FPATH_NOCASE
 #define C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 #define C_DBP_SUPPORT_DISK_MOUNT_DOSFILE

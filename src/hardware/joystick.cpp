@@ -353,7 +353,7 @@ void DBPSerialize_Joystick(DBPArchive& ar)
 	ar.Serialize(write_active);
 	ar.Serialize(swap34);
 	ar.Serialize(button_wrapping_enabled);
-	if (ar.mode == DBPArchive::MODE_LOAD)
+	if (ar.mode == DBPArchive::MODE_LOAD && !(ar.flags & DBPArchive::FLAG_NORESETINPUT))
 	{
 		for (Bitu i = 0; i != 2; i++)
 		{

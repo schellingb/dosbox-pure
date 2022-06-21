@@ -82,6 +82,9 @@ public:
 /* Some other functions */
 void PAGING_Enable(bool enabled);
 bool PAGING_Enabled(void);
+void PAGING_ChangedWP(void);
+void PAGING_SwitchCPL(bool isUser);
+void PAGING_OnChangeCore(void);
 
 Bitu PAGING_GetDirBase(void);
 void PAGING_SetDirBase(Bitu cr3);
@@ -174,6 +177,18 @@ struct PagingBlock {
 		Bitu used;
 		Bit32u entries[PAGING_LINKS];
 	} links;
+	struct {
+		Bitu used;
+		Bit32u entries[PAGING_LINKS];
+	} ur_links;
+	struct {
+		Bitu used;
+		Bit32u entries[PAGING_LINKS];
+	} krw_links;
+	struct {
+		Bitu used;
+		Bit32u entries[PAGING_LINKS];
+	} kr_links; // WP-only
 	Bit32u		firstmb[LINK_START];
 	bool		enabled;
 };
@@ -363,5 +378,11 @@ static INLINE bool mem_writed_checked(PhysPt address,Bit32u val) {
 	} else return mem_unalignedwrited_checked(address,val);
 }
 
+extern bool paging_prevent_exception_jump;
+#include <exception>
+struct GuestPageFaultException : std::exception {
+	GuestPageFaultException(Bitu n_faultcode) : faultcode(n_faultcode) {}
+	Bitu faultcode;
+};
 
 #endif

@@ -29,6 +29,7 @@
 #include "setup.h"
 #include "programs.h"
 #include "paging.h"
+#include "callback.h"
 #include "lazyflags.h"
 #include "support.h"
 
@@ -55,8 +56,10 @@ Bit32s CPU_CycleMax = 3000;
 Bit32s CPU_OldCycleMax = 3000;
 Bit32s CPU_CyclePercUsed = 100;
 Bit32s CPU_CycleLimit = -1;
+#ifdef C_DBP_ENABLE_MAPPER
 Bit32s CPU_CycleUp = 0;
 Bit32s CPU_CycleDown = 0;
+#endif
 Bit64s CPU_IODelayRemoved = 0;
 CPU_Decoder * cpudecoder;
 bool CPU_CycleAutoAdjust = false;
@@ -479,13 +482,13 @@ bool CPU_SwitchTask(Bitu new_tss_selector,TSwitchType tstype,Bitu old_eip) {
 	if (reg_flags & FLAG_VM) {
 		SegSet16(cs,new_cs);
 		cpu.code.big=false;
-		cpu.cpl=3;			//We don't have segment caches so this will do
+		CPU_SetCPL(3);			//We don't have segment caches so this will do
 	} else {
 		/* Protected mode task */
 		if (new_ldt!=0) CPU_LLDT(new_ldt);
 		/* Load the new CS*/
 		Descriptor cs_desc;
-		cpu.cpl=new_cs & 3;
+		CPU_SetCPL(new_cs & 3);
 		if (!cpu.gdt.GetDescriptor(new_cs,cs_desc))
 			E_Exit("Task switch with CS beyond limits");
 		if (!cs_desc.saved.seg.p)
@@ -691,7 +694,7 @@ void CPU_Interrupt(Bitu num,Bitu type,Bitu oldeip) {
 							reg_sp=n_esp & 0xffff;
 						}
 
-						cpu.cpl=cs_dpl;
+						CPU_SetCPL(cs_dpl);
 						if (gate.Type() & 0x8) {	/* 32-bit Gate */
 							if (reg_flags & FLAG_VM) {
 								CPU_Push32(SegValue(gs));SegSet16(gs,0x0);
@@ -861,7 +864,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 
 				CPU_SetFlags(n_flags,FMASK_ALL | FLAG_VM);
 				DestroyConditionFlags();
-				cpu.cpl=3;
+				CPU_SetCPL(3);
 
 				CPU_SetSegGeneral(ss,n_ss);
 				CPU_SetSegGeneral(es,n_es);
@@ -982,7 +985,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 			CPU_SetFlags(n_flags,mask);
 			DestroyConditionFlags();
 
-			cpu.cpl=n_cs_rpl;
+			CPU_SetCPL(n_cs_rpl);
 			reg_eip=n_eip;
 
 			Segs.val[ss]=n_ss;
@@ -1231,7 +1234,7 @@ call_code:
 							reg_sp=n_esp & 0xffff;
 						}
 
-						cpu.cpl = n_cs_desc.DPL();
+						CPU_SetCPL(n_cs_desc.DPL());
 						Bit16u oldcs    = SegValue(cs);
 						/* Switch to new CS:EIP */
 						Segs.phys[cs]	= n_cs_desc.GetBase();
@@ -1454,7 +1457,7 @@ RET_same_level:
 				"RET:Stack segment not present",
 				EXCEPTION_SS,n_ss & 0xfffc)
 
-			cpu.cpl = rpl;
+			CPU_SetCPL(rpl);
 			Segs.phys[cs]=desc.GetBase();
 			cpu.code.big=desc.Big()>0;
 			Segs.val[cs]=(selector&0xfffc) | cpu.cpl;
@@ -1565,6 +1568,10 @@ void CPU_SET_CRX(Bitu cr,Bitu value) {
 			Bitu changed=cpu.cr0 ^ value;
 			if (!changed) return;
 			cpu.cr0=value;
+			if (GCC_UNLIKELY(changed & CR0_WRITEPROTECT)) {
+				if (CPU_ArchitectureType >= CPU_ARCHTYPE_486OLDSLOW)
+					PAGING_ChangedWP();
+			}
 			if (value & CR0_PROTECTION) {
 				cpu.pmode=true;
 				LOG(LOG_CPU,LOG_NORMAL)("Protected mode");
@@ -1578,10 +1585,12 @@ void CPU_SET_CRX(Bitu cr,Bitu value) {
 					CPU_Cycles=0;
 					CPU_OldCycleMax=CPU_CycleMax;
 					GFX_SetTitle(CPU_CyclePercUsed,-1,false);
+#ifdef C_DBP_ENABLE_MAPPER
 					if(!printed_cycles_auto_info) {
 						printed_cycles_auto_info = true;
 						LOG_MSG("DOSBox has switched to max cycles, because of the setting: cycles=auto.\nIf the game runs too fast, try a fixed cycles amount in DOSBox's options.");
 					}
+#endif
 				} else {
 					GFX_SetTitle(-1,-1,false);
 				}
@@ -2093,6 +2102,93 @@ void CPU_ENTER(bool use32,Bitu bytes,Bitu level) {
 	reg_esp=(reg_esp&cpu.stack.notmask)|((sp_index)&cpu.stack.mask);
 }
 
+//DBP: Added implementation of force feed virtual 8086 mode fake I/O instructions from DOSBox-X by Jonathan Campbell
+//     Source: https://github.com/joncampbell123/dosbox-x/commit/8a9cc14
+static const Bitu vm86_fake_io_seg = 0xF000;	/* unused area in BIOS for IO instruction */
+static const Bitu vm86_fake_io_off = 0x0700;
+static Bitu vm86_fake_io_offs[3*2]={0};	/* offsets from base off because of dynamic core cache */
+
+static void init_vm86_fake_io() {
+	Bitu phys = (vm86_fake_io_seg << 4) + vm86_fake_io_off;
+	Bitu wo = 0;
+
+	/* read */
+	vm86_fake_io_offs[0] = vm86_fake_io_off + wo;
+	phys_writeb(phys+wo+0x00,(Bit8u)0xEC);	/* IN AL,DX */
+	phys_writeb(phys+wo+0x01,(Bit8u)0xCB);	/* RETF */
+	wo += 2;
+
+	vm86_fake_io_offs[1] = vm86_fake_io_off + wo;
+	phys_writeb(phys+wo+0x00,(Bit8u)0xED);	/* IN AX,DX */
+	phys_writeb(phys+wo+0x01,(Bit8u)0xCB);	/* RETF */
+	wo += 2;
+
+	vm86_fake_io_offs[2] = vm86_fake_io_off + wo;
+	phys_writeb(phys+wo+0x00,(Bit8u)0x66);	/* IN EAX,DX */
+	phys_writeb(phys+wo+0x01,(Bit8u)0xED);
+	phys_writeb(phys+wo+0x02,(Bit8u)0xCB);	/* RETF */
+	wo += 3;
+
+	/* write */
+	vm86_fake_io_offs[3] = vm86_fake_io_off + wo;
+	phys_writeb(phys+wo+0x00,(Bit8u)0xEE);	/* OUT DX,AL */
+	phys_writeb(phys+wo+0x01,(Bit8u)0xCB);	/* RETF */
+	wo += 2;
+
+	vm86_fake_io_offs[4] = vm86_fake_io_off + wo;
+	phys_writeb(phys+wo+0x00,(Bit8u)0xEF);	/* OUT DX,AX */
+	phys_writeb(phys+wo+0x01,(Bit8u)0xCB);	/* RETF */
+	wo += 2;
+
+	vm86_fake_io_offs[5] = vm86_fake_io_off + wo;
+	phys_writeb(phys+wo+0x00,(Bit8u)0x66);	/* OUT DX,EAX */
+	phys_writeb(phys+wo+0x01,(Bit8u)0xEF);
+	phys_writeb(phys+wo+0x02,(Bit8u)0xCB);	/* RETF */
+	wo += 3;
+}
+
+Bitu CPU_ForceV86FakeIO_In(Bitu port,Bitu len) {
+	Bitu old_ax,old_dx,ret;
+
+	/* save EAX:EDX and setup DX for IN instruction */
+	old_ax = reg_eax;
+	old_dx = reg_edx;
+
+	reg_edx = port;
+
+	/* make the CPU execute that instruction */
+	CALLBACK_RunRealFar(vm86_fake_io_seg,vm86_fake_io_offs[(len==4?2:(len-1))+0]);
+
+	/* take whatever the CPU or OS v86 trap left in EAX and return it */
+	ret = reg_eax;
+	if (len == 1) ret &= 0xFF;
+	else if (len == 2) ret &= 0xFFFF;
+
+	/* then restore EAX:EDX */
+	reg_eax = old_ax;
+	reg_edx = old_dx;
+
+	return ret;
+}
+
+void CPU_ForceV86FakeIO_Out(Bitu port,Bitu val,Bitu len) {
+	Bitu old_ax,old_dx;
+
+	/* save EAX:EDX and setup DX/AX for OUT instruction */
+	old_ax = reg_eax;
+	old_dx = reg_edx;
+
+	reg_edx = port;
+	reg_eax = val;
+
+	/* make the CPU execute that instruction */
+	CALLBACK_RunRealFar(vm86_fake_io_seg,vm86_fake_io_offs[(len==4?2:(len-1))+3]);
+
+	/* then restore EAX:EDX */
+	reg_eax = old_ax;
+	reg_edx = old_dx;
+}
+
 #ifdef C_DBP_ENABLE_MAPPER
 static void CPU_CycleIncrease(bool pressed) {
 	if (!pressed) return;
@@ -2174,7 +2270,8 @@ private:
 public:
 	CPU(Section* configuration):Module_base(configuration) {
 		if(inited) {
-			Change_Config(configuration);
+			Change_Config(configuration, false);
+			PAGING_OnChangeCore();
 			return;
 		}
 //		Section_prop * section=static_cast<Section_prop *>(configuration);
@@ -2230,10 +2327,12 @@ public:
 		MAPPER_AddHandler(CPU_CycleDecrease,MK_f11,MMOD1,"cycledown","Dec Cycles");
 		MAPPER_AddHandler(CPU_CycleIncrease,MK_f12,MMOD1,"cycleup"  ,"Inc Cycles");
 #endif
-		Change_Config(configuration);	
+		Change_Config(configuration, true);
 		CPU_JMP(false,0,0,0);					//Setup the first cpu core
+
+		init_vm86_fake_io();
 	}
-	bool Change_Config(Section* newconfig){
+	bool Change_Config(Section* newconfig, bool firststartup){
 		Section_prop * section=static_cast<Section_prop *>(newconfig);
 		CPU_AutoDetermineMode=CPU_AUTODETERMINE_NONE;
 		//CPU_CycleLeft=0;//needed ?
@@ -2320,9 +2419,16 @@ public:
 			CPU_CycleAutoAdjust=false;
 		}
 #endif // C_DBP_LIBRETRO
+#ifdef C_DBP_ENABLE_MAPPER
 		CPU_CycleUp=section->Get_int("cycleup");
 		CPU_CycleDown=section->Get_int("cycledown");
+#endif
 		std::string core(section->Get_string("core"));
+#ifdef C_DBP_LIBRETRO // use our custom cycle scaling
+		if (!firststartup && cpudecoder != CPU_Core_Simple_Run && core == "simple") core = "normal"; // simple can only be run from startup
+		void CPU_ResetCPUDecoder(const std::string& core);
+		CPU_ResetCPUDecoder(core);
+#else
 		cpudecoder=&CPU_Core_Normal_Run;
 		if (core == "normal") {
 			cpudecoder=&CPU_Core_Normal_Run;
@@ -2356,6 +2462,7 @@ public:
 #elif (C_DYNREC)
 		CPU_Core_Dynrec_Cache_Init( core == "dynamic" );
 #endif
+#endif // C_DBP_LIBRETRO
 
 		CPU_ArchitectureType = CPU_ARCHTYPE_MIXED;
 		std::string cputype(section->Get_string("cputype"));
@@ -2399,12 +2506,13 @@ public:
 		else if (CPU_ArchitectureType>=CPU_ARCHTYPE_486OLDSLOW) CPU_extflags_toggle=(FLAG_AC);
 		else CPU_extflags_toggle=0;
 
-
+#ifdef C_DBP_ENABLE_MAPPER
 		if(CPU_CycleMax <= 0) CPU_CycleMax = 3000;
 		if(CPU_CycleUp <= 0)   CPU_CycleUp = 500;
 		if(CPU_CycleDown <= 0) CPU_CycleDown = 20;
 		if (CPU_CycleAutoAdjust) GFX_SetTitle(CPU_CyclePercUsed,-1,false);
 		else GFX_SetTitle(CPU_CycleMax,-1,false);
+#endif
 		return true;
 	}
 	~CPU(){
@@ -2418,9 +2526,11 @@ static CPU * test;
 
 void CPU_ShutDown(Section* sec) {
 #if (C_DYNAMIC_X86)
-	CPU_Core_Dyn_X86_Cache_Close();
+	extern bool DBP_IsShuttingDown();
+	if (DBP_IsShuttingDown()) CPU_Core_Dyn_X86_Cache_Init(false);
 #elif (C_DYNREC)
-	CPU_Core_Dynrec_Cache_Close();
+	extern bool DBP_IsShuttingDown();
+	if (DBP_IsShuttingDown()) CPU_Core_Dynrec_Cache_Init(false);
 #endif
 	delete test;
 }
@@ -2432,12 +2542,54 @@ void CPU_Init(Section* sec) {
 //initialize static members
 bool CPU::inited=false;
 
+#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
+void CPU_ResetCPUDecoder(const std::string& core)
+{
+	CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CORE|(CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT));
+	cpudecoder = &CPU_Core_Normal_Run;
+	if (core == "simple") cpudecoder = &CPU_Core_Simple_Run;
+	else if (core == "full") cpudecoder = &CPU_Core_Full_Run;
+	#if C_DYNAMIC_X86 || C_DYNREC
+	else if (core == "auto") {
+		if (cpu.pmode) {
+			CPU_AutoDetermineMode |= (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT);
+			goto set_dynamic_cpudecoder;
+		} else {
+			CPU_AutoDetermineMode |= CPU_AUTODETERMINE_CORE;
+		}
+	}
+	#endif
+	#if C_DYNAMIC_X86
+	else if (core == "dynamic") {
+		set_dynamic_cpudecoder:
+		cpudecoder = &CPU_Core_Dyn_X86_Run;
+		CPU_Core_Dyn_X86_SetFPUMode(true);
+	} else if (core == "dynamic_nodhfpu") {
+		cpudecoder = &CPU_Core_Dyn_X86_Run;
+		CPU_Core_Dyn_X86_SetFPUMode(false);
+	}
+	#elif C_DYNREC
+	else if (core == "dynamic") {
+		set_dynamic_cpudecoder:
+		cpudecoder = &CPU_Core_Dynrec_Run;
+	}
+	#endif
+
+	#if (C_DYNAMIC_X86)
+	CPU_Core_Dyn_X86_Cache_Init(cpudecoder == &CPU_Core_Dyn_X86_Run);
+	#elif (C_DYNREC)
+	CPU_Core_Dynrec_Cache_Init(cpudecoder == &CPU_Core_Dynrec_Run);
+	#endif
+
+}
+#endif
+
 //This function is safer than setting new cycle settings through config (can cause FPU overflow crashes)
 void DBP_CPU_ModifyCycles(const char* val)
 {
+	CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT));
 	if (val[0] == 'm') { //max
 		CPU_CycleAutoAdjust = true;
-		CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT));
 	} else if (val[0] == 'a') { // auto
 		if (cpu.pmode) {
 			CPU_AutoDetermineMode |= (CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT);
@@ -2450,7 +2602,6 @@ void DBP_CPU_ModifyCycles(const char* val)
 		}
 	} else {
 		CPU_CycleAutoAdjust = false;
-		CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT));
 		CPU_CycleMax = atoi(val);
 		if (CPU_CycleMax < CPU_CYCLES_LOWER_LIMIT) CPU_CycleMax = CPU_CYCLES_LOWER_LIMIT;
 	}
@@ -2518,6 +2669,12 @@ void DBPSerialize_CPU(DBPArchive& ar)
 		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, IO),
 		DBP_SERIALIZE_GET_POINTER_LIST(CPU_DecoderPtr, Paging));
 
+	if (ar.version >= 5)
+	{
+		void DBPSerialize_CPU_Core_Normal(DBPArchive& ar);
+		DBPSerialize_CPU_Core_Normal(ar);
+	}
+
 	#if (C_DYNAMIC_X86)
 	void DBPSerialize_CPU_Core_Dyn_X86(DBPArchive& ar);
 	DBPSerialize_CPU_Core_Dyn_X86(ar);
@@ -2528,4 +2685,29 @@ void DBPSerialize_CPU(DBPArchive& ar)
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 		CPU_IODelayRemoved = 0;
+}
+
+const char* DBP_CPU_GetDecoderName()
+{
+	if (cpudecoder == &CPU_Core_Full_Run         ) return "Full";
+	if (cpudecoder == &CPU_Core_Normal_Run       ) return "Normal";
+	if (cpudecoder == &CPU_Core_Prefetch_Run     ) return "Prefetch";
+	if (cpudecoder == &CPU_Core_Simple_Run       ) return "Simple";
+	if (cpudecoder == &CPU_Core_Normal_Trap_Run  ) return "Normal_Trap";
+	if (cpudecoder == &CPU_Core_Prefetch_Trap_Run) return "Prefetch_Trap";
+	if (cpudecoder == &CPU_Core_Simple_Trap_Run  ) return "Simple_Trap";
+	if (cpudecoder == &HLT_Decode                ) return "HLT_Decode";
+	#if (C_DYNAMIC_X86)
+	if (cpudecoder == &CPU_Core_Dyn_X86_Run      ) return "DynX86";
+	if (cpudecoder == &CPU_Core_Dyn_X86_Trap_Run ) return "DynX86_Trap";
+	#elif (C_DYNREC)
+	if (cpudecoder == &CPU_Core_Dynrec_Run       ) return "DynRec";
+	if (cpudecoder == &CPU_Core_Dynrec_Trap_Run  ) return "DynRec_Trap";
+	#endif
+	typedef CPU_Decoder* CPU_DecoderPtr;
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(CPU_DecoderPtr, IO);
+	if (cpudecoder == DBPSerializeCPU_DecoderPtrIOPtrs[0]) return "IO";
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(CPU_DecoderPtr, Paging);
+	if (cpudecoder == DBPSerializeCPU_DecoderPtrPagingPtrs[0]) return "PageFault";
+	return "???";
 }

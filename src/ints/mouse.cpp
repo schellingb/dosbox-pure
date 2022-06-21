@@ -1220,9 +1220,17 @@ void DBPSerialize_Mouse(DBPArchive& ar)
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
-		mouse.screenMask = (screenMask_num ? (screenMask_num == 1 ? defaultScreenMask : userdefScreenMask) : NULL);
-		mouse.cursorMask = (cursorMask_num ? (cursorMask_num == 1 ? defaultCursorMask : userdefCursorMask) : NULL);
-		for (Bit8u i = 0; i != MOUSE_BUTTONS; i++)
-			Mouse_ButtonReleased(i);
+		if (!(ar.flags & DBPArchive::FLAG_NORESETINPUT))
+		{
+			mouse.screenMask = (screenMask_num ? (screenMask_num == 1 ? defaultScreenMask : userdefScreenMask) : NULL);
+			mouse.cursorMask = (cursorMask_num ? (cursorMask_num == 1 ? defaultCursorMask : userdefCursorMask) : NULL);
+			for (Bit8u i = 0; i != MOUSE_BUTTONS; i++)
+				Mouse_ButtonReleased(i);
+		}
+		else if (mouse.timer_in_progress)
+		{
+			PIC_RemoveEvents(MOUSE_Limit_Events);
+			PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
+		}
 	}
 }
