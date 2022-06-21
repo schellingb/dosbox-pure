@@ -355,6 +355,9 @@ public:
 	bool readSector(Bit8u *buffer, Bit32u sector);
 	virtual char const* GetLabel(void) {return discLabel;};
 	virtual void Activate(void);
+	#ifdef C_DBP_ENABLE_IDE
+	class CDROM_Interface* GetInterface();
+	#endif
 private:
 	int  readDirEntry(isoDirEntry *de, Bit8u *data);
 	bool loadImage();

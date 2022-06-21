@@ -561,3 +561,7 @@ bool isoDrive :: lookup(isoDirEntry *de, const char *path) {
 	}
 	return true;
 }
+
+#ifdef C_DBP_ENABLE_IDE
+CDROM_Interface* isoDrive::GetInterface() { return CDROM_Interface_Image::images[subUnit]; }
+#endif
