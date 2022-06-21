@@ -173,7 +173,7 @@ void DBPArchive::SerializeSparse(void* ptr, size_t sz)
 		}
 		Bit32u zero = 0;
 		Serialize(zero).Serialize(zero);
-		//printf("    Sparse saved into %f%%\n", (GetOffset()-start_offset) / (double)(ptr_end - ptr_begin));
+		//printf("    Sparse saved %f MB into %f%%\n", sz/1024./1024., (GetOffset()-start_offset) / (double)sz);
 	}
 	else
 	{
@@ -185,6 +185,7 @@ void DBPArchive::SerializeSparse(void* ptr, size_t sz)
 			p += skip;
 			SerializeBytes(p, len);
 			p += len;
+			if (had_error) return;
 		}
 		memset(p, 0, (Bit8u*)ptr + sz - p);
 	}
@@ -269,14 +270,14 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 	Bit64s from = __rdtsc();
 	#endif
 
-	ar.version = 4;
+	ar.version = 5;
 	if (ar.mode != DBPArchive::MODE_ZERO)
 	{
 		Bit32u magic = 0xD05B5747;
 		Bit8u invalid_state = (dos_running ? 0 : 1) | (game_running ? 0 : 2);
 		ar << magic << ar.version << invalid_state;
 		if (magic != 0xD05B5747) { ar.had_error = DBPArchive::ERR_LAYOUT; return; }
-		if (ar.version < 1 || ar.version > 4) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
+		if (ar.version < 1 || ar.version > 5) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
 		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
 		{
 			if (!dos_running  || (invalid_state & 1)) { ar.had_error = DBPArchive::ERR_DOSNOTRUNNING; return; }
@@ -290,6 +291,7 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 	ar << serialized_machine << serialized_memory << serialized_vgamem;
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
+		if (ar.version < 5 && serialized_memory == 63) serialized_memory = 64; // will be patched in DBPSerialize_Memory
 		if (serialized_machine != current_machine) { ar.had_error = DBPArchive::ERR_WRONGMACHINECONFIG; ar.error_info = serialized_machine; return; }
 		if (serialized_memory  != current_memory)  { ar.had_error = DBPArchive::ERR_WRONGMEMORYCONFIG;  ar.error_info = serialized_memory;  return; }
 		if (serialized_vgamem  != current_vgamem)  { ar.had_error = DBPArchive::ERR_WRONGVGAMEMCONFIG;  ar.error_info = serialized_vgamem;  return; }

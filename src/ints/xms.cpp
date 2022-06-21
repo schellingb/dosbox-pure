@@ -491,8 +491,6 @@ void XMS_Init(Section* sec) {
 
 #include <dbp_serialize.h>
 
-INLINE DBPArchive& operator<<(DBPArchive& ar, XMS_Block& i) { return ar << i.size << i.mem << i.locked << i.free; }
-
 void DBPSerialize_XMS(DBPArchive& ar)
 {
 	ar.Serialize(umb_available).SerializeArray(xms_handles);

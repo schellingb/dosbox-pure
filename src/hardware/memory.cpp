@@ -566,12 +566,6 @@ public:
 			LOG_MSG("Memory sizes above %d MB are NOT recommended.",SAFE_MEMORY - 1);
 			LOG_MSG("Stick with the default values unless you are absolutely certain.");
 		}
-#else
-		if (memsize == 64) {
-			// In older versions MAX_MEMORY was set to 64 which caused the code above to limit it to 63
-			// Avoid problems for users who have created save states with the "64 MB" options by replicating that behavior
-			memsize = 63;
-		}
 #endif
 		MemBase = new(std::nothrow) Bit8u[memsize*1024*1024];
 		if (!MemBase) E_Exit("Can't allocate main memory of %" sBitfs(d) " MB",memsize);
@@ -634,18 +628,28 @@ void DBPSerialize_Memory(DBPArchive& ar)
 {
 	if (ar.mode == DBPArchive::MODE_ZERO) { ar.Serialize(memory); return; }
 
+	// in older versions when setting the core to 64MB ram it was actually only set to 63MB
+	Bitu pages = (ar.version < 5 && memory.pages == 16384 ? 16128 : memory.pages);
+
+	//// We could keep the callback memory section across load because we don't serialize CallBack_Handlers[]
+	//// Don't do this for now because we can't be sure the OS hasn't modified this area or the emulated program keeps a copy of it.
+	//// Instead try to keep callbacks in the same order when adding new functionality with callbacks like PCI bus.
+	//Bit8u cbBuf[CB_SIZE * CB_MAX]; if (ar.mode == DBPArchive::MODE_LOAD) memcpy(cbBuf, MemBase + CALLBACK_PhysPointer(0), sizeof(cbBuf));
+
 	// memory.pages is serialized in DBPSerialize_All and validated to be unchanged during load
 	ar.Serialize(memory.lfb.start_page);
 	ar.Serialize(memory.lfb.end_page);
 	ar.Serialize(memory.lfb.pages);
 	ar.Serialize(memory.a20);
-	ar.SerializeSparse((char*)MemBase, (memory.pages * MEM_PAGE_SIZE));
-	ar.SerializeBytes(memory.mhandles, memory.pages * sizeof(MemHandle));
+	ar.SerializeSparse(MemBase, (pages * MEM_PAGE_SIZE));
+	ar.SerializeBytes(memory.mhandles, (pages * sizeof(MemHandle)));
+
+	//if (ar.mode == DBPArchive::MODE_LOAD) memcpy(MemBase + CALLBACK_PhysPointer(0), cbBuf, sizeof(cbBuf));
 
 	typedef PageHandler* PageHandlerPtr;
 	DBP_SERIALIZE_STATIC_POINTER_LIST(PageHandlerPtr, Memory, &illegal_page_handler, &ram_page_handler, &rom_page_handler);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PageHandlerPtr, VGA);
-	ar.SerializePointers((void**)memory.phandlers, memory.pages, true, 2,
+	ar.SerializePointers((void**)memory.phandlers, pages, true, 2,
 		DBP_SERIALIZE_GET_POINTER_LIST(PageHandlerPtr, Memory),
 		DBP_SERIALIZE_GET_POINTER_LIST(PageHandlerPtr, VGA));
 }
