@@ -302,6 +302,10 @@
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
     </ClCompile>
+    <ClCompile Include="src\hardware\ide.cpp">
+      <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
+      <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
+    </ClCompile>
     <ClCompile Include="src\hardware\iohandler.cpp">
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>

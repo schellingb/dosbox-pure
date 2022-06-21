@@ -93,6 +93,9 @@ public:
 	virtual void	ChannelControl		(TCtrl ctrl) = 0;
 	
 	virtual bool	ReadSectors			(PhysPt buffer, bool raw, unsigned long sector, unsigned long num) = 0;
+	#ifdef C_DBP_ENABLE_IDE
+	virtual bool	ReadSectorsHost		(void* buffer, bool raw, unsigned long sector, unsigned long num) = 0;
+	#endif
 
 	virtual bool	LoadUnloadMedia		(bool unload) = 0;
 	
@@ -145,6 +148,9 @@ public:
 	bool	StopAudio			(void) { return true; };
 	void	ChannelControl		(TCtrl /*ctrl*/) { return; };
 	bool	ReadSectors			(PhysPt /*buffer*/, bool /*raw*/, unsigned long /*sector*/, unsigned long /*num*/) { return true; };
+	#ifdef C_DBP_ENABLE_IDE
+	bool	ReadSectorsHost		(void* buffer, bool raw, unsigned long sector, unsigned long num) { return true; };
+	#endif
 	bool	LoadUnloadMedia		(bool /*unload*/) { return true; };
 };	
 
@@ -233,6 +239,9 @@ public:
 	bool	StopAudio		(void);
 	void	ChannelControl		(TCtrl ctrl);
 	bool	ReadSectors		(PhysPt buffer, bool raw, unsigned long sector, unsigned long num);
+	#ifdef C_DBP_ENABLE_IDE
+	bool	ReadSectorsHost		(void* buffer, bool raw, unsigned long sector, unsigned long num);
+	#endif
 	bool	LoadUnloadMedia		(bool unload);
 	bool	ReadSector		(Bit8u *buffer, bool raw, unsigned long sector);
 	bool	HasDataTrack		(void);

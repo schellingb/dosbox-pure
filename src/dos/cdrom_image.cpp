@@ -447,20 +447,41 @@ void CDROM_Interface_Image::ChannelControl(TCtrl ctrl)
 bool CDROM_Interface_Image::ReadSectors(PhysPt buffer, bool raw, unsigned long sector, unsigned long num)
 {
 	int sectorSize = raw ? RAW_SECTOR_SIZE : COOKED_SECTOR_SIZE;
-	Bitu buflen = num * sectorSize;
-	Bit8u* buf = new Bit8u[buflen];
+	//DBP: Removed memory allocation
+	//Bitu buflen = num * sectorSize;
+	//Bit8u* buf = new Bit8u[buflen];
 	
+	bool success = true; //Gobliiins reads 0 sectors
+	for(unsigned long i = 0; i < num; i++) {
+		//success = ReadSector(&buf[i * sectorSize], raw, sector + i);
+		Bit8u buf[RAW_SECTOR_SIZE];
+		success = ReadSector(buf, raw, sector + i);
+		MEM_BlockWrite(buffer, buf, sectorSize);
+		buffer += sectorSize;
+		if (!success) break;
+	}
+
+	//MEM_BlockWrite(buffer, buf, buflen);
+	//delete[] buf;
+
+	return success;
+}
+
+#ifdef C_DBP_ENABLE_IDE
+bool CDROM_Interface_Image::ReadSectorsHost(void* buffer, bool raw, unsigned long sector, unsigned long num)
+{
+	int sectorSize = raw ? RAW_SECTOR_SIZE : COOKED_SECTOR_SIZE;
+	Bit8u* buf = (Bit8u*)buffer;
+
 	bool success = true; //Gobliiins reads 0 sectors
 	for(unsigned long i = 0; i < num; i++) {
 		success = ReadSector(&buf[i * sectorSize], raw, sector + i);
 		if (!success) break;
 	}
 
-	MEM_BlockWrite(buffer, buf, buflen);
-	delete[] buf;
-
 	return success;
 }
+#endif
 
 bool CDROM_Interface_Image::LoadUnloadMedia(bool /*unload*/)
 {

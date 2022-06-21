@@ -321,9 +321,13 @@ int CMscdex::AddDrive(Bit16u _drive, char* physicalPath, Bit8u& subUnit)
 		return 3;
 	}
 
+	//DBP: Avoid messing with memory if booted into an OS (otherwise it freezes here with Win9x running)
+	extern const char * RunningProgram;
+	if (rootDriverHeaderSeg==0 && !memcmp(RunningProgram, "BOOT", 5)) {
+		// do nothing
+	}
+	else if (rootDriverHeaderSeg==0) {
 
-	if (rootDriverHeaderSeg==0) {
-		
 		Bit16u driverSize = sizeof(DOS_DeviceHeader::sDeviceHeader) + 10; // 10 = Bytes for 3 callbacks
 		
 		// Create Device Header
@@ -376,9 +380,12 @@ int CMscdex::AddDrive(Bit16u _drive, char* physicalPath, Bit8u& subUnit)
 		devHeader.SetInterrupt(off+5);
 	}
 
-	// Set drive
-	DOS_DeviceHeader devHeader(PhysMake(rootDriverHeaderSeg,0));
-	devHeader.SetNumSubUnits(devHeader.GetNumSubUnits()+1);
+	//DBP: Avoid messing with memory if booted into an OS
+	if (rootDriverHeaderSeg!=0) {
+		// Set drive
+		DOS_DeviceHeader devHeader(PhysMake(rootDriverHeaderSeg,0));
+		devHeader.SetNumSubUnits(devHeader.GetNumSubUnits()+1);
+	}
 
 	if (dinfo[0].drive-1==_drive) {
 		CDROM_Interface *_cdrom = cdrom[numDrives];

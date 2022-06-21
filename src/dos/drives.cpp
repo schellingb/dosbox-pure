@@ -255,6 +255,9 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	void BIOS_ShutdownDisks(void);
 	BIOS_ShutdownDisks();
 
+	void IDE_ShutdownControllers(void);
+	IDE_ShutdownControllers();
+
 	// unmount image file based drives first (they could be mounted from other mounted drives)
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
 		if (Drives[i] && (dynamic_cast<fatDrive*>(Drives[i]) || dynamic_cast<isoDrive*>(Drives[i])) && DriveManager::UnmountDrive(i) == 0)
