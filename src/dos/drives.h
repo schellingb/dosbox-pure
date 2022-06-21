@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2021  Bernhard Schelling
+ *  Copyright (C) 2020-2022  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -69,6 +69,7 @@ public:
 	virtual bool AllocationInfo(Bit16u * _bytes_sector,Bit8u * _sectors_cluster,Bit16u * _total_clusters,Bit16u * _free_clusters);
 	virtual bool FileExists(const char* name);
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
+	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual Bit8u GetMediaByte(void);
 	virtual void EmptyCache(void) { dirCache.EmptyCache(label); };
 	virtual bool isRemote(void);
@@ -347,6 +348,7 @@ public:
 	virtual bool AllocationInfo(Bit16u *bytes_sector, Bit8u *sectors_cluster, Bit16u *total_clusters, Bit16u *free_clusters);
 	virtual bool FileExists(const char *name);
    	virtual bool FileStat(const char *name, FileStat_Block *const stat_block);
+	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual Bit8u GetMediaByte(void);
 	virtual void EmptyCache(void){}
 	virtual bool isRemote(void);
@@ -486,11 +488,14 @@ private:
 #define DOSPATH_REMOVE_ENDINGDOTS_KEEP(VAR) const char* VAR##_org = VAR; DOSPATH_REMOVE_ENDINGDOTS(VAR)
 void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH]);
 bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
-void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data = 0);
-Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
+bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fcb_findfirst);
 Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len);
 DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize = NULL, bool* writable = NULL, char const* relative_to = NULL);
 bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize = 1024*1024, char const* relative_to = NULL);
+Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
+bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes);
+Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc = 0);
+void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data = 0);
 
 template <typename TVal> struct StringToPointerHashMap
 {
@@ -504,7 +509,7 @@ template <typename TVal> struct StringToPointerHashMap
 		return hash_init;
 	}
 
-	TVal* Get(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	TVal* Get(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) const
 	{
 		if (len == 0) return NULL;
 		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
@@ -549,9 +554,9 @@ template <typename TVal> struct StringToPointerHashMap
 
 	void Clear() { memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
 
-	Bit32u Len() { return len; }
-	Bit32u Capacity() { return (maxlen ? maxlen + 1 : 0); }
-	TVal* GetAtIndex(Bit32u idx) { return (keys[idx] ? vals[idx] : NULL); }
+	Bit32u Len() const { return len; }
+	Bit32u Capacity() const { return (maxlen ? maxlen + 1 : 0); }
+	TVal* GetAtIndex(Bit32u idx) const { return (keys[idx] ? vals[idx] : NULL); }
 
 	struct Iterator
 	{
@@ -658,6 +663,7 @@ public:
 	virtual bool FileExists(const char* name);
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
@@ -686,6 +692,7 @@ public:
 	virtual bool FindNext(DOS_DTA & dta);
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);

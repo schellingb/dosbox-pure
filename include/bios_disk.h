@@ -45,6 +45,10 @@ struct diskGeo {
 };
 extern diskGeo DiskGeometryList[];
 
+#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
+template <typename TVal> struct StringToPointerHashMap;
+#endif
+
 class imageDisk  {
 public:
 	Bit8u Read_Sector(Bit32u head,Bit32u cylinder,Bit32u sector,void * data);
@@ -64,11 +68,17 @@ public:
 	imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk);
 	~imageDisk() { if(diskimg != NULL) { fclose(diskimg); }	};
 	#endif
+	#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
+	imageDisk(class DOS_Drive *useDrive, Bit32u freeSpaceMB = 0, const char* savePath = NULL, Bit32u driveSerial = 0, const StringToPointerHashMap<void>* fileFilter = NULL);
+	void Set_GeometryForHardDisk();
+	struct fatFromDOSDrive* ffdd;
+	#endif
 
 	bool hardDrive;
 	bool active;
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	class DOS_File* dos_file;
+	std::vector<Bit8u*> tempwrites;
 	#else
 	FILE *diskimg;
 	#endif
@@ -85,7 +95,8 @@ private:
 void updateDPT(void);
 void incrementFDD(void);
 
-#define MAX_HDD_IMAGES 2
+//DBP: Increased from 2 to 4
+#define MAX_HDD_IMAGES 4
 
 #define MAX_DISK_IMAGES (2 + MAX_HDD_IMAGES)
 

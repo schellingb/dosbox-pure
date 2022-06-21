@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2021 Bernhard Schelling
+ *  Copyright (C) 2020-2022 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -984,13 +984,13 @@ struct Zip_File : Zip_Entry
 	Bit64u data_ofs;
 	Bit32u comp_size, uncomp_size;
 	Bit32u refs;
-	Bit16u bit_flags;
+	Bit16u ofs_past_header;
+	Bit8u bit_flags;
 	Bit8u method;
-	bool ofs_past_header;
 	ZIP_Unpacker* unpacker;
 
-	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, Bit64u _data_ofs, Bit32u _comp_size, Bit32u _uncomp_size, Bit16u _bit_flags, Bit8u _method)
-		: Zip_Entry(_attr, filename, _date, _time), data_ofs(_data_ofs), comp_size(_comp_size), uncomp_size(_uncomp_size), refs(0), bit_flags(_bit_flags), method(_method), ofs_past_header(false), unpacker(NULL) {}
+	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, Bit64u _data_ofs, Bit32u _comp_size, Bit32u _uncomp_size, Bit8u _bit_flags, Bit8u _method)
+		: Zip_Entry(_attr, filename, _date, _time), data_ofs(_data_ofs), comp_size(_comp_size), uncomp_size(_uncomp_size), refs(0), bit_flags(_bit_flags), method(_method), ofs_past_header(0), unpacker(NULL) {}
 
 	~Zip_File()
 	{
@@ -1081,7 +1081,6 @@ struct Zip_DeflateMemoryUnpacker : Zip_MemoryUnpacker
 		{
 			if (!read_buf_avail)
 			{
-				DBP_ASSERT(comp_remaining);
 				read_buf_avail = (comp_remaining < miniz::MZ_ZIP_MAX_IO_BUF_SIZE ? comp_remaining : miniz::MZ_ZIP_MAX_IO_BUF_SIZE);
 				if (archive.Read(ofs, read_buf, read_buf_avail) != read_buf_avail)
 					break;
@@ -1374,8 +1373,9 @@ struct Zip_Handle : public DOS_File
 struct Zip_Directory: Zip_Entry
 {
 	StringToPointerHashMap<Zip_Entry> entries;
+	Bit64u ofs;
 
-	Zip_Directory(Bit16u _attr, const char* dirname, Bit16u _date = 0, Bit16u _time = 0) : Zip_Entry(_attr, dirname, _date, _time) {}
+	Zip_Directory(Bit16u _attr, const char* dirname, Bit16u _date, Bit16u _time, Bit64u _ofs) : Zip_Entry(_attr, dirname, _date, _time), ofs(_ofs) {}
 
 	~Zip_Directory()
 	{
@@ -1427,7 +1427,7 @@ struct zipDriveImpl
 		MZ_ZIP_LDH_FILENAME_LEN_OFS = 26, MZ_ZIP_LDH_EXTRA_LEN_OFS = 28,
 	};
 
-	zipDriveImpl(DOS_File* _zip, bool enter_solo_root_dir) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF), archive(_zip), total_decomp_size(0)
+	zipDriveImpl(DOS_File* _zip, bool enter_solo_root_dir) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), archive(_zip), total_decomp_size(0)
 	{
 		// Basic sanity checks - reject files which are too small.
 		if (archive.size < MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
@@ -1438,8 +1438,8 @@ struct zipDriveImpl
 		Bit64u ecdh_ofs = (archive.size < sizeof(buf) ? 0 : archive.size - sizeof(buf));
 		for (;; ecdh_ofs = MZ_MAX(ecdh_ofs - (sizeof(buf) - 3), 0))
 		{
-			Bit32u i, n = (Bit32u)MZ_MIN(sizeof(buf), archive.size - ecdh_ofs);
-			if (archive.Read(ecdh_ofs, buf, n) != n) return;
+			Bit32s i, n = (Bit32s)MZ_MIN(sizeof(buf), archive.size - ecdh_ofs);
+			if (archive.Read(ecdh_ofs, buf, (Bit32s)n) != (Bit32s)n) return;
 			for (i = n - 4; i >= 0; --i) { if (MZ_READ_LE32(buf + i) == MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG) break; }
 			if (i >= 0) { ecdh_ofs += i; break; }
 			if (!ecdh_ofs || (archive.size - ecdh_ofs) >= (0xFFFF + MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)) return;
@@ -1586,7 +1586,7 @@ struct zipDriveImpl
 						else if (baseLen >= 5 && p_dos[j+2] && p_dos[j+2] < '~') p_dos[j+2]++;
 						else goto skip_zip_entry;
 					}
-					zfile = new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, local_header_ofs, (Bit32u)comp_size, (Bit32u)decomp_size, (Bit16u)bit_flag, (Bit8u)method);
+					zfile = new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, local_header_ofs, (Bit32u)comp_size, (Bit32u)decomp_size, (Bit8u)bit_flag, (Bit8u)method);
 					parent->entries.Put(p_dos, zfile);
 					skip_zip_entry:
 					break;
@@ -1595,7 +1595,7 @@ struct zipDriveImpl
 				if (!zdir)
 				{
 					if (parent->entries.Get(p_dos)) break; // Skip if directory (or a file) already exists with the same name
-					zdir = new Zip_Directory(DOS_ATTR_DIRECTORY, p_dos, file_date, file_time);
+					zdir = new Zip_Directory(DOS_ATTR_DIRECTORY, p_dos, file_date, file_time, local_header_ofs);
 					parent->entries.Put(p_dos, zdir);
 					directories.Put(dos_path, zdir);
 				}
@@ -1617,10 +1617,11 @@ struct zipDriveImpl
 			return false;
 		if (MZ_READ_LE32(local_header) != MZ_ZIP_LOCAL_DIR_HEADER_SIG)
 			return false;
-		f.data_ofs += MZ_ZIP_LOCAL_DIR_HEADER_SIZE + MZ_READ_LE16(local_header + MZ_ZIP_LDH_FILENAME_LEN_OFS) + MZ_READ_LE16(local_header + MZ_ZIP_LDH_EXTRA_LEN_OFS);
+		unsigned ofs = MZ_ZIP_LOCAL_DIR_HEADER_SIZE + MZ_READ_LE16(local_header + MZ_ZIP_LDH_FILENAME_LEN_OFS) + MZ_READ_LE16(local_header + MZ_ZIP_LDH_EXTRA_LEN_OFS);
+		f.data_ofs += ofs;
 		if ((f.data_ofs + f.comp_size) > archive.size)
 			return false;
-		f.ofs_past_header = true;
+		f.ofs_past_header = (ofs > 0xFFFF ? (Bit16u)0xFFFF : (Bit16u)ofs);
 		return true;
 	}
 
@@ -1716,19 +1717,7 @@ bool zipDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 		impl->searches[dta.GetDirID()] = s;
 	}
 
-	Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];
-	dta.GetSearchParams(attr,pattern);
-	if (attr == DOS_ATTR_VOLUME)
-	{
-		dta.SetResult(GetLabel(),0,0,0,DOS_ATTR_VOLUME);
-		return true;
-	}
-	else if ((attr & DOS_ATTR_VOLUME) && !*dir_path && !fcb_findfirst && WildFileCmp(GetLabel(), pattern))
-	{
-		dta.SetResult(GetLabel(),0,0,0,DOS_ATTR_VOLUME);
-		return true;
-	}
-
+	if (DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
 	return FindNext(dta);
 }
 
@@ -1778,6 +1767,36 @@ bool zipDrive::GetFileAttr(char * name, Bit16u * attr)
 	Zip_Entry* p = impl->Get(name);
 	if (!p) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	*attr = p->attr;
+	return true;
+}
+
+bool zipDrive::GetLongFileName(const char* path, char longname[256])
+{
+	DOSPATH_REMOVE_ENDINGDOTS(path);
+	Zip_Entry* e = impl->Get(path);
+	if (!e || !*path || (e->IsFile() && e->AsFile()->ofs_past_header == 0xFFFF)) return false;
+
+	Bit64u ldh_ofs = (e->IsFile() ? e->AsFile()->data_ofs - e->AsFile()->ofs_past_header : e->AsDirectory()->ofs);
+	char ldh[zipDriveImpl::MZ_ZIP_LOCAL_DIR_HEADER_SIZE + CROSS_LEN * 2];
+	if (impl->archive.Read(ldh_ofs, ldh, sizeof(ldh)) <= zipDriveImpl::MZ_ZIP_LOCAL_DIR_HEADER_SIZE || MZ_READ_LE32(ldh) != zipDriveImpl::MZ_ZIP_LOCAL_DIR_HEADER_SIG)
+		return false;
+
+	char *ldh_path = ldh + zipDriveImpl::MZ_ZIP_LOCAL_DIR_HEADER_SIZE, *ldh_path_end = ldh_path + MZ_READ_LE16(ldh + zipDriveImpl::MZ_ZIP_LDH_FILENAME_LEN_OFS), *ldh_fname = ldh_path;
+	if (ldh_path_end <= ldh_path || ldh_path_end > ldh + sizeof(ldh)) return false;
+	if (ldh_path_end[-1] == '/' || ldh_path_end[-1] == '\\') ldh_path_end--;
+	if (!e->IsFile()) // cut off directory name in full file path
+	{
+		int slashes = 0;
+		for (const char *p = path; *p; p++) if (*p == '\\') slashes++;
+		for (char *p = ldh_path; p != ldh_path_end; p++) { if ((*p == '/' || *p == '\\') && !slashes--) { ldh_path_end = p; break; } }
+	}
+	for (char *p = ldh_path; p < ldh_path_end - 1; p++) if (*p == '/' || *p == '\\') ldh_fname = p + 1;
+
+	size_t p_name_len = strlen(e->name), ldh_fname_len = ldh_path_end - ldh_fname;
+	if (ldh_fname_len > (256 - 1) || (ldh_fname_len == p_name_len && !memcmp(e->name, ldh_fname, p_name_len))) return false;
+
+	memcpy(longname, ldh_fname, ldh_fname_len);
+	longname[ldh_fname_len] = '\0';
 	return true;
 }
 

@@ -365,6 +365,32 @@ bool isoDrive::FileStat(const char *name, FileStat_Block *const stat_block) {
 	return success;
 }
 
+//DBP: Added GetLongFileName function
+bool isoDrive::GetLongFileName(const char* name, char longname[256])
+{
+	isoDirEntry de;
+	bool success = lookup(&de, name);
+
+	if (success) {
+		Bit8u* buffer = NULL;
+		ReadCachedSector(&buffer, dirIterators[nextFreeDirIterator].currentSector);
+		char *short_ident = (char*)de.ident, *long_ident = (char*)&buffer[dirIterators[nextFreeDirIterator].pos - de.length + 33], *long_ver;
+		size_t short_len = strlen(short_ident), long_len = de.fileIdentLength;
+		de.ident[long_len] = '\0';
+		if (!IS_DIR(FLAGS1) && (long_ver = strchr(long_ident, ';')) != NULL)
+		{
+			*long_ver = '\0';
+			long_len = long_ver - long_ident;
+		}
+		if (long_len > (256 - 1)) return false;
+		if (long_len == short_len) { upcase(short_ident); if (!memcmp(short_ident, long_ident, short_len)) { return false; } }
+		memcpy(longname, long_ident, long_len);
+		longname[long_len] = '\0';
+	}
+
+	return success;
+}
+
 Bit8u isoDrive::GetMediaByte(void) {
 	return mediaid;
 }

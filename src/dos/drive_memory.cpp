@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2021 Bernhard Schelling
+ *  Copyright (C) 2020-2022 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -204,10 +204,7 @@ struct memoryDriveImpl
 	}
 };
 
-memoryDrive::memoryDrive() : impl(new memoryDriveImpl())
-{
-	label.SetLabel("MEMORY", false, true);
-}
+memoryDrive::memoryDrive() : impl(new memoryDriveImpl()) { }
 
 memoryDrive::~memoryDrive()
 {
@@ -341,19 +338,7 @@ bool memoryDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 		impl->searches[dta.GetDirID()] = s;
 	}
 
-	Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];
-	dta.GetSearchParams(attr,pattern);
-	if (attr == DOS_ATTR_VOLUME)
-	{
-		dta.SetResult(GetLabel(),0,0,0,DOS_ATTR_VOLUME);
-		return true;
-	}
-	else if ((attr & DOS_ATTR_VOLUME) && !*dir_path && !fcb_findfirst && WildFileCmp(GetLabel(), pattern))
-	{
-		dta.SetResult(GetLabel(),0,0,0,DOS_ATTR_VOLUME);
-		return true;
-	}
-
+	if (DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
 	return FindNext(dta);
 }
 

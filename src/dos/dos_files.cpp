@@ -791,6 +791,19 @@ char DOS_ToUpper(char c) {
 	return sc;
 }
 
+//DBP: Added this helper function to filter out invalid characters in the process
+char DOS_ToUpperAndFilter(char c)
+{
+	switch (c >> 5)
+	{
+		case 0: return '-';
+		case 1: return (strchr(" \"*,./:;<=>?", c) ? '-' : c);
+		case 2: return (strchr("[\\]", c) ? '-' : c);
+		case 3: return ((c >= 'a' && c <= 'z') ? c - 0x20 : c == '|' ? '-' : c);
+		default: return DOS_ToUpper(c);
+	}
+}
+
 #define FCB_SEP ":;,=+"
 #define ILLEGAL ":.;,=+ \t/\"[]<>|"
 
@@ -1373,8 +1386,8 @@ void DBPSerialize_Files(DBPArchive& ar)
 			attr = Files[i]->attr;
 			refCtr = (Bit32u)Files[i]->refCtr;
 			seekPos = 0;
-			if (refCtr) Files[i]->Seek(&seekPos, DOS_SEEK_CUR);
 			if (drive >= DOS_DRIVES) devnum = (Bit8u)dynamic_cast<DOS_Device*>(Files[i])->GetDeviceNumber();
+			else if (refCtr) Files[i]->Seek(&seekPos, DOS_SEEK_CUR);
 		}
 
 		ar << i << drive << name_len << flags << attr << refCtr << seekPos;

@@ -339,6 +339,16 @@ bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
 	return found_file;
 }
 
+bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
+{
+	Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];const char* label;
+	dta.GetSearchParams(attr,pattern);
+	if (!(attr & DOS_ATTR_VOLUME) || !*(label = drv->GetLabel())) return false;
+	if ((attr & ~DOS_ATTR_VOLUME) && (*dir_path || fcb_findfirst || !WildFileCmp(label, pattern))) return false;
+	dta.SetResult(label,0,0,0,DOS_ATTR_VOLUME);
+	return true;
+}
+
 Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len)
 {
 	struct Func
@@ -347,10 +357,8 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 		{
 			for (; trg < trg_end && len--; trg++)
 			{
-				char DOS_ToUpper(char);
-				*trg = *(src++);
-				if (*trg <= ' ' || *trg == '.' || *trg == '"' || *trg == '*' || *trg == ',' || *trg == '/' || *trg == ':' || *trg == ';' || *trg == '<' || *trg == '=' || *trg == '>' || *trg == '?' || *trg == '[' || *trg == '\\' || *trg == ']' || *trg == '|') *trg = '-';
-				*trg = DOS_ToUpper(*trg);
+				char DOS_ToUpperAndFilter(char c);
+				*trg = DOS_ToUpperAndFilter(*(src++));
 			}
 		}
 	};
@@ -484,13 +492,38 @@ bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize, 
 
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes)
 {
+	if (!drv) return 0;
 	DOS_File *df = nullptr;
-	Drives['C'-'A']->FileOpen(&df, (char*)path, OPEN_READ);
+	if (!drv->FileOpen(&df, (char*)path, OPEN_READ)) return 0;
 	df->AddRef();
 	if (!df->Read(outbuf, &numbytes)) numbytes = 0;
 	df->Close();
 	delete df;
 	return numbytes;
+}
+
+bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes)
+{
+	DOS_File *df;
+	if (!drv || !drv->FileCreate(&df, (char*)path, DOS_ATTR_ARCHIVE)) return false;
+	df->AddRef();
+	for (Bit16u wrote; numbytes; numbytes -= wrote, buf += wrote)
+	{
+		wrote = (Bit16u)(numbytes > 0xFFFF ? 0xFFFF : numbytes);
+		if (!df->Write((Bit8u*)buf, &wrote)) { DBP_ASSERT(0); }
+	}
+	df->Close();
+	delete df;
+	return true;
+}
+
+Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc)
+{
+	// Karl Malbrain's compact CRC-32. See "A compact CCITT crc16 and crc32 C implementation that balances processor cache usage against speed": http://www.geocities.com/malbrain/
+	static const Bit32u s_crc32[16] = { 0, 0x1db71064, 0x3b6e20c8, 0x26d930ac, 0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c, 0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c, 0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c };
+	Bit32u crcu32 = (Bit32u)~crc;
+	while (len--) { Bit8u b = *ptr++; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b & 0xF)]; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b >> 4)]; }
+	return ~crcu32;
 }
 
 //DBP: utility function to evaluate an entire drives filesystem
@@ -499,7 +532,7 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 	if (!drv) return;
 	struct Iter
 	{
-		static void ParseDir(DOS_Drive* drv, std::string dir, std::vector<std::string>& dirs, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
+		static void ParseDir(DOS_Drive* drv, const std::string& dir, std::vector<std::string>& dirs, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
 		{
 			size_t dirlen = dir.length();
 			if (dirlen + DOS_NAMELENGTH >= DOS_PATHLENGTH) return;
@@ -524,14 +557,14 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 				bool is_dir = !!(dta_attr & DOS_ATTR_DIRECTORY);
 				//if (is_dir) printf("[%s] [%s] %s (size: %u - date: %u - time: %u - attr: %u)\n", (const char*)data, (dta_attr == 8 ? "V" : (is_dir ? "D" : "F")), full_path, dta_size, dta_date, dta_time, dta_attr);
 				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
-				if (is_dir) dirs.push_back(full_path);
+				if (is_dir) dirs.emplace_back(full_path);
 				func(full_path, is_dir, dta_size, dta_date, dta_time, dta_attr, data);
 			}
 			dos.dta(save_dta);
 		}
 	};
 	std::vector<std::string> dirs;
-	dirs.push_back("");
+	dirs.emplace_back("");
 	std::string dir;
 	while (dirs.size())
 	{

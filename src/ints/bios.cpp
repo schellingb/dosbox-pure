@@ -1017,6 +1017,67 @@ static Bitu INT15_Handler(void) {
 		LOG(LOG_BIOS,LOG_NORMAL)("INT15:Function %X called, bios mouse not supported",reg_ah);
 		CALLBACK_SCF(true);
 		break;
+	//DBP: Added implementation of 0xe8 extensions from Taewoong's Daum branch (might help with win9x support?)
+	case 0xe8:
+		switch (reg_al) {
+		case 0x01:
+			{ /* E801: memory size */
+				Bitu sz = MEM_TotalPages()*4;
+				if (sz >= 1024) sz -= 1024;
+				else sz = 0;
+				reg_ax = reg_cx = (sz > 0x3C00) ? 0x3C00 : sz; /* extended memory between 1MB and 16MB in KBs */
+				sz -= reg_ax;
+				sz /= 64;   /* extended memory size from 16MB in 64KB blocks */
+				if (sz > 65535) sz = 65535;
+				reg_bx = reg_dx = sz;
+				CALLBACK_SCF(false);
+			}
+			break;
+		case 0x20: //E820: MEMORY LISTING
+			if (reg_edx == 0x534D4150 && reg_ecx >= 20 && (MEM_TotalPages()*4) >= 24000) {
+				/* return a minimalist list:
+					*
+					*    0) 0x000000-0x09EFFF       Free memory
+					*    1) 0x0C0000-0x0FFFFF       Reserved
+					*    2) 0x100000-...            Free memory (no ACPI tables) */
+				if (reg_ebx < 3) {
+					uint32_t base = 0,len = 0,type = 0;
+					Bitu seg = SegValue(es);
+
+					switch (reg_ebx) {
+						case 0: base=0x000000; len=0x09F000; type=1; break;
+						case 1: base=0x0C0000; len=0x040000; type=2; break;
+						case 2: base=0x100000; len=(MEM_TotalPages()*4096)-0x100000; type=1; break;
+						default: E_Exit("Despite checks EBX is wrong value"); /* BUG! */
+					}
+
+					/* write to ES:DI */
+					real_writed(seg,reg_di+0x00,base);
+					real_writed(seg,reg_di+0x04,0);
+					real_writed(seg,reg_di+0x08,len);
+					real_writed(seg,reg_di+0x0C,0);
+					real_writed(seg,reg_di+0x10,type);
+					reg_ecx = 20;
+
+					/* return EBX pointing to next entry. wrap around, as most BIOSes do.
+						* the program is supposed to stop on CF=1 or when we return EBX == 0 */
+					if (++reg_ebx >= 3) reg_ebx = 0;
+				}
+				else {
+					CALLBACK_SCF(true);
+				}
+
+				reg_eax = 0x534D4150;
+			}
+			else {
+				reg_eax = 0x8600;
+				CALLBACK_SCF(true);
+			}
+			break;
+		default:
+			goto unhandled;
+		}
+		break;
 	default:
 	unhandled:
 		LOG(LOG_BIOS,LOG_ERROR)("INT15:Unknown call %4X",reg_ax);
@@ -1069,8 +1130,9 @@ static Bitu Reboot_Handler(void) {
 	while((PIC_FullIndex()-start)<3000) CALLBACK_Idle();
 	throw 1;
 #else
-	void DBP_Crash(const char* msg);
-	DBP_Crash("BIOS Reboot");
+	LOG(LOG_BIOS,LOG_WARN)("BIOS Reboot");
+	void DBP_OnBIOSReboot();
+	DBP_OnBIOSReboot();
 #endif
 	return CBRET_NONE;
 }

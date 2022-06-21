@@ -141,6 +141,7 @@ private:
 //DBP: Reason being DOS_Drive_Cache uses a lot of memory and is only used in a few
 //DBP: places, while DOS_Label is used in many.
 //DBP: Changed size of label from CROSS_LEN to DOS_NAMELENGTH_ASCII
+//DBP: Added GetLongFileName function to DOS_Drive
 class DOS_Label {
 public:
 	DOS_Label() : updatelabel(true) { label[0] = 0; }
@@ -271,6 +272,7 @@ public:
 	virtual bool AllocationInfo(Bit16u * _bytes_sector,Bit8u * _sectors_cluster,Bit16u * _total_clusters,Bit16u * _free_clusters)=0;
 	virtual bool FileExists(const char* name)=0;
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block)=0;
+	virtual bool GetLongFileName(const char* name, char longname[256]) { return false; }
 	virtual Bit8u GetMediaByte(void)=0;
 	virtual void SetDir(const char* path) { strcpy(curdir,path); };
 	virtual void EmptyCache(void) { };

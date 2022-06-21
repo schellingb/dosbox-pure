@@ -414,6 +414,27 @@ bool localDrive::FileStat(const char* name, FileStat_Block * const stat_block) {
 	return true;
 }
 
+//DBP: Added GetLongFileName function
+bool localDrive::GetLongFileName(const char* name, char longname[256])
+{
+	char newname[CROSS_LEN];
+	strcpy(newname,basedir);
+	strcat(newname,name);
+	CROSS_FILENAME(newname);
+	dirCache.ExpandName(newname);
+
+	const char *name_end = name + strlen(name), *fname = name;
+	for (const char *p = name; p < name_end - 1; p++) if (*p == '/' || *p == '\\') fname = p + 1;
+	char *newname_end = newname + strlen(newname), *newfname = newname;
+	for (char *p = newname; p < newname_end - 1; p++) if (*p == '/' || *p == '\\') newfname = p + 1;
+
+	size_t fname_len = name_end - fname, newfname_len = newname_end - newfname;
+	if (newfname_len > (256 - 1) || (newfname_len == fname_len && !memcmp(fname, newfname, fname_len))) return false;
+
+	memcpy(longname, newfname, newfname_len);
+	longname[newfname_len] = '\0';
+	return true;
+}
 
 Bit8u localDrive::GetMediaByte(void) {
 	return allocation.mediaid;

@@ -302,16 +302,6 @@ struct unionDriveImpl
 			std::vector<Bit8u> central_dir;
 			std::string mods;
 
-			static Bit32u UpdateCRC32(Bit32u crc, const Bit8u *ptr, size_t buf_len)
-			{
-				// Karl Malbrain's compact CRC-32. See "A compact CCITT crc16 and crc32 C implementation that balances processor cache usage against speed": http://www.geocities.com/malbrain/
-				static const Bit32u s_crc32[16] = { 0, 0x1db71064, 0x3b6e20c8, 0x26d930ac, 0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c, 0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c, 0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c };
-				Bit32u crcu32 = (Bit32u)crc;
-				if (!ptr) return 0;
-				crcu32 = ~crcu32; while (buf_len--) { Bit8u b = *ptr++; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b & 0xF)]; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b >> 4)]; }
-				return ~crcu32;
-			}
-
 			static void WriteFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
 			{
 				Saver& s = *(Saver*)data;
@@ -324,7 +314,7 @@ struct unionDriveImpl
 					fseek_wrap(s.f, 30 + pathLen, SEEK_CUR);
 					if (s.mods.size())
 					{
-						crc32 = UpdateCRC32(crc32, (Bit8u*)&s.mods[0], size);
+						crc32 = DriveCalculateCRC32((Bit8u*)&s.mods[0], size, crc32);
 						s.failed |= !fwrite(&s.mods[0], size, 1, s.f);
 					}
 					else
@@ -337,7 +327,7 @@ struct unionDriveImpl
 						Bit32u remain = size;
 						for (Bit16u read; remain && df->Read(buf, &(read = sizeof(buf))) && read; remain -= read)
 						{
-							crc32 = UpdateCRC32(crc32, buf, read);
+							crc32 = DriveCalculateCRC32(buf, read, crc32);
 							s.failed |= !fwrite(buf, read, 1, s.f);
 						}
 						DBP_ASSERT(remain == 0);
@@ -390,11 +380,11 @@ struct unionDriveImpl
 
 		Saver s;
 		unionDriveImpl* impl = (unionDriveImpl*)implPtr;
-		printf("[DOSBOX] Saving filesystem modifications to %s\n", impl->save_file.c_str());
+		LOG_MSG("[DOSBOX] Saving filesystem modifications to %s\n", impl->save_file.c_str());
 		s.f = fopen_wrap(impl->save_file.c_str(), "wb");
 		if (!s.f)
 		{
-			printf("[DOSBOX] Opening file %s for writing failed\n", impl->save_file.c_str());
+			LOG_MSG("[DOSBOX] Opening file %s for writing failed\n", impl->save_file.c_str());
 			impl->ScheduleSave(5000.f);
 			return;
 		}
@@ -428,7 +418,7 @@ struct unionDriveImpl
 
 		if (s.failed)
 		{
-			printf("[DOSBOX] Error while writing file %s\n", impl->save_file.c_str());
+			LOG_MSG("[DOSBOX] Error while writing file %s\n", impl->save_file.c_str());
 			impl->ScheduleSave(5000.f);
 			return;
 		}
@@ -818,19 +808,7 @@ bool unionDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 	if (dir_len) s->dir_hash = impl->modifications.Hash("\\", 1, s->dir_hash); // also hash a \ at the end
 	memcpy(s->dir, dir_path, dir_len + 1); // with '\0' terminator
 
-	Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];
-	dta.GetSearchParams(attr,pattern);
-	if (attr == DOS_ATTR_VOLUME)
-	{
-		dta.SetResult(GetLabel(),0,0,0,DOS_ATTR_VOLUME);
-		return true;
-	}
-	else if ((attr & DOS_ATTR_VOLUME) && !*dir_path && !fcb_findfirst && WildFileCmp(GetLabel(), pattern))
-	{
-		dta.SetResult(GetLabel(),0,0,0,DOS_ATTR_VOLUME);
-		return true;
-	}
-
+	if (DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
 	return FindNext(dta);
 }
 
@@ -851,19 +829,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 			const char* dotted = (s.step++ ? ".." : ".");
 			if (!WildFileCmp(dotted, pattern) || !s.dir_len) continue;
 			FileStat_Block stat;
-			if (s.step == 1) // current dir '.' (step is now 1 because of step++)
-			{
-				FileStat(s.dir, &stat);
-			}
-			else // parent dir '..'
-			{
-				int parentdirlen = s.dir_len;
-				while (parentdirlen && s.dir[parentdirlen] != '\\') parentdirlen--;
-				char tmp = s.dir[parentdirlen];
-				s.dir[parentdirlen] = '\0';
-				FileStat(s.dir, &stat);
-				s.dir[parentdirlen] = tmp;
-			}
+			FileStat(s.dir, &stat); // both '.' and '..' return the stats from the current dir
 			if (~attr & (Bit8u)stat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 			dta.SetResult(dotted, 0, stat.date, stat.time, (Bit8u)stat.attr);
 			return true;
@@ -947,6 +913,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 bool unionDrive::FileStat(const char* path, FileStat_Block * const stat_block)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(path);
+	if (!*path) return impl->under.FileStat(path, stat_block); //get time stamps for root directory from underlying drive
 	Union_Modification* m = impl->modifications.Get(path);
 	if (m && m->IsDelete())   return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	if (m && m->IsRedirect()) return impl->under.FileStat(m->RedirectSource(), stat_block);
@@ -960,6 +927,15 @@ bool unionDrive::GetFileAttr(char * path, Bit16u * attr)
 	if (m && m->IsDelete())   return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	if (m && m->IsRedirect()) return impl->under.GetFileAttr(m->RedirectSource(), attr);
 	return (impl->over.GetFileAttr(path, attr) || impl->under.GetFileAttr(path, attr));
+}
+
+bool unionDrive::GetLongFileName(const char* path, char longname[256])
+{
+	DOSPATH_REMOVE_ENDINGDOTS(path);
+	Union_Modification* m = impl->modifications.Get(path);
+	if (m && m->IsDelete())   return false;
+	if (m && m->IsRedirect()) return impl->under.GetLongFileName(m->RedirectSource(), longname);
+	return (impl->over.GetLongFileName(path, longname) || impl->under.GetLongFileName(path, longname));
 }
 
 bool unionDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)
