@@ -72,6 +72,11 @@ struct XGAStatus {
 
 } xga;
 
+//DBP: Added XGA COLOR_CMP register patch from DOSBox-X by Jonathan Campbell
+//     Source 1: https://github.com/joncampbell123/dosbox-x/commit/7279438
+//     Source 2: https://github.com/joncampbell123/dosbox-x/commit/66ae3d4
+static uint32_t xga_color_compare;
+
 void XGA_Write_Multifunc(Bitu val, Bitu len) {
 	Bitu regselect = val >> 12;
 	Bitu dataval = val & 0xfff;
@@ -754,6 +759,20 @@ void XGA_BlitRect(Bitu val) {
 			break;
 	}
 
+	#ifdef C_DBP_LIBRETRO //DBP: Added XGA color cmp patch
+	Bitu colorcmpdata = 0;
+	bool color_cmp_enabled = !!(xga.control1 & 0x100);
+	if (color_cmp_enabled) {
+		Bitu xga_point_mask;
+		switch(XGA_COLOR_MODE) {
+			case M_LIN8: xga_point_mask = 0xFFul; break;
+			case M_LIN15: case M_LIN16: xga_point_mask = 0xFFFFul; break;
+			case M_LIN32: xga_point_mask = 0xFFFFFFFFul; break;
+			default: xga_point_mask = 0; break;
+		}
+		colorcmpdata = xga_color_compare & xga_point_mask;
+	}
+	#endif
 
 	/* Copy source to video ram */
 	for(yat=0;yat<=xga.MIPcount ;yat++) {
@@ -796,10 +815,26 @@ void XGA_BlitRect(Bitu val) {
 					break;
 			}
 
+			#ifndef C_DBP_LIBRETRO //DBP: Added XGA color cmp patch
 			destval = XGA_GetMixResult(mixmode, srcval, dstdata);
 			//LOG_MSG("XGA: DrawPattern: Mixmode: %x Mixselect: %x", mixmode, mixselect);
 
 			XGA_DrawPoint(tarx, tary, destval);
+			#else
+			if (!color_cmp_enabled) {
+				do_draw_point:
+				destval = XGA_GetMixResult(mixmode, srcval, dstdata);
+				//LOG_MSG("XGA: DrawPattern: Mixmode: %x Mixselect: %x", mixmode, mixselect);
+
+				XGA_DrawPoint((Bitu)tarx, (Bitu)tary, destval);
+			}
+			else { /* COLOR_CMP enabled. control1 corresponds to XGA register BEE8h */
+				/* control1 bit 7 is SRC_NE.
+				 * If clear, don't update if source value == COLOR_CMP.
+				 * If set, don't update if source value != COLOR_CMP */
+				if (((srcval == colorcmpdata)?0:1)^((xga.control1>>7u)&1u)) goto do_draw_point;
+			}
+			#endif
 
 			srcx += dx;
 			tarx += dx;
@@ -1127,7 +1162,7 @@ void XGA_Write(Bitu port, Bitu val, Bitu len) {
 			xga.destx = val&0x3fff;
 			break;
 		case 0xb2e8:
-			LOG_MSG("COLOR_CMP not implemented");
+			XGA_SetDualReg(xga_color_compare, val);
 			break;
 		case 0xb6e8:
 			xga.backmix = val;
@@ -1197,6 +1232,8 @@ Bitu XGA_Read(Bitu port, Bitu len) {
 			else return 0x0;
 		case 0xbee8:
 			return XGA_Read_Multifunc();
+		case 0xb2e8:
+			return XGA_GetDualReg(xga_color_compare);
 		case 0xa2e8:
 			return XGA_GetDualReg(xga.backcolor);
 			break;
@@ -1321,4 +1358,6 @@ void VGA_SetupXGA(void) {
 void DBPSerialize_VGA_XGA(DBPArchive& ar)
 {
 	ar.Serialize(xga);
+	if (ar.version >= 5)
+		ar.Serialize(xga_color_compare);
 }
