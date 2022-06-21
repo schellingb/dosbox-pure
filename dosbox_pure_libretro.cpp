@@ -4374,19 +4374,19 @@ bool fpath_nocase(char* path, const char* base_dir)
 		if (psubdir == path) continue;
 		if (psubdir) *psubdir = '\0';
 
-		bool found = false;
-		struct retro_vfs_dir_handle *dir = vfs.iface->opendir(base_dir, true);
-		while (dir && vfs.iface->readdir(dir))
+		// On Android opendir fails for directories the user/app doesn't have access so just assume it exists as is
+		if (struct retro_vfs_dir_handle *dir = vfs.iface->opendir(base_dir, true))
 		{
-			const char* entry_name = vfs.iface->dirent_get_name(dir);
-			if (strcasecmp(entry_name, path)) continue;
-			memcpy(path, entry_name, strlen(entry_name));
-			found = true;
-			break;
+			while (dir && vfs.iface->readdir(dir))
+			{
+				const char* entry_name = vfs.iface->dirent_get_name(dir);
+				if (strcasecmp(entry_name, path)) continue;
+				memcpy(path, entry_name, strlen(entry_name));
+				break;
+			}
+			vfs.iface->closedir(dir);
 		}
-		vfs.iface->closedir(dir);
-		if (!found || !psubdir) { if (psubdir) *psubdir = '/'; return found; }
-
+		if (!psubdir) { if (psubdir) *psubdir = '/'; return true; }
 		if (subdir.empty()) subdir = base_dir;
 		if (subdir.back() != '/') subdir += '/';
 		base_dir = subdir.append(path).c_str();
