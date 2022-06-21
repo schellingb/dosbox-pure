@@ -462,6 +462,8 @@
     </ClCompile>
     <ClCompile Include="src\ints\bios_disk.cpp">
       <WarningLevel>Level2</WarningLevel>
+      <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
+      <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
     </ClCompile>
     <ClCompile Include="src\ints\bios_keyboard.cpp" />
     <ClCompile Include="src\ints\ems.cpp">

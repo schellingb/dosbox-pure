@@ -468,7 +468,7 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_cpu_type",
-		"CPU Type", NULL,
+		"CPU Type (restart required)", NULL,
 		"Emulated CPU type. Auto is the fastest choice." "\n"
 			"Games that require specific CPU type selection:" "\n"
 			"386 (prefetch): X-Men: Madness in The Murderworld, Terminator 1, Contra, Fifa International Soccer 1994" "\n"
@@ -506,6 +506,24 @@ static retro_core_option_v2_definition option_defs[] =
 		#else
 		"normal"
 		#endif
+	},
+	{
+		"dosbox_pure_bootos_ramdisk",
+		"Advanced > Discard Disk Modifications (restart required)", NULL,
+		"When running an installed operating system, modifications to the C: drive will not be saved permanently." "\n"
+		"This allows the content to be closed any time without worry of file system or registry corruption.", NULL, //end of System > Advanced section
+		"System",
+		{ { "false", "Off (default)" }, { "true", "On" } },
+		"false"
+	},
+	{
+		"dosbox_pure_bootos_forcenormal",
+		"Advanced > Force Normal Core in OS", NULL,
+		"The normal core can be more stable when running an installed operating system." "\n"
+		"This can be toggled on and off to navigate around crashes." "\n\n", NULL, //end of System > Advanced section
+		"System",
+		{ { "false", "Off (default)" }, { "true", "On" } },
+		"false"
 	},
 
 	// Audio
