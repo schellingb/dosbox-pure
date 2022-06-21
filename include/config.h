@@ -49,7 +49,7 @@
 /* #undef C_MODEM */ /* Define to 1 to enable internal modem support, requires SDL_net */
 /* #undef C_SDL_SOUND */ /* Define to 1 to enable SDL_sound support */
 
-// ----- Disabled native interfaces and features
+// ----- Disabled native interfaces and legacy features
 //#define C_DBP_NATIVE_MIDI
 //#define C_DBP_NATIVE_CDROM //(also needs SDL to work)
 //#define C_DBP_NATIVE_OVERLAY
@@ -68,6 +68,7 @@
 //#define C_DBP_ENABLE_MESSAGEFILE
 //#define C_DBP_ENABLE_AUTOLOCK
 //#define C_DBP_ENABLE_DISKSWAP
+//#define C_DBP_ENABLE_SCALERCACHE
 
 // ----- Enabled new features
 #define C_DBP_LIBRETRO

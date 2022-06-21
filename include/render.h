@@ -65,14 +65,18 @@ typedef struct {
 		int count;
 		int max;
 		Bitu index;
+#if 0
 		Bit8u hadSkip[RENDER_SKIP_CACHE];
+#endif
 	} frameskip;
 	struct {
 		Bitu size;
 		scalerMode_t inMode;
 		scalerMode_t outMode;
 		scalerOperation_t op;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		bool clearCache;
+#endif
 		bool forced;
 		ScalerLineHandler_t lineHandler;
 		ScalerLineHandler_t linePalHandler;
@@ -80,8 +84,10 @@ typedef struct {
 		Bitu blocks, lastBlock;
 		Bitu outPitch;
 		Bit8u *outWrite;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		Bitu cachePitch;
 		Bit8u *cacheRead;
+#endif
 		Bitu inHeight, inLine, outLine;
 	} scale;
 #if C_OPENGL
@@ -91,7 +97,9 @@ typedef struct {
 	bool updating;
 	bool active;
 	bool aspect;
+#ifdef VGA_KEEP_CHANGES
 	bool fullFrame;
+#endif
 	bool forceUpdate;
 } Render_t;
 

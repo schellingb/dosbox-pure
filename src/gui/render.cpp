@@ -101,6 +101,7 @@ void RENDER_SetPal(Bit8u entry,Bit8u red,Bit8u green,Bit8u blue) {
 static void RENDER_EmptyLineHandler(const void * src) {
 }
 
+#ifdef C_DBP_ENABLE_SCALERCACHE
 static void RENDER_StartLineHandler(const void * s) {
 	if (s) {
 		const Bitu *src = (Bitu*)s;
@@ -148,6 +149,7 @@ static void RENDER_ClearCacheHandler(const void * src) {
 		cacheLine[x] = ~srcLine[x];
 	render.scale.lineHandler( src );
 }
+#endif
 
 bool RENDER_StartUpdate(void) {
 	if (GCC_UNLIKELY(render.updating))
@@ -164,9 +166,16 @@ bool RENDER_StartUpdate(void) {
 	}
 	render.scale.inLine = 0;
 	render.scale.outLine = 0;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 	render.scale.cacheRead = (Bit8u*)&scalerSourceCache;
+#endif
 	render.scale.outWrite = 0;
 	render.scale.outPitch = 0;
+#ifndef C_DBP_ENABLE_SCALERCACHE
+	if (GCC_UNLIKELY(!GFX_StartUpdate( render.scale.outWrite, render.scale.outPitch )))
+		return false;
+	RENDER_DrawLine = render.scale.lineHandler;
+#else
 	Scaler_ChangedLines[0] = 0;
 	Scaler_ChangedLineIndex = 0;
 	/* Clearing the cache will first process the line to make sure it's never the same */
@@ -175,7 +184,9 @@ bool RENDER_StartUpdate(void) {
 		//Will always have to update the screen with this one anyway, so let's update already
 		if (GCC_UNLIKELY(!GFX_StartUpdate( render.scale.outWrite, render.scale.outPitch )))
 			return false;
+#ifdef VGA_KEEP_CHANGES
 		render.fullFrame = true;
+#endif
 		render.scale.clearCache = false;
 		RENDER_DrawLine = RENDER_ClearCacheHandler;
 	} else {
@@ -184,17 +195,24 @@ bool RENDER_StartUpdate(void) {
 			if (GCC_UNLIKELY(!GFX_StartUpdate( render.scale.outWrite, render.scale.outPitch )))
 				return false;
 			RENDER_DrawLine = render.scale.linePalHandler;
+#ifdef VGA_KEEP_CHANGES
 			render.fullFrame = true;
+#endif
 		} else {
 			RENDER_DrawLine = RENDER_StartLineHandler;
 #ifdef C_DBP_ENABLE_CAPTURE
 			if (GCC_UNLIKELY(CaptureState & (CAPTURE_IMAGE|CAPTURE_VIDEO))) 
+#ifdef VGA_KEEP_CHANGES
 				render.fullFrame = true;
+#endif
 			else
 #endif
+#ifdef VGA_KEEP_CHANGES
 				render.fullFrame = false;
+#endif
 		}
 	}
+#endif
 	render.updating = true;
 	return true;
 }
@@ -229,8 +247,14 @@ void RENDER_EndUpdate( bool abort ) {
 	}
 #endif
 	if ( render.scale.outWrite ) {
+#ifndef C_DBP_ENABLE_SCALERCACHE
+		GFX_EndUpdate( abort? NULL : (const Bit16u*)(size_t)1 );
+#else
 		GFX_EndUpdate( abort? NULL : Scaler_ChangedLines );
+#endif
+#if 0
 		render.frameskip.hadSkip[render.frameskip.index] = 0;
+#endif
 	} else {
 #if 0
 		Bitu total = 0, i;
@@ -491,25 +515,33 @@ forcenormal:
 		render.scale.lineHandler = (*lineBlock)[0][render.scale.outMode];
 		render.scale.linePalHandler = (*lineBlock)[4][render.scale.outMode];
 		render.scale.inMode = scalerMode8;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		render.scale.cachePitch = render.src.width * 1;
+#endif
 		break;
 	case 15:
 		render.scale.lineHandler = (*lineBlock)[1][render.scale.outMode];
 		render.scale.linePalHandler = 0;
 		render.scale.inMode = scalerMode15;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		render.scale.cachePitch = render.src.width * 2;
+#endif
 		break;
 	case 16:
 		render.scale.lineHandler = (*lineBlock)[2][render.scale.outMode];
 		render.scale.linePalHandler = 0;
 		render.scale.inMode = scalerMode16;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		render.scale.cachePitch = render.src.width * 2;
+#endif
 		break;
 	case 32:
 		render.scale.lineHandler = (*lineBlock)[3][render.scale.outMode];
 		render.scale.linePalHandler = 0;
 		render.scale.inMode = scalerMode32;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		render.scale.cachePitch = render.src.width * 4;
+#endif
 		break;
 	default:
 		E_Exit("RENDER:Wrong source bpp %" sBitfs(d), render.src.bpp );
@@ -523,10 +555,16 @@ forcenormal:
 	render.pal.changed = false;
 	memset(render.pal.modified, 0, sizeof(render.pal.modified));
 	//Finish this frame using a copy only handler
+#ifdef C_DBP_ENABLE_SCALERCACHE
 	RENDER_DrawLine = RENDER_FinishLineHandler;
+#else
+	RENDER_DrawLine = RENDER_EmptyLineHandler;
+#endif
 	render.scale.outWrite = 0;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 	/* Signal the next frame to first reinit the cache */
 	render.scale.clearCache = true;
+#endif
 	render.active=true;
 }
 
@@ -535,7 +573,9 @@ static void RENDER_CallBack( GFX_CallBackFunctions_t function ) {
 		RENDER_Halt( );	
 		return;
 	} else if (function == GFX_CallBackRedraw) {
+#ifdef C_DBP_ENABLE_SCALERCACHE
 		render.scale.clearCache = true;
+#endif
 		return;
 	} else if ( function == GFX_CallBackReset) {
 		GFX_EndUpdate( 0 );	
@@ -772,13 +812,23 @@ void DBPSerialize_Render(DBPArchive& ar)
 		.Serialize(render.pal)
 		.Serialize(render.updating)
 		.Serialize(render.active)
-		.Serialize(render.scale.inLine).Serialize(render.scale.outLine)
-		.Serialize(Scaler_ChangedLineIndex)
-		.Serialize(render_offset);
+		.Serialize(render.scale.inLine).Serialize(render.scale.outLine);
 
+#ifndef C_DBP_ENABLE_SCALERCACHE
+	if (ar.version < 5) { Bitu old; ar.Serialize(old); }
+	ar.Serialize(render_offset);
+	if (ar.version >= 2 && ar.version < 5) { Bit32u old; ar.Serialize(old); }
+#else
+	ar.Serialize(Scaler_ChangedLineIndex)
+	ar.Serialize(render_offset);
 	Bit32u cache_offset = (render.scale.cacheRead - (Bit8u*)&scalerSourceCache);
-	if (ar.version >= 2) ar.Serialize(cache_offset);
-	else cache_offset = 0;
+	if (ar.version >= 2) ar.Serialize(cache_offset); else cache_offset = 0;
+	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
+		render.scale.clearCache = true;
+		render.scale.cacheRead = (Bit8u*)&scalerSourceCache + cache_offset;
+	}
+#endif
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
@@ -795,7 +845,5 @@ void DBPSerialize_Render(DBPArchive& ar)
 		{
 			RENDER_Reset();
 		}
-		render.scale.clearCache = true;
-		render.scale.cacheRead = (Bit8u*)&scalerSourceCache + cache_offset;
 	}
 }

@@ -44,11 +44,14 @@ static void conc4d(SCALERNAME,SBPP,DBPP,R)(const void *s) {
 	/* Clear the complete line marker */
 	Bitu hadChange = 0;
 	const SRCTYPE *src = (SRCTYPE*)s;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 	SRCTYPE *cache = (SRCTYPE*)(render.scale.cacheRead);
 	render.scale.cacheRead += render.scale.cachePitch;
+#endif
 	PTYPE * line0=(PTYPE *)(render.scale.outWrite);
-#if (SBPP == 9)
 	for (Bits x=render.src.width;x>0;) {
+#ifdef C_DBP_ENABLE_SCALERCACHE
+#if (SBPP == 9)
 		if (*(Bit32u const*)src == *(Bit32u*)cache && !(
 			render.pal.modified[src[0]] | 
 			render.pal.modified[src[1]] | 
@@ -59,7 +62,6 @@ static void conc4d(SCALERNAME,SBPP,DBPP,R)(const void *s) {
 			cache+=4;
 			line0+=4*SCALERWIDTH;
 #else 
-	for (Bits x=render.src.width;x>0;) {
 		if (*(Bitu const*)src == *(Bitu*)cache) {
 			x-=(sizeof(Bitu)/sizeof(SRCTYPE));
 			src+=(sizeof(Bitu)/sizeof(SRCTYPE));
@@ -67,6 +69,9 @@ static void conc4d(SCALERNAME,SBPP,DBPP,R)(const void *s) {
 			line0+=(sizeof(Bitu)/sizeof(SRCTYPE))*SCALERWIDTH;
 #endif
 		} else {
+#else //C_DBP_ENABLE_SCALERCACHE
+		{
+#endif //C_DBP_ENABLE_SCALERCACHE
 #if defined(SCALERLINEAR)
 #if (SCALERHEIGHT > 1) 
 			PTYPE *line1 = WC[0];
@@ -97,8 +102,11 @@ static void conc4d(SCALERNAME,SBPP,DBPP,R)(const void *s) {
 			hadChange = 1;
 			for (Bitu i = x > 32 ? 32 : x;i>0;i--,x--) {
 				const SRCTYPE S = *src;
+#ifdef C_DBP_ENABLE_SCALERCACHE
 				*cache = S;
-				src++;cache++;
+				cache++;
+#endif
+				src++;
 				const PTYPE P = PMAKE(S);
 				SCALERFUNC;
 				line0 += SCALERWIDTH;

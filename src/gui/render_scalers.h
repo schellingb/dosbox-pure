@@ -95,12 +95,14 @@ typedef union {
 	Bit8u b8	[SCALER_COMPLEXHEIGHT] [SCALER_COMPLEXWIDTH];
 } scalerFrameCache_t;
 #endif
+#ifdef C_DBP_ENABLE_SCALERCACHE
 typedef union {
 	Bit32u b32	[SCALER_MAXHEIGHT] [SCALER_MAXWIDTH];
 	Bit16u b16	[SCALER_MAXHEIGHT] [SCALER_MAXWIDTH];
 	Bit8u b8	[SCALER_MAXHEIGHT] [SCALER_MAXWIDTH];
 } scalerSourceCache_t;
 extern scalerSourceCache_t scalerSourceCache;
+#endif
 #if RENDER_USE_ADVANCED_SCALERS>1
 extern scalerChangeCache_t scalerChangeCache;
 #endif

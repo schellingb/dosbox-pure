@@ -26,8 +26,10 @@
 #include <string.h>
 
 Bit8u Scaler_Aspect[SCALER_MAXHEIGHT];
+#ifdef C_DBP_ENABLE_SCALERCACHE
 Bit16u Scaler_ChangedLines[SCALER_MAXHEIGHT];
 Bitu Scaler_ChangedLineIndex;
+#endif
 
 #ifdef C_DBP_ENABLE_SCALERS
 static union {
@@ -37,8 +39,10 @@ static union {
 	Bit8u   b8 [SCALER_MAX_MUL_HEIGHT + 1][SCALER_MAXLINE_WIDTH];
 } scalerWriteCache;
 #endif
+#ifdef C_DBP_ENABLE_SCALERCACHE
 //scalerFrameCache_t scalerFrameCache;
 scalerSourceCache_t scalerSourceCache;
+#endif
 #if RENDER_USE_ADVANCED_SCALERS>1
 scalerChangeCache_t scalerChangeCache;
 #endif
@@ -65,11 +69,13 @@ static INLINE void BituMove( void *_dst, const void * _src, Bitu size) {
 }
 
 static INLINE void ScalerAddLines( Bitu changed, Bitu count ) {
+#ifdef C_DBP_ENABLE_SCALERCACHE
 	if ((Scaler_ChangedLineIndex & 1) == changed ) {
 		Scaler_ChangedLines[Scaler_ChangedLineIndex] += count;
 	} else {
 		Scaler_ChangedLines[++Scaler_ChangedLineIndex] = count;
 	}
+#endif
 	render.scale.outWrite += render.scale.outPitch * count;
 }
 
