@@ -588,6 +588,32 @@ bool isoDrive :: lookup(isoDirEntry *de, const char *path) {
 	return true;
 }
 
+bool isoDrive::CheckBootDiskImage(Bit8u** read_image, Bit32u* read_size)
+{
+	Bit8u buf[COOKED_SECTOR_SIZE];
+	if (!readSector(buf, 17) || memcmp((char*)buf+10, "TORITO", 6)) return false; // read boot record volume at fixed sector 17
+	Bit32u bootCatSector = var_read((Bit32u*)&buf[7+64]);
+	if (!bootCatSector || !readSector(buf, bootCatSector)) return false; // read boot catalog sector
+	if (buf[0] != 1 || buf[2] != 0 || buf[3] != 0 || buf[30] != 0x55 || buf[31] != 0xAA) return false; // validate boot catalog
+	if (buf[32] != 0x88) return false; // validate initial/default boot entry
+	Bit8u mediaType = buf[33];
+	Bit32u mediaSize;
+	if      (mediaType == 1) mediaSize = 1228800; // 1.20 MB floppy
+	else if (mediaType == 2) mediaSize = 1474560; // 1.44 MB floppy
+	else if (mediaType == 3) mediaSize = 2949120; // 2.88 MB floppy
+	else return false; // unsupported (hd image, no emulation)
+	Bit32u bootImageSector = var_read((Bit32u*)&buf[40]);
+	if (bootImageSector <= bootCatSector) return false;
+	if (read_image)
+	{
+		*read_size = mediaSize;
+		*read_image = (Bit8u*)malloc(mediaSize);
+		for (Bit32u i = 0, secEnd = mediaSize/COOKED_SECTOR_SIZE; i != secEnd; i++)
+			if (!readSector(*read_image+i*COOKED_SECTOR_SIZE, bootImageSector+i)) { free(*read_image); return false; }
+	}
+	return true;
+}
+
 #ifdef C_DBP_ENABLE_IDE
 CDROM_Interface* isoDrive::GetInterface() { return CDROM_Interface_Image::images[subUnit]; }
 #endif
