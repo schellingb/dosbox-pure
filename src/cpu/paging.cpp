@@ -130,43 +130,6 @@ extern bool DOSBOX_IsWipingPageFaultQueue;
 static Bit32u DBP_PageFaultCycles;
 #endif
 
-static Bits PageFaultCore(void) {
-	CPU_CycleLeft+=CPU_Cycles;
-	CPU_Cycles=1;
-	Bits ret=CPU_Core_Full_Run();
-	CPU_CycleLeft+=CPU_Cycles;
-	if (ret<0) E_Exit("Got a dosbox close machine in pagefault core?");
-	if (ret) 
-		return ret;
-#ifndef C_DBP_PAGE_FAULT_QUEUE_WIPE
-	if (!pf_queue.used) E_Exit("PF Core without PF");
-	PF_Entry * entry=&pf_queue.entries[pf_queue.used-1];
-#else // support loading save state into a pagefault
-	if (!pf_queue.used) DOSBOX_ResetCPUDecoder();
-	PF_Entry * entry=&pf_queue.entries[pf_queue.used?pf_queue.used-1:0];
-#endif
-	X86PageEntry pentry;
-	pentry.load=phys_readd(entry->page_addr);
-	if (pentry.block.p && entry->cs == SegValue(cs) && entry->eip==reg_eip) {
-		cpu.mpl=entry->mpl;
-		return -1;
-	}
-#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
-	if (DOSBOX_IsWipingPageFaultQueue) return -1;
-	if ((pf_queue.used > 3 && DBP_PageFaultCycles++ > 5000000) || pf_queue.used > 50)
-	{
-		LOG(LOG_PAGING,LOG_NORMAL)("Wiping page fault queue after %d queueups", pf_queue.used);
-		DOSBOX_WipePageFaultQueue();
-		DBP_PageFaultCycles = 0;
-		return -1;
-	}
-#endif
-	return 0;
-}
-#if C_DEBUG
-Bitu DEBUG_EnableDebugger(void);
-#endif
-
 #define ACCESS_KR  0
 #define ACCESS_KRW 1
 #define ACCESS_UR  2
@@ -305,6 +268,44 @@ void PrintPageInfo(const char* string, PhysPt lin_addr, bool writing, bool prepa
 }
 */
 
+static Bits PageFaultCore(void) {
+	CPU_CycleLeft+=CPU_Cycles;
+	CPU_Cycles=1;
+	Bits ret=CPU_Core_Full_Run();
+	CPU_CycleLeft+=CPU_Cycles;
+	if (ret<0) E_Exit("Got a dosbox close machine in pagefault core?");
+	if (ret) 
+		return ret;
+#ifndef C_DBP_PAGE_FAULT_QUEUE_WIPE
+	if (!pf_queue.used) E_Exit("PF Core without PF");
+	PF_Entry * entry=&pf_queue.entries[pf_queue.used-1];
+#else // support loading save state into a pagefault
+	if (!pf_queue.used) DOSBOX_ResetCPUDecoder();
+	PF_Entry * entry=&pf_queue.entries[pf_queue.used?pf_queue.used-1:0];
+#endif
+	X86PageEntry pentry;
+	pentry.load=phys_readd(entry->page_addr);
+	if (pentry.block.p && entry->cs == SegValue(cs) && entry->eip==reg_eip) {
+		cpu.mpl=entry->mpl;
+		return -1;
+	}
+#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
+	if (DOSBOX_IsWipingPageFaultQueue) return -1;
+	if ((pf_queue.used >= 2 && DBP_PageFaultCycles++ > 5000000) || pf_queue.used > 50)
+	{
+		LOG(LOG_PAGING,LOG_NORMAL)("Wiping page fault queue after %d queueups", pf_queue.used);
+		DOSBOX_WipePageFaultQueue();
+		DBP_PageFaultCycles = 0;
+		return -1;
+	}
+#endif
+	return 0;
+}
+
+#if C_DEBUG
+Bitu DEBUG_EnableDebugger(void);
+#endif
+
 void PAGING_PageFault(PhysPt lin_addr,Bitu page_addr,Bitu faultcode) {
 #ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
 	if (pf_queue.used > 60)
@@ -406,11 +407,6 @@ static void PAGING_NewPageFault(PhysPt lin_addr, Bitu page_addr, bool prepare_on
 	} else if (!paging_prevent_exception_jump) {
 		LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] queue 1",lin_addr,faultcode);
 		throw GuestPageFaultException(faultcode);
-		//// Solution without C++ exceptions (slower and does not work with re-throwing like in string.h)
-		//paging_prevent_exception_jump=true;
-		//CPU_Exception(EXCEPTION_PF,faultcode);
-		//paging_prevent_exception_jump=false;
-		//DOSBOX_WipePageFaultQueue();
 	} else {
 		PAGING_PageFault(lin_addr,page_addr,faultcode);
 	}
