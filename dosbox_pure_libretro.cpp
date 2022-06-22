@@ -2905,7 +2905,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "0.9.3";
+	info->library_version  = "0.9.5";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf";
@@ -3874,7 +3874,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 		autoexec->ExecuteInit();
 
 		// Mount the first found cdrom image as well as the first found floppy, or reinsert them on core restart (and keep selected index)
-		int active_disk_image_index = dbp_disk_image_index;
+		unsigned active_disk_image_index = dbp_disk_image_index;
 		for (unsigned i = 0; auto_mount && i != (unsigned)dbp_images.size(); i++)
 			if (!firsttime && (dbp_images[i].path[0] == '$' && !Drives[dbp_images[i].path[1]-'A']))
 				dbp_images.erase(dbp_images.begin() + (i--));
@@ -4486,19 +4486,13 @@ void retro_run(void)
 	{
 		extern const char* DBP_CPU_GetDecoderName();
 		if (dbp_perf == DBP_PERF_DETAILED)
-			retro_notify(-1500, RETRO_LOG_INFO, "Speed: %4.1f%%, DOS: %dx%d@%4.2ffps, Actual: %4.2ffps, Drawn: %dfps, Cycles: %u"
+			retro_notify(-1500, RETRO_LOG_INFO, "Speed: %4.1f%%, DOS: %dx%d@%4.2ffps, Actual: %4.2ffps, Drawn: %dfps, Cycles: %u (%s)"
 				#ifdef DBP_ENABLE_WAITSTATS
 				", Waits: p%u|f%u|z%u|c%u"
 				#endif
-				#ifndef NDEBUG
-				", CPU: %s"
-				#endif
-				, ((float)tpfTarget / (float)tpfActual * 100), (int)render.src.width, (int)render.src.height, render.src.fps, (1000000.f / tpfActual), tpfDraws, CPU_CycleMax
+				, ((float)tpfTarget / (float)tpfActual * 100), (int)render.src.width, (int)render.src.height, render.src.fps, (1000000.f / tpfActual), tpfDraws, CPU_CycleMax, DBP_CPU_GetDecoderName()
 				#ifdef DBP_ENABLE_WAITSTATS
 				, waitPause, waitFinish, waitPaused, waitContinue
-				#endif
-				#ifndef NDEBUG
-				, DBP_CPU_GetDecoderName()
 				#endif
 				);
 		else
