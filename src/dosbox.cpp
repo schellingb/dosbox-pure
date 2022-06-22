@@ -213,7 +213,9 @@ static Bitu Normal_Loop(void) {
 			if (GCC_UNLIKELY(ret<0)) return 1;
 			if (ret>0) {
 				if (GCC_UNLIKELY(ret >= CB_MAX)) return 0;
+				paging_prevent_exception_jump = true;
 				Bitu blah = (*CallBack_Handlers[ret])();
+				paging_prevent_exception_jump = false;
 				if (GCC_UNLIKELY(blah)) return blah;
 			}
 #if C_DEBUG
