@@ -11,6 +11,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Load games from ZIP](#load-games-from-zip)
     * [Store modifications in separate save files](#store-modifications-in-separate-save-files)
     * [Mount disk images from inside ZIP files](#mount-disk-images-from-inside-zip-files)
+    * [Installing an Operating System](#installing-an-operating-system)
     * [Start menu with auto start](#start-menu-with-auto-start)
     * [Automated controller mappings](#automated-controller-mappings)
     * [Mouse emulation](#mouse-emulation)
@@ -18,6 +19,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Joystick emulation](#joystick-emulation)
     * [On-screen keyboard](#on-screen-keyboard)
     * [Gamepad mapper](#gamepad-mapper)
+	* [3dfx Voodoo Emulation](#3dfx-voodoo-emulation)
     * [MIDI playback with SoundFonts](#midi-playback-with-soundfonts)
     * [Cheats support](#cheats-support)
     * [Save states](#save-states)
@@ -68,6 +70,33 @@ CD images (ISO or CUE) and floppy disk images (IMG/IMA/VHD/JRC/TC) can be mounte
 The system will automatically mount the first found disk image as the A: or D: drive.  
 Additional disks can be loaded or swapped by using the `Disc Control` menu in RetroArch.  
 The start menu also offers the option to mount or unmount an image.
+
+### Installing an Operating System
+When loading a content that contains a bootable CD-ROM image, the start menu will show an additional option
+`[ Boot and Install New Operating System ]`. Additionally it will also show when  both a CD-ROM image and a
+floppy disk image are loaded, so non-bootable install CDs can be used as well.
+
+With this option a hard disk image of selectable size (between 8 and 1024 MB) can be created after which
+the CD-ROM or floppy disk image will boot to install the operating system. Once the installation has completed,
+loading any content (for example a ZIP file) will have the option `[ Run Installed Operating System ]` to boot
+the created hard disk image as the C: drive and with the loaded content becoming the D: drive. If there are
+any CD-ROM images available they will appear as the E: drive.
+
+There are two core options related to this feature:
+
+- `System > Advanced > Discard Disk Modifications`: If set, while running an installed operating system,
+  modifications to the C: drive will not be saved permanently. This allows the content to be closed any
+  time without worry of file system or registry corruption. Make sure to finish setting up the OS
+  by setting the screen resolution and installing device drivers first before setting this option.
+- `System > Advanced > Force Normal Core in OS`: If you encounter program errors or crashes inside the
+  installed operating system, this option can be used to switch to a more compatible but slower
+  mode. The option can be toggled on and off as needed.
+
+It is also possible to create save states while running an installed operating system. This can be used
+to skip the startup sequence or even jump directly to the title screen of a game. Make sure to load the
+same operating system and do not modify the loaded ZIP file in any way otherwise the operating system
+will be very confused and most likely crash. To make things easier, set the operating system to 
+[auto start](#start-menu-with-auto-start) so it starts together with the content and skipping the start menu.
 
 ### Start menu with auto start
 ![Start Menu](images/startmenu.png)
@@ -130,6 +159,20 @@ To open it, click the "PAD MAPPER" button in the [On-screen keyboard](#on-screen
 
 It is available any time in-game and changes are immediately saved and applied when closing the mapper. Up to 4 functions can be mapped
 for any button/direction of the gamepad. A mapping can be to any function of the 3 emulated input devices: keyboard, mouse or joystick.
+
+### 3dfx Voodoo Emulation
+The core includes emulation of a 3dfx Voodoo PCI card. Compatible DOS games should work out of the box. If running an
+[installed operating system](#installing-an-operating-system) like Windows 95 or Windows 98, you can get the required drivers
+from [this site](https://www.philscomputerlab.com/drivers-for-voodoo.html). Download and launch voodoo_graphics_driver_kit_version_3.01.00.zip
+with the core, then run the operating system and install the driver via the control panel from the files on the D: drive.
+
+There are two core options related to this feature:
+
+- `Video > 3dfx Voodoo Emulation`: By default a 12 MB memory card with two texture mapping units is emulated.
+  It can be changed to a single TMU 4MB card or support can be disabled entirely.
+- `Video > 3dfx Voodoo Performance Settings`: Some options to modify the rendering behavior are available. Setting
+  it to 'low quality' only gives a small performance improvement. Disabling multi-threading is possible for example
+  if your device gets too hot while using it but in general is not recommended.
 
 ### MIDI playback with SoundFonts
 If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
