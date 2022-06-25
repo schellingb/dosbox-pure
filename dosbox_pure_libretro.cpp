@@ -2132,7 +2132,7 @@ static void DBP_PureMenuProgram(Program** make)
 					list.emplace_back(IT_NONE, ATTR_HEADER, "Hard Disk Size For Install");
 					list.emplace_back(IT_NONE);
 					char buf[128];
-					for (Bit16s sz = 0; sz <= 1024; sz = (sz ? sz * 2 : 8))
+					for (Bit16s sz = 0; sz <= 2048; sz = (sz ? sz * 2 : 8))
 						list.emplace_back(IT_INSTALLOS, sz, (sz && sprintf(buf, "%d MB Hard Disk", sz) ? buf : "No Hard Disk"));
 					list.emplace_back(IT_NONE);
 					list.emplace_back(IT_NONE, ATTR_WARN, "This will create the hard disk image in the following location:");
