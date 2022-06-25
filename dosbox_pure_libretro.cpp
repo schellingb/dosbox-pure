@@ -1765,6 +1765,11 @@ static void DBP_PureMenuProgram(Program** make)
 				delete memDsk;
 				delete memDrv;
 
+				// If using system directory index cache, append the new OS image to that now
+				if (dbp_system_cached)
+					if (FILE* f = fopen_wrap(DBP_GetSaveFile(SFT_SYSTEMDIR).append("DOSBoxPureMidiCache.txt").c_str(), "a"))
+						{ fprintf(f, "%s\n", filename); fclose(f); }
+
 				// Set last_info to this new image to support BIOS rebooting with it
 				last_result = DBP_MenuState::IT_BOOTOS;
 				last_info = (Bit16s)dbp_osimages.size();
