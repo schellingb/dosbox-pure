@@ -88,7 +88,11 @@ public:
 	Bit32u sector_size;
 	Bit32u heads,cylinders,sectors;
 private:
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	Bit64u current_fpos;
+	#else
 	Bit32u current_fpos;
+	#endif
 	enum { NONE,READ,WRITE } last_action;
 };
 

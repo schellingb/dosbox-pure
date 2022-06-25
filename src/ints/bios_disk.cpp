@@ -831,16 +831,17 @@ Bit8u imageDisk::Read_AbsoluteSector(Bit32u sectnum, void * data) {
 	}
 	#endif
 
-	Bit32u bytenum;
-
-	bytenum = sectnum * sector_size;
-
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	if (last_action==WRITE || bytenum!=current_fpos) dos_file->Seek(&bytenum, DOS_SEEK_SET);
+	Bit64u bytenum = (Bit64u)sectnum * sector_size;
+	if (last_action==WRITE || bytenum!=current_fpos) dos_file->Seek64(&bytenum, DOS_SEEK_SET);
 	DBP_ASSERT(sector_size <= 0xFFFF);
 	Bit16u read_size = (Bit16u)sector_size;
 	size_t ret=dos_file->Read((Bit8u*)data, &read_size)?read_size:0;
 	#else
+	Bit32u bytenum;
+
+	bytenum = sectnum * sector_size;
+
 	if (last_action==WRITE || bytenum!=current_fpos) fseek_wrap(diskimg,bytenum,SEEK_SET);
 	size_t ret=fread(data, 1, sector_size, diskimg);
 	#endif
@@ -878,18 +879,19 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 	}
 	#endif
 
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	Bit64u bytenum = (Bit64u)sectnum * sector_size;
+	if (last_action==READ || bytenum!=current_fpos) dos_file->Seek64(&bytenum, DOS_SEEK_SET);
+	DBP_ASSERT(sector_size <= 0xFFFF);
+	Bit16u write_size = (Bit16u)sector_size;
+	size_t ret=dos_file->Write((Bit8u*)data, &write_size)?write_size:0;
+	#else
 	Bit32u bytenum;
 
 	bytenum = sectnum * sector_size;
 
 	//LOG_MSG("Writing sectors to %ld at bytenum %d", sectnum, bytenum);
 
-	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	if (last_action==READ || bytenum!=current_fpos) dos_file->Seek(&bytenum, DOS_SEEK_SET);
-	DBP_ASSERT(sector_size <= 0xFFFF);
-	Bit16u write_size = (Bit16u)sector_size;
-	size_t ret=dos_file->Write((Bit8u*)data, &write_size)?write_size:0;
-	#else
 	if (last_action==READ || bytenum!=current_fpos) fseek_wrap(diskimg,bytenum,SEEK_SET);
 	size_t ret=fwrite(data, 1, sector_size, diskimg);
 	#endif
@@ -903,10 +905,10 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 Bit32u imageDisk::Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len)
 {
-	if ((Bit32u)seek != current_fpos)
+	if (seek != current_fpos)
 	{
-		current_fpos = (Bit32u)seek;
-		dos_file->Seek(&current_fpos, DOS_SEEK_SET);
+		current_fpos = seek;
+		dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
 	}
 	for (Bit32u remain = (Bit32u)len; remain;)
 	{
@@ -964,7 +966,7 @@ imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool i
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	DBP_ASSERT(imgFile->refCtr >= 1);
 	dos_file = imgFile;
-	dos_file->Seek(&current_fpos, DOS_SEEK_SET);
+	dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
 	#else
 	diskimg = imgFile;
 	fseek(diskimg,0,SEEK_SET);
@@ -1031,18 +1033,19 @@ void imageDisk::Set_GeometryForHardDisk()
 		Set_Geometry(setHeads, setCyl, setSect, 512);
 		return;
 	}
-	Bit32u diskimgsize;
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	if (!dos_file) { DBP_ASSERT(false); return; }
-	dos_file->Seek(&(diskimgsize = 0), DOS_SEEK_END);
-	dos_file->Seek(&current_fpos, DOS_SEEK_SET);
+	Bit64u diskimgsize = 0;
+	dos_file->Seek64(&diskimgsize, DOS_SEEK_END);
+	dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
 	#else
 	if (!diskimg) return;
+	Bit32u diskimgsize;
 	fseek(diskimg,0,SEEK_END);
 	diskimgsize = (Bit32u)ftell(diskimg);
 	fseek(diskimg,current_fpos,SEEK_SET);
 	#endif
-	Set_Geometry(16, diskimgsize / (512 * 63 * 16), 63, 512);
+	Set_Geometry(16, (Bit32u)(diskimgsize / (512 * 63 * 16)), 63, 512);
 }
 #endif
 
