@@ -135,10 +135,9 @@ void close_directory(dir_information* dirp);
 FILE *fopen_wrap(const char *path, const char *mode);
 
 #ifdef C_DBP_HAVE_FPATH_NOCASE
-// Check if path exists inside base_dir, will fix case in path
-// Either base_dir (if set) or path (if without base_dir) needs to be absolute
+// Check if path exists, will fix case in path
 // Returns true if file exists, otherwise path can be partially modified
-bool fpath_nocase(char* path, const char* base_dir = NULL);
+bool fpath_nocase(char* path);
 #endif
 
 //DBP: Use 64-bit fseek and ftell (based on libretro-common/vfs/vfs_implementation.c)

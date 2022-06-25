@@ -4621,36 +4621,28 @@ FILE *fopen_wrap(const char *path, const char *mode) { return (FILE*)fopen_utf8(
 #include "libretro-common/encodings/encoding_utf.c"
 #endif
 
-bool fpath_nocase(char* path, const char* base_dir)
+bool fpath_nocase(char* path)
 {
 	if (!path || !*path) return false;
+	struct stat test;
+	if (stat(path, &test) == 0) return true; // exists as is
 
-	// Because we have no idea what the current directory of the frontend is, refuse relative paths
-	const char* test = (base_dir && *base_dir ? base_dir : path);
 	#ifdef WIN32
-	if (test[0] < 'A' || test[0] > 'z' || test[1] != ':' || (test[2] && test[2] != '/' && test[2] != '\\')) return false;
-	enum { PATH_ROOTLEN = 2 };
+	// We also could just return false here because file paths are not case senstive on Windows
+	size_t rootlen = ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) ? 3 : 0);
 	#else
-	if (*test != '/') return false;
-	enum { PATH_ROOTLEN = 1 };
+	size_t rootlen = ((path[0] == '/' || path[0] == '\\') ? 1 : 0);
 	#endif
-
+	if (!path[rootlen]) return false;
 	std::string subdir;
-	if (!base_dir || !*base_dir)
-	{
-		if (!path[PATH_ROOTLEN]) return false;
-		base_dir = subdir.append(path, PATH_ROOTLEN).c_str();
-		path += PATH_ROOTLEN;
-	}
+	const char* base_dir = (rootlen ? subdir.append(path, rootlen).c_str() : NULL);
+	path += rootlen;
+
 	struct retro_vfs_interface_info vfs = { 3, NULL };
 	if (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) || vfs.required_interface_version < 3 || !vfs.iface)
-	{
-		struct stat test;
-		if (subdir.empty() && base_dir) subdir = base_dir;
-		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\' && *path != '/' && *path != '\\') subdir += '/';
-		return (stat(subdir.append(path).c_str(), &test) == 0);
-	}
-	for (char* psubdir;; *psubdir = '/', path = psubdir + 1)
+		return false;
+
+	for (char* psubdir;; *psubdir = CROSS_FILESPLIT, path = psubdir + 1)
 	{
 		char *next_slash = strchr(path, '/'), *next_bslash = strchr(path, '\\');
 		psubdir = (next_slash && (!next_bslash || next_slash < next_bslash) ? next_slash : next_bslash);
@@ -4658,20 +4650,20 @@ bool fpath_nocase(char* path, const char* base_dir)
 		if (psubdir) *psubdir = '\0';
 
 		// On Android opendir fails for directories the user/app doesn't have access so just assume it exists as is
-		if (struct retro_vfs_dir_handle *dir = vfs.iface->opendir(base_dir, true))
+		if (struct retro_vfs_dir_handle *dir = (base_dir ? vfs.iface->opendir(base_dir, true) : NULL))
 		{
 			while (dir && vfs.iface->readdir(dir))
 			{
 				const char* entry_name = vfs.iface->dirent_get_name(dir);
 				if (strcasecmp(entry_name, path)) continue;
-				memcpy(path, entry_name, strlen(entry_name));
+				strcpy(path, entry_name);
 				break;
 			}
 			vfs.iface->closedir(dir);
 		}
-		if (!psubdir) { if (psubdir) *psubdir = '/'; return true; }
-		if (subdir.empty()) subdir = base_dir;
-		if (subdir.back() != '/') subdir += '/';
+		if (!psubdir) return true;
+		if (subdir.empty() && base_dir) subdir = base_dir;
+		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
 		base_dir = subdir.append(path).c_str();
 	}
 }

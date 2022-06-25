@@ -396,7 +396,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	if (force_mounted) filename++;
 
 	DOS_File *dos_file;
-	Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : DOS_GetDefaultDrive());
+	Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : (control ? DOS_GetDefaultDrive() : DOS_DRIVES));
 	if (drive < DOS_DRIVES && Drives[drive])
 	{
 		char dos_path[DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;

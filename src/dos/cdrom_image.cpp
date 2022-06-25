@@ -886,11 +886,12 @@ bool CDROM_Interface_Image::GetRealFileName(string &filename, string &pathname)
 		return true;
 	}
 #else
-	if (filename.empty()) return false;
-	if (fpath_nocase(&filename[0])) return true;
-	if (!pathname.empty() && fpath_nocase(&filename[0], pathname.c_str()))
-	{
-		filename = std::string(pathname + '/' + filename);
+	if (fpath_nocase(filename.c_str())) return true;
+	
+	// check if file with path relative to cue file exists
+	string tmpstr(pathname + "/" + filename);
+	if (fpath_nocase(tmpstr.c_str())) {
+		filename = tmpstr;
 		return true;
 	}
 #endif
