@@ -6840,7 +6840,7 @@ static void Voodoo_UpdateScreen(void) {
 		} else
 #endif
 		{
-			RENDER_SetSize(v->fbi.width, v->fbi.height, 16, 1000.0f / v->draw.vfreq, 4.0/3.0, false, false);
+			RENDER_SetSize(v->fbi.width, v->fbi.height, 16, 1000.0f / v->draw.vfreq, 1.0, false, false);
 		}
 
 		Voodoo_VerticalTimer(0);
