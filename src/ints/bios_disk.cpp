@@ -283,9 +283,9 @@ struct fatFromDOSDrive
 						if (niext && niext != 8)
 							for (int i = 2; i >= 0; i--)
 								entryname[8+i] = entryname[niext+i], entryname[niext+i] = ' ';
-						if (niext && ni - niext > 3)
-							for (int i = (ni - niext - 1); i >= 3; i--)
-								entryname[niext + i] = ' ';
+						if (niext && niext <= 4 && ni - niext > 3)
+							for (int i = niext + 3; i != 8; i++)
+								entryname[i] = ' ';
 
 						if (lossy)
 						{
