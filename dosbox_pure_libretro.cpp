@@ -1760,6 +1760,7 @@ static void DBP_PureMenuProgram(Program** make)
 				Bit32u heads, cyl, sect, sectSize;
 				memDsk->Get_Geometry(&heads, &cyl, &sect, &sectSize);
 				FILE* f = fopen_wrap(path.c_str(), "wb");
+				if (!f) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.append(" (create file failed)").c_str()); return; }
 				for (Bit32u i = 0, total = heads * cyl * sect; i != total; i++) { Bit8u data[512]; memDsk->Read_AbsoluteSector(i, data); fwrite(data, 512, 1, f); }
 				fclose(f);
 				delete memDsk;
@@ -1767,8 +1768,8 @@ static void DBP_PureMenuProgram(Program** make)
 
 				// If using system directory index cache, append the new OS image to that now
 				if (dbp_system_cached)
-					if (FILE* f = fopen_wrap(DBP_GetSaveFile(SFT_SYSTEMDIR).append("DOSBoxPureMidiCache.txt").c_str(), "a"))
-						{ fprintf(f, "%s\n", filename); fclose(f); }
+					if (FILE* fc = fopen_wrap(DBP_GetSaveFile(SFT_SYSTEMDIR).append("DOSBoxPureMidiCache.txt").c_str(), "a"))
+						{ fprintf(fc, "%s\n", filename); fclose(fc); }
 
 				// Set last_info to this new image to support BIOS rebooting with it
 				last_result = DBP_MenuState::IT_BOOTOS;
@@ -1794,9 +1795,16 @@ static void DBP_PureMenuProgram(Program** make)
 				if (result == DBP_MenuState::IT_INSTALLOS) ramdisk = 'f'; // must be false while installing os
 
 				// Now mount OS hard disk image as C: drive
-				bool writable; // just passing this opens the file writable
-				DOS_File* df = FindAndOpenDosFile(path.c_str(), NULL, (ramdisk == 't' ? NULL : &writable));
+				bool needwritable = (ramdisk != 't'), gotwritable; // just passing this opens the file writable
+				DOS_File* df = FindAndOpenDosFile(path.c_str(), NULL, (needwritable ? &gotwritable : NULL));
 				if (!df) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.c_str()); return; }
+				if (needwritable && !gotwritable)
+				{
+					retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.append(" (file is read-only!)").c_str());
+					if (df->IsOpen()) df->Close();
+					if (df->RemoveRef() <= 0) delete df;
+					return;
+				}
 				imageDiskList['C'-'A'] = new imageDisk(df, "", 0, true);
 				imageDiskList['C'-'A']->Set_GeometryForHardDisk();
 			}
