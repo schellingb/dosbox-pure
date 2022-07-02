@@ -633,7 +633,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 				Bit8u arr[] = { (Bit8u)(size>>24), (Bit8u)(size>>16), (Bit8u)(size>>8), (Bit8u)(size), (Bit8u)(date>>8), (Bit8u)(date), (Bit8u)(time>>8), (Bit8u)(time), attr };
 				hash = DriveCalculateCRC32(arr, sizeof(arr), DriveCalculateCRC32((const Bit8u*)path, pathlen, hash));
 			}};
-			Bit32u hash = 0x11111111;
+			Bit32u hash = (Bit32u)(0x11111111 - 1024) + (Bit32u)atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024"));
 			DriveFileIterator(Drives['C'-'A'], Local::FileHash, (Bitu)&hash);
 			res.resize(res.size() + 32);
 			res.resize(res.size() - 32 + sprintf(&res[res.size() - 32], (hash == 0x11111111 ? ".sav" : "-%08X.sav"), hash));
@@ -1787,7 +1787,8 @@ static void DBP_PureMenuProgram(Program** make)
 				{
 					Bit32u save_hash = 0;
 					DBP_SetDriveLabelFromContentPath(Drives['C'-'A'], dbp_content_path.c_str(), 'C', NULL, NULL, true);
-					imageDiskList[newC-'A'] = new imageDisk(Drives['C'-'A'], 1024, DBP_GetSaveFile(SFT_VIRTUALDISK, NULL, &save_hash).c_str(), save_hash, &dbp_vdisk_filter);
+					std::string save_path = DBP_GetSaveFile(SFT_VIRTUALDISK, NULL, &save_hash);
+					imageDiskList[newC-'A'] = new imageDisk(Drives['C'-'A'], atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")), save_path.c_str(), save_hash, &dbp_vdisk_filter);
 				}
 
 				static char ramdisk;
@@ -1795,7 +1796,7 @@ static void DBP_PureMenuProgram(Program** make)
 				if (result == DBP_MenuState::IT_INSTALLOS) ramdisk = 'f'; // must be false while installing os
 
 				// Now mount OS hard disk image as C: drive
-				bool needwritable = (ramdisk != 't'), gotwritable; // just passing this opens the file writable
+				bool needwritable = (ramdisk != 't'), gotwritable = false; // just passing this opens the file writable
 				DOS_File* df = FindAndOpenDosFile(path.c_str(), NULL, (needwritable ? &gotwritable : NULL));
 				if (!df) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.c_str()); return; }
 				if (needwritable && !gotwritable)

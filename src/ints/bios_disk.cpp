@@ -416,8 +416,16 @@ struct fatFromDOSDrive
 		memset(&mbr, 0, sizeof(mbr));
 		var_write((Bit32u*)&mbr.booter[440], serial); //4 byte disk serial number
 		var_write(&mbr.pentry[0].bootflag, 0x80); //Active bootable
-		chs_write(mbr.pentry[0].beginchs, SECT_BOOT, SECTORSPERTRACK, HEADCOUNT);
-		chs_write(mbr.pentry[0].endchs, sect_disk_end - 1, SECTORSPERTRACK, HEADCOUNT);
+		if ((sect_disk_end - 1) / (HEADCOUNT * SECTORSPERTRACK) > 0x3FF)
+		{
+			mbr.pentry[0].beginchs[0] = mbr.pentry[0].beginchs[1] = mbr.pentry[0].beginchs[2] = 0;
+			mbr.pentry[0].endchs[0] = mbr.pentry[0].endchs[1] = mbr.pentry[0].endchs[2] = 0;
+		}
+		else
+		{
+			chs_write(mbr.pentry[0].beginchs, SECT_BOOT);
+			chs_write(mbr.pentry[0].endchs, sect_disk_end - 1);
+		}
 		var_write(&mbr.pentry[0].absSectStart, SECT_BOOT);
 		var_write(&mbr.pentry[0].partSize, partSize);
 		mbr.magic1 = 0x55; mbr.magic2 = 0xaa;
@@ -504,11 +512,11 @@ struct fatFromDOSDrive
 		}
 	}
 
-	static void chs_write(Bit8u* chs, Bit32u lba, Bit16u sectorspertrack, Bit16u headcount)
+	static void chs_write(Bit8u* chs, Bit32u lba)
 	{
-		Bit32u cylinder = lba / (headcount * sectorspertrack);
-		Bit32u head = (lba / sectorspertrack) % headcount;
-		Bit32u sector = (lba % sectorspertrack) + 1;
+		Bit32u cylinder = lba / (HEADCOUNT * SECTORSPERTRACK);
+		Bit32u head = (lba / SECTORSPERTRACK) % HEADCOUNT;
+		Bit32u sector = (lba % SECTORSPERTRACK) + 1;
 		DBP_ASSERT(head <= 0xFF && sector <= 0x3F && cylinder <= 0x3FF);
 		chs[0] = (Bit8u)(head & 0xFF);
 		chs[1] = (Bit8u)((sector & 0x3F) | ((cylinder >> 8) & 0x3));

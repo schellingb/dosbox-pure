@@ -509,12 +509,22 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_bootos_ramdisk",
-		"Advanced > Discard Disk Modifications (restart required)", NULL,
+		"Advanced > Discard OS Disk Modifications (restart required)", NULL,
 		"When running an installed operating system, modifications to the C: drive will not be saved permanently." "\n"
-		"This allows the content to be closed any time without worry of file system or registry corruption.", NULL, //end of System > Advanced section
+		"This allows the content to be closed any time without worry of file system or registry corruption.", NULL,
 		"System",
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
+	},
+	{
+		"dosbox_pure_bootos_dfreespace",
+		"Advanced > Free Space on D: in OS (restart required)", NULL,
+		"Controls the amount of free space available on the D: drive when running an installed operating system." "\n"
+		"If the total size of the D: drive (data + free space) exceeds 2 GB, it can't be used in earlier versions of Windows 95." "\n"
+		"WARNING: Created save files are tied to this setting, so changing this will hide all existing D: drive changes.", NULL,
+		"System",
+		{ { "1024", "1GB (default)" }, { "2048", "2GB" }, { "4096", "4GB" }, { "8192", "8GB" } },
+		"1024"
 	},
 	{
 		"dosbox_pure_bootos_forcenormal",
