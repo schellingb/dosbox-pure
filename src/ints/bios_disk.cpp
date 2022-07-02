@@ -270,7 +270,7 @@ struct fatFromDOSDrive
 							{
 								char c = *le->Name(j);
 								if (c == '\0') { lossy |= (niext && ni - niext > 3); break; }
-								if (c == '.') { if (ni > 8) { ni = 8; } if (!ni || niext) { lossy = 1; } niext = ni; continue; }
+								if (c == '.') { if (ni > 8) { memset(entryname+8, ' ', 3); ni = 8; } if (!ni || niext) { lossy = 1; } niext = ni; continue; }
 								if (c == ' ' || ni == 11 || (ni == 8 && !niext)) { lossy = 1; continue; }
 								if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) { }
 								else if (c >= 'a' && c <= 'z') { c ^= 0x20; }
