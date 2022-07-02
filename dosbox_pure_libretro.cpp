@@ -659,7 +659,7 @@ static void DBP_SetDriveLabelFromContentPath(DOS_Drive* drive, const char *path,
 {
 	// Use content filename as drive label, cut off at file extension, the first occurence of a ( or [ character or right white space.
 	if (!path_file && !DBP_ExtractPathInfo(path, &path_file, NULL, &ext)) return;
-	char lbl[11+1], *lblend = lbl + (ext - path_file > 11 ? 11 : ext - 1 - path_file);
+	char lbl[11+1], *lblend = lbl + (ext - path_file > 11 ? 11 : ext - (*ext ? 1 : 0) - path_file);
 	memcpy(lbl, path_file, lblend - lbl);
 	for (char* c = lblend; c > lbl; c--) { if (c == lblend || *c == '(' || *c == '[' || (*c <= ' ' && !c[1])) *c = '\0'; }
 	if (forceAppendExtension && ext && ext[0])
@@ -2253,7 +2253,7 @@ static void DBP_PureMenuProgram(Program** make)
 			bool always_show_menu = (dbp_menu_time == (char)-1 || (on_finish && (DBP_GetTicks() - dbp_lastmenuticks) < 500));
 			dbp_lastmenuticks = DBP_GetTicks();
 
-			bool isBiosReboot = (on_boot && dbp_biosreboot && (last_result == IT_BOOTIMG || last_result == IT_BOOTOS || last_result == IT_INSTALLOS));
+			bool isBiosReboot = (dbp_biosreboot && (last_result == IT_BOOTIMG || last_result == IT_BOOTOS || last_result == IT_INSTALLOS));
 			if (!isBiosReboot) RefreshFileList(true);
 			ReadAutoBoot(isBiosReboot);
 
@@ -3722,11 +3722,11 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 	}
 
 	// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config at which point we cannot request input_state yet (RetroArch would crash)
-	bool force_start_menu = ((!input_state_cb || dbp_biosreboot) ? false : (
+	bool force_start_menu = (dbp_biosreboot ? true : (!input_state_cb ? false : (
 		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LSHIFT) ||
 		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
-		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
+		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2))));
 
 	if (dbp_conf_loading != 'f' && !force_start_menu && !dosboxconf)
 	{
@@ -3873,7 +3873,7 @@ static bool init_dosbox(const char* path, bool firsttime, std::string* dosboxcon
 		autoexec->ExecuteDestroy();
 		if (!force_start_menu && path && (!strcasecmp(path_ext, "EXE") || !strcasecmp(path_ext, "COM") || !strcasecmp(path_ext, "BAT")))
 		{
-			((((static_cast<Section_line*>(autoexec)->data += '@') += path_file) += '\n') += "@Z:PUREMENU") += " -FINISH\n";
+			(((((static_cast<Section_line*>(autoexec)->data += '@') += ((path_ext[0]|0x20) == 'b' ? "call " : "")) += path_file) += '\n') += "@Z:PUREMENU") += " -FINISH\n";
 		}
 		else if (!force_start_menu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
 		{
