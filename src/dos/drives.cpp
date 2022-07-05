@@ -21,6 +21,7 @@
 #include "dosbox.h"
 #include "dos_system.h"
 #include "drives.h"
+#include "bios_disk.h"
 #include "mapper.h"
 #include "support.h"
 #include "setup.h"
@@ -197,7 +198,14 @@ void DriveManager::CycleDisks(int drive, bool notify) {
 		currentDisk = (currentDisk + 1) % numDisks;		
 		DOS_Drive* newDisk = driveInfos[drive].disks[currentDisk];
 		driveInfos[drive].currentDisk = currentDisk;
-		
+		if (drive < MAX_DISK_IMAGES && imageDiskList[drive] != NULL) {
+			if (strncmp(newDisk->GetInfo(),"fatDrive",8) == 0)
+				imageDiskList[drive] = ((fatDrive *)newDisk)->loadedDisk;
+			else
+				imageDiskList[drive] = (imageDisk *)newDisk;
+			if ((drive == 2 || drive == 3) && imageDiskList[drive]->hardDrive) updateDPT();
+		}
+
 		// copy working directory, acquire system resources and finally switch to next drive		
 		strcpy(newDisk->curdir, oldDisk->curdir);
 		newDisk->Activate();

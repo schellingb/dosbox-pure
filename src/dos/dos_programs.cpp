@@ -781,7 +781,12 @@ public:
 					i++;
 					continue;
 				}
-				
+
+				if (imageDiskList[0] != NULL || imageDiskList[1] != NULL) {
+					WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_MOUNTED"));
+					return;
+				}
+
 #ifdef C_DBP_ENABLE_DISKSWAP
 				if ( i >= MAX_SWAPPABLE_DISKS ) {
 					return; //TODO give a warning.
@@ -1639,9 +1644,8 @@ public:
 			}
 			WriteOut(MSG_Get("PROGRAM_MOUNT_STATUS_2"), drive, tmp.c_str());
 
-			if (paths.size() == 1) {
-				DOS_Drive * newdrive = imgDisks[0];
-				switch (drive - 'A') {
+			DOS_Drive * newdrive = imgDisks[0];
+			switch (drive - 'A') {
 				case 0:
 				case 1:
 					if(!((fatDrive *)newdrive)->loadedDisk->hardDrive) {
@@ -1657,7 +1661,6 @@ public:
 						updateDPT();
 					}
 					break;
-				}
 			}
 		} else if (fstype=="iso") {
 
@@ -1749,7 +1752,7 @@ public:
 			if (hdd) newImage->Set_Geometry(sizes[2],sizes[3],sizes[1],sizes[0]);
 			if(imageDiskList[drive - '0'] != NULL) delete imageDiskList[drive - '0'];
 			imageDiskList[drive - '0'] = newImage;
-			updateDPT();
+			if ((drive == '2' || drive == '3') && hdd) updateDPT();
 			WriteOut(MSG_Get("PROGRAM_IMGMOUNT_MOUNT_NUMBER"),drive - '0',temp_line.c_str());
 		}
 
@@ -2000,6 +2003,7 @@ void DOS_SetupPrograms(void) {
 		"\033[34;1mBOOT [diskimg1.img diskimg2.img] [-l driveletter]\033[0m\n"
 		);
 	MSG_Add("PROGRAM_BOOT_UNABLE","Unable to boot off of drive %c");
+	MSG_Add("PROGRAM_BOOT_IMAGE_MOUNTED","Floppy image(s) already mounted.\n");
 	MSG_Add("PROGRAM_BOOT_IMAGE_OPEN","Opening image file: %s\n");
 	MSG_Add("PROGRAM_BOOT_IMAGE_NOT_OPEN","Cannot open %s");
 	MSG_Add("PROGRAM_BOOT_BOOT","Booting from drive %c...\n");
