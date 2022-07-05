@@ -698,7 +698,7 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		FILE* zip_file_h = fopen_wrap(path, "rb");
 		if (!zip_file_h)
 		{
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "ZIP", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "ZIP", path, "");
 			return NULL;
 		}
 		drive = new zipDrive(new rawFile(zip_file_h, false), dbp_legacy_save);
@@ -766,7 +766,7 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		if (error)
 		{
 			delete drive;
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "cdrom image", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "CD-ROM image", path, "");
 			return NULL;
 		}
 		cdrom = ((isoDrive*)drive)->GetInterface();
@@ -787,7 +787,7 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		FILE* m3u_file_h = fopen_wrap(path, "rb");
 		if (!m3u_file_h)
 		{
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "M3U", path);
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "M3U", path, "");
 			return NULL;
 		}
 		fseek(m3u_file_h, 0, SEEK_END);
@@ -1733,7 +1733,31 @@ static void DBP_PureMenuProgram(Program** make)
 			first_shell->bf = new BatchFileBoot(imageDiskList['A'-'A'] ? 'A' : 'C');
 		}
 
-		static void BootOS(DBP_MenuState::ItemType result, int info, bool have_iso, bool isBiosReboot)
+		static bool BootOSMountIMG(char drive, const char* path, const char* type, bool needwritable, bool complainnotfound)
+		{
+			FILE* raw_file_h = NULL;
+			if (needwritable && (raw_file_h = fopen_wrap(path, "rb+")) != NULL) goto openok;
+			if ((raw_file_h = fopen_wrap(path, "rb")) == NULL)
+			{
+				if (complainnotfound)
+					retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", type, path, "");
+				return false;
+			}
+			if (needwritable)
+			{
+				retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", type, path, " (file is read-only!)");
+				fclose(raw_file_h);
+				return false;
+			}
+			openok:
+			DOS_File* df = new rawFile(raw_file_h, needwritable);
+			df->AddRef();
+			imageDiskList[drive-'A'] = new imageDisk(df, "", 0, true);
+			imageDiskList[drive-'A']->Set_GeometryForHardDisk();
+			return true;
+		}
+
+		static void BootOS(DBP_MenuState::ItemType result, Bit16s info, bool have_iso, bool isBiosReboot)
 		{
 			// Make sure we have at least 32 MB of RAM, if not set it to 64
 			if ((MEM_TotalPages() / 256) < 32)
@@ -1760,7 +1784,7 @@ static void DBP_PureMenuProgram(Program** make)
 				Bit32u heads, cyl, sect, sectSize;
 				memDsk->Get_Geometry(&heads, &cyl, &sect, &sectSize);
 				FILE* f = fopen_wrap(path.c_str(), "wb");
-				if (!f) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.append(" (create file failed)").c_str()); return; }
+				if (!f) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "OS image", path.c_str(), " (create file failed)"); return; }
 				for (Bit32u i = 0, total = heads * cyl * sect; i != total; i++) { Bit8u data[512]; memDsk->Read_AbsoluteSector(i, data); fwrite(data, 512, 1, f); }
 				fclose(f);
 				delete memDsk;
@@ -1783,7 +1807,7 @@ static void DBP_PureMenuProgram(Program** make)
 				char newC = ((have_iso || DBP_IsMounted('D')) ? 'E' : 'D'); // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
 				if (imageDiskList['C'-'A'])
 					imageDiskList[newC-'A'] = imageDiskList['C'-'A'];
-				else if (Drives['C'-'A'])
+				else if (!BootOSMountIMG(newC, (dbp_content_path + ".img").c_str(), "D: drive image", true, false) && Drives['C'-'A'])
 				{
 					Bit32u save_hash = 0;
 					DBP_SetDriveLabelFromContentPath(Drives['C'-'A'], dbp_content_path.c_str(), 'C', NULL, NULL, true);
@@ -1791,23 +1815,12 @@ static void DBP_PureMenuProgram(Program** make)
 					imageDiskList[newC-'A'] = new imageDisk(Drives['C'-'A'], atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")), save_path.c_str(), save_hash, &dbp_vdisk_filter);
 				}
 
-				static char ramdisk;
+				static char ramdisk; // static variable so it sticks across bios reboots
 				if (!ramdisk || !isBiosReboot) ramdisk = retro_get_variable("dosbox_pure_bootos_ramdisk", "false")[0];
 				if (result == DBP_MenuState::IT_INSTALLOS) ramdisk = 'f'; // must be false while installing os
 
 				// Now mount OS hard disk image as C: drive
-				bool needwritable = (ramdisk != 't'), gotwritable = false; // just passing this opens the file writable
-				DOS_File* df = FindAndOpenDosFile(path.c_str(), NULL, (needwritable ? &gotwritable : NULL));
-				if (!df) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.c_str()); return; }
-				if (needwritable && !gotwritable)
-				{
-					retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "OS image", path.append(" (file is read-only!)").c_str());
-					if (df->IsOpen()) df->Close();
-					if (df->RemoveRef() <= 0) delete df;
-					return;
-				}
-				imageDiskList['C'-'A'] = new imageDisk(df, "", 0, true);
-				imageDiskList['C'-'A']->Set_GeometryForHardDisk();
+				BootOSMountIMG('C', path.c_str(), "OS image", (ramdisk != 't'), true);
 			}
 			else if (!imageDiskList['C'-'A'] && Drives['C'-'A'])
 			{
@@ -4628,7 +4641,15 @@ void retro_deinit(void) { }
 
 // UTF8 fopen
 #include "libretro-common/include/compat/fopen_utf8.h"
-FILE *fopen_wrap(const char *path, const char *mode) { return (FILE*)fopen_utf8(path, mode); }
+FILE *fopen_wrap(const char *path, const char *mode)
+{
+	#ifdef WIN32
+	for (const unsigned char* p = (unsigned char*)path; *p; p++)
+		if (*p >= 0x80)
+			return (FILE*)fopen_utf8(path, mode);
+	#endif
+	return fopen(path, mode);
+}
 #ifndef STATIC_LINKING
 #include "libretro-common/compat/fopen_utf8.c"
 #include "libretro-common/compat/compat_strl.c"
@@ -4642,7 +4663,7 @@ bool fpath_nocase(char* path)
 	if (stat(path, &test) == 0) return true; // exists as is
 
 	#ifdef WIN32
-	// We also could just return false here because file paths are not case senstive on Windows
+	// If stat could handle utf8 strings, we just return false here because paths are not case senstive on Windows
 	size_t rootlen = ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) ? 3 : 0);
 	#else
 	size_t rootlen = ((path[0] == '/' || path[0] == '\\') ? 1 : 0);
