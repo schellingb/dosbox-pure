@@ -1612,8 +1612,10 @@ struct DBP_MenuState
 		for (int count = (int)list.size(); !result && sel_change;)
 		{
 			sel += sel_change;
-			while (sel >= count) sel = (sel_change > 1 ? count - 1 : 0);
-			while (sel < 0) sel = (sel_change < -1 ? 0 : count - 1);
+			if (sel >= 0 && sel < count) { }
+			else if (sel_change > 1) sel = count - 1;
+			else if (sel_change == -1) sel = count - 1;
+			else sel = scroll = 0;
 			if (list[sel].type != IT_NONE) break;
 			sel_change = (sel_change == -1 ? -1 : 1);
 		}
@@ -1780,7 +1782,7 @@ static void DBP_PureMenuProgram(Program** make)
 				// Create a new empty hard disk image of the requested size
 				memoryDrive* memDrv = new memoryDrive();
 				DBP_SetDriveLabelFromContentPath(memDrv, path.c_str(), 'C', filename, path.c_str() + path.size() - 3);
-				imageDisk* memDsk = new imageDisk(memDrv, (Bit32u)info);
+				imageDisk* memDsk = new imageDisk(memDrv, (Bit32u)(info*8));
 				Bit32u heads, cyl, sect, sectSize;
 				memDsk->Get_Geometry(&heads, &cyl, &sect, &sectSize);
 				FILE* f = fopen_wrap(path.c_str(), "wb");
@@ -2153,14 +2155,25 @@ static void DBP_PureMenuProgram(Program** make)
 					list.clear();
 					list.emplace_back(IT_NONE, ATTR_HEADER, "Hard Disk Size For Install");
 					list.emplace_back(IT_NONE);
-					char buf[128];
-					for (Bit16s sz = 0; sz <= 2048; sz = (sz ? sz * 2 : 8))
-						list.emplace_back(IT_INSTALLOS, sz, (sz && sprintf(buf, "%d MB Hard Disk", sz) ? buf : "No Hard Disk"));
-					list.emplace_back(IT_NONE);
-					list.emplace_back(IT_NONE, ATTR_WARN, "This will create the hard disk image in the following location:");
+					list.emplace_back(IT_NONE, ATTR_WARN, "Create a new hard disk image in the following location:");
 					if (filename > &osimg[0]) { list.emplace_back(IT_NONE, ATTR_WARN); list.back().str.assign(&osimg[0], filename - &osimg[0]); }
 					list.emplace_back(IT_NONE, ATTR_WARN, filename);
-					sel = 9;
+					list.emplace_back(IT_NONE);
+					char buf[128];
+					for (Bit16s sz = 16/8; sz <= 64*1024/8; sz += (sz < 4096/8 ? sz : (sz < 32*1024/8 ? 4096/8 : 8192/8)))
+					{
+						list.emplace_back(IT_INSTALLOS, sz, (sprintf(buf, "%3d %cB Hard Disk", (sz < 1024/8 ? sz*8 : sz*8/1024), (sz < 1024/8 ? 'M' : 'G')),buf));
+						if (sz == 2048/8)
+						{
+							list.emplace_back(IT_NONE);
+							list.emplace_back(IT_NONE, ATTR_WARN, "Hard disk images over 2GB will be formatted with FAT32");
+							list.emplace_back(IT_NONE, ATTR_WARN, "NOTE: FAT32 is only supported in Windows 95C and newer");
+							list.emplace_back(IT_NONE);
+						}
+					}
+					list.emplace_back(IT_NONE);
+					list.emplace_back(IT_INSTALLOS, 0, "[ Boot Only Without Creating Hard Disk Image ]");
+					sel = (filename > &osimg[0] ? 11 : 10);
 					scroll = 0;
 					result = IT_NONE;
 					RedrawScreen(false);
