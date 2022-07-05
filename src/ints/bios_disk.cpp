@@ -330,7 +330,7 @@ struct fatFromDOSDrive
 		drv->AllocationInfo(&drv_bytes_sector, &drv_sectors_cluster, &drv_total_clusters, &drv_free_clusters);
 		DriveFileIterator(drv, Iter::SumFileSize, (Bitu)&sum);
 
-		readOnly = (drv_free_clusters == 0);
+		readOnly = (drv_free_clusters == 0 || freeSpaceMB == 0);
 
 		const Bit32u addFreeMB = (readOnly ? 0 : freeSpaceMB), totalMB = (Bit32u)(sum.used_bytes / (1024*1024)) + addFreeMB + 1;
 		if      (totalMB >= 3072) { isFAT32 = true;  sectorsPerCluster = 64; } // 32 kb clusters ( 98304 ~        FAT entries)
@@ -648,13 +648,13 @@ struct fatFromDOSDrive
 		else if (sectnum >= sect_root_start) return &root[(sectnum - sect_root_start) * (BYTESPERSECTOR / sizeof(direntry))];
 		else if (sectnum >= sect_fat2_start) return &fat[(sectnum - sect_fat2_start) * BYTESPERSECTOR];
 		else if (sectnum >= sect_fat1_start) return &fat[(sectnum - sect_fat1_start) * BYTESPERSECTOR];
-		else if (sectnum == SECT_BOOT) return &bootsec;
+		else if (sectnum == SECT_BOOT) return &bootsec; // boot sector 1
 		else if (sectnum == SECT_MBR) return &mbr;
-		else if (sectnum == SECT_BOOT+1) return fsinfosec;
-		else if (sectnum == SECT_BOOT+2) return fsinfosec; // additional boot loader code (anything is ok for us but needs 0x55AA footer signature)
-		else if (sectnum == SECT_BOOT+6) return &bootsec; // boot sector copy
-		else if (sectnum == SECT_BOOT+7) return fsinfosec; // boot sector copy
-		else if (sectnum == SECT_BOOT+8) return fsinfosec; // boot sector copy
+		else if (sectnum == SECT_BOOT+1) return fsinfosec; // boot sector 2: fs information sector
+		else if (sectnum == SECT_BOOT+2) return fsinfosec; // boot sector 3: additional boot loader code (anything is ok for us but needs 0x55AA footer signature)
+		else if (sectnum == SECT_BOOT+6) return &bootsec;  // boot sector 1 copy
+		else if (sectnum == SECT_BOOT+7) return fsinfosec; // boot sector 2 copy
+		else if (sectnum == SECT_BOOT+8) return fsinfosec; // boot sector 3 copy
 		return NULL;
 	}
 
