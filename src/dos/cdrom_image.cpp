@@ -473,13 +473,18 @@ bool CDROM_Interface_Image::ReadSectorsHost(void* buffer, bool raw, unsigned lon
 	int sectorSize = raw ? RAW_SECTOR_SIZE : COOKED_SECTOR_SIZE;
 	Bit8u* buf = (Bit8u*)buffer;
 
-	bool success = true; //Gobliiins reads 0 sectors
 	for(unsigned long i = 0; i < num; i++) {
-		success = ReadSector(&buf[i * sectorSize], raw, sector + i);
-		if (!success) break;
+		if (!ReadSector(&buf[i * sectorSize], raw, sector + i)) return false;
+		if (raw && buf[i * sectorSize + 2068] && sector < tracks[0].length && !tracks[0].mode2)
+		{
+			// ECMA-130: The Intermediate field shall consist of 8 (00)-bytes recorded in positions 2068 to 2075
+			// We report a non-zero value as a sector read error. This is to satisfy copy protection checks which expect certain sectors to be bad.
+			// Some raw CD image formats represent bad sectors on the original media by filling up the entire sector beyond the header with a dummy byte like 0x55.
+			return false;
+		}
 	}
 
-	return success;
+	return true;
 }
 #endif
 
