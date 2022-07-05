@@ -301,6 +301,7 @@ enum { DOS_SEEK_SET=0,DOS_SEEK_CUR=1,DOS_SEEK_END=2};
 //DBP: These flag checks were inconsistent across the code, so added these macros
 #define OPEN_IS_WRITING(flags) (flags & 3)
 #define OPEN_IS_READING(flags) (!(flags & 1))
+#define OPEN_CHECK_ACCESS_CODE(flags) ((flags&0xf) <= 4)
 
 /*
  A multiplex handler should read the registers to check what function is being called

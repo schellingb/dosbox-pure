@@ -1647,6 +1647,7 @@ zipDrive::~zipDrive()
 
 bool zipDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 {
+	if (!OPEN_CHECK_ACCESS_CODE(flags)) return FALSE_SET_DOSERR(ACCESS_CODE_INVALID);
 	if (OPEN_IS_WRITING(flags)) return FALSE_SET_DOSERR(ACCESS_DENIED);
 
 	DOSPATH_REMOVE_ENDINGDOTS(name);

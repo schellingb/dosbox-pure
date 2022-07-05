@@ -580,6 +580,7 @@ unionDrive::~unionDrive()
 
 bool unionDrive::FileOpen(DOS_File * * file, char * path, Bit32u flags)
 {
+	if (!OPEN_CHECK_ACCESS_CODE(flags)) return FALSE_SET_DOSERR(ACCESS_CODE_INVALID);
 	DOSPATH_REMOVE_ENDINGDOTS_KEEP(path);
 	if (!*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
 	Union_Modification* m = impl->modifications.Get(path);

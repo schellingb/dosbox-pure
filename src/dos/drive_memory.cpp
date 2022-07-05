@@ -214,6 +214,7 @@ memoryDrive::~memoryDrive()
 
 bool memoryDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 {
+	if (!OPEN_CHECK_ACCESS_CODE(flags)) return FALSE_SET_DOSERR(ACCESS_CODE_INVALID);
 	DOSPATH_REMOVE_ENDINGDOTS_KEEP(name);
 	Memory_Entry* e = impl->Get(name);
 	if (!e || e->IsDirectory()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
