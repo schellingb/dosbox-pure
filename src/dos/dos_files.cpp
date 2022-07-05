@@ -570,7 +570,16 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry,bool fcb) {
 		dos.errorcode=0;
 		exists=Drives[drive]->FileOpen(&Files[handle],fullname,flags);
 		if (exists) Files[handle]->SetDrive(drive);
+#ifndef C_DBP_LIBRETRO
 		if (dos.errorcode) return false;
+#else
+		if (dos.errorcode)
+		{
+			// Make sure none of the drive implementations sets an errorcode but still succeeds
+			if (!exists) return false;
+			DBP_ASSERT(false);
+		}
+#endif
 		dos.errorcode=olderror;
 	}
 	if (exists || device ) { 

@@ -486,6 +486,7 @@ private:
 
 //DBP: New drive types
 #define FALSE_SET_DOSERR(ERRNAME) (dos.errorcode = (DOSERR_##ERRNAME), false)
+#define TRUE_CLEAR_DOSERR() (dos.errorcode = 0, true)
 #define DOSPATH_REMOVE_ENDINGDOTS(VAR) char VAR##_buf[DOS_PATHLENGTH]; DrivePathRemoveEndingDots((const char**)&VAR, VAR##_buf)
 #define DOSPATH_REMOVE_ENDINGDOTS_KEEP(VAR) const char* VAR##_org = VAR; DOSPATH_REMOVE_ENDINGDOTS(VAR)
 void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH]);

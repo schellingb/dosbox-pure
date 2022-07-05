@@ -212,7 +212,7 @@ struct unionDriveImpl
 			ForceCloseFileAndScheduleSave(drv, path);
 			bool in_under = (under.FileExists(path) || under.TestDir(path));
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //mark deletion
-			return true;
+			return TRUE_CLEAR_DOSERR();
 		}
 		if (type == Union_Modification::TFILE ? under.FileExists(path) : under.TestDir(path))
 		{
@@ -636,19 +636,20 @@ bool unionDrive::FileOpen(DOS_File * * file, char * path, Bit32u flags)
 			}
 			delete real_file;
 			delete clone_write;
-			if (!impl->over.FileOpen(&real_file, path, flags)) { DBP_ASSERT(0); return false; }
+			if (!impl->over.FileOpen(&real_file, path, flags)) { DBP_ASSERT(false); return false; }
 			#endif
 			// Only copy file to overlay on first write operation
 			need_copy_on_write = true;
 		}
 		*file = new Union_WriteHandle(impl, real_file, flags, path_org, need_copy_on_write); 
-		return true;
+		return TRUE_CLEAR_DOSERR();
 	}
 	else // open readable
 	{
 		// No need to call AddRef on the opened file here, it will be done by our caller
 		if (m && m->IsRedirect()) return impl->under.FileOpen(file, m->RedirectSource(), flags);
-		return (impl->over.FileOpen(file, path, flags) || impl->under.FileOpen(file, path, flags));
+		if (!impl->over.FileOpen(file, path, flags) && !impl->under.FileOpen(file, path, flags)) return false;
+		return TRUE_CLEAR_DOSERR();
 	}
 }
 
@@ -670,7 +671,7 @@ bool unionDrive::FileCreate(DOS_File** file, char * path, Bit16u attributes)
 	}
 	*file = new Union_WriteHandle(impl, real_file, OPEN_READWRITE, path_org, false);
 	impl->ScheduleSave();
-	return true;
+	return TRUE_CLEAR_DOSERR();
 }
 
 bool unionDrive::Rename(char * oldpath, char * newpath)
@@ -718,7 +719,7 @@ bool unionDrive::Rename(char * oldpath, char * newpath)
 			old_m->RedirectSetNewPath(newpath);
 			impl->modifications.Put(newpath, old_m);
 		}
-		return true;
+		return TRUE_CLEAR_DOSERR();
 	}
 	if (in_under)
 	{
@@ -731,7 +732,7 @@ bool unionDrive::Rename(char * oldpath, char * newpath)
 		DBP_ASSERT(in_under);
 		impl->modifications.Put(newpath, new Union_Modification(newpath, oldpath, is_file)); //MRED
 	}
-	return true;
+	return TRUE_CLEAR_DOSERR();
 }
 
 bool unionDrive::FileUnlink(char * path)
@@ -752,7 +753,7 @@ bool unionDrive::MakeDir(char* dir_path)
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	if (!impl->UnionPrepareCreate(dir_path, false) || !impl->over.MakeDir(dir_path)) return false;
 	impl->ScheduleSave();
-	return true;
+	return TRUE_CLEAR_DOSERR();
 }
 
 bool unionDrive::RemoveDir(char* dir_path)
@@ -787,7 +788,7 @@ bool unionDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 	if (!TestDir(dir_path)) return FALSE_SET_DOSERR(PATH_NOT_FOUND);
 	Union_Search* s;
 	size_t dir_len = strlen(dir_path);
-	if (dir_len >= sizeof(s->dir)) return false;
+	if (dir_len >= sizeof(s->dir)) { DBP_ASSERT(false); return false; }
 
 	if (impl->free_search_ids.empty())
 	{
@@ -832,7 +833,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 			FileStat(s.dir, &stat); // both '.' and '..' return the stats from the current dir
 			if (~attr & (Bit8u)stat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 			dta.SetResult(dotted, 0, stat.date, stat.time, (Bit8u)stat.attr);
-			return true;
+			return TRUE_CLEAR_DOSERR();
 		}
 	}
 	switch (s.step)
@@ -859,7 +860,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (impl->over.FileExists(dta_path) || impl->over.TestDir(dta_path)) continue;
 				if (impl->modifications.Get(dta_name, DOS_NAMELENGTH_ASCII, s.dir_hash)) continue;
 				dta.SetDirID(my_dir_id);
-				return true;
+				return TRUE_CLEAR_DOSERR();
 			}
 
 		case_over_find_first:
@@ -881,7 +882,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (dta_attr & DOS_ATTR_VOLUME) continue;
 				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
 				dta.SetDirID(my_dir_id);
-				return true;
+				return TRUE_CLEAR_DOSERR();
 			}
 
 		case_over_done:
@@ -902,7 +903,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (!impl->under.FileStat(m->RedirectSource(), &filestat)) continue;
 				if (~attr & (Bit8u)filestat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 				dta.SetResult(redirect_newname, filestat.size, filestat.date, filestat.time, (Bit8u)filestat.attr);
-				return true;
+				return TRUE_CLEAR_DOSERR();
 			}
 			s.step = -1;
 			impl->free_search_ids.push_back(dta.GetDirID());
@@ -915,7 +916,7 @@ bool unionDrive::FileStat(const char* path, FileStat_Block * const stat_block)
 	DOSPATH_REMOVE_ENDINGDOTS(path);
 	if (!*path) return impl->under.FileStat(path, stat_block); //get time stamps for root directory from underlying drive
 	Union_Modification* m = impl->modifications.Get(path);
-	if (m && m->IsDelete())   return FALSE_SET_DOSERR(FILE_NOT_FOUND);
+	if (m && m->IsDelete())   return false;
 	if (m && m->IsRedirect()) return impl->under.FileStat(m->RedirectSource(), stat_block);
 	return (impl->over.FileStat(path, stat_block) || impl->under.FileStat(path, stat_block));
 }
@@ -924,7 +925,7 @@ bool unionDrive::GetFileAttr(char * path, Bit16u * attr)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(path);
 	Union_Modification* m = impl->modifications.Get(path);
-	if (m && m->IsDelete())   return FALSE_SET_DOSERR(FILE_NOT_FOUND);
+	if (m && m->IsDelete())   return false;
 	if (m && m->IsRedirect()) return impl->under.GetFileAttr(m->RedirectSource(), attr);
 	return (impl->over.GetFileAttr(path, attr) || impl->under.GetFileAttr(path, attr));
 }
