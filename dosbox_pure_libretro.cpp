@@ -3283,7 +3283,7 @@ static void set_variables(bool force_midi_scan = false)
 					int32_t entry_size = 0;
 					std::string subpath = path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name);
 					FILE* f = fopen_wrap(path.assign(system_dir).append("/").append(subpath).c_str(), "rb");
-					size_t fsize = 0; if (f) { fseek(f, 0, SEEK_END); fsize = ftell(f); fclose(f); }
+					Bit64u fsize = 0; if (f) { fseek_wrap(f, 0, SEEK_END); fsize = (Bit64u)ftell_wrap(f); fclose(f); }
 					if (fsize < 1024*1024*7 || (fsize % 512)) continue; // min 7MB hard disk image made up of 512 byte sectors
 					dbp_osimages.push_back(subpath);
 				}
