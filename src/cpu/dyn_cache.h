@@ -32,7 +32,7 @@ extern "C" int getVMBlock();
 #include <switch.h>
 static Jit dynarec_jit;
 static u_char *jit_dynrec;
-static void *jit_rx_addr, *jit_rw_addr, *jit_rw_buffer, *jit_old_addr;
+static void *jit_rx_addr, *jit_rw_addr;
 static size_t jit_len;
 static bool jit_is_executable;
 extern char __start__;
@@ -42,12 +42,8 @@ static inline void *nxmmap(void *addr, size_t len)
 	if (R_SUCCEEDED(jitCreate(&dynarec_jit, jit_len)))
 	{
 		jit_len = dynarec_jit.size;
-		jit_rw_buffer = malloc(jit_len);
-		jit_rx_addr = (void*)(&__start__ - 0x1000 - jit_len);
-		jit_old_addr = dynarec_jit.rx_addr;
-		dynarec_jit.rx_addr = jit_rx_addr;
 		jit_rw_addr = jitGetRwAddr(&dynarec_jit);
-		jit_dynrec = (u_char*)jit_rw_addr;
+		jit_rx_addr = jitGetRxAddr(&dynarec_jit);
 		printf("Jit Initialized: RX %p, RW %p\n", jit_rx_addr, jit_rw_addr);
 		jitTransitionToExecutable(&dynarec_jit);
 		jit_is_executable = true;
@@ -58,12 +54,7 @@ static inline void *nxmmap(void *addr, size_t len)
 }
 static inline int nxmunmap(void *addr, size_t)
 {
-	jitTransitionToWritable(&dynarec_jit);
-	if(jit_old_addr != 0) dynarec_jit.rx_addr = jit_old_addr;
-	jit_old_addr = 0;
 	jitClose(&dynarec_jit);
-	free(jit_rw_buffer);
-	jit_rw_buffer = 0;
 	return 0;
 }
 #endif
