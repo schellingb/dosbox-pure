@@ -85,7 +85,7 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "inside", "Try 'dosbox.conf' in the loaded content (ZIP or folder)" },
 			{ "outside", "Try '.conf' with same name as loaded content (next to ZIP or folder)" },
 		},
-		"default"
+		"false"
 	},
 	{
 		"dosbox_pure_menu_time",
@@ -407,7 +407,7 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "svga_et4000",   "Tseng Labs ET4000" },
 			{ "svga_paradise", "Paradise PVGA1A" },
 		},
-		"s3"
+		"svga_s3"
 	},
 	{
 		"dosbox_pure_voodoo",
