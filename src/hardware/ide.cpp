@@ -376,7 +376,90 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		return my_cdrom;
 	}
 
+	#if 0
+	static const char* getIDECommandName(uint8_t cmd)
+	{
+		switch (cmd)
+		{
+			case 0x08: return "DEVICE RESET";
+			case 0x20: return "READ SECTOR";
+			case 0xA0: return "ATAPI PACKET";
+			case 0xA1: return "IDENTIFY PACKET DEVICE";
+			case 0xEC: return "IDENTIFY DEVICE";
+			case 0xEF: return "SET FEATURES";
+			default: return "?????? UNKNOWN ??????";
+		}
+	}
+	static const char* getATAPICommandName(uint8_t cmd)
+	{
+		switch (cmd)
+		{
+			case 0x00: return "TEST_UNIT_READY";
+			case 0x03: return "REQUEST_SENSE";
+			case 0x04: return "FORMAT_UNIT";
+			case 0x12: return "INQUIRY";
+			case 0x15: return "MODE_SELECT_6";
+			case 0x1A: return "MODE_SENSE_6";
+			case 0x1B: return "START_STOP_UNIT";
+			case 0x1E: return "PREVENT_ALLOW_MEDIUM_REMOVAL";
+			case 0x23: return "READ_FORMAT_CAPACITIES";
+			case 0x25: return "READ_CAPACITY";
+			case 0x28: return "READ_10";
+			case 0x2A: return "WRITE_10";
+			case 0x2B: return "SEEK_10";
+			case 0x2C: return "ERASE_10";
+			case 0x2E: return "WRITE_AND_VERIFY_10";
+			case 0x2F: return "VERIFY_10";
+			case 0x35: return "SYNCHRONIZE_CACHE";
+			case 0x3B: return "WRITE_BUFFER";
+			case 0x3C: return "READ_BUFFER";
+			case 0x42: return "READ_SUBCHANNEL";
+			case 0x43: return "READ_TOC_PMA_ATIP";
+			case 0x45: return "PLAY_AUDIO_10";
+			case 0x46: return "GET_CONFIGURATION";
+			case 0x47: return "PLAY_AUDIO_MSF";
+			case 0x4A: return "GET_EVENT_STATUS_NOTIFICATION";
+			case 0x4B: return "PAUSE_RESUME";
+			case 0x4E: return "STOP_PLAY_SCAN";
+			case 0x51: return "READ_DISC_INFORMATION";
+			case 0x52: return "READ_TRACK_INFORMATION";
+			case 0x53: return "RESERVE_TRACK";
+			case 0x54: return "SEND_OPC_INFORMATION";
+			case 0x55: return "MODE_SELECT_10";
+			case 0x58: return "REPAIR_TRACK";
+			case 0x5A: return "MODE_SENSE_10";
+			case 0x5B: return "CLOSE_TRACK_SESSION";
+			case 0x5C: return "READ_BUFFER_CAPACITY";
+			case 0x5D: return "SEND_CUE_SHEET";
+			case 0xA1: return "BLANK";
+			case 0xA2: return "SEND_EVENT";
+			case 0xA3: return "SEND_KEY";
+			case 0xA4: return "REPORT_KEY";
+			case 0xA5: return "PLAY_AUDIO_12";
+			case 0xA6: return "LOAD_UNLOAD_MEDUIM";
+			case 0xA7: return "SET_READ_AHEAD";
+			case 0xA8: return "READ_12";
+			case 0xAA: return "WRITE_12";
+			case 0xAC: return "GET_PERFORMANCE";
+			case 0xAD: return "READ_DISC_STRUCTURE";
+			case 0xB6: return "SET_STREAMING";
+			case 0xB9: return "READ_CD_MSF";
+			case 0xBA: return "SCAN";
+			case 0xBB: return "SET_CD_SPEED";
+			case 0xBD: return "MECHANISM_STATUS";
+			case 0xBE: return "READ_CD";
+			case 0xBF: return "SEND_DVD_STRUCTURE";
+			default: return "?????? UNKNOWN ??????";
+		}
+	}
+	#endif
+
 	virtual void writecommand(uint8_t cmd) {
+		#if 0
+		LOG_MSG("[ATAPI] [IDE] WRITE COMMAND - CMD: %s (0x%02x) - INTERRUPT_OK: %d - FEATURE: %x - LBA: %x %x %x (%u)",
+			getIDECommandName(cmd), (int)cmd, command_interruption_ok(cmd), feature, lba[0], lba[1], lba[2], (unsigned)((lba[1] & 0xFF) | ((lba[2] & 0xFF) << 8)));
+		#endif
+
 		if (!command_interruption_ok(cmd))
 			return;
 
@@ -616,8 +699,9 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		sector[3] = 0x21;
 		sector[4] = 36 - 5;     /* additional length */
 
+		/* id_mmc_product_id must not contain the word "Virtual" otherwise SafeDisc2 copy protection refuses to run */
 		memcpy(sector+8, "DOSBox-X", 8); //id_mmc_vendor_id, 8 bytes, padded with space
-		memcpy(sector+16, "Virtual CD-ROM  ", 16); //id_mmc_product_id, 16 bytes, padded with space
+		memcpy(sector+16, "DOSBox CD-ROM   ", 16); //id_mmc_product_id, 16 bytes, padded with space
 		memcpy(sector+32, "0.83", 4); //id_mmc_product_rev 4 bytes, padded with space
 	}
 
@@ -643,13 +727,17 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		DBP_ASSERT(sector_total <= sizeof(sector));
 	}
 
-	void set_sense(unsigned char SK,unsigned char ASC=0,unsigned char ASCQ=0,unsigned int len=0) {
-		if (len < 18) len = 18;
+	void set_sense(unsigned char SK,unsigned char ASC=0,unsigned char ASCQ=0,unsigned int info=0) {
+		const unsigned int len = 18 + 0xB;
 		memset(sense,0,len);
 		sense_length = len;
 
-		sense[0] = 0x70;    /* RESPONSE CODE */
+		sense[0] = 0xF0;    /* RESPONSE CODE */
 		sense[2] = SK&0xF;  /* SENSE KEY */
+		sense[3] = (unsigned char)(info >> 24u);
+		sense[4] = (unsigned char)(info >> 16u);
+		sense[5] = (unsigned char)(info >> 8u);
+		sense[6] = (unsigned char)(info >> 0u);
 		sense[7] = len - 18;    /* additional sense length */
 		sense[12] = ASC;
 		sense[13] = ASCQ;
@@ -806,7 +894,8 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 	void atapi_io_completion() {
 		#if 0
-		LOG_MSG("ATAPI IO COMPLETE - COUNT: %d - CMD: 0x%02x",(int)count, (int)atapi_cmd[0]);
+		LOG_MSG("[ATAPI] IO COMPLETE - COUNT: %d - CMD: %s (0x%02x) - LBA: %x %x %x (%u)",
+			(int)count, getATAPICommandName(atapi_cmd[0]), (int)atapi_cmd[0], lba[0], lba[1], lba[2], (unsigned)((lba[1] & 0xFF) | ((lba[2] & 0xFF) << 8)));
 		#endif
 		/* for most ATAPI PACKET commands, the transfer is done and we need to clear
 		   all indication of a possible data transfer */
@@ -886,7 +975,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 						/* TODO: Emulate CD-ROM spin-up delay, and seek delay */
 						PIC_RemoveSpecificEvents(IDE_DelayedCommand,device_index);
 						PIC_AddEvent(IDE_DelayedCommand,(3)/*ms*/,device_index);
-				return;
+						return;
 					}
 					else {
 						//LOG_MSG("ATAPI CD READ LBA=%x xfer=%x xferrem=%x transfer complete",(unsigned int)LBA,(unsigned int)TransferLength,(unsigned int)TransferLengthRemaining);
@@ -910,6 +999,11 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 	}
 
 	void io_completion() {
+		#if 0
+		LOG_MSG("[ATAPI] [IDE] IO COMPLETION - CMD: %s (0x%02x) - FEATURE: %x - LBA: %x %x %x (%u)",
+			getIDECommandName(command), (int)command, feature, lba[0], lba[1], lba[2], (unsigned)((lba[1] & 0xFF) | ((lba[2] & 0xFF) << 8)));
+		#endif
+
 		/* lower DRQ */
 		status &= ~IDE_STATUS_DRQ;
 
@@ -934,7 +1028,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 			 in many of the commands here. Right now it doesn't matter. */
 	void atapi_cmd_completion() {
 		#if 0
-		LOG_MSG("ATAPI command %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x to_host=%u",
+		LOG_MSG("[ATAPI] CMD COMPLETION - CMD: %s (0x%02x) - DATA: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x to_host=%u", getATAPICommandName(atapi_cmd[0]),
 			atapi_cmd[ 0],atapi_cmd[ 1],atapi_cmd[ 2],atapi_cmd[ 3],atapi_cmd[ 4],atapi_cmd[ 5],
 			atapi_cmd[ 6],atapi_cmd[ 7],atapi_cmd[ 8],atapi_cmd[ 9],atapi_cmd[10],atapi_cmd[11],
 			atapi_to_host);
@@ -993,6 +1087,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 				break;
 			case 0x12: /* INQUIRY */
 				DBP_ASSERT(!(atapi_cmd[1] & 0x01));  /* EVPD (Enable Vital Product Data) bit not supported (see atapi.c from qemu) */
+				DBP_ASSERT(atapi_cmd[2] == 0); /* without EVPD, PAGE CODE must be zero */
 				count = 0x02;
 				state = IDE_DEV_ATAPI_BUSY;
 				status = IDE_STATUS_BUSY;
@@ -1019,6 +1114,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 					/* Sector size? */
 					TransferSectorType = (atapi_cmd[1] >> 2) & 7u; /* RESERVED=[7:5] ExpectedSectorType=[4:2] RESERVED=[1:1] RELOAD=[0:0] */
 					TransferReadCD9 = atapi_cmd[9]; /* SYNC=[7:7] HeaderCodes=[6:5] UserData=[4:4] EDCECC=[3:3] ErrorField=[2:1] RESERVED=[0:0] */
+					DBP_ASSERT(atapi_cmd[10] == 0); /* subchannels not supported */
 
 					if (TransferSectorType <= 5) { /* Treat unspecified sector type == 0 the same as CDDA with regard to sector size */
 
@@ -1342,7 +1438,8 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 	void on_atapi_busy_time() {
 		#if 0
 		static const char* loadingModeNames[] = { "NO_DISC", "INSERT_CD", "IDLE", "DISC_LOADING", "DISC_READIED", "READY", "?????", "?????" };
-		LOG_MSG("[ATAPI] BUSY TIME - Loading Mode: %s IO COMPLETE - CMD: 0x%02x - TransferSectorType: %u, TransferLength: %u, TransferSectorSize: %u, TransferLengthRemaining: %u", loadingModeNames[loading_mode], atapi_cmd[0], (unsigned)TransferSectorType, (unsigned)TransferLength, (unsigned)TransferSectorSize, (unsigned)TransferLengthRemaining);
+		LOG_MSG("[ATAPI] BUSY TIME CMD: %s (0x%02x) - Loading Mode: %s - TransferSectorType: %u, TransferLength: %u, TransferSectorSize: %u, TransferLengthRemaining: %u",
+			getATAPICommandName(atapi_cmd[0]), atapi_cmd[0], loadingModeNames[loading_mode], (unsigned)TransferSectorType, (unsigned)TransferLength, (unsigned)TransferSectorSize, (unsigned)TransferLengthRemaining);
 		#endif
 		/* if the drive is spinning up, then the command waits */
 		if (loading_mode == LOAD_DISC_LOADING) {
@@ -1379,8 +1476,9 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 		switch (atapi_cmd[0]) {
 			case 0x03: /* REQUEST SENSE */
-				prepare_read(0,IDEMIN((unsigned int)sense_length,(unsigned int)host_maximum_byte_count));
+				prepare_read(0,IDEMIN((unsigned int)sense_length,(unsigned int)(atapi_cmd[4] ? (atapi_cmd[4]+4) : host_maximum_byte_count)));
 				memcpy(sector,sense,sense_length);
+				set_sense(0); /* clear sense data now after it has been copied */
 
 				feature = 0x00;
 				state = IDE_DEV_DATA_READ;
@@ -1404,7 +1502,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 				CDROM_Interface *cdrom = getMSCDEXDrive();
 
-				if (!cdrom->GetAudioTracks(first,last,leadOut)) {
+				if (!cdrom || !cdrom->GetAudioTracks(first,last,leadOut)) {
 					LOG_MSG("WARNING: ATAPI READ TOC failed to get track info");
 				}
 
@@ -1458,7 +1556,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 			case 0x12: /* INQUIRY */
 				/* NTS: the state of atapi_to_host doesn't seem to matter. */
 				generate_mmc_inquiry();
-				prepare_read(0,IDEMIN((unsigned int)36,(unsigned int)host_maximum_byte_count));
+				prepare_read(0,IDEMIN((unsigned int)36,(unsigned int)(atapi_cmd[4] ? atapi_cmd[4] : host_maximum_byte_count)));
 
 				feature = 0x00;
 				state = IDE_DEV_DATA_READ;
@@ -1467,42 +1565,10 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 				goto write_back_lba;
 			case 0x28: /* READ(10) */
 			case 0xA8: /* READ(12) */
-				if (TransferLength == 0) {
-					/* this is legal. the SCSI MMC standards say so.
-					   and apparently, MSCDEX.EXE issues READ(10) commands with transfer length == 0
-					   to test the drive, so we have to emulate this */
-					feature = 0x00;
-					count = 0x03; /* no more transfer */
-					sector_total = 0;/*nothing to transfer */
-					state = IDE_DEV_READY;
-					status = IDE_STATUS_DRIVE_READY;
-				}
-				else {
-					/* OK, try to read */
-					//LOG_MSG("[ATAPI READ %02x] LBA: %8u - LEN: %4u - NUM: %2u", atapi_cmd[0], LBA, 2048, TransferLength);
-					CDROM_Interface *cdrom = getMSCDEXDrive();
-					if (cdrom && cdrom->ReadSectorsHost(sector,false,(unsigned long)LBA,(unsigned long)TransferLength)) {
-						prepare_read(0,IDEMIN((unsigned int)(TransferLength*2048),(unsigned int)host_maximum_byte_count));
-						LBAnext = LBA + TransferLength;
-						feature = 0x00;
-						count = 0x02; /* data for computer */
-						state = IDE_DEV_DATA_READ;
-						status = IDE_STATUS_DRIVE_READY|IDE_STATUS_DRQ|IDE_STATUS_DRIVE_SEEK_COMPLETE;
-					}
-					else {
-						LOG_MSG("ATAPI: Failed to read %lu sectors at %lu", (unsigned long)TransferLength,(unsigned long)LBA);
-						set_sense(/*SK=*/0x03,/*ASC=*/0x11); /* Medium Error: Unrecovered Read Error */
-						feature = 0xF4; /* abort sense=0xF */
-						count = 0x03; /* no more transfer */
-						sector_total = 0;/*nothing to transfer */
-						TransferLength = 0;
-						TransferLengthRemaining = 0;
-						state = IDE_DEV_READY;
-						status = IDE_STATUS_DRIVE_READY|IDE_STATUS_ERROR;
-					}
-				}
-
-				goto write_back_lba;
+				TransferSectorSize = 2048;
+				TransferSectorType = 8; /* Special type, non-CD-DA, user data only */
+				TransferReadCD9 = 1; /* Special type, non-CD-DA, user data only */
+				/* fall through */
 			case 0xBE: /* READ CD */
 				if (TransferLength == 0 || TransferSectorSize == 0) {
 					/* this is legal. the SCSI MMC standards say so.
@@ -1516,47 +1582,17 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 				}
 				else {
 					/* OK, try to read */
-					bool res = false;
+					CDROM_Interface *cdrom = getMSCDEXDrive();
+					CDROM_Interface::atapi_res res;
+					if (!cdrom)
+						res = CDROM_Interface::ATAPI_NO_MEDIA;
+					else if (TransferReadCD9 & 6)
+						res = CDROM_Interface::ATAPI_ILLEGAL_MODE; /* TODO: support returning zero filled block and error bit areas */
+					else
+						res = cdrom->ReadSectorsAtapi(sector, sizeof(sector), LBA, TransferLength, TransferSectorType, TransferSectorSize);
 
-					/* TODO: Implement remaining types and better comply with the standard (i.e. validate track type, don't allow reading across data and CDDA tracks) */
-					if (TransferSectorType == 2/*Mode 1*/ || TransferSectorType == 4/*Mode 2 form 1*/) {
-						if (TransferSectorSize == 2048) {
-							//LOG_MSG("[ATAPI READ %02x] LBA: %8u - LEN: %4u - NUM: %2u", 0xBE, LBA, 2048, TransferLength);
-							DBP_ASSERT(TransferLength * 2048 <= sizeof(sector));
-							CDROM_Interface *cdrom = getMSCDEXDrive();
-							if (cdrom && cdrom->ReadSectorsHost(sector,false,(unsigned long)LBA,(unsigned long)TransferLength))
-							{
-								res = true;
-								prepare_read(0,IDEMIN((unsigned int)(TransferLength*2048),(unsigned int)host_maximum_byte_count));
-							}
-						}
-						else {
-							LOG_MSG("ATAPI READ CD warning: Unsupported sector type %u byte9 %x size %u",
-								(unsigned int)TransferSectorType,(unsigned int)TransferReadCD9,(unsigned int)TransferSectorSize);
-						}
-					}
-					else if (TransferSectorType == 0/*raw*/ || TransferSectorType == 1/*CDDA*/) {
-						if (TransferSectorSize == 2352) {
-							//LOG_MSG("[ATAPI READ %02x] LBA: %8u - LEN: %4u - NUM: %2u", 0xBE, LBA, 2352, TransferLength);
-							DBP_ASSERT(TransferLength * 2352 <= sizeof(sector));
-							CDROM_Interface *cdrom = getMSCDEXDrive();
-							if (cdrom && cdrom->ReadSectorsHost(sector,true,(unsigned long)LBA,(unsigned long)TransferLength))
-							{
-								res = true;
-								prepare_read(0,IDEMIN((unsigned int)(TransferLength*2352),(unsigned int)host_maximum_byte_count));
-							}
-						}
-						else {
-							LOG_MSG("ATAPI READ CD warning: Unsupported sector type %u byte9 %x size %u",
-								(unsigned int)TransferSectorType,(unsigned int)TransferReadCD9,(unsigned int)TransferSectorSize);
-						}
-					}
-					else {
-						LOG_MSG("ATAPI READ CD warning: Unsupported sector type %u byte9 %x size %u",
-							(unsigned int)TransferSectorType,(unsigned int)TransferReadCD9,(unsigned int)TransferSectorSize);
-					}
-
-					if (res) {
+					if (res == CDROM_Interface::ATAPI_OK) {
+						prepare_read(0,IDEMIN((unsigned int)(TransferLength*TransferSectorSize),(unsigned int)host_maximum_byte_count));
 						LBAnext = LBA + TransferLength;
 						feature = 0x00;
 						count = 0x02; /* data for computer */
@@ -1564,9 +1600,14 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 						status = IDE_STATUS_DRIVE_READY|IDE_STATUS_DRQ|IDE_STATUS_DRIVE_SEEK_COMPLETE;
 					}
 					else {
-						LOG_MSG("ATAPI: Failed to read %lu sectors at %lu", (unsigned long)TransferLength,(unsigned long)LBA);
-						set_sense(/*SK=*/0x03,/*ASC=*/0x11); /* Medium Error: Unrecovered Read Error */
-						feature = 0xF4; /* abort sense=0xF */
+						LOG_MSG("ATAPI: Failed to read %lu sectors at %lu (res: %d)", (unsigned long)TransferLength,(unsigned long)LBA,(int)res);
+						if (res == CDROM_Interface::ATAPI_ILLEGAL_MODE)
+							set_sense(/*SK=*/0x05,/*ASC=*/0x64, /*ASCQ=*/0x00, (unsigned int)LBA); /* Illegal Request: Illegal Mode For This Track  */
+						else if (res == CDROM_Interface::ATAPI_READ_ERROR)
+							set_sense(/*SK=*/0x03,/*ASC=*/0x11, /*ASCQ=*/0x04, (unsigned int)LBA); /* Medium Error: Unrecovered Read Error */
+						else if (res == CDROM_Interface::ATAPI_NO_MEDIA)
+							set_sense(/*SK=*/0x02,/*ASC=*/0x3A); /* Medium Not Present */
+						feature = ((sense[2]&0xF) << 4) | ((sense[2]&0xF) ? 0x04/*abort*/ : 0x00);
 						count = 0x03; /* no more transfer */
 						sector_total = 0;/*nothing to transfer */
 						TransferLength = 0;
@@ -1671,6 +1712,11 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 				/* ATAPI protocol also says we write back into LBA 23:8 what we're going to transfer in the block */
 				lba[2] = (uint16_t)(sector_total >> 8);
 				lba[1] = (uint16_t)sector_total;
+
+				#if 0
+				LOG_MSG("[ATAPI] BUSY TIME DONE - FEATURE: %x - COUNT: %x - LBA: %x %x %x - DRIVEHEAD: %x",
+					feature, count, lba[0], lba[1], lba[2], drivehead);
+				#endif
 
 				raise_irq();
 				allow_writing = true;
@@ -2613,6 +2659,10 @@ static void IDE_DelayedCommand(Bitu dev_idx/*which IDE device*/) {
 		else {
 			switch (dev->command) {
 				case 0xA0:/*ATAPI PACKET*/
+					if (atapi->atapi_cmd_i != atapi->atapi_cmd_total) {
+						LOG_MSG("ATAPI WARNING: Start new ATAPI PACKET ATAPI command before finishing previous? Received %d of %d cmd bytes (%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x)", atapi->atapi_cmd_i, atapi->atapi_cmd_total,
+							atapi->atapi_cmd[0], atapi->atapi_cmd[1], atapi->atapi_cmd[2], atapi->atapi_cmd[3], atapi->atapi_cmd[4], atapi->atapi_cmd[5], atapi->atapi_cmd[6], atapi->atapi_cmd[7], atapi->atapi_cmd[8], atapi->atapi_cmd[9], atapi->atapi_cmd[10], atapi->atapi_cmd[11]);
+					}
 					dev->state = IDE_DEV_ATAPI_PACKET_COMMAND;
 					dev->status = IDE_STATUS_DRIVE_READY|IDE_STATUS_DRIVE_SEEK_COMPLETE|IDE_STATUS_DRQ;
 					dev->count = 0x01;  /* input/output == 0, command/data == 1 */

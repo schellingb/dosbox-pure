@@ -468,23 +468,97 @@ bool CDROM_Interface_Image::ReadSectors(PhysPt buffer, bool raw, unsigned long s
 }
 
 #ifdef C_DBP_ENABLE_IDE
-bool CDROM_Interface_Image::ReadSectorsHost(void* buffer, bool raw, unsigned long sector, unsigned long num)
+CDROM_Interface::atapi_res CDROM_Interface_Image::ReadSectorsAtapi(void* buffer, Bitu bufferSize, Bitu sector, Bitu num, Bit8u readSectorType, Bitu readLength)
 {
-	int sectorSize = raw ? RAW_SECTOR_SIZE : COOKED_SECTOR_SIZE;
-	Bit8u* buf = (Bit8u*)buffer;
+	Bit8u *buf = (Bit8u*)buffer, *bufEnd = buf + bufferSize;
 
-	for(unsigned long i = 0; i < num; i++) {
-		if (!ReadSector(&buf[i * sectorSize], raw, sector + i)) return false;
-		if (raw && buf[i * sectorSize + 2068] && sector < tracks[0].length && !tracks[0].mode2)
+	int track_num = GetTrack((int)sector);
+	if (track_num <= 0) return CDROM_Interface::ATAPI_ILLEGAL_MODE; // illegal request - illegal mode for this track
+	Track *t = &tracks[track_num - 1], *lastt = &tracks.back();
+
+	for (Bitu i = 0; i != num; i++, sector++, buf += readLength)
+	{
+		for (; sector >= t->start + t->length; t++)
+			if (t == lastt || (t + 1)->attr != t->attr)
+				return CDROM_Interface::ATAPI_ILLEGAL_MODE; // illegal request - illegal mode for this track
+
+		int raw_off = 0;
+		bool t_is_raw = (t->sectorSize == RAW_SECTOR_SIZE), can_read = true;
+		switch (readSectorType)
 		{
-			// ECMA-130: The Intermediate field shall consist of 8 (00)-bytes recorded in positions 2068 to 2075
-			// We report a non-zero value as a sector read error. This is to satisfy copy protection checks which expect certain sectors to be bad.
-			// Some raw CD image formats represent bad sectors on the original media by filling up the entire sector beyond the header with a dummy byte like 0x55.
-			return false;
+			case 0: break; /* All types */
+			case 1: /* CD-DA */
+				can_read = (t->attr != 0x40 && t_is_raw);
+				break;
+			case 2: /* Mode 1 */
+				raw_off = (16 - (readLength&31));
+				can_read = (!t->mode2 && t->attr == 0x40 && (t_is_raw || raw_off == 16));
+				break;
+			case 3: /* Mode 2 Formless */
+			case 4: /* Mode 2 Form 1 */
+			case 5: /* Mode 2 Form 2 */
+				raw_off = (readLength < 2324 ? (24 - (readLength&31)) : (readLength < 2332 ? 24 : (readLength < 2340 ? 16 : (readLength < 2348 ? 12 : 0))));
+				can_read = (t->mode2 && t->attr == 0x40 && (t_is_raw || raw_off == 24));
+				break;
+			case 8: /* Special, non-CD-DA, user data only */
+				raw_off = (t->mode2 ? 24 : 16);
+				can_read = (t->attr == 0x40);
+				break;
+			default:
+				DBP_ASSERT(false);
+				return CDROM_Interface::ATAPI_ILLEGAL_MODE; // illegal request - illegal mode for this track
+		}
+
+		int off = (t_is_raw ? raw_off : 0), seek = t->skip + (sector - t->start) * t->sectorSize + off;
+		if (!can_read || raw_off < 0 || readLength + off > t->sectorSize || buf + RAW_SECTOR_SIZE > bufEnd)
+			return CDROM_Interface::ATAPI_ILLEGAL_MODE; // illegal request - illegal mode for this track
+
+		if (t_is_raw && !t->mode2)
+		{
+			if (!t->file->read(buf, seek, RAW_SECTOR_SIZE - off)) { DBP_ASSERT(false); return CDROM_Interface::ATAPI_ILLEGAL_MODE; } // illegal request - illegal mode for this track
+
+			#ifdef CDROM_VALIDATE_SECTOR_CRC // (slow + unoptimized) validation of CRC
+			if (!off)
+			{
+				// validate crc
+				Bit32u invacc = 0, top = 0;
+				for (Bit32u i = 0; i < 2064 * 8 + 32; i++) {
+					top = invacc & 0x80000000;
+					invacc = (invacc << 1);
+					if (i < 2064 * 8)
+						invacc |= ((buf[i / 8] >> (i % 8)) & 1);
+					if (top)
+						invacc ^= 0x8001801b;
+				}
+
+				Bit32u acc = 0;
+				for (Bit32u i = 0; i < 32; i++)
+					if (invacc & (1 << i))
+						acc |= 1 << (31 - i);
+
+				Bit8u chksum[] = { (Bit8u)((acc) & 0xFF), (Bit8u)((acc >> 8) & 0xFF), (Bit8u)((acc >> 16) & 0xFF), (Bit8u)((acc >> 24) & 0xFF) };
+				if (buf[2064] != chksum[0] || buf[2065] != chksum[1] || buf[2066] != chksum[2] || buf[2067] != chksum[3])
+				{
+					DBP_ASSERT(buf[2068 - off]); // on failed checksum, this normally zero byte should also have some garbage in it
+					return CDROM_Interface::ATAPI_READ_ERROR; // medium error - unrecoverable read error
+				}
+			}
+			#endif
+
+			if (buf[2068 - off])
+			{
+				// ECMA-130: The Intermediate field shall consist of 8 (00)-bytes recorded in positions 2068 to 2075
+				// We report a non-zero value as a sector read error. This is to satisfy copy protection checks which expect certain sectors to be bad.
+				// Some raw CD image formats represent bad sectors on the original media by filling up the entire sector beyond the header with a dummy byte like 0x55.
+				return CDROM_Interface::ATAPI_READ_ERROR; // medium error - unrecoverable read error
+			}
+		}
+		else
+		{
+			if (!t->file->read(buf, seek, readLength)) { DBP_ASSERT(false); return CDROM_Interface::ATAPI_ILLEGAL_MODE; } // illegal request - illegal mode for this track
 		}
 	}
-
-	return true;
+	return CDROM_Interface::ATAPI_OK;
 }
 #endif
 

@@ -94,7 +94,8 @@ public:
 	
 	virtual bool	ReadSectors			(PhysPt buffer, bool raw, unsigned long sector, unsigned long num) = 0;
 	#ifdef C_DBP_ENABLE_IDE
-	virtual bool	ReadSectorsHost		(void* buffer, bool raw, unsigned long sector, unsigned long num) = 0;
+	enum atapi_res { ATAPI_OK, ATAPI_ILLEGAL_MODE, ATAPI_READ_ERROR, ATAPI_NO_MEDIA };
+	virtual atapi_res ReadSectorsAtapi	(void* buffer, Bitu bufferSize, Bitu sector, Bitu num, Bit8u readSectorType, Bitu readLength) { return ATAPI_READ_ERROR; }
 	#endif
 
 	virtual bool	LoadUnloadMedia		(bool unload) = 0;
@@ -148,9 +149,6 @@ public:
 	bool	StopAudio			(void) { return true; };
 	void	ChannelControl		(TCtrl /*ctrl*/) { return; };
 	bool	ReadSectors			(PhysPt /*buffer*/, bool /*raw*/, unsigned long /*sector*/, unsigned long /*num*/) { return true; };
-	#ifdef C_DBP_ENABLE_IDE
-	bool	ReadSectorsHost		(void* buffer, bool raw, unsigned long sector, unsigned long num) { return true; };
-	#endif
 	bool	LoadUnloadMedia		(bool /*unload*/) { return true; };
 };	
 
@@ -240,7 +238,7 @@ public:
 	void	ChannelControl		(TCtrl ctrl);
 	bool	ReadSectors		(PhysPt buffer, bool raw, unsigned long sector, unsigned long num);
 	#ifdef C_DBP_ENABLE_IDE
-	bool	ReadSectorsHost		(void* buffer, bool raw, unsigned long sector, unsigned long num);
+	atapi_res ReadSectorsAtapi	(void* buffer, Bitu bufferSize, Bitu sector, Bitu num, Bit8u readSectorType, Bitu readLength);
 	#endif
 	bool	LoadUnloadMedia		(bool unload);
 	bool	ReadSector		(Bit8u *buffer, bool raw, unsigned long sector);
