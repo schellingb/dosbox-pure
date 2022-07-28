@@ -929,7 +929,7 @@ struct Zip_Archive
 	Bit32u Read(Bit64u seek_ofs, void *pBuf, Bit32u n)
 	{
 		if (seek_ofs >= size) n = 0;
-		else if (n > (Bit32u)(size - seek_ofs)) n = (Bit32u)(size - seek_ofs);
+		else if ((Bit64u)n > (size - seek_ofs)) n = (Bit32u)(size - seek_ofs);
 		if (seek_ofs != ofs)
 		{
 			zip->Seek64(&seek_ofs, DOS_SEEK_SET);
