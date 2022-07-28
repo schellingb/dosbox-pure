@@ -3522,6 +3522,7 @@ static bool check_variables(bool is_startup = false)
 		case 'p': dbmachine = "pcjr"; break;
 	}
 	Variables::DosBoxSet("dosbox", "machine", dbmachine, false, true);
+	Variables::DosBoxSet("dosbox", "vmemsize", retro_get_variable("dosbox_pure_svgamem", "2"), false, true);
 	if (dbp_reboot_machine)
 		control->GetSection("dosbox")->GetProp("machine")->OnChangedByConfigProgram(), dbp_reboot_machine = 0;
 
@@ -3605,6 +3606,7 @@ static bool check_variables(bool is_startup = false)
 	}
 
 	Variables::RetroVisibility("dosbox_pure_svga", machine_is_svga);
+	Variables::RetroVisibility("dosbox_pure_svgamem", machine_is_svga);
 	Variables::RetroVisibility("dosbox_pure_voodoo", machine_is_svga);
 	Variables::RetroVisibility("dosbox_pure_voodoo_perf", machine_is_svga);
 	if (machine_is_svga)

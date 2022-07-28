@@ -410,6 +410,21 @@ static retro_core_option_v2_definition option_defs[] =
 		"svga_s3"
 	},
 	{
+		"dosbox_pure_svgamem",
+		"SVGA Memory (restart required)", NULL,
+		"The amount of memory available to the emulated SVGA card.", NULL,
+		"Video",
+		{
+			{ "0",  "512KB" },
+			{ "1", "1MB" },
+			{ "2", "2MB (default)" },
+			{ "3", "3MB" },
+			{ "4", "4MB" },
+			{ "8", "8MB (not always recognized)" },
+		},
+		"2"
+	},
+	{
 		"dosbox_pure_voodoo",
 		"3dfx Voodoo Emulation", NULL,
 		"Enables certain games with support for the Voodoo 3D accelerator." "\n"

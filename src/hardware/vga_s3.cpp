@@ -546,6 +546,11 @@ void SVGA_Setup_S3Trio(void) {
 	} else if (vga.vmemsize < 4096*1024)	{
 		vga.vmemsize = 3072*1024;
 		vga.s3.reg_36 = 0x5a;		// 3mb fast page mode
+#ifdef C_DBP_LIBRETRO
+	} else if (vga.vmemsize == 8192*1024)	{ // hack more mem than supported by real Trio64 card
+		vga.vmemsize = 8192*1024;
+		vga.s3.reg_36 = 0x7a;		// 8mb fast page mode
+#endif
 	} else {	// Trio64 supported only up to 4M
 		vga.vmemsize = 4096*1024;
 		vga.s3.reg_36 = 0x1a;		// 4mb fast page mode
