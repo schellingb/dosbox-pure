@@ -154,7 +154,7 @@ enum DBP_Event_Type : Bit8u
 
 	DBPET_MOUSEXY,
 	DBPET_MOUSEDOWN, DBPET_MOUSEUP,
-	DBPET_MOUSESETSPEED, DBPET_MOUSERESETSPEED, 
+	DBPET_MOUSESETSPEED, DBPET_MOUSERESETSPEED,
 	DBPET_JOYHATSETBIT, DBPET_JOYHATUNSETBIT,
 	DBPET_JOY1DOWN, DBPET_JOY1UP,
 	DBPET_JOY2DOWN, DBPET_JOY2UP,
@@ -211,25 +211,59 @@ static struct DBP_Event { DBP_Event_Type type; int val, val2; } dbp_event_queue[
 static int dbp_event_queue_write_cursor;
 static int dbp_event_queue_read_cursor;
 static int dbp_keys_down_count;
-static unsigned char dbp_keys_down[KBD_LAST+1];
+static unsigned char dbp_keys_down[KBD_LAST+16];
 static unsigned short dbp_keymap_dos2retro[KBD_LAST];
 static unsigned char dbp_keymap_retro2dos[RETROK_LAST];
 static void(*dbp_input_intercept)(DBP_Event_Type, int, int);
-static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
+static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0, DBP_InputBind *binds = NULL, DBP_InputBind *binds_end = NULL)
 {
+	unsigned char* downs = dbp_keys_down;
 	switch (type)
 	{
-		case DBPET_KEYDOWN:
-			if (!val || ((++dbp_keys_down[val]) & 127) > 1) return;
-			dbp_keys_down_count++;
+		case DBPET_KEYDOWN: goto check_down;
+		case DBPET_KEYUP:   goto check_up;
+		case DBPET_MOUSEDOWN:          downs = dbp_keys_down + KBD_LAST +  0; goto check_down;
+		case DBPET_MOUSEUP:            downs = dbp_keys_down + KBD_LAST +  0; goto check_up;
+		case DBPET_JOY1DOWN:           downs = dbp_keys_down + KBD_LAST +  3; goto check_down;
+		case DBPET_JOY1UP:             downs = dbp_keys_down + KBD_LAST +  3; goto check_up;
+		case DBPET_JOY2DOWN:           downs = dbp_keys_down + KBD_LAST +  5; goto check_down;
+		case DBPET_JOY2UP:             downs = dbp_keys_down + KBD_LAST +  5; goto check_up;
+		case DBPET_JOYHATSETBIT:       downs = dbp_keys_down + KBD_LAST +  7; goto check_down;
+		case DBPET_JOYHATUNSETBIT:     downs = dbp_keys_down + KBD_LAST +  7; goto check_up;
+		case DBPET_ONSCREENKEYBOARD:   downs = dbp_keys_down + KBD_LAST + 15; goto check_down;
+		case DBPET_ONSCREENKEYBOARDUP: downs = dbp_keys_down + KBD_LAST + 15; goto check_up;
+
+		check_down:
+			if (((++downs[val]) & 127) > 1) return;
+			if (downs == dbp_keys_down) dbp_keys_down_count++;
 			break;
-		case DBPET_KEYUP:
-			if (((dbp_keys_down[val]) & 127) == 0 || ((--dbp_keys_down[val]) & 127) > 0) return;
-			dbp_keys_down[val] = 0;
-			dbp_keys_down_count--;
+		check_up:
+			if (((downs[val]) & 127) == 0 || ((--downs[val]) & 127) > 0) return;
+			if (downs == dbp_keys_down) dbp_keys_down_count--;
 			break;
-		case DBPET_MOUSEDOWN: case DBPET_JOY1DOWN: case DBPET_JOY2DOWN: dbp_keys_down[KBD_LAST] = 1; break;
-		case DBPET_MOUSEUP:   case DBPET_JOY1UP:   case DBPET_JOY2UP:   dbp_keys_down[KBD_LAST] = 0; break;
+
+		case DBPET_JOY1X: case DBPET_JOY1Y: case DBPET_JOY2X: case DBPET_JOY2Y: case DBPET_JOYMX: case DBPET_JOYMY:
+			if (val) break;
+			for (DBP_InputBind *b = binds; b != binds_end; b++) // check if another bind is currently influencing the same axis
+			{
+				if (!b->lastval) continue;
+				Bit16s bval = b->lastval;
+				if (b->evt <= _DBPET_JOY_AXIS_MAX)
+				{
+					if ((DBP_Event_Type)b->evt != type) continue;
+					val = (b->meta ? (bval ? 32767 : 0) * b->meta : bval);
+					goto found_axis_value;
+				}
+				else if (b->device != RETRO_DEVICE_ANALOG) continue;
+				else for (Bit16s dir = 1; dir >= -1; dir -= 2)
+				{
+					Bit16s map = DBP_MAPPAIR_GET(dir, b->meta), dirbval = bval * dir;
+					if (map < DBP_SPECIALMAPPINGS_KEY || dirbval < 0 || (DBP_Event_Type)DBP_SPECIALMAPPING(map).evt != type) continue;
+					val = (dirbval < 0 ? 0 : dirbval) * DBP_SPECIALMAPPING(map).meta;
+					goto found_axis_value;
+				}
+			}
+			found_axis_value:break;
 		default:;
 	}
 	DBP_Event evt = { type, val, val2 };
@@ -1436,7 +1470,7 @@ void GFX_Events()
 	for (;dbp_event_queue_read_cursor != dbp_event_queue_write_cursor; dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE))
 	{
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
-		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [@%6d] %s %08x%s\n", DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_input_intercept && e.type >= _DBPETOLD_INPUT_FIRST ? " [INTERCEPTED]" : ""));
+		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [@%6d] %s %08x%s\n", DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_input_intercept ? " [INTERCEPTED]" : ""));
 		if (dbp_input_intercept)
 		{
 			dbp_input_intercept(e.type, e.val, e.val2);
@@ -4404,10 +4438,11 @@ void retro_run(void)
 	{
 		Bit16s val = input_state_cb(b->port, b->device, b->index, b->id), lastval = b->lastval;
 		if (val == lastval) continue;
+		b->lastval = val; // set before calling DBP_QueueEvent
 		if (b->evt <= _DBPET_JOY_AXIS_MAX)
 		{
 			// if meta is 1 or -1, this is a digital input for an axis
-			DBP_QueueEvent((DBP_Event_Type)b->evt, (b->meta ? (val ? 32767 : 0) * b->meta : val));
+			DBP_QueueEvent((DBP_Event_Type)b->evt, (b->meta ? (val ? 32767 : 0) * b->meta : val), 0, binds, binds_end);
 		}
 		else if (b->device != RETRO_DEVICE_ANALOG)
 		{
@@ -4421,18 +4456,17 @@ void retro_run(void)
 			if (map == KBD_NONE) continue;
 			if (map < KBD_LAST)
 			{
-				if (dirval >=  12000 && dirlastval <   12000) { DBP_QueueEvent(DBPET_KEYDOWN, map); }
-				if (dirval <   12000 && dirlastval >=  12000) { DBP_QueueEvent(DBPET_KEYUP,   map); }
+				if (dirval >=  12000 && dirlastval <   12000) DBP_QueueEvent(DBPET_KEYDOWN, map);
+				if (dirval <   12000 && dirlastval >=  12000) DBP_QueueEvent(DBPET_KEYUP,   map);
 				continue;
 			}
 			if (map < DBP_SPECIALMAPPINGS_KEY) { DBP_ASSERT(false); continue; }
 			if (dirval <= 0 && dirlastval <= 0) continue;
 			const DBP_SpecialMapping& sm = DBP_SPECIALMAPPING(map);
-			if (sm.evt <= _DBPET_JOY_AXIS_MAX)                 DBP_QueueEvent((DBP_Event_Type)sm.evt, (dirval < 0 ? 0 : dirval) * sm.meta);
+			if (sm.evt <= _DBPET_JOY_AXIS_MAX)                 DBP_QueueEvent((DBP_Event_Type)sm.evt, (dirval < 0 ? 0 : dirval) * sm.meta, 0, binds, binds_end);
 			else if (dirval >=  12000 && dirlastval <   12000) DBP_QueueEvent((DBP_Event_Type)sm.evt, sm.meta);
 			else if (dirval <   12000 && dirlastval >=  12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt + 1), sm.meta);
 		}
-		b->lastval = val;
 	}
 	int16_t mousex = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
 	int16_t mousey = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
