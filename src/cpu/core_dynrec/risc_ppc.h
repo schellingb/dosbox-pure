@@ -25,7 +25,7 @@
 // try to use non-flags generating functions if possible
 #define DRC_FLAGS_INVALIDATION
 // try to replace _simple functions by code
-#define DRC_FLAGS_INVALIDATION_DCODE
+//#define DRC_FLAGS_INVALIDATION_DCODE
 
 // type with the same size as a pointer
 #define DRC_PTR_SIZE_IM Bit32u
@@ -465,20 +465,28 @@ static int INLINE do_gen_call(void *func, Bit32u *pos, bool pad)
 	// relative branches are limited to +/- ~32MB
 	if (off < 0x02000000 && off >= -0x02000000)
 	{
-		pos[0] = 0x48000001 | (off & 0x03FFFFFC); // bl func
+		//pos[0] = 0x48000001 | (off & 0x03FFFFFC); // bl func
+		cache_addd(0x48000001 | (off & 0x03FFFFFC),(const Bit8u *)&pos[0]);
 		if (pad)
 		{
-			pos[1] = 0x4800000C;       // b 12+
-			pos[2] = pos[3] = IMM(24, 0, 0, 0); // nop
+			//pos[1] = 0x4800000C;       // b 12+
+			//pos[2] = pos[3] = IMM(24, 0, 0, 0); // nop
+			cache_addd(0x4800000C,(const Bit8u *)&pos[1]);
+			cache_addd(IMM(24, 0, 0, 0),(const Bit8u *)&pos[2]);
+			cache_addd(IMM(24, 0, 0, 0),(const Bit8u *)&pos[3]);
 			return 16;
 		}
 		return 4;
 	}
 
-	pos[0] = IMM(15, HOST_R8, 0, f>>16);      // lis r8,imm@h
-	pos[1] = IMM(24, HOST_R8, HOST_R8, f);    // ori r8,r8,imm@l
-	pos[2] = EXT(HOST_R8, 9, 0, 467, 0);      // mtctr r8
-	pos[3] = IMM(19, 0x14, 0, (528<<1)|1); // bctrl
+	//pos[0] = IMM(15, HOST_R8, 0, f>>16);      // lis r8,imm@h
+	//pos[1] = IMM(24, HOST_R8, HOST_R8, f);    // ori r8,r8,imm@l
+	//pos[2] = EXT(HOST_R8, 9, 0, 467, 0);      // mtctr r8
+	//pos[3] = IMM(19, 0x14, 0, (528<<1)|1); // bctrl
+	cache_addd(IMM(15, HOST_R8, 0, f>>16),  (const Bit8u *)&pos[0]);
+	cache_addd(IMM(24, HOST_R8, HOST_R8, f),(const Bit8u *)&pos[1]);
+	cache_addd(EXT(HOST_R8, 9, 0, 467, 0),  (const Bit8u *)&pos[2]);
+	cache_addd(IMM(19, 0x14, 0, (528<<1)|1),(const Bit8u *)&pos[3]);
 	return 16;
 }
 
@@ -563,7 +571,8 @@ static void gen_fill_branch(const Bit8u* data)
 	if (len >= 0x8000) LOG_MSG("Big jump %d",len);
 #endif
 
-	((Bit16u*)data)[1] = (Bit16u)((cache.pos-data) & 0xFFFC);
+	//((Bit16u*)data)[1] = (Bit16u)((cache.pos-data) & 0xFFFC);
+	cache_addw((Bit16u)((cache.pos-data) & 0xFFFC),data+2);
 }
 
 

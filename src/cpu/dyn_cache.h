@@ -60,9 +60,15 @@ static inline int nxmunmap(void *addr, size_t)
 #endif
 
 #ifdef WIIU
-// WiiU has just shy of 8MiB RWX RAM available using the current method
-#define WUP_RWX_MEM_BASE 0x00802000
-#define WUP_RWX_MEM_END 0x01000000
+extern "C" void DCFlushRange(void *addr, uint32_t size);       /* Equivalent to dcbf, sync, eieio. */
+extern "C" void ICInvalidateRange(void *addr, uint32_t size);  /* Equivalent to icbi instruction. */
+extern "C" void SC0x25_KernelCopyData(unsigned int addr, unsigned int src, unsigned int len);
+extern "C" uint32_t OSEffectiveToPhysical(uint32_t virtualAddress);
+static Bit8u WUP_RWX_MEM_BASE[CACHE_TOTAL+CACHE_MAXSIZE] __attribute__((aligned(4096))) __attribute__((section(".text#")));
+//static Bit8u WUP_RWX_MEM_COPY[CACHE_TOTAL+CACHE_MAXSIZE] __attribute__((aligned(4096)));
+//static Bit8u WUP_RWX_MEM_BASE[CACHE_TOTAL+CACHE_MAXSIZE] __attribute__((aligned(4096)));
+//#define WUP_ASSERT(cond) DBP_ASSERT(cond)
+#define WUP_ASSERT(cond, id) (void)((cond) ? ((int)0) : *(volatile int*)(0xF00DB000+(id)) = 0xbad)
 #endif
 
 class CodePageHandlerDynRec;	// forward
@@ -607,9 +613,18 @@ static void cache_closeblock(void) {
 
 // place an 8bit value into the cache
 static INLINE void cache_addb(Bit8u val,const Bit8u *pos) {
-#ifdef HAVE_LIBNX
+#if defined (HAVE_LIBNX)
 	Bit8u* rwPos = (Bit8u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
+#elif defined (WIIU)
+	WUP_ASSERT(pos >= WUP_RWX_MEM_BASE && pos < WUP_RWX_MEM_BASE+sizeof(WUP_RWX_MEM_BASE), 1);
+	uint32_t tmp __attribute__((aligned(4))) = (uint32_t)val << 24;
+	SC0x25_KernelCopyData((uint32_t)OSEffectiveToPhysical((uint32_t)pos), ((uint32_t)&tmp), 1);
+	//DCFlushRange((Bit8u*)pos, 1);
+	//ICInvalidateRange((Bit8u*)pos, 1);
+	DCFlushRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	ICInvalidateRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	WUP_ASSERT(*(Bit8u*)pos == val, 2);
 #else
 	*(Bit8u*)pos = val;
 #endif
@@ -622,9 +637,18 @@ static INLINE void cache_addb(Bit8u val) {
 
 // place a 16bit value into the cache
 static INLINE void cache_addw(Bit16u val,const Bit8u *pos) {
-#ifdef HAVE_LIBNX
+#if defined (HAVE_LIBNX)
 	Bit16u* rwPos = (Bit16u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
+#elif defined (WIIU)
+	WUP_ASSERT(pos >= WUP_RWX_MEM_BASE && pos < WUP_RWX_MEM_BASE+sizeof(WUP_RWX_MEM_BASE), 3);
+	uint32_t tmp __attribute__((aligned(4))) = (uint32_t)val << 16;
+	SC0x25_KernelCopyData((uint32_t)OSEffectiveToPhysical((uint32_t)pos), ((uint32_t)&tmp), 2);
+	//DCFlushRange((Bit16u*)pos, 2);
+	//ICInvalidateRange((Bit16u*)pos, 2);
+	DCFlushRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	ICInvalidateRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	WUP_ASSERT(*(Bit16u*)pos == val, 4);
 #else
 	*(Bit16u*)pos=val;
 #endif
@@ -637,9 +661,18 @@ static INLINE void cache_addw(Bit16u val) {
 
 // place a 32bit value into the cache
 static INLINE void cache_addd(Bit32u val,const Bit8u *pos) {
-#ifdef HAVE_LIBNX
+#if defined (HAVE_LIBNX)
 	Bit32u* rwPos = (Bit32u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
+#elif defined (WIIU)
+	WUP_ASSERT(pos >= WUP_RWX_MEM_BASE && pos < WUP_RWX_MEM_BASE+sizeof(WUP_RWX_MEM_BASE), 5);
+	uint32_t tmp __attribute__((aligned(4))) = (uint32_t)val;
+	SC0x25_KernelCopyData((uint32_t)OSEffectiveToPhysical((uint32_t)pos), ((uint32_t)&tmp), 4);
+	//DCFlushRange((Bit32u*)pos, 4);
+	//ICInvalidateRange((Bit32u*)pos, 4);
+	DCFlushRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	ICInvalidateRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	WUP_ASSERT(*(Bit32u*)pos == val, 6);
 #else
 	*(Bit32u*)pos=val;
 #endif
@@ -652,9 +685,18 @@ static INLINE void cache_addd(Bit32u val) {
 
 // place a 64bit value into the cache
 static INLINE void cache_addq(Bit64u val,const Bit8u *pos) {
-#ifdef HAVE_LIBNX
+#if defined (HAVE_LIBNX)
 	Bit64u* rwPos = (Bit64u*)((intptr_t)pos - (intptr_t)jit_rx_addr + (intptr_t)jit_rw_addr);
 	*rwPos=val;
+#elif defined (WIIU)
+	WUP_ASSERT(pos >= WUP_RWX_MEM_BASE && pos < WUP_RWX_MEM_BASE+sizeof(WUP_RWX_MEM_BASE), 7);
+	Bit64u tmp __attribute__((aligned(8))) = (Bit64u)val;
+	SC0x25_KernelCopyData((uint32_t)OSEffectiveToPhysical((uint32_t)pos), ((uint32_t)&tmp), 8);
+	//DCFlushRange((Bit32u*)pos, 4);
+	//ICInvalidateRange((Bit32u*)pos, 4);
+	DCFlushRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	ICInvalidateRange((void*)((uint32_t)pos & ~0x20), 0x20);
+	WUP_ASSERT(*(Bit64u*)pos == val, 8);
 #else
 	*(Bit64u*)pos=val;
 #endif
@@ -719,9 +761,9 @@ static void cache_init(bool enable) {
 				ret = sceKernelOpenVMDomain();
 				if (ret < 0) cache_code_start_ptr = NULL;
 			}
-#elif defined(WIIU)
-			cache_code_start_ptr=(Bit8u*)WUP_RWX_MEM_BASE;
-			//memset(cache_code_start_ptr, 0, (WUP_RWX_MEM_END - WUP_RWX_MEM_BASE));
+#elif defined (WIIU)
+			cache_code_start_ptr=WUP_RWX_MEM_BASE;
+			memset(WUP_RWX_MEM_BASE, 0, sizeof(WUP_RWX_MEM_BASE));
 #else
 			cache_code_start_ptr=(Bit8u*)malloc(CACHE_TOTAL+CACHE_MAXSIZE+PAGESIZE_TEMP-1+PAGESIZE_TEMP);
 #endif
