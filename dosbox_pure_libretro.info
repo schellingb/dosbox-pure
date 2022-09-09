@@ -2,11 +2,11 @@
 display_name = "DOS (DOSBox-Pure)"
 authors = "DOSBox Team|Psyraven"
 supported_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf"
-corename = "DOSBox"
+corename = "DOSBox-pure"
 categories = "Emulator"
 license = "GPLv2"
 permissions = ""
-display_version = "Pure"
+display_version = "0.9.7"
 
 # Hardware Information
 manufacturer = "Microsoft"
@@ -30,3 +30,5 @@ needs_fullpath = "true"
 disk_control = "true"
 is_experimental = "false"
 needs_kbd_mouse_focus = "true"
+
+description = "A port of the mature and well-known DOSBox emulator to libretro with a goal of simplicty and ease of use. This core includes a streamlined workflow for launching games directly from ZIP archives (including disk images therein) with automated mapping of controls to gamepads and a native onscreen keyboard. This is a good core for most users who just want to play games and are not looking for a traditional DOS experience."
