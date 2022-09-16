@@ -508,6 +508,12 @@ static void DOSBOX_RealInit(Section * sec) {
 	else if (mtype == "svga_paradise") { svgaCard = SVGA_ParadisePVGA1A; }
 	else if (mtype == "vgaonly")      { svgaCard = SVGA_None; }
 	else E_Exit("DOSBOX:Unknown machine type %s",mtype.c_str());
+
+#ifdef C_DBP_LIBRETRO
+	vga.vmemsize = section->Get_int("vmemsize")*1024*1024;
+	if (!vga.vmemsize)
+		vga.vmemsize = 512*1024;
+#endif
 }
 
 
@@ -550,6 +556,12 @@ void DOSBOX_Init(void) {
 	Pstring = secprop->Add_string("machine",Property::Changeable::OnlyAtStart,"svga_s3");
 	Pstring->Set_values(machines);
 	Pstring->Set_help("The type of machine DOSBox tries to emulate.");
+
+#ifdef C_DBP_LIBRETRO
+	Pint = secprop->Add_int("vmemsize", Property::Changeable::OnlyAtStart,2);
+	Pint->SetMinMax(0,8);
+	Pint->Set_help("Amount of video memory in megabytes.");
+#endif
 
 #ifdef C_DBP_ENABLE_CAPTURE
 	Pstring = secprop->Add_path("captures",Property::Changeable::Always,"capture");
