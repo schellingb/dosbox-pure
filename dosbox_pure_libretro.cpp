@@ -376,7 +376,7 @@ static const char* retro_get_variable(const char* key, const char* default_value
 static void DBP_StartOnScreenKeyboard();
 static void DBP_StartMapper();
 void DBP_DOSBOX_ForceShutdown(const Bitu = 0);
-void DBP_CPU_ModifyCycles(const char* val);
+void DBP_CPU_ModifyCycles(const char* val, const char* params = NULL);
 void DBP_KEYBOARD_ReleaseKeys();
 void DBP_CGA_SetModelAndComposite(bool new_model, Bitu new_comp_mode);
 void DBP_Hercules_SetPalette(Bit8u pal);
