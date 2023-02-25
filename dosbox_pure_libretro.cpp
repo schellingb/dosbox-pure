@@ -725,7 +725,14 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 	CDROM_Interface* cdrom = NULL;
 	Bit8u media_byte = 0;
 
-	if (!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ"))
+	bool isdir = false;
+	DIR *tdir = opendir(path);
+	if (tdir) {
+		closedir(tdir);
+		isdir = true;
+	}
+
+	if ((!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ")) && !isdir)
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
@@ -739,7 +746,7 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
 		if (boot && letter == 'C') return drive;
 	}
-	else if (!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC") || !strcasecmp(ext, "TC"))
+	else if ((!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC") || !strcasecmp(ext, "TC")) && !isdir)
 	{
 		fatDrive* fat = new fatDrive(path, 512, 0, 0, 0, 0);
 		if (!fat->loadedDisk || (!fat->created_successfully && letter >= 'A'+MAX_DISK_IMAGES))
@@ -789,7 +796,7 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		if (!letter) letter = (disk->hardDrive ? 'D' : 'A');
 		media_byte = (disk->hardDrive ? 0xF8 : (disk->active ? disk->GetBiosType() : 0));
 	}
-	else if (!strcasecmp(ext, "ISO") || !strcasecmp(ext, "CUE") || !strcasecmp(ext, "INS"))
+	else if ((!strcasecmp(ext, "ISO") || !strcasecmp(ext, "CUE") || !strcasecmp(ext, "INS")) && !isdir)
 	{
 		MOUNT_ISO:
 		if (letter < 'D') letter = 'D';
@@ -805,11 +812,13 @@ static DOS_Drive* DBP_Mount(unsigned disk_image_index = 0, bool unmount_existing
 		}
 		cdrom = ((isoDrive*)drive)->GetInterface();
 	}
-	else if (!strcasecmp(ext, "EXE") || !strcasecmp(ext, "COM") || !strcasecmp(ext, "BAT") || !strcasecmp(ext, "conf") || ext[-1] != '.')
+	else if (!strcasecmp(ext, "EXE") || !strcasecmp(ext, "COM") || !strcasecmp(ext, "BAT") || !strcasecmp(ext, "conf") || ext[-1] != '.' || isdir)
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
-		std::string dir; dir.assign(path, (ext[-1] == '.' ? path_file : ext) - path).append(ext[-1] == '.' ? "" : "/"); // must end with slash
+		std::string dir; 
+		if (isdir) dir.assign(path).append("/"); // must end with slash
+		else dir.assign(path, (ext[-1] == '.' ? path_file : ext) - path).append(ext[-1] == '.' ? "" : "/"); // must end with slash
 		strreplace((char*)dir.c_str(), (CROSS_FILESPLIT == '\\' ? '/' : '\\'), CROSS_FILESPLIT); // required by localDrive
 		drive = new localDrive(dir.c_str(), 512, 32, 32765, 16000, 0xF8);
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
