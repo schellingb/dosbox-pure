@@ -2542,7 +2542,6 @@ void CPU_Init(Section* sec) {
 //initialize static members
 bool CPU::inited=false;
 
-#ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
 void CPU_ResetCPUDecoder(const std::string& core)
 {
 	CPU_AutoDetermineMode &= ~(CPU_AUTODETERMINE_CORE|(CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT));
@@ -2580,9 +2579,7 @@ void CPU_ResetCPUDecoder(const std::string& core)
 	#elif (C_DYNREC)
 	CPU_Core_Dynrec_Cache_Init(cpudecoder == &CPU_Core_Dynrec_Run);
 	#endif
-
 }
-#endif
 
 //This function is safer than setting new cycle settings through config (can cause FPU overflow crashes)
 void DBP_CPU_ModifyCycles(const char* val, const char* params)

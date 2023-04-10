@@ -167,7 +167,7 @@ DOS_Shell::DOS_Shell():Program(){
 
 //DBP: memory cleanup
 DOS_Shell::~DOS_Shell(){
-	if (bf) delete bf;
+	while (bf) delete bf;
 }
 
 Bitu DOS_Shell::GetRedirection(char *s, char **ifn, char **ofn,bool * append) {
