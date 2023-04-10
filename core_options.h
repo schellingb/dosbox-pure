@@ -18,12 +18,12 @@
 
 static retro_core_option_v2_category option_cats[] =
 {
-	{ "Emulation",   "Emulation Options",   "Core specific settings (latency, save states, start menu)." },
-	{ "Input",       "Input Options",       "Keyboard, mouse and joystick settings." },
-	{ "Performance", "Performance Options", "Adjust the performance of the emulated CPU." },
-	{ "Video",       "Video Options",       "Settings for the emulated graphics card and aspect ratio." },
-	{ "System",      "System Options",      "Other system settings for the emulated RAM and CPU." },
-	{ "Audio",       "Audio Options",       "MIDI, SoundBlaster and other audio settings." },
+	{ "Emulation",   "Emulation",   "Core specific settings (latency, save states, start menu)." },
+	{ "Input",       "Input",       "Keyboard, mouse and joystick settings." },
+	{ "Performance", "Performance", "Adjust the performance of the emulated CPU." },
+	{ "Video",       "Video",       "Settings for the emulated graphics card and aspect ratio." },
+	{ "System",      "System",      "Other system settings for the emulated RAM and CPU." },
+	{ "Audio",       "Audio",       "MIDI, SoundBlaster and other audio settings." },
 	{ NULL, NULL, NULL }
 };
 
