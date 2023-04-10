@@ -44,6 +44,7 @@
 
 PagingBlock paging;
 
+//static Bit32u logcnt;
 
 Bitu PageHandler::readb(PhysPt addr) {
 	E_Exit("No byte handler for read from %d",addr);	
@@ -326,9 +327,11 @@ void PAGING_PageFault(PhysPt lin_addr,Bitu page_addr,Bitu faultcode) {
 	paging.cr2=lin_addr;
 	DBP_ASSERT(pf_queue.used < PF_QUEUESIZE);
 	PF_Entry * entry=&pf_queue.entries[pf_queue.used++];
-	LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] queue %d",lin_addr,faultcode,pf_queue.used);
-	//LOG_MSG("EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
-	//LOG_MSG("CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
+	//LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] queue %d (paging_prevent_exception_jump: %d)",lin_addr,faultcode,pf_queue.used, (int)paging_prevent_exception_jump);
+	//LOG(LOG_PAGING,LOG_NORMAL)("    EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
+	//LOG(LOG_PAGING,LOG_NORMAL)("    CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
+//	LOG_MSG("EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
+//	LOG_MSG("CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
 	entry->cs=SegValue(cs);
 	entry->eip=reg_eip;
 	entry->page_addr=page_addr;
@@ -341,7 +344,7 @@ void PAGING_PageFault(PhysPt lin_addr,Bitu page_addr,Bitu faultcode) {
 #endif
 	DOSBOX_RunMachine();
 	pf_queue.used--;
-	LOG(LOG_PAGING,LOG_NORMAL)("Left PageFault for %x queue %d",lin_addr,pf_queue.used);
+	//LOG(LOG_PAGING,LOG_NORMAL)("Left PageFault for %x queue %d",lin_addr,pf_queue.used);
 	memcpy(&lflags,&old_lflags,sizeof(LazyFlags));
 #ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE //DBP: Added this check to support page fault queue wiping
 	if (DOSBOX_IsWipingPageFaultQueue) return;
@@ -403,10 +406,10 @@ static void PAGING_NewPageFault(PhysPt lin_addr, Bitu page_addr, bool prepare_on
 	if (prepare_only) {
 		cpu.exception.which = EXCEPTION_PF;
 		cpu.exception.error = faultcode;
-		LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+		//LOG_MSG("[%8u] [@%8d] PageFault at %X type [%x] PREPARE",logcnt++, CPU_Cycles,lin_addr,cpu.exception.error);
 	} else if (!paging_prevent_exception_jump) {
-		LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] queue 1",lin_addr,faultcode);
-		throw GuestPageFaultException(faultcode);
+		//LOG_MSG("[%8u] [@%8d] PageFault at %X type [%x] queue 1",logcnt++, CPU_Cycles,lin_addr,faultcode);
+		THROW_PAGE_FAULT(faultcode);
 	} else {
 		PAGING_PageFault(lin_addr,page_addr,faultcode);
 	}
@@ -903,7 +906,9 @@ static INLINE bool InitPageCheckPresence_CheckOnly(PhysPt lin_addr,bool writing,
 		paging.cr2=lin_addr;
 		cpu.exception.which=EXCEPTION_PF;
 		cpu.exception.error=(writing?0x02:0x00) | (((cpu.cpl&cpu.mpl)==0)?0x00:0x04);
-		LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+		//LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+		//LOG(LOG_PAGING,LOG_NORMAL)("    EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
+		//LOG(LOG_PAGING,LOG_NORMAL)("    CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
 		return false;
 	}
 	Bitu entry_addr=(table.block.base<<12)+t_index*4;
@@ -912,7 +917,9 @@ static INLINE bool InitPageCheckPresence_CheckOnly(PhysPt lin_addr,bool writing,
 		paging.cr2=lin_addr;
 		cpu.exception.which=EXCEPTION_PF;
 		cpu.exception.error=(writing?0x02:0x00) | (((cpu.cpl&cpu.mpl)==0)?0x00:0x04);
-		LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+		//LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+		//LOG(LOG_PAGING,LOG_NORMAL)("    EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
+		//LOG(LOG_PAGING,LOG_NORMAL)("    CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
 		return false;
 	}
 	return true;
@@ -1128,6 +1135,8 @@ public:
 				cpu.exception.which=EXCEPTION_PF;
 				cpu.exception.error=0x05 | (writing?0x02:0x00);
 				LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+				//LOG(LOG_PAGING,LOG_NORMAL)("    EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
+				//LOG(LOG_PAGING,LOG_NORMAL)("    CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
 				return false;
 			}
 		} else {
@@ -1270,7 +1279,9 @@ public:
 				paging.cr2=lin_addr;
 				cpu.exception.which=EXCEPTION_PF;
 				cpu.exception.error=0x07;
-				LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE",lin_addr,cpu.exception.error);
+				//LOG(LOG_PAGING,LOG_NORMAL)("PageFault at %X type [%x] PREPARE RO",lin_addr,cpu.exception.error);
+				//LOG(LOG_PAGING,LOG_NORMAL)("    EAX:%04X ECX:%04X EDX:%04X EBX:%04X",reg_eax,reg_ecx,reg_edx,reg_ebx);
+				//LOG(LOG_PAGING,LOG_NORMAL)("    CS:%04X EIP:%08X SS:%04x SP:%08X",SegValue(cs),reg_eip,SegValue(ss),reg_esp);
 				return 0;
 			}
 			PAGING_LinkPage(lin_page,entry.block.base);
@@ -1368,7 +1379,7 @@ void PAGING_InitTLB(void) {
 }
 
 void PAGING_ClearTLB(void) {
-	//LOG_MSG("CLEAR                          m% 4u, kr%d, krw%d, ur%d",
+	//LOG_MSG("[%8u] [@%8d] [CLEARTLB] m% 4u, kr%d, krw%d, ur%d", logcnt++, CPU_Cycles,
 	//	paging.links.used, paging.kr_links.used, paging.krw_links.used, paging.ur_links.used);
 	Bit32u * entries=&paging.links.entries[0];
 	for (;paging.links.used>0;paging.links.used--) {
@@ -1395,7 +1406,7 @@ void PAGING_UnlinkPages(Bitu lin_page,Bitu pages) {
 }
 
 void PAGING_MapPage(Bitu lin_page,Bitu phys_page) {
-	LOG_MSG("[MAPPAGE] Page: %x - Phys: %x", lin_page, phys_page);
+	//LOG_MSG("[%8u] [@%8d] [MAPPAGE] Page: %x - Phys: %x", logcnt++, CPU_Cycles, lin_page, phys_page);
 	if (lin_page<LINK_START) {
 		paging.firstmb[lin_page]=phys_page;
 		paging.tlb.read[lin_page]=0;
@@ -1415,8 +1426,8 @@ static void PAGING_LinkPageNew(Bitu lin_page, Bitu phys_page, Bitu linkmode, boo
 	PageHandler * handler=MEM_GetPageHandler(phys_page);
 	Bitu lin_base=lin_page << 12;
 
-	static const char* const lnm[] = {"RW ","RE ","EE "}; // debug stuff
-	//LOG_MSG("[LINKPAGE] Page: %x - Phys: %x - Dirty: %d - Outcome: %s", lin_page, phys_page, dirty, lnm[outcome]);
+	//static const char* const lnm[] = {"RW ","RE ","EE "}; // debug stuff
+	//LOG_MSG("[%8u] [@%8d] [LINKPAGE] Page: %x - Phys: %x - Dirty: %d - Outcome: %s", logcnt++, CPU_Cycles, lin_page, phys_page, dirty, lnm[outcome]);
 	//LOG_MSG("MAPPG %s",lnm[outcome]);
 
 	if (GCC_UNLIKELY(lin_page>=TLB_SIZE || phys_page>=TLB_SIZE)) 
@@ -1486,7 +1497,7 @@ static void PAGING_LinkPageNew(Bitu lin_page, Bitu phys_page, Bitu linkmode, boo
 }
 
 void PAGING_LinkPage(Bitu lin_page,Bitu phys_page) {
-	//LOG_MSG("[LINKPAGE] Page: %x - Phys: %x", lin_page, phys_page);
+	//LOG_MSG("[%8u] [@%8d] [LINKPAGE] Page: %x - Phys: %x", logcnt++, CPU_Cycles, lin_page, phys_page);
 	PageHandler * handler=MEM_GetPageHandler(phys_page);
 	Bitu lin_base=lin_page << 12;
 	if (lin_page>=TLB_SIZE || phys_page>=TLB_SIZE) 
@@ -1509,7 +1520,7 @@ void PAGING_LinkPage(Bitu lin_page,Bitu phys_page) {
 }
 
 void PAGING_LinkPage_ReadOnly(Bitu lin_page,Bitu phys_page) {
-	//LOG_MSG("[LINKPAGERO] Page: %x - Phys: %x", lin_page, phys_page);
+	//LOG_MSG("[%8u] [@%8d] [LINKPAGERO] Page: %x - Phys: %x", logcnt++, CPU_Cycles, lin_page, phys_page);
 	PageHandler * handler=MEM_GetPageHandler(phys_page);
 	Bitu lin_base=lin_page << 12;
 	if (lin_page>=TLB_SIZE || phys_page>=TLB_SIZE) 
@@ -1681,6 +1692,7 @@ static void PAGING_ShutDown(Section* /*sec*/) {
 }
 
 void PAGING_Init(Section * sec) {
+	//logcnt = 0;
 	sec->AddDestroyFunction(&PAGING_ShutDown);
 
 	Bitu i;
@@ -1719,7 +1731,6 @@ void PAGING_OnChangeCore(void) {
 	}
 	init_page_handler = next_init_page_handler;
 }
-
 
 #include <dbp_serialize.h>
 

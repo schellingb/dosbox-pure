@@ -379,10 +379,70 @@ static INLINE bool mem_writed_checked(PhysPt address,Bit32u val) {
 }
 
 extern bool paging_prevent_exception_jump;
+
+#if 1 // use C++ exceptions
 #include <exception>
 struct GuestPageFaultException : std::exception {
 	GuestPageFaultException(Bitu n_faultcode) : faultcode(n_faultcode) {}
 	Bitu faultcode;
 };
+
+#define THROW_PAGE_FAULT(CODE) throw GuestPageFaultException(CODE)
+
+#define PAGE_FAULT_TRY \
+	restartloop2: \
+	try \
+	{
+
+#define PAGE_FAULT_CATCH \
+	} \
+	catch (GuestPageFaultException& pf) { \
+		paging_prevent_exception_jump = true; \
+		CPU_Exception(EXCEPTION_PF,pf.faultcode); \
+		paging_prevent_exception_jump = false; \
+		goto restartloop2; \
+	}
+
+#define REWIND_ESP_ON_PAEGFAULT_START \
+	{ \
+		Bitu old_esp = reg_esp; \
+		try {
+
+#define REWIND_ESP_ON_PAGEFAULT_END \
+		} \
+		catch (GuestPageFaultException&) { \
+			reg_esp = old_esp; \
+			throw; \
+		} \
+	}
+#else // use C longjmp (incomplete)
+#include <csetjmp>
+extern Bitu pagefault_faultcode;
+extern std::jmp_buf pagefault_jmp_buf;
+extern Bit32u pagefault_old_esp;
+
+#define THROW_PAGE_FAULT(CODE) \
+		pagefault_faultcode = (CODE); \
+		std::longjmp(pagefault_jmp_buf, 1)
+
+#define PAGE_FAULT_TRY \
+	if (looprecursion == 1 && setjmp(pagefault_jmp_buf)) \
+	{ \
+		if (pagefault_old_esp) { reg_esp = pagefault_old_esp; pagefault_old_esp = 0; } \
+		paging_prevent_exception_jump = true; \
+		CPU_Exception(EXCEPTION_PF,pagefault_faultcode); \
+		paging_prevent_exception_jump = false; \
+	}
+
+#define PAGE_FAULT_CATCH
+
+#define REWIND_ESP_ON_PAEGFAULT_START \
+	{ \
+		pagefault_old_esp = reg_esp;
+
+#define REWIND_ESP_ON_PAGEFAULT_END \
+		pagefault_old_esp = 0; \
+	}
+#endif
 
 #endif

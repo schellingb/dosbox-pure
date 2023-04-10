@@ -135,7 +135,6 @@ static Bit32u ticksAdded;
 Bit32s ticksDone;
 Bit32u ticksScheduled;
 bool ticksLocked;
-bool DBP_CPUOverload;
 void increaseticks();
 #endif
 
@@ -303,8 +302,7 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 	ticksRemain = ticksNew-ticksLast;
 	ticksLast = ticksNew;
 	ticksDone += ticksRemain;
-	//DBP: store result of this into ticksCPUOverload to give user feedback when max cycles is too high
-	if ( (DBP_CPUOverload = (ticksRemain > 20)) ) {
+	if ( ticksRemain > 20 ) {
 //		LOG(LOG_MISC,LOG_ERROR)("large remain %d",ticksRemain);
 		ticksRemain = 20;
 	}
@@ -405,28 +403,25 @@ void DOSBOX_SetNormalLoop() {
 	loop=Normal_Loop;
 }
 
+#if 0
+Bit32u pagefault_old_esp;
+Bitu pagefault_faultcode;
+std::jmp_buf pagefault_jmp_buf;
+#endif
+
 void DOSBOX_RunMachine(void){
 #ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
 	restartloop:
 	static Bit32u looprecursion;
 	looprecursion++;
 #endif
-	restartloop2:
-	try
-	{
 
+	PAGE_FAULT_TRY
 	Bitu ret;
 	do {
 		ret=(*loop)();
 	} while (!ret);
-
-	}
-	catch (GuestPageFaultException& pf) {
-		paging_prevent_exception_jump = true;
-		CPU_Exception(EXCEPTION_PF,pf.faultcode);
-		paging_prevent_exception_jump = false;
-		goto restartloop2;
-	}
+	PAGE_FAULT_CATCH
 
 #ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
 	if (--looprecursion == 0)
@@ -461,7 +456,6 @@ static void DOSBOX_UnlockSpeed( bool pressed ) {
 			CPU_CycleAutoAdjust = true;
 		}
 	}
-	DBP_CPUOverload = false;
 }
 #endif
 

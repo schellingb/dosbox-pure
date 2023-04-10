@@ -147,31 +147,19 @@
 	CASE_D(0x5f)												/* POP EDI */
 		reg_edi=Pop_32();break;
 	CASE_D(0x60)												/* PUSHAD */
-		{
-			Bitu tmpesp = reg_esp;
-			try {
-				Push_32(reg_eax);Push_32(reg_ecx);Push_32(reg_edx);Push_32(reg_ebx);
-				Push_32(tmpesp);Push_32(reg_ebp);Push_32(reg_esi);Push_32(reg_edi);
-			}
-			catch (GuestPageFaultException&) {
-				reg_esp = tmpesp;
-				throw;
-			}
-			break;
-		}
+	{
+		REWIND_ESP_ON_PAEGFAULT_START
+		Bitu tmpesp = reg_esp;
+		Push_32(reg_eax);Push_32(reg_ecx);Push_32(reg_edx);Push_32(reg_ebx);
+		Push_32(tmpesp);Push_32(reg_ebp);Push_32(reg_esi);Push_32(reg_edi);
+		REWIND_ESP_ON_PAGEFAULT_END
+	}; break;
 	CASE_D(0x61)												/* POPAD */
-		{
-			Bitu old_esp = reg_esp;
-			try {
-				reg_edi=Pop_32();reg_esi=Pop_32();reg_ebp=Pop_32();Pop_32();//Don't save ESP
-				reg_ebx=Pop_32();reg_edx=Pop_32();reg_ecx=Pop_32();reg_eax=Pop_32();
-			}
-			catch (GuestPageFaultException&) {
-				reg_esp = old_esp;
-				throw;
-			}
-			break;
-		}
+		REWIND_ESP_ON_PAEGFAULT_START
+		reg_edi=Pop_32();reg_esi=Pop_32();reg_ebp=Pop_32();Pop_32();//Don't save ESP
+		reg_ebx=Pop_32();reg_edx=Pop_32();reg_ecx=Pop_32();reg_eax=Pop_32();
+		REWIND_ESP_ON_PAGEFAULT_END
+		break;
 	CASE_D(0x62)												/* BOUND Ed */
 		{
 			GetRMrd;
@@ -369,17 +357,12 @@
 		}
 	CASE_D(0x8f)												/* POP Ed */
 		{
-			Bit32u old_esp = reg_esp;
-			try {
-				Bit32u val=Pop_32();
-				GetRM;
-				if (rm >= 0xc0 ) {GetEArd;*eard=val;}
-				else {GetEAa;SaveMd(eaa,val);}
-			}
-			catch (GuestPageFaultException&) {
-				reg_esp = old_esp;
-				throw;
-			}
+			REWIND_ESP_ON_PAEGFAULT_START
+			Bit32u val=Pop_32();
+			GetRM;
+			if (rm >= 0xc0 ) {GetEArd;*eard=val;}
+			else {GetEAa;SaveMd(eaa,val);}
+			REWIND_ESP_ON_PAGEFAULT_END
 			break;
 		}
 	CASE_D(0x91)												/* XCHG ECX,EAX */
@@ -480,17 +463,12 @@
 		GRP2D(Fetchb());break;
 	CASE_D(0xc2)												/* RETN Iw */
 		{
-			Bit32u old_esp = reg_esp;
-			try {
-				/* this is structured either to complete RET or leave registers unmodified if interrupted by page fault */
-				Bit32u new_eip=Pop_32();
-				reg_esp+=Fetchw();
-				reg_eip=new_eip;
-			}
-			catch (GuestPageFaultException&) {
-				reg_esp = old_esp; /* restore stack pointer */
-				throw;
-			}
+			REWIND_ESP_ON_PAEGFAULT_START
+			/* this is structured either to complete RET or leave registers unmodified if interrupted by page fault */
+			Bit32u new_eip=Pop_32();
+			reg_esp+=Fetchw();
+			reg_eip=new_eip;
+			REWIND_ESP_ON_PAGEFAULT_END
 			continue;
 		}
 	CASE_D(0xc3)												/* RETN */
@@ -529,19 +507,12 @@
 		}
 		break;
 	CASE_D(0xc9)												/* LEAVE */
-		{
-			Bit32u old_esp = reg_esp;
-			reg_esp&=cpu.stack.notmask;
-			reg_esp|=(reg_ebp&cpu.stack.mask);
-			try {
-				reg_ebp=Pop_32();
-			}
-			catch (GuestPageFaultException&) {
-				reg_esp = old_esp;
-				throw;
-			}
-			break;
-		}
+		REWIND_ESP_ON_PAEGFAULT_START
+		reg_esp&=cpu.stack.notmask;
+		reg_esp|=(reg_ebp&cpu.stack.mask);
+		reg_ebp=Pop_32();
+		REWIND_ESP_ON_PAGEFAULT_END
+		break;
 	CASE_D(0xca)												/* RETF Iw */
 		{ 
 			Bitu words=Fetchw();
