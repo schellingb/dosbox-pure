@@ -4137,9 +4137,9 @@ static void prepare_tmu(tmu_state *t)
 
 static INLINE INT32 round_coordinate(float value)
 {
-	return (value > 0 ? (INT32)(value + .4999999f) : (INT32)(value - .5f));
-	//INT32 result = (INT32)floor(value);
-	//return result + (value - (float)result > 0.5f);
+	INT32 result = (INT32)value;
+	float delta = value - (float)result;
+	return result + (delta > 0.5) - (delta <= -0.5);
 }
 
 /*************************************
@@ -4214,7 +4214,7 @@ static void triangle_worker_work(triangle_worker& tworker, INT32 worktstart, INT
 	float dxdy_v1v3 = (v3.y == v1.y) ? 0.0f : (v3.x - v1.x) / (v3.y - v1.y);
 	float dxdy_v2v3 = (v3.y == v2.y) ? 0.0f : (v3.x - v2.x) / (v3.y - v2.y);
 
-	stats_block my_stats;
+	stats_block my_stats = {0};
 	INT32 from = tworker.totalpix * worktstart / TRIANGLE_WORKERS;
 	INT32 to   = tworker.totalpix * worktend   / TRIANGLE_WORKERS;
 	for (INT32 curscan = tworker.v1y, scanend = tworker.v3y, sumpix = 0, lastsum = 0; curscan != scanend && lastsum < to; lastsum = sumpix, curscan++)
