@@ -141,7 +141,7 @@ void increaseticks();
 #include "shell.h"
 struct DBP_ShutdownCPU
 {
-	static Bitu Loop(void) { return 1; }
+	static Bitu Loop(void) { PIC_Ticks++; return 1; }
 	static Bits CPUDecoder(void) { return -1; }
 	static void Shutdown()
 	{
