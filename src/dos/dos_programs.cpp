@@ -782,12 +782,12 @@ public:
 					continue;
 				}
 
+#ifdef C_DBP_ENABLE_DISKSWAP
 				if (imageDiskList[0] != NULL || imageDiskList[1] != NULL) {
 					WriteOut(MSG_Get("PROGRAM_BOOT_IMAGE_MOUNTED"));
 					return;
 				}
 
-#ifdef C_DBP_ENABLE_DISKSWAP
 				if ( i >= MAX_SWAPPABLE_DISKS ) {
 					return; //TODO give a warning.
 				}
