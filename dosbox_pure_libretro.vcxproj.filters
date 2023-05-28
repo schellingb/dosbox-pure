@@ -605,6 +605,9 @@
     <ClInclude Include="src\gui\midi_tsf.h">
       <Filter>src\gui</Filter>
     </ClInclude>
+    <ClInclude Include="src\gui\midi_opl.h">
+      <Filter>src\gui</Filter>
+    </ClInclude>
     <ClInclude Include="src\gui\render_glsl.h">
       <Filter>src\gui</Filter>
     </ClInclude>

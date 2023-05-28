@@ -27,7 +27,9 @@
 #include "pic.h"
 #include "hardware.h"
 
+#ifdef C_DBP_LIBRETRO
 void DBPSerialize_OPL(struct DBPArchive& ar_outer);
+#endif
 
 namespace Adlib {
 
@@ -193,10 +195,16 @@ public:
 	Module( Section* configuration); 
 	~Module();
 
+#ifdef C_DBP_LIBRETRO
 	friend void ::DBPSerialize_OPL(DBPArchive& ar_outer);
+#endif
 };
 
 
 }		//Adlib namespace
+
+#ifdef C_DBP_SUPPORT_MIDI_ADLIB
+Adlib::Module* OPL_GetActiveModule();
+#endif
 
 #endif

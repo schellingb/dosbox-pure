@@ -81,6 +81,10 @@ MidiHandler::MidiHandler(){
 #include "midi_retro.h"
 #endif
 
+#ifdef C_DBP_SUPPORT_MIDI_ADLIB
+#include "midi_opl.h"
+#endif
+
 #if !defined(C_DBP_SUPPORT_MIDI_TSF) && !defined(C_DBP_SUPPORT_MIDI_RETRO)
 MidiHandler Midi_none;
 #endif

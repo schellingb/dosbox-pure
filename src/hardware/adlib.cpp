@@ -921,6 +921,10 @@ void OPL_ShutDown(Section* /*sec*/){
 
 }
 
+#ifdef C_DBP_SUPPORT_MIDI_ADLIB
+Adlib::Module* OPL_GetActiveModule() { return module; }
+#endif
+
 #include <dbp_serialize.h>
 
 void DBPSerialize_OPL(DBPArchive& ar_outer)

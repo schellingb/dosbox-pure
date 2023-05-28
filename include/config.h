@@ -69,6 +69,7 @@
 //#define C_DBP_ENABLE_AUTOLOCK
 //#define C_DBP_ENABLE_DISKSWAP
 //#define C_DBP_ENABLE_SCALERCACHE
+//#define C_DBP_SUPPORT_MIDI_ADLIB
 
 // ----- Enabled new features
 #define C_DBP_LIBRETRO
