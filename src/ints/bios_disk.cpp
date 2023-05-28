@@ -511,7 +511,7 @@ struct fatFromDOSDrive
 			else if (0)
 			{
 				invalid_file:
-				LOG_MSG("[DOSBOX] Invalid disk save file %s\n", inSavePath);
+				LOG_MSG("[DOSBOX] Invalid disk save file %s", inSavePath);
 				fclose(f);
 				saveFile = NULL;
 			}

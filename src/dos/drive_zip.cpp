@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1364,7 +1364,7 @@ struct Zip_Handle : public DOS_File
 		return true;
 	}
 
-	Bit16u GetInformation(void)
+	virtual Bit16u GetInformation(void)
 	{
 		return 0x40; // read-only drive
 	}

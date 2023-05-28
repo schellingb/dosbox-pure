@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -21,7 +21,6 @@
 #include "drives.h"
 #include "pic.h"
 
-#include "drives.h"
 #include <time.h>
 #include <vector>
 
@@ -255,7 +254,7 @@ struct unionDriveImpl
 			{
 				Loader& l = *(Loader*)data;
 				DOS_File* df;
-				if (!date && !time && size && !strcmp(path, "FILEMODS.DBP") && l.zip->FileOpen(&df, (char*)path, 0))
+				if (path[0] == 'F' && size && !strcmp(path, "FILEMODS.DBP") && l.zip->FileOpen(&df, (char*)path, 0))
 				{
 					df->AddRef();
 					std::vector<char> mods;
@@ -380,11 +379,11 @@ struct unionDriveImpl
 
 		Saver s;
 		unionDriveImpl* impl = (unionDriveImpl*)implPtr;
-		LOG_MSG("[DOSBOX] Saving filesystem modifications to %s\n", impl->save_file.c_str());
+		LOG_MSG("[DOSBOX] Saving filesystem modifications to %s", impl->save_file.c_str());
 		s.f = fopen_wrap(impl->save_file.c_str(), "wb");
 		if (!s.f)
 		{
-			LOG_MSG("[DOSBOX] Opening file %s for writing failed\n", impl->save_file.c_str());
+			LOG_MSG("[DOSBOX] Opening file %s for writing failed", impl->save_file.c_str());
 			impl->ScheduleSave(5000.f);
 			return;
 		}
@@ -418,7 +417,7 @@ struct unionDriveImpl
 
 		if (s.failed)
 		{
-			LOG_MSG("[DOSBOX] Error while writing file %s\n", impl->save_file.c_str());
+			LOG_MSG("[DOSBOX] Error while writing file %s", impl->save_file.c_str());
 			impl->ScheduleSave(5000.f);
 			return;
 		}
@@ -551,7 +550,7 @@ struct Union_WriteHandle : public DOS_File
 		return false;
 	}
 
-	Bit16u GetInformation(void)
+	virtual Bit16u GetInformation(void)
 	{
 		return 0; //writable storage
 	}
