@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -285,9 +285,11 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 		}
 	}
 
+	Bitu memory_mb = MEM_TotalPages() / ((1024*1024)/MEM_PAGE_SIZE);
 	Bit8u serialized_machine = (Bit8u)machine, current_machine = serialized_machine;
-	Bit8u serialized_memory = (Bit8u)(MEM_TotalPages() * MEM_PAGE_SIZE / (1024*1024)), current_memory = serialized_memory;
+	Bit8u serialized_memory = (Bit8u)(memory_mb < 225 ? memory_mb : (223+memory_mb/128)), current_memory = serialized_memory;
 	Bit8u serialized_vgamem = (Bit8u)(vga.vmemsize / (1024*128)), current_vgamem = serialized_vgamem;
+	DBP_ASSERT(MEM_TotalPages() == (current_memory < 225 ? current_memory : (current_memory-223)*128)*256);
 	ar << serialized_machine << serialized_memory << serialized_vgamem;
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{

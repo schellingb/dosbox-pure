@@ -31,13 +31,13 @@
 #define SAFE_MEMORY	32
 #define MAX_MEMORY	64
 #else
-#define MAX_MEMORY	225 // needs to be <= 255 (MAXUINT8) due to DBPSerialize_All
+#define MAX_MEMORY	2049 // needs to be <= 4097 due to DBPSerialize_All
 #endif
-#define MAX_PAGE_ENTRIES (MAX_MEMORY*1024*1024/4096)
-#define LFB_PAGES	512
-#define MAX_LINKS	((MAX_MEMORY*1024/4)+4096)		//Hopefully enough
-
 //DBP: Unused
+//#define MAX_PAGE_ENTRIES (MAX_MEMORY*1024*1024/4096)
+//#define LFB_PAGES	512
+//#define MAX_LINKS	((MAX_MEMORY*1024/4)+4096)		//Hopefully enough
+//
 //struct LinkBlock {
 //	Bitu used;
 //	Bit32u pages[MAX_LINKS];

@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -478,6 +478,9 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "96", "96 MB" },
 			{ "128", "128 MB" },
 			{ "224", "224 MB" },
+			{ "256", "256 MB" },
+			{ "512", "512 MB" },
+			{ "1024", "1024 MB" },
 		},
 		"16"
 	},
