@@ -650,6 +650,7 @@
     <ClInclude Include="src\ints\xms.h">
       <Filter>src\ints</Filter>
     </ClInclude>
+    <ClInclude Include="dosbox_pure_osd.h" />
     <ClInclude Include="core_options.h" />
     <ClInclude Include="libretro-common\include\libretro.h" />
   </ItemGroup>

@@ -1278,8 +1278,8 @@ void DOS_Shell::CMD_CHOICE(char * args){
 	do {
 		DOS_ReadFile (STDIN,&c,&n);
 
-		//DBP: Added this abort to support restart
-		if (first_shell->exit) { ptr = rem; break; }
+		//DBP: Added this abort to support restart and abort with ESC
+		if (first_shell->exit || c == 0x1b) { dos.return_code = 0; return; }
 	} while (!c || !(ptr = strchr(rem,(optS?c:toupper(c)))));
 	c = optS?c:(Bit8u)toupper(c);
 	DOS_WriteFile (STDOUT,&c, &n);
