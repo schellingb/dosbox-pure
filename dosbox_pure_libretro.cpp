@@ -4625,11 +4625,15 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 				retro_notify(0, RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
 			case DBPArchive::ERR_DOSNOTRUNNING:
-				if (dbp_serializemode != DBPSERIALIZE_REWIND)
+				if (ar.mode == DBPArchive::MODE_LOAD)
+					retro_notify(0, RETRO_LOG_WARN, "Unable to load a save state while game the isn't running, start it first.");
+				else if (dbp_serializemode != DBPSERIALIZE_REWIND)
 					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running.\nIf using rewind, make sure to modify the related core option.", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while DOS was" : "save state while DOS is"));
 				break;
 			case DBPArchive::ERR_GAMENOTRUNNING:
-				if (dbp_serializemode != DBPSERIALIZE_REWIND)
+				if (ar.mode == DBPArchive::MODE_LOAD)
+					retro_notify(0, RETRO_LOG_WARN, "Unable to load a save state while game the isn't running, start it first.");
+				else if (dbp_serializemode != DBPSERIALIZE_REWIND)
 					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running.\nIf using rewind, make sure to modify the related core option.", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while game was" : "save state while game is"));
 				break;
 			case DBPArchive::ERR_WRONGMACHINECONFIG:
