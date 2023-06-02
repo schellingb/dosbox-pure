@@ -4638,7 +4638,7 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 				break;
 			case DBPArchive::ERR_WRONGMEMORYCONFIG:
 				retro_notify(0, RETRO_LOG_ERROR, "%sWrong memory size configuration (%d MB instead of %d MB)", "Load State Error: ",
-					(Bit8u)(MEM_TotalPages() / 256), ar.error_info);
+					(Bit8u)(MEM_TotalPages() / 256), (ar.error_info < 225 ? ar.error_info : (ar.error_info-223)*128));
 				break;
 			case DBPArchive::ERR_WRONGVGAMEMCONFIG:
 				retro_notify(0, RETRO_LOG_ERROR, "%sWrong SVGA mode configuration (%d KB VGA RAM instead of %D KB)", "Load State Error: ",
