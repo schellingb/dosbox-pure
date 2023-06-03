@@ -576,7 +576,7 @@ void DOSBOX_Init(void) {
 #ifndef C_DBP_LIBRETRO
 	Pint->SetMinMax(1,63);
 #else
-	Pint->SetMinMax(1,224);
+	Pint->SetMinMax(1,2048);
 #endif
 	Pint->Set_help(
 		"Amount of memory DOSBox has in megabytes.\n"
