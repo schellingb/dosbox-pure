@@ -282,7 +282,7 @@ public:
 	virtual void PrintData(FILE* outfile) const =0;
 #endif
 #ifdef C_DBP_LIBRETRO
-	virtual Property* GetProp(std::string const& _property) const =0;
+	virtual Property* GetProp(char const * const _property) const =0;
 #endif
 	virtual ~Section() { /*Children must call executedestroy ! */}
 };
@@ -325,7 +325,7 @@ public:
 #endif
 	virtual std::string GetPropValue(std::string const& _property) const;
 #ifdef C_DBP_LIBRETRO
-	virtual Property* GetProp(std::string const& _property) const;
+	virtual Property* GetProp(char const * const _property) const;
 #endif
 	//ExecuteDestroy should be here else the destroy functions use destroyed properties
 	virtual ~Section_prop();
@@ -365,7 +365,7 @@ public:
 #endif
 	virtual std::string GetPropValue(std::string const& _property) const;
 #ifdef C_DBP_LIBRETRO
-	virtual Property* GetProp(std::string const& _property) const {return NULL;}
+	virtual Property* GetProp(char const * const _property) const {return NULL;}
 #endif
 	std::string data;
 };

@@ -772,7 +772,7 @@ void CONFIG::Run(void) {
 				value.c_str(),pvars[1].c_str());
 #ifdef C_DBP_LIBRETRO
 			else {
-				Property* p = tsec->GetProp(pvars[1]);
+				Property* p = tsec->GetProp(pvars[1].c_str());
 				if (p) p->OnChangedByConfigProgram();
 			}
 #endif

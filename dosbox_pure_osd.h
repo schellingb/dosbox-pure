@@ -1,7 +1,25 @@
+/*
+ *  Copyright (C) 2020-2023 Bernhard Schelling
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ */
+
 enum DBP_OSDMode { DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, _DBPOSD_COUNT, DBPOSD_CLOSED };
 static void DBP_StartOSD(DBP_OSDMode mode, struct DBP_PureMenuState* in_main = NULL);
 static void DBP_CloseOSD();
-static bool DBP_OSDIsStartmenu;
+static bool DBP_FullscreenOSD;
 
 struct DBP_BufferDrawing : DBP_Buffer
 {
@@ -477,7 +495,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_DEL, 0, "[Delete Custom Mapping]");
 		}
-		if (!DBP_OSDIsStartmenu)
+		if (!DBP_FullscreenOSD)
 		{
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_CANCEL, 0, "    Close Mapper");
@@ -628,7 +646,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 			changed = false;
 			menu_top();
 		}
-		else if ((ok_type == IT_CANCEL || res == RES_CLOSESCREENKEYBOARD) && !DBP_OSDIsStartmenu)
+		else if ((ok_type == IT_CANCEL || res == RES_CLOSESCREENKEYBOARD) && !DBP_FullscreenOSD)
 		{
 			DBP_CloseOSD();
 		}
@@ -841,19 +859,20 @@ struct DBP_PureMenuState : DBP_MenuState
 	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD };
 	enum { INFO_HEADER = 0x0B, INFO_WARN = 0x0A };
 
-	int exe_count, fs_count, init_autoboothash, autoskip;
-	bool have_autoboot, use_autoboot, multidrive;
+	int exe_count, fs_count;
+	bool multidrive;
 	Bit8u popupsel;
 
-	DBP_PureMenuState() : exe_count(0), fs_count(0), init_autoboothash(0), autoskip(0), have_autoboot(false), use_autoboot(false), multidrive(false), popupsel(0)
+	DBP_PureMenuState() : exe_count(0), fs_count(0), multidrive(false), popupsel(0)
 	{
 		if (dbp_game_running) INT10_SetCursorShape(0x1e, 0); // hide blinking cursor
 		RefreshFileList(true);
-		ReadAutoBoot();
-		if (!use_autoboot && reboot.str.length())
+		if (DBP_Run::autoboot.use)
 		{
-			int idx = MenuIndexByString(reboot.str.c_str());
-			if (idx != -1) { ResetSel(idx); }
+			if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTOS) GoToSubMenu(IT_BOOTOSLIST);
+			if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG);
+			int idx = MenuIndexByString(DBP_Run::startup.str.c_str());
+			if (idx != -1) ResetSel(idx);
 		}
 	}
 
@@ -907,9 +926,9 @@ struct DBP_PureMenuState : DBP_MenuState
 		sel = (fs_count && exe_count ? fs_count + 1 : 0);
 
 		if (list.empty()) { list.emplace_back(IT_NONE, 0, "No executable file found"); list.emplace_back(IT_NONE); sel = 2; }
-		if (DBP_OSDIsStartmenu) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
+		if (DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
 		else if (dbp_game_running) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
-		if (!DBP_OSDIsStartmenu) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
+		if (!DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
 		if (list.back().type == IT_NONE) list.pop_back();
 		if (!initial_scan) { if (old_sel < (int)list.size()) sel = old_sel; return; }
 	}
@@ -935,71 +954,6 @@ struct DBP_PureMenuState : DBP_MenuState
 		std::swap(m->list[insert_index].str, entry);
 	}
 
-	static int ReadAutoSkip()
-	{
-		char autostr[DOS_PATHLENGTH + 32] = {0,1}, *pautostr = autostr;
-		Bit16u autostrlen = DriveReadFileBytes(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)autostr, (Bit16u)(sizeof(autostr) - 1));
-		if (!autostrlen) return 0;
-		autostr[autostrlen] = '\0';
-		char *skip = strchr(pautostr, '\n');
-		while (skip && *skip && *skip <= ' ') skip++;
-		return (skip ? atoi(skip) : 0);
-	}
-
-	void ReadAutoBoot()
-	{
-		char autostr[DOS_PATHLENGTH + 32] = {0,1}, *pautostr = autostr;
-		Bit16u autostrlen = DriveReadFileBytes(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)autostr, (Bit16u)(sizeof(autostr) - 1));
-		autostr[autostrlen] = '\0';
-		have_autoboot = (autostrlen != 0);
-		if (have_autoboot)
-		{
-			if (autostr[1] == '*')
-			{
-				if      (autostr[0] == 'O') { GoToSubMenu(IT_BOOTOSLIST); pautostr += 2; }
-				else if (autostr[0] == 'I') { GoToSubMenu(IT_BOOTIMG); pautostr += 2; }
-			}
-			char *nameend = strchr(pautostr, '\n'), *skip = nameend;
-			while (skip && *skip && *skip <= ' ') skip++;
-			if (skip) autoskip = atoi(skip);
-			while (nameend > pautostr && *nameend <= ' ') nameend--;
-			if (nameend) nameend[1] = '\0';
-		}
-		else if (strrchr(dbp_content_path.c_str(), '#'))
-		{
-			memcpy(pautostr, "C:\\", 3);
-			safe_strncpy(pautostr + 3, strrchr(dbp_content_path.c_str(), '#') + 1, DOS_PATHLENGTH + 16);
-		}
-		if (!pautostr[0]) return;
-		int idx = MenuIndexByString(pautostr);
-		if (idx == -1) return;
-		ResetSel(idx);
-		use_autoboot = have_autoboot = true;
-		init_autoboothash = AutoBootHash();
-	}
-
-	int AutoBootHash()
-	{
-		return 1 | ((14 * autoskip) ^ (254 * sel) ^ (4094 * (int)list[sel].type));
-	}
-
-	void UpdateAutoBootFile(Bit8u ok_type)
-	{
-		DBP_ASSERT(ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_COMMANDLINE);
-		if (have_autoboot && !use_autoboot)
-		{
-			Drives['C'-'A']->FileUnlink((char*)"AUTOBOOT.DBP");
-		}
-		else if (use_autoboot && (!have_autoboot || init_autoboothash != AutoBootHash()) && ok_type != IT_INSTALLOS && ok_type != IT_COMMANDLINE)
-		{
-			char autostr[DOS_PATHLENGTH + 32], *pautostr = autostr;
-			if (ok_type != IT_RUN) { autostr[0] = (ok_type == IT_BOOTOS ? 'O' : 'I'); autostr[1] = '*'; pautostr = autostr + 2; }
-			char* autoend = pautostr + snprintf(pautostr, (&autostr[sizeof(autostr)] - pautostr), "%s", list[sel].str.c_str());
-			if (autoskip) autoend += snprintf(autoend, (&autostr[sizeof(autostr)] - autoend), "\r\n%d", autoskip);
-			if (!DriveCreateFile(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)autostr, (Bit32u)(autoend - autostr))) { DBP_ASSERT(false); }
-		}
-	}
-
 	int MenuIndexByString(const char* findit)
 	{
 		for (Item& it : list)
@@ -1015,7 +969,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (it.type != type) continue;
 			sel = (int)(&it - &list[0]);
 			open_ticks -= 1000;
-			DoInput(RES_OK, type, 0);
+			DoInput(RES_NONE, type, 0);
 			return;
 		}
 		DBP_ASSERT(false);
@@ -1034,7 +988,6 @@ struct DBP_PureMenuState : DBP_MenuState
 		int inforow = (w > 319), hdr = lh*2+12, rows = (h - hdr - ftr) / lh - inforow, count = (int)list.size(), bot = hdr + rows * lh + 3 - (lh == 8 ? 1 : 0);
 		DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, 8, w - 8, hdr);
 
-		bool autostart_info = false;
 		for (int i = scroll, se = (hide_sel ? -1 : sel); i != count && i != (scroll + rows); i++)
 		{
 			const DBP_MenuState::Item& item = list[i];
@@ -1054,9 +1007,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				if (i != se) continue;
 				buf.Print(lh, lblx - buf.CW*(2      ), y, "*", buf.COL_WHITE);
 				buf.Print(lh, lblx + buf.CW*(len + 1), y, "*", buf.COL_WHITE);
-				autostart_info = use_autoboot;
-
-				if (use_autoboot)
+				if (DBP_Run::autoboot.use)
 				{
 					buf.Print(lh, lblx + buf.CW*(len + 1), y, "* [SET AUTO START]", buf.COL_WHITE);
 				}
@@ -1067,8 +1018,8 @@ struct DBP_PureMenuState : DBP_MenuState
 		if (inforow)
 		{
 			char skiptext[38];
-			if (!use_autoboot) skiptext[0] = '\0';
-			else if (autoskip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", autoskip);
+			if (!DBP_Run::autoboot.use) skiptext[0] = '\0';
+			else if (DBP_Run::autoboot.skip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", DBP_Run::autoboot.skip);
 			else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/R2 + Restart to come back");
 
 			if (w > 639)
@@ -1081,7 +1032,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				buf.DrawBox(8, bot, w-319, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 			}
 			
-			if (w < 640 && use_autoboot)
+			if (w < 640 && DBP_Run::autoboot.use)
 			{
 				buf.DrawBox(8, bot, w-16, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 				buf.PrintCenteredOutlined(lh, 0, w, bot+2, skiptext, buf.COL_BTNTEXT);
@@ -1126,10 +1077,10 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 		Item& item = list[sel];
 		//if (item.type != IT_RUN && item.type != IT_BOOTOS && item.type != IT_BOOTIMG_MACHINE) auto_change = 0;
-		if (use_autoboot && auto_change > 0) autoskip += (autoskip < 50 ? 10 : (autoskip < 150 ? 25 : (autoskip < 300 ? 50 : 100)));
-		if (!use_autoboot && auto_change > 0) use_autoboot = true;
-		if (auto_change < 0) autoskip -= (autoskip <= 50 ? 10 : (autoskip <= 150 ? 25 : (autoskip <= 300 ? 50 : 100)));
-		if (autoskip < 0) { use_autoboot = false; autoskip = 0; }
+		if (DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.skip += (DBP_Run::autoboot.skip < 50 ? 10 : (DBP_Run::autoboot.skip < 150 ? 25 : (DBP_Run::autoboot.skip < 300 ? 50 : 100)));
+		if (!DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.use = true;
+		if (auto_change < 0) DBP_Run::autoboot.skip -= (DBP_Run::autoboot.skip <= 50 ? 10 : (DBP_Run::autoboot.skip <= 150 ? 25 : (DBP_Run::autoboot.skip <= 300 ? 50 : 100)));
+		if (DBP_Run::autoboot.skip < 0) { DBP_Run::autoboot.use = false; DBP_Run::autoboot.skip = 0; }
 
 		if (ok_type == IT_MOUNT)
 		{
@@ -1141,27 +1092,20 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 		else if (ok_type == IT_BOOTIMG)
 		{
-			if (!have_autoboot && DBP_OSDIsStartmenu && control->GetSection("dosbox")->GetProp("machine")->getChange() == Property::Changeable::OnlyByConfigProgram)
-			{
-				// Machine property was fixed by DOSBOX.CONF and cannot be modified here, so automatically boot the image as is
+			// Machine property was fixed by dbp_reboot_machine or DOSBOX.CONF and cannot be modified here, so automatically boot the image as is (RES_NONE check is for GoToSubMenu)
+			if (res != RES_NONE && DBP_FullscreenOSD && control->GetSection("dosbox")->GetProp("machine")->getChange() == Property::Changeable::OnlyByConfigProgram)
 				goto handle_result;
-			}
 			list.clear();
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Boot System Mode");
 			list.emplace_back(IT_NONE);
-			list.emplace_back(IT_BOOTIMG_MACHINE, 's', "SVGA (Super Video Graphics Array)");
-			list.emplace_back(IT_BOOTIMG_MACHINE, 'v', "VGA (Video Graphics Array)");
-			list.emplace_back(IT_BOOTIMG_MACHINE, 'e', "EGA (Enhanced Graphics Adapter");
-			list.emplace_back(IT_BOOTIMG_MACHINE, 'c', "CGA (Color Graphics Adapter)");
-			list.emplace_back(IT_BOOTIMG_MACHINE, 't', "Tandy (Tandy Graphics Adapter");
-			list.emplace_back(IT_BOOTIMG_MACHINE, 'h', "Hercules (Hercules Graphics Card)");
-			list.emplace_back(IT_BOOTIMG_MACHINE, 'p', "PCjr");
+			for (const char* it : DBP_MachineNames) list.emplace_back(IT_BOOTIMG_MACHINE, (Bit16s)(it[0]|0x20), it);
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_CANCEL, 0, "Cancel");
 			const std::string& img = (!dbp_images.empty() ? dbp_images[dbp_image_index].path : list[1].str);
 			bool isPCjrCart = (img.size() > 3 && (img[img.size()-3] == 'J' || img[img.size()-2] == 'T'));
+			char wantmchar = (isPCjrCart ? 'p' : DBP_Run::GetDosBoxMachineChar());
 			for (const Item& it : list)
-				if (it.info == (isPCjrCart ? 'p' : dbp_last_machine))
+				if (it.info == wantmchar)
 					{ ResetSel((int)(&it - &list[0])); break; }
 		}
 		else if (ok_type == IT_INSTALLOSSIZE)
@@ -1208,7 +1152,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_NONE, INFO_WARN, filename);
 			ResetSel(2, true);
 		}
-		else if (((res == RES_CANCEL && list.back().type == IT_CLOSEOSD) || res == RES_CLOSESCREENKEYBOARD) && !DBP_OSDIsStartmenu)
+		else if (((res == RES_CANCEL && list.back().type == IT_CLOSEOSD) || res == RES_CLOSESCREENKEYBOARD) && !DBP_FullscreenOSD)
 		{
 			ok_type = IT_CLOSEOSD;
 			goto handle_result;
@@ -1224,306 +1168,31 @@ struct DBP_PureMenuState : DBP_MenuState
 			handle_result:
 			if (ok_type != IT_CLOSEOSD)
 			{
+				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_COMMANDLINE));
 				if (!show_popup && dbp_game_running)
 				{
 					popupsel = 0;
 					show_popup = true;
 					return;
 				}
-				UpdateAutoBootFile(ok_type);
-				Run(item, autoskip);
+
+				DBP_Run::Run(
+					(ok_type == IT_RUN ? DBP_Run::RUN_EXEC :
+					(ok_type == IT_BOOTIMG ? DBP_Run::RUN_BOOTIMG:
+					(ok_type == IT_BOOTIMG_MACHINE ? DBP_Run::RUN_BOOTIMG :
+					(ok_type == IT_BOOTOS ? DBP_Run::RUN_BOOTOS :
+					(ok_type == IT_INSTALLOS ? DBP_Run::RUN_INSTALLOS :
+					(ok_type == IT_COMMANDLINE ? DBP_Run::RUN_COMMANDLINE : DBP_Run::RUN_NONE)))))),
+					item.info, item.str, true);
+
+				// Show menu again on image boot when machine needs to change but there are EXE files (some games need to run a FIX.EXE before booting)
+				if (ok_type == IT_BOOTIMG_MACHINE && dbp_reboot_machine && exe_count && !DBP_Run::autoboot.use)
+					DBP_Run::startup.mode = DBP_Run::RUN_NONE;
 			}
 			DBP_CloseOSD();
 		}
 	}
-
-	static Item reboot;
-
-	static void RunBatchFile(BatchFile* bf)
-	{
-		DBP_ASSERT(!dbp_game_running);
-		const bool inAutoexec = (first_shell->bf && first_shell->bf->filename[0] == 'Z');
-		while (first_shell->bf) delete first_shell->bf;
-		bf->prev = NULL; // was just deleted
-		bf->echo = true; // always want this back after returning
-		first_shell->bf = bf;
-		first_shell->echo = false;
-
-		if (!inAutoexec)
-		{
-			// Sending this key sequence makes sure DOS_Shell::Run will run our batch file immediately
-			// It also clears anything typed already on the command line or finishes DOS_Shell::CMD_PAUSE or DOS_Shell::CMD_CHOICE
-			KEYBOARD_AddKey(KBD_esc, true);
-			KEYBOARD_AddKey(KBD_esc, false);
-			KEYBOARD_AddKey(KBD_enter, true);
-			KEYBOARD_AddKey(KBD_enter, false);
-		}
-		dbp_lastmenuticks = DBP_GetTicks();
-	}
-
-	static void ConsoleClearScreen()
-	{
-		DBP_ASSERT(!dbp_game_running);
-		reg_ax = 0x0003;
-		CALLBACK_RunRealInt(0x10);
-	}
-
-	struct BatchFileRun : BatchFile
-	{
-		BatchFileRun(const std::string& _exe) : BatchFile(first_shell,_exe.c_str(),"","") { }
-		virtual bool ReadLine(char * line)
-		{
-			char *p = (char*)filename.c_str(), *f = strrchr(p, '\\') + 1, *fext;
-			*(line++) = '@';
-			switch (location++)
-			{
-				case 0:
-				{
-					ConsoleClearScreen();
-
-					DOS_SetDefaultDrive(p[0]-'A');
-					if (f - p > 3)
-					{
-						memcpy(Drives[p[0]-'A']->curdir,p + 3, f - p - 4);
-						Drives[p[0]-'A']->curdir[f - p - 4] = '\0';
-					}
-					else Drives[p[0]-'A']->curdir[0] = '\0';
-
-					bool isbat = ((fext = strrchr(f, '.')) && !strcasecmp(fext, ".bat"));
-					int call_cmd_len = (isbat ? 5 : 0), flen = (int)strlen(f);
-					memcpy(line, "call ", call_cmd_len);
-					memcpy(line+call_cmd_len, f, flen);
-					memcpy(line+call_cmd_len+flen, "\n", 2);
-					break;
-				}
-				case 1:
-					memcpy(line, "Z:PUREMENU", 10);
-					memcpy(line+10, " -FINISH\n", 10);
-					delete this;
-					break;
-			}
-			return true;
-		}
-	};
-
-	struct BatchFileBoot : BatchFile
-	{
-		BatchFileBoot(char drive) : BatchFile(first_shell,"Z:\\AUTOEXEC.BAT","","") { file_handle = drive; }
-
-		virtual bool ReadLine(char * line)
-		{
-			if (location++)
-			{
-				// This function does not do `delete this;` instead it calls DBP_OnBIOSReboot to eventually do that
-				memcpy(line, "@PAUSE\n", 8);
-				if (location > 2) { reboot.type = IT_NONE; DBP_OnBIOSReboot(); }
-				return true;
-			}
-			ConsoleClearScreen();
-			memcpy(line, "@Z:BOOT -l  \n", 14);
-			line[11] = (char)file_handle; // drive letter
-			if (machine == MCH_PCJR && file_handle == 'A' && !dbp_images.empty())
-			{
-				// The path to the image needs to be passed to boot for pcjr carts
-				const std::string& imgpath = dbp_images[dbp_image_index].path;
-				line[12] = ' ';
-				memcpy(line+13, imgpath.c_str(), imgpath.size());
-				memcpy(line+13+imgpath.size(), "\n", 2);
-			}
-			return true;
-		}
-
-		static bool HaveISO()
-		{
-			for (DBP_Image& i : dbp_images) if ((i.path[i.path.size()-2]|0x25) != 'm') return true; //0x25 recognizes IMG/IMA/VHD but not ISO/CUE/INS
-			return false;
-		}
-
-		static void BootImage(char want_machine)
-		{
-			if (dbp_last_machine != want_machine)
-			{
-				dbp_reboot_machine = want_machine;
-				DBP_OnBIOSReboot();
-				return;
-			}
-
-			DBP_ASSERT(!dbp_images.empty()); // IT_BOOTIMG should only be available if this is true
-			if (!dbp_images.empty())
-			{
-				DBP_Mount(); // make sure something is mounted
-
-				// If hard disk image was mounted to D:, swap it to be the bootable C: drive
-				std::swap(imageDiskList['D'-'A'], imageDiskList['C'-'A']);
-
-				// If there is no mounted hard disk image but a D: drive, setup the CDROM IDE controller
-				if (!imageDiskList['C'-'A'] && Drives['D'-'A'])
-					IDE_SetupControllers(HaveISO() ? 'D' : 0);
-			}
-
-			RunBatchFile(new BatchFileBoot(imageDiskList['A'-'A'] ? 'A' : 'C'));
-		}
-
-		static bool BootOSMountIMG(char drive, const char* path, const char* type, bool needwritable, bool complainnotfound)
-		{
-			FILE* raw_file_h = NULL;
-			if (needwritable && (raw_file_h = fopen_wrap(path, "rb+")) != NULL) goto openok;
-			if ((raw_file_h = fopen_wrap(path, "rb")) == NULL)
-			{
-				if (complainnotfound)
-					retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", type, path, "");
-				return false;
-			}
-			if (needwritable)
-			{
-				retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", type, path, " (file is read-only!)");
-				fclose(raw_file_h);
-				return false;
-			}
-			openok:
-			DOS_File* df = new rawFile(raw_file_h, needwritable);
-			df->AddRef();
-			imageDiskList[drive-'A'] = new imageDisk(df, "", 0, true);
-			imageDiskList[drive-'A']->Set_GeometryForHardDisk();
-			return true;
-		}
-
-		static void BootOS(Bit8u result, int info)
-		{
-			// Make sure we have at least 32 MB of RAM, if not set it to 64
-			if ((MEM_TotalPages() / 256) < 32)
-			{
-				dbp_reboot_set64mem = true;
-				DBP_OnBIOSReboot();
-				return;
-			}
-
-			std::string path;
-			if (result == IT_BOOTOS)
-			{
-				path = DBP_GetSaveFile(SFT_SYSTEMDIR).append(dbp_osimages[info]);
-			}
-			else if (info) //IT_INSTALLOS
-			{
-				const char* filename;
-				path = DBP_GetSaveFile(SFT_NEWOSIMAGE, &filename);
-
-				// Create a new empty hard disk image of the requested size
-				memoryDrive* memDrv = new memoryDrive();
-				DBP_SetDriveLabelFromContentPath(memDrv, path.c_str(), 'C', filename, path.c_str() + path.size() - 3);
-				imageDisk* memDsk = new imageDisk(memDrv, (Bit32u)(info*8));
-				Bit32u heads, cyl, sect, sectSize;
-				memDsk->Get_Geometry(&heads, &cyl, &sect, &sectSize);
-				FILE* f = fopen_wrap(path.c_str(), "wb");
-				if (!f) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "OS image", path.c_str(), " (create file failed)"); return; }
-				for (Bit32u i = 0, total = heads * cyl * sect; i != total; i++) { Bit8u data[512]; memDsk->Read_AbsoluteSector(i, data); fwrite(data, 512, 1, f); }
-				fclose(f);
-				delete memDsk;
-				delete memDrv;
-
-				// If using system directory index cache, append the new OS image to that now
-				if (dbp_system_cached)
-					if (FILE* fc = fopen_wrap(DBP_GetSaveFile(SFT_SYSTEMDIR).append("DOSBoxPureMidiCache.txt").c_str(), "a"))
-						{ fprintf(fc, "%s\n", filename); fclose(fc); }
-
-				// Set last_info to this new image to support BIOS rebooting with it
-				reboot.type = IT_BOOTOS;
-				reboot.info = (int)dbp_osimages.size();
-				dbp_osimages.emplace_back(filename);
-			}
-
-			const bool have_iso = HaveISO();
-			if (!path.empty())
-			{
-				// When booting an external disk image as C:, use whatever is C: in DOSBox DOS as the second hard disk in the booted OS (it being E: in Drives[] doesn't matter)
-				char newC = ((have_iso || DBP_IsMounted('D')) ? 'E' : 'D'); // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
-				if (imageDiskList['C'-'A'])
-					imageDiskList[newC-'A'] = imageDiskList['C'-'A'];
-				else if (!BootOSMountIMG(newC, (dbp_content_path + ".img").c_str(), "D: drive image", true, false) && Drives['C'-'A'])
-				{
-					Bit32u save_hash = 0;
-					DBP_SetDriveLabelFromContentPath(Drives['C'-'A'], dbp_content_path.c_str(), 'C', NULL, NULL, true);
-					std::string save_path = DBP_GetSaveFile(SFT_VIRTUALDISK, NULL, &save_hash);
-					imageDiskList[newC-'A'] = new imageDisk(Drives['C'-'A'], atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")), save_path.c_str(), save_hash, &dbp_vdisk_filter);
-				}
-
-				// Ramdisk setting must be false while installing os
-				char ramdisk = (result == IT_INSTALLOS ? 'f' : retro_get_variable("dosbox_pure_bootos_ramdisk", "false")[0]);
-
-				// Now mount OS hard disk image as C: drive
-				BootOSMountIMG('C', path.c_str(), "OS image", (ramdisk != 't'), true);
-			}
-			else if (!imageDiskList['C'-'A'] && Drives['C'-'A'])
-			{
-				// Running without hard disk image uses the DOS C: drive as a read-only C: hard disk
-				imageDiskList['C'-'A'] = new imageDisk(Drives['C'-'A'], 0);
-			}
-
-			// Try reading a boot disk image off from an ISO file
-			Bit8u* bootdisk_image; Bit32u bootdisk_size;
-			if (!Drives['A'-'A'] && Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage(&bootdisk_image, &bootdisk_size))
-			{
-				Drives['Y'-'A'] = new memoryDrive();
-				DriveCreateFile(Drives['Y'-'A'], "CDBOOT.IMG", bootdisk_image, bootdisk_size);
-				free(bootdisk_image);
-				DBP_Mount(DBP_AppendImage("$Y:\\CDBOOT.IMG", false), true); // this mounts the image as the A drive
-				//// Generate autoexec bat that starts the OS setup program?
-				//DriveCreateFile(Drives['A'-'A'], "CONFIG.SYS", (const Bit8u*)"", 0);
-				//DriveCreateFile(Drives['A'-'A'], "AUTOEXEC.BAT", (const Bit8u*)"DIR\r\n", 5);
-			}
-
-			// Setup IDE controllers for the hard drives and one CDROM drive (if any CDROM image is mounted)
-			IDE_SetupControllers(have_iso ? 'D' : 0);
-
-			// Switch cputype to highest feature set (needed for Windows 9x) and increase real mode CPU cycles
-			Section* section = control->GetSection("cpu");
-			section->ExecuteDestroy(false);
-			section->HandleInputline("cputype=pentium_slow");
-			if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
-			section->ExecuteInit(false);
-			if (Property* p = section->GetProp("cputype")) p->OnChangedByConfigProgram();
-			if (dbp_content_year < 1993) { dbp_content_year = 1993; DBP_SetRealModeCycles(); }
-
-			RunBatchFile(new BatchFileBoot(result == IT_BOOTOS ? 'C' : 'A'));
-		}
-	};
-
-	static void Run(Item& it, int doautoskip)
-	{
-		DBP_ASSERT(it.type == IT_RUN || it.type == IT_BOOTIMG || it.type == IT_BOOTIMG_MACHINE || it.type == IT_BOOTOS || it.type == IT_INSTALLOS || it.type == IT_COMMANDLINE);
-		Bit8u res = it.type;
-		reboot.type = ((res == IT_RUN || res == IT_COMMANDLINE) ? IT_NONE : res); // if a booted OS does a bios reboot, auto reboot that OS from now on
-		reboot.info = it.info;
-		std::swap(reboot.str, it.str); // remember to set cursor again and for rebooting a different IT_RUN
-
-		if (dbp_game_running)
-		{
-			if (res == IT_RUN || res == IT_COMMANDLINE) reboot.type = res;
-			if (res == IT_BOOTIMG_MACHINE && dbp_last_machine != (char)reboot.info) dbp_reboot_machine = (char)reboot.info;
-			if (res == IT_BOOTIMG && dbp_last_machine) dbp_reboot_machine = dbp_last_machine;
-			DBP_OnBIOSReboot();
-			return;
-		}
-
-		if (doautoskip)
-			DBP_UnlockSpeed(true, doautoskip, true);
-
-		if (res == IT_RUN)
-		{
-			RunBatchFile(new BatchFileRun(reboot.str));
-		}
-		else if (res == IT_BOOTIMG || res == IT_BOOTIMG_MACHINE)
-		{
-			BatchFileBoot::BootImage(res == IT_BOOTIMG ? dbp_last_machine : (char)reboot.info);
-		}
-		else if (res == IT_BOOTOS || res == IT_INSTALLOS)
-		{
-			BatchFileBoot::BootOS(res, reboot.info);
-		}
-	}
 };
-
-DBP_MenuState::Item DBP_PureMenuState::reboot;
 
 struct DBP_OnScreenDisplay
 {
@@ -1569,11 +1238,11 @@ struct DBP_OnScreenDisplay
 		bool isOSK = (mode == DBPOSD_OSK);
 		bool mouseMoved = mouse.Update(buf, isOSK);
 
-		Bit32u blend = (DBP_OSDIsStartmenu ? 0xFF000000 : 0x00000000);
-		if (DBP_OSDIsStartmenu || !isOSK)
+		Bit32u blend = (DBP_FullscreenOSD ? 0xFF000000 : 0x00000000);
+		if (DBP_FullscreenOSD || !isOSK)
 		{
 			int btny = buf.height - 13 - lh;
-			int n = (DBP_OSDIsStartmenu ? 2 : 3);
+			int n = (DBP_FullscreenOSD ? 2 : 3);
 			if (n == 2) buf.FillRect(0, 0, w, h, buf.BGCOL_STARTMENU);
 			if (          buf.DrawButton(blend, btny, lh, 0,   n, mode == DBPOSD_MAIN,   mouse, (w < 500 ? "STARTMENU" : "START MENU"))        && mouse.left_up) SetMode(DBPOSD_MAIN);
 			if (n == 3 && buf.DrawButton(blend, btny, lh, 1,   n, mode == DBPOSD_OSK,    mouse, (w < 500 ? "KEYBOARD" : "ON-SCREEN KEYBOARD")) && mouse.left_up) SetMode(DBPOSD_OSK);
@@ -1614,7 +1283,7 @@ struct DBP_OnScreenDisplay
 		if (type == DBPET_KEYUP && ((KBD_KEYS)val == KBD_tab || (KBD_KEYS)val == KBD_grave))
 		{
 			int add = (((KBD_KEYS)val == KBD_tab && !DBP_IsKeyDown(KBD_leftshift) && !DBP_IsKeyDown(KBD_rightshift)) ? 1 : 2);
-			SetMode(DBP_OSDIsStartmenu ? (mode == DBPOSD_MAIN ? DBPOSD_MAPPER : DBPOSD_MAIN) : (DBP_OSDMode)((mode + add) % _DBPOSD_COUNT));
+			SetMode(DBP_FullscreenOSD ? (mode == DBPOSD_MAIN ? DBPOSD_MAPPER : DBPOSD_MAIN) : (DBP_OSDMode)((mode + add) % _DBPOSD_COUNT));
 		}
 	}
 
@@ -1625,7 +1294,7 @@ struct DBP_OnScreenDisplay
 static DBP_OnScreenDisplay DBP_OSD;
 static void DBP_StartOSD(DBP_OSDMode mode, DBP_PureMenuState* in_main)
 {
-	DBP_OSDIsStartmenu = (in_main != NULL);
+	DBP_FullscreenOSD = (in_main != NULL);
 	DBP_OSD.mouse.Reset();
 	DBP_OSD.SetMode(mode, in_main);
 };
@@ -1678,23 +1347,19 @@ static void DBP_PureMenuProgram(Program** make)
 
 		virtual void Run() override
 		{
-			enum { M_NORMAL, M_BOOT, M_FINISH, M_REBOOT } m = (cmd->FindExist("-BOOT") ? M_BOOT : cmd->FindExist("-FINISH") ? M_FINISH : cmd->FindExist("-REBOOT") ? M_REBOOT : M_NORMAL);
+			enum { M_NORMAL, M_BOOT, M_FINISH } m = (cmd->FindExist("-BOOT") ? M_BOOT : cmd->FindExist("-FINISH") ? M_FINISH : M_NORMAL);
 
-			if (m == M_REBOOT && DBP_PureMenuState::reboot.type)
-			{
-				DBP_PureMenuState::Run(DBP_PureMenuState::reboot, DBP_PureMenuState::ReadAutoSkip());
+			if (m == M_BOOT && DBP_Run::HandleStartup())
 				return;
-			}
 
 			opentime = DBP_GetTicks();
-
-			DBP_OSDIsStartmenu = true;
+			DBP_FullscreenOSD = true;
 			DBP_PureMenuState* ms = new DBP_PureMenuState();
 			bool always_show_menu = (dbp_menu_time == (char)-1 || (m == M_FINISH && (opentime - dbp_lastmenuticks) < 500));
-			bool auto_boot = (!always_show_menu && ((ms->exe_count == 1 && ms->fs_count <= 1) || ms->use_autoboot));
+			bool runsoloexe = (ms->exe_count == 1 && ms->fs_count <= 1);
 
 			#ifndef STATIC_LINKING
-			if (m == M_FINISH && auto_boot)
+			if (m == M_FINISH && !always_show_menu && (runsoloexe || DBP_Run::autoboot.use))
 			{
 				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
 				sprintf(msgbuf, "* GAME ENDED - EXITTING IN %d SECONDS - PRESS ANY KEY TO CONTINUE *", dbp_menu_time);
@@ -1711,9 +1376,8 @@ static void DBP_PureMenuProgram(Program** make)
 				m = M_NORMAL;
 			}
 
-			// Show menu on image auto boot when there are EXE files (some games need to run a FIX.EXE before booting)
-			if (m == M_BOOT && auto_boot)
-				ms->Run(ms->list[ms->sel], ms->autoskip);
+			if (m == M_BOOT && runsoloexe && !always_show_menu)
+				ms->DoInput(DBP_MenuState::RES_OK, ms->list[ms->sel].type, 0);
 			else if (m != M_BOOT || ms->exe_count != 0 || ms->fs_count != 0 || Drives['C'-'A'] || Drives['A'-'A'] || Drives['D'-'A'])
 				DBP_StartOSD(DBPOSD_MAIN, ms);
 		}

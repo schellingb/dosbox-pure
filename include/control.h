@@ -82,6 +82,9 @@ public:
 	Section_prop * AddSection_prop(char const * const _name,void (*_initfunction)(Section*),bool canchange=false);
 	
 	Section* GetSection(int index);
+#ifdef C_DBP_LIBRETRO
+	Section* GetSection(char const * const _sectionname) const;
+#endif
 	Section* GetSection(std::string const&_sectionname) const;
 	Section* GetSectionFromProperty(char const * const prop) const;
 

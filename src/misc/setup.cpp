@@ -733,9 +733,9 @@ string Section_prop::GetPropValue(string const& _property) const {
 }
 
 #ifdef C_DBP_LIBRETRO
-Property* Section_prop::GetProp(std::string const& _property) const {
+Property* Section_prop::GetProp(char const * const _property) const {
 	for(const_it tel = properties.begin();tel != properties.end();++tel){
-		if (!strcasecmp((*tel)->propname.c_str(),_property.c_str())){
+		if (!strcasecmp((*tel)->propname.c_str(),_property)){
 			return *tel;
 		}
 	}
@@ -909,6 +909,15 @@ Section* Config::GetSection(int index) {
 	}
 	return NULL;
 }
+
+#ifdef C_DBP_LIBRETRO
+Section* Config::GetSection(char const * const _sectionname) const {
+	for (const_it tel = sectionlist.begin(); tel != sectionlist.end(); ++tel){
+		if (!strcasecmp((*tel)->GetName(),_sectionname)) return (*tel);
+	}
+	return NULL;
+}
+#endif
 
 Section* Config::GetSection(string const& _sectionname) const {
 	for (const_it tel = sectionlist.begin(); tel != sectionlist.end(); ++tel){
