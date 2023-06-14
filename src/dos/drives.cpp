@@ -363,17 +363,25 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 	{
 		static void AppendFiltered(char*& trg, const char* trg_end, const char* src, Bit32u len)
 		{
+			char DOS_ToUpperAndFilter(char c);
 			for (; trg < trg_end && len--; trg++)
-			{
-				char DOS_ToUpperAndFilter(char c);
 				*trg = DOS_ToUpperAndFilter(*(src++));
-			}
 		}
 	};
 	const char *target_start = target, *target_end = target + target_len, *source_end = source + source_len, *sDot;
 	for (sDot = source_end - 1; *sDot != '.' && sDot > source; sDot--);
 	Bit32u baseLen = (Bit32u)((*sDot == '.' ? sDot : source_end) - source);
 	Bit32u extLen = (Bit32u)(*sDot == '.' ? source_end - 1 - sDot : 0);
+	if (baseLen <= 8 && extLen <= 3 && target_len >= source_len)
+	{
+		extern const Bit8u DOS_ValidCharBits[32];
+		for (const char* p = source; p != source_end; p++)
+			if (!(DOS_ValidCharBits[((Bit8u)*p)/8] & (1<<(((Bit8u)*p)%8))) && p != sDot)
+				goto need_filter;
+		memcpy(target, source, source_len);
+		return source_len;
+		need_filter:;
+	}
 	Bit32u baseLeft = (baseLen > 8 ? 4 : baseLen), baseRight = (baseLen > 8 ? 4 : 0);
 	Func::AppendFiltered(target, target_end, source, baseLeft);
 	Func::AppendFiltered(target, target_end, source + baseLen - baseRight, baseRight);
@@ -407,7 +415,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : (control ? DOS_GetDefaultDrive() : DOS_DRIVES));
 	if (drive < DOS_DRIVES && Drives[drive])
 	{
-		char dos_path[DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
+		char dos_path[DOS_PATHLENGTH + 2], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
 		const char* n = filename + (filename[1] == ':' ? 2 : 0);
 		if (*n == '\\' || *n == '/') n++; // absolute path
 		else if (*Drives[drive]->curdir) // relative path
@@ -424,26 +432,33 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 			if (Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READ))
 				goto get_file_size_write_protected;
 		}
-		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; nDir = ++n)
+		bool transformed = false;
+		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos < p_dos_end; nDir = ++n)
 		{
 			while (*n != '/' && *n != '\\' && n != nEnd) n++;
-			if (n == nDir || (nDir[0] == '.' && n == nDir + 1)) continue;
+			if (n == nDir || (nDir[0] == '.' && n == nDir + 1)) { transformed = true; continue; }
 			if (nDir[0] == '.' && nDir[1] == '.' && n == nDir + 2)
 			{
 				// Remove the last parent directory in dos_path on ..
-				if (p_dos == dos_path) continue;
-				for (p_dos--; p_dos > dos_path && p_dos[-1] != '\\'; p_dos--) {}
+				transformed = true;
+				while (p_dos > dos_path && *p_dos != '\\') p_dos--;
 				continue;
 			}
 
 			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
-			p_dos += DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, (Bit32u)(n - nDir));
-			*(p_dos++) = (n == nEnd ? '\0' : '\\');
+			if (p_dos != dos_path) *(p_dos++) = '\\';
+			Bit32u nLen = (Bit32u)(n - nDir), tLen = DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen);
+			transformed = transformed || (tLen != nLen) || memcmp(p_dos, nDir, nLen) || *n == '/';
+			p_dos += tLen;
 		}
-		if (writable && Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
-			goto get_file_size;
-		if (Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READ))
-			goto get_file_size_write_protected;
+		if (transformed)
+		{
+			*p_dos = '\0';
+			if (writable && Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
+				goto get_file_size;
+			if (Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READ))
+				goto get_file_size_write_protected;
+		}
 	}
 
 	if (!force_mounted) {

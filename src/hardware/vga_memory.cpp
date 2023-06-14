@@ -940,8 +940,12 @@ void VGA_StartUpdateLFB(void) {
 }
 
 static void VGA_Memory_ShutDown(Section * /*sec*/) {
+#ifndef C_DBP_LIBRETRO
 	delete[] vga.mem.linear_orgptr;
 	delete[] vga.fastmem_orgptr;
+#else
+	delete[] vga.mem.linear_orgptr;
+#endif
 #ifdef VGA_KEEP_CHANGES
 	delete[] vga.changes.map;
 #endif
@@ -956,6 +960,7 @@ void VGA_SetupMemory(Section* sec) {
 	if (vga_allocsize<512*1024) vga_allocsize=512*1024;
 	// We reserve extra 2K for one scan line
 	vga_allocsize+=2048;
+#ifndef C_DBP_LIBRETRO
 	vga.mem.linear_orgptr = new Bit8u[vga_allocsize+16];
 	vga.mem.linear=(Bit8u*)(((Bitu)vga.mem.linear_orgptr + 16-1) & ~(16-1));
 	memset(vga.mem.linear,0,vga_allocsize);
@@ -964,6 +969,17 @@ void VGA_SetupMemory(Section* sec) {
 	vga.fastmem=(Bit8u*)(((Bitu)vga.fastmem_orgptr + 16-1) & ~(16-1));
 	//DBP: Added this zeroeing for better compression of serialized data
 	memset(vga.fastmem,0,(vga.vmemsize<<1)+4096);
+#else // DBP: Combine two allocations into one
+	vga_allocsize+=16;
+	Bit32u vga_fastmemofs = vga_allocsize;
+	vga_allocsize+=(vga.vmemsize<<1)+4096+16;
+
+	vga.mem.linear_orgptr = new Bit8u[vga_allocsize];
+	memset(vga.mem.linear_orgptr,0,vga_allocsize);
+
+	vga.mem.linear = (Bit8u*)(((Bitu)vga.mem.linear_orgptr                  + 16-1) & ~(16-1));
+	vga.fastmem    = (Bit8u*)(((Bitu)vga.mem.linear_orgptr + vga_fastmemofs + 16-1) & ~(16-1));
+#endif
 
 	// In most cases these values stay the same. Assumptions: vmemwrap is power of 2,
 	// vmemwrap <= vmemsize, fastmem implicitly has mem wrap twice as big

@@ -806,17 +806,13 @@ char DOS_ToUpper(char c) {
 	return sc;
 }
 
+extern const Bit8u DOS_ValidCharBits[32];
+const Bit8u DOS_ValidCharBits[32] = { 0, 0, 0, 0, 250, 43, 255, 3, 255, 255, 255, 199, 1, 0, 0, 232, 1, 192, 5, 254, 224, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255 };
+
 //DBP: Added this helper function to filter out invalid characters in the process
 char DOS_ToUpperAndFilter(char c)
 {
-	switch (c >> 5)
-	{
-		case 0: return '-';
-		case 1: return (strchr(" \"*,./:;<=>?", c) ? '-' : c);
-		case 2: return (strchr("[\\]", c) ? '-' : c);
-		case 3: return ((c >= 'a' && c <= 'z') ? c - 0x20 : c == '|' ? '-' : c);
-		default: return DOS_ToUpper(c);
-	}
+	return ((DOS_ValidCharBits[((Bit8u)c)/8] & (1<<(((Bit8u)c)%8))) ? c : ((c >= 'a' && c <= 'z') ? (c & 0x5F) : (((Bit8u)c) < 0x80 ? '-' : DOS_ToUpper(c))));
 }
 
 #define FCB_SEP ":;,=+"

@@ -1251,6 +1251,17 @@ void Chip::Setup( Bit32u rate ) {
 		EnvelopeSelect( i, index, shift );
 		linearRates[i] = (Bit32u)( scale * (EnvelopeIncreaseTable[ index ] << ( RATE_SH + ENV_EXTRA - shift - 3 )));
 	}
+#ifdef C_DBP_LIBRETRO 
+// DBP: Calculating the attack rates here is a significant part of DOSBox startup time (60%) so we cache the numbers to facilitate a much faster restart/reboot
+static Bit32u cachedAttackRates[76];
+static double cachedScale;
+if (scale == cachedScale)
+{
+	memcpy(attackRates, cachedAttackRates, sizeof(cachedAttackRates));
+}
+else
+{
+#endif
 //	Bit32s attackDiffs[62];
 	//Generate the best matching attack rate
 	for ( Bit8u i = 0; i < 62; i++ ) {
@@ -1303,6 +1314,11 @@ void Chip::Setup( Bit32u rate ) {
 		//This should provide instant volume maximizing
 		attackRates[i] = 8 << RATE_SH;
 	}
+#ifdef C_DBP_LIBRETRO // faster startup
+	memcpy(cachedAttackRates, attackRates, sizeof(cachedAttackRates));
+	cachedScale = scale;
+}
+#endif
 	//Setup the channels with the correct four op flags
 	//Channels are accessed through a table so they appear linear here
 	chan[ 0].fourMask = 0x00 | ( 1 << 0 );
