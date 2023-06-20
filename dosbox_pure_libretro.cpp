@@ -60,7 +60,7 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable;
-static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward;
+static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
@@ -294,6 +294,7 @@ int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
 int MSCDEX_RemoveDrive(char driveLetter);
 void IDE_RefreshCDROMs();
 void IDE_SetupControllers(char force_cd_drive_letter = 0);
+void NET_SetupNetworkCard();
 bool MIDI_TSF_SwitchSF2(const char*);
 bool MIDI_Retro_HasOutputIssue();
 
@@ -1095,6 +1096,7 @@ struct DBP_PadMapping
 
 static void DBP_Shutdown()
 {
+	// to be called on the main thread
 	if (dbp_state == DBPSTATE_SHUTDOWN || dbp_state == DBPSTATE_BOOT) return;
 	DBP_ThreadControl(TCM_SHUTDOWN);
 	if (!dbp_crash_message.empty())
@@ -1112,6 +1114,22 @@ static void DBP_Shutdown()
 	dbp_state = DBPSTATE_SHUTDOWN;
 }
 
+void DBP_ForceReset()
+{
+	// to be called on the main thread
+	retro_input_state_t tmp = input_state_cb;
+	input_state_cb = NULL;
+	retro_reset();
+	input_state_cb = tmp;
+}
+
+void DBP_OnBIOSReboot()
+{
+	// to be called on the DOSBox thread
+	dbp_biosreboot = true;
+	DBP_DOSBOX_ForceShutdown();
+}
+
 static double DBP_GetFPS()
 {
 	// More accurate then render.src.fps would be (1000.0 / vga.draw.delay.vtotal)
@@ -1119,12 +1137,6 @@ static double DBP_GetFPS()
 	if (dbp_latency != DBP_LATENCY_VARIABLE) return render.src.fps;
 	if (!dbp_targetrefreshrate && (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &dbp_targetrefreshrate) || dbp_targetrefreshrate < 1)) dbp_targetrefreshrate = 60.0f;
 	return dbp_targetrefreshrate;
-}
-
-void DBP_OnBIOSReboot()
-{
-	dbp_biosreboot = true;
-	DBP_DOSBOX_ForceShutdown();
 }
 
 void DBP_Crash(const char* msg)
@@ -1158,6 +1170,28 @@ bool DBP_IsShuttingDown()
 bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
 {
 	return (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res));
+}
+
+void DBP_EnableNetwork()
+{
+	if (dbp_use_network) return;
+	dbp_use_network = true;
+
+	extern const char* RunningProgram;
+	bool running_dos_game = (dbp_had_game_running && strcmp(RunningProgram, "BOOT"));
+	if (running_dos_game && DBP_GetTicks() < 10000) { DBP_ForceReset(); return; }
+
+	bool pauseThread = (dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
+	if (pauseThread) DBP_ThreadControl(TCM_PAUSE_FRAME);
+	Section* sec = control->GetSection("ipx");
+	sec->ExecuteDestroy(false);
+	sec->GetProp("ipx")->SetValue("true");
+	sec->ExecuteInit(false);
+	sec = control->GetSection("serial");
+	sec->ExecuteDestroy(false);
+	sec->GetProp("serial1")->SetValue("libretro");
+	sec->ExecuteInit(false);
+	if (pauseThread) DBP_ThreadControl(TCM_RESUME_FRAME);
 }
 
 #include "dosbox_pure_run.h"
@@ -1539,7 +1573,7 @@ void GFX_Events()
 void GFX_SetTitle(Bit32s cycles, int frameskip, bool paused)
 {
 	extern const char* RunningProgram;
-	dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU"));
+	dbp_had_game_running |= (dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU")));
 	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] Program: %s - Cycles: %d - Frameskip: %d - Paused: %d\n", RunningProgram, cycles, frameskip, paused);
 	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000 && !dbp_content_year)
 	{
@@ -2389,9 +2423,25 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_au
 	}
 }
 
-static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const std::string&, Section**) = NULL, const std::string* cfg = NULL)
+static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(const std::string&, Section**) = NULL, const std::string* cfg = NULL)
 {
-	DBP_ASSERT(dbp_state == DBPSTATE_BOOT);
+	if (dbp_state != DBPSTATE_BOOT)
+	{
+		DBP_Shutdown();
+		DBPArchiveZeroer ar;
+		DBPSerialize_All(ar);
+		extern const char* RunningProgram;
+		RunningProgram = "DOSBOX";
+		dbp_crash_message.clear();
+		dbp_state = DBPSTATE_BOOT;
+		dbp_throttle = { RETRO_THROTTLE_NONE };
+		dbp_game_running = dbp_had_game_running = false;
+		dbp_last_fastforward = false;
+		dbp_serializesize = 0;
+		dbp_intercept_gfx = NULL;
+		dbp_intercept_input = NULL;
+		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
+	}
 	if (!dbp_biosreboot) DBP_Run::ResetStartup();
 	control = new Config();
 	DOSBOX_Init();
@@ -2404,10 +2454,10 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 	PROGRAMS_MakeFile("LABEL.COM", DBP_PureLabelProgram);
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
 
+	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str());
 	const char *path_file, *path_ext; size_t path_namelen;
 	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext))
 	{
-		dbp_content_path = path;
 		dbp_content_name = std::string(path_file, path_namelen);
 	}
 
@@ -2427,12 +2477,6 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}
 
-	// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config at which point we cannot request input_state yet (RetroArch would crash)
-	bool force_start_menu = (dbp_biosreboot ? true : (!input_state_cb ? false : (
-		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LSHIFT) ||
-		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
-		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
-		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2))));
 
 	// Detect content year and auto mapping
 	if (firsttime && !loadcfg)
@@ -2547,7 +2591,8 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		DBP_PadMapping::Load();
 	}
 
-	if (!loadcfg && dbp_conf_loading != 'f' && !force_start_menu)
+	const bool force_puremenu = (dbp_biosreboot || forcemenu);
+	if (!loadcfg && dbp_conf_loading != 'f' && !force_puremenu)
 	{
 		const char* confpath = NULL; std::string strconfpath, confcontent;
 		if (dbp_conf_loading == 'i' && Drives['C'-'A']) // load confs 'i'nside content
@@ -2562,9 +2607,12 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		if (confpath && FindAndReadDosFile(confpath, confcontent))
 		{
 			delete control;
-			return init_dosbox(path, firsttime, init_dosbox_load_dosboxconf, &confcontent);
+			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
 		}
 	}
+
+	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
+	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
 
 	// Joysticks are refreshed after control modifications but needs to be done here also to happen on core restart
 	DBP_RefreshDosJoysticks();
@@ -2577,11 +2625,11 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 	{
 		bool auto_mount = true;
 		autoexec->ExecuteDestroy();
-		if (!force_start_menu && dbp_menu_time != (char)-1 && path && (!strcasecmp(path_ext, "EXE") || !strcasecmp(path_ext, "COM") || !strcasecmp(path_ext, "BAT")))
+		if (!force_puremenu && dbp_menu_time != (char)-1 && path && (!strcasecmp(path_ext, "EXE") || !strcasecmp(path_ext, "COM") || !strcasecmp(path_ext, "BAT")))
 		{
 			((((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += ((path_ext[0]|0x20) == 'b' ? "call " : "")) += path_file) += '\n') += "Z:PUREMENU") += " -FINISH\n";
 		}
-		else if (!force_start_menu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
+		else if (!force_puremenu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
 		{
 			((static_cast<Section_line*>(autoexec)->data += '@') += "DOSBOX.BAT") += '\n';
 			auto_mount = false;
@@ -2589,7 +2637,7 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		else
 		{
 			// Boot into puremenu, it will take care of further auto start options
-			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_start_menu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
+			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
 		}
 		autoexec->ExecuteInit();
 
@@ -2618,7 +2666,6 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 	dbp_frame_pending = true;
 	dbp_state = DBPSTATE_FIRST_FRAME;
 	Thread::StartDetached(Local::ThreadDOSBox);
-	return true;
 }
 
 void retro_init(void) //#3
@@ -2796,6 +2843,9 @@ void retro_init(void) //#3
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
 
+	const retro_netpacket_callback* DBP_Network_GetCallbacks(void);
+	environ_cb(RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE, (void*)DBP_Network_GetCallbacks());
+
 	struct retro_perf_callback perf;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) && perf.get_time_usec) time_cb = perf.get_time_usec;
 
@@ -2833,9 +2883,8 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	//static const struct retro_audio_callback rac = { CallBacks::audio_callback, CallBacks::audio_set_state_callback };
 	//bool use_audio_callback = environ_cb(RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK, (void*)&rac);
 
-	const char* path = (info ? info->path : NULL);
-
-	if (!init_dosbox(path, true)) return false;
+	if (info && info->path && *info->path) dbp_content_path = info->path;
+	init_dosbox(true);
 
 	DOS_PSP psp(dos.psp());
 	DOS_MCB env_mcb(psp.GetEnvironment() - 1);
@@ -2879,7 +2928,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	{
 		// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config
 		DBP_ASSERT(dbp_biosreboot && dbp_state == DBPSTATE_EXITED);
-		retro_reset();
+		DBP_ForceReset();
 		DBP_ThreadControl(TCM_FINISH_FRAME);
 		DBP_ASSERT(!dbp_biosreboot && dbp_state == DBPSTATE_FIRST_FRAME);
 	}
@@ -2908,21 +2957,12 @@ void retro_set_controller_port_device(unsigned port, unsigned device) //#5
 
 void retro_reset(void)
 {
-	DBP_Shutdown();
-	DBPArchiveZeroer ar;
-	DBPSerialize_All(ar);
-	extern const char* RunningProgram;
-	RunningProgram = "DOSBOX";
-	dbp_crash_message.clear();
-	dbp_state = DBPSTATE_BOOT;
-	dbp_throttle = { RETRO_THROTTLE_NONE };
-	dbp_game_running = false;
-	dbp_last_fastforward = false;
-	dbp_serializesize = 0;
-	dbp_intercept_gfx = NULL;
-	dbp_intercept_input = NULL;
-	for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
-	init_dosbox((dbp_content_path.empty() ? NULL : dbp_content_path.c_str()), false);
+	// Calling input_state_cb before the first frame can be fatal (RetroArch would crash), but during retro_reset it should be fine
+	init_dosbox(false, input_state_cb && (
+		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LSHIFT) ||
+		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
+		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
+		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
 }
 
 void retro_run(void)
@@ -2949,7 +2989,7 @@ void retro_run(void)
 			if (!dbp_crash_message.empty()) // unexpected shutdown
 				DBP_Shutdown();
 			else if (dbp_state == DBPSTATE_REBOOT || dbp_biosreboot)
-				retro_reset();
+				DBP_ForceReset();
 			else if (dbp_state == DBPSTATE_EXITED) // expected shutdown
 			{
 				#ifndef STATIC_LINKING

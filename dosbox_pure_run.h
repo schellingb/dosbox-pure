@@ -162,6 +162,9 @@ struct DBP_Run
 			// If there is no mounted hard disk image but a D: drive, setup the CDROM IDE controller
 			if (!imageDiskList['C'-'A'] && Drives['D'-'A'])
 				IDE_SetupControllers(BatchFileBoot::HaveISO() ? 'D' : 0);
+
+			// Install the NE2000 network card
+			NET_SetupNetworkCard();
 		}
 
 		RunBatchFile(new BatchFileBoot(imageDiskList['A'-'A'] ? 'A' : 'C'));
@@ -253,6 +256,9 @@ struct DBP_Run
 
 		// Setup IDE controllers for the hard drives and one CDROM drive (if any CDROM image is mounted)
 		IDE_SetupControllers(have_iso ? 'D' : 0);
+
+		// Install the NE2000 network card
+		NET_SetupNetworkCard();
 
 		// Switch cputype to highest feature set (needed for Windows 9x) and increase real mode CPU cycles
 		Section* section = control->GetSection("cpu");

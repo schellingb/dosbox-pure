@@ -95,7 +95,7 @@ void DISNEY_Init(Section*);
 void SERIAL_Init(Section*);
 
 
-#if C_IPX
+#if C_IPX || defined(C_DBP_ENABLE_LIBRETRO_IPX)
 void IPX_Init(Section*);
 #endif
 
@@ -875,8 +875,14 @@ void DOSBOX_Init(void) {
 	Pint->Set_help("the percentage of motion to ignore. 100 turns the stick into a digital one.");
 
 	secprop=control->AddSection_prop("serial",&SERIAL_Init,true);
-	const char* serials[] = { "dummy", "disabled", "modem", "nullmodem",
-	                          "directserial",0 };
+	const char* serials[] = { "dummy", "disabled",
+#if C_MODEM
+	                          "modem", "nullmodem", "directserial",
+#endif
+#ifdef C_DBP_ENABLE_LIBRETRO_MODEM
+	                          "libretro",
+#endif
+	                          0 };
 
 	Pmulti_remain = secprop->Add_multiremain("serial1",Property::Changeable::WhenIdle," ");
 	Pstring = Pmulti_remain->GetSection()->Add_string("type",Property::Changeable::WhenIdle,"dummy");
@@ -885,6 +891,7 @@ void DOSBOX_Init(void) {
 	Pstring = Pmulti_remain->GetSection()->Add_string("parameters",Property::Changeable::WhenIdle,"");
 	Pmulti_remain->Set_help(
 		"set type of device connected to com port.\n"
+#if C_MODEM
 		"Can be disabled, dummy, modem, nullmodem, directserial.\n"
 		"Additional parameters must be in the same line in the form of\n"
 		"parameter:value. Parameter for all types is irq (optional).\n"
@@ -894,6 +901,11 @@ void DOSBOX_Init(void) {
 		"for nullmodem: server, rxdelay, txdelay, telnet, usedtr,\n"
 		"               transparent, port, inhsocket (all optional).\n"
 		"Example: serial1=modem listenport:5000");
+#endif
+#ifdef C_DBP_ENABLE_LIBRETRO_MODEM
+		"Can be disabled, dummy, libretro.\n"
+		"Example: serial1=libretro");
+#endif
 
 	Pmulti_remain = secprop->Add_multiremain("serial2",Property::Changeable::WhenIdle," ");
 	Pstring = Pmulti_remain->GetSection()->Add_string("type",Property::Changeable::WhenIdle,"dummy");
@@ -943,7 +955,7 @@ void DOSBOX_Init(void) {
 	secprop->AddInitFunction(&MSCDEX_Init);
 	secprop->AddInitFunction(&DRIVES_Init);
 	secprop->AddInitFunction(&CDROM_Image_Init);
-#if C_IPX
+#if C_IPX || defined(C_DBP_ENABLE_LIBRETRO_IPX)
 	secprop=control->AddSection_prop("ipx",&IPX_Init,true);
 	Pbool = secprop->Add_bool("ipx",Property::Changeable::WhenIdle, false);
 	Pbool->Set_help("Enable ipx over UDP/IP emulation.");
