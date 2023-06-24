@@ -2345,67 +2345,38 @@ struct NetCallBacks
 		return (mac[0] == FIRST_MAC_OCTET ? (Bit16u)((mac[4] << 8) | mac[5]) : (Bit16u)0xFFFF);
 	}
 
-	static void handle_pkt(const Bit8u* pkt, size_t pktlen, bool is_incoming = false)
-	{
-		const Bit8u *data = pkt + 1, *src_mac, *dest_mac;
-		if (pkt[0] == DBP_Net::PKT_IPX)
-		{
-			if (pktlen < (sizeof(IPXHeader) + 1)) { DBP_ASSERT(false); return; }
-			src_mac = ((const IPXHeader*)data)->src.mac, dest_mac = ((const IPXHeader*)data)->dest.mac;
-		}
-		else // DBP_Net::PKT_NE2K
-		{
-			if (pktlen < (sizeof(EthernetHeader) + 1)) { DBP_ASSERT(false); return; }
-			src_mac = ((const EthernetHeader*)data)->src_mac, dest_mac = ((const EthernetHeader*)data)->dest_mac;
-		}
-		uint16_t src_client_id = client_id_from_mac(src_mac), dest_client_id = client_id_from_mac(dest_mac);
-		//printf("[DOSBOXNET] %s Packet - Len: %d - Src: %02x:%02x:%02x:%02x:%02x:%02x (#%d) - Dest: %02x:%02x:%02x:%02x:%02x:%02x (#%d)\n", (is_incoming ? "Incoming" : "Outgoing"), pktlen, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5], src_client_id, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], dest_client_id);
-		if (src_client_id == dest_client_id) { DBP_ASSERT(false); return; }
-		bool is_host = dbp_net_client_id == 0;
-		if (is_incoming)
-		{
-			if (dest_client_id == 0xFFFF || dest_client_id == dbp_net_client_id) // is for me
-			{
-				std::vector<Bit8u>& incoming = (pkt[0] == DBP_Net::PKT_IPX ? dbp_net->IncomingIPX : dbp_net->IncomingNe2k);
-				dbp_net->IncomingMtx.Lock();
-				size_t incomingsz = incoming.size(), datalen = pktlen - 1; // reduce by packet type
-				incoming.resize(incomingsz + 2 + datalen);
-				Bit8u *pStore = &incoming[incomingsz];
-				NET_WRITE_LE16(pStore, (Bit16u)datalen);
-				memcpy(pStore + 2, data, datalen);
-				dbp_net->IncomingMtx.Unlock();
-			}
-			if (!is_host) return; // no need to forward incoming packets on clients
-		}
-
-		if     (!is_host)                             dbp_net_send_fn(pkt, pktlen, 0, false);              // send to host
-		else if (is_host && dest_client_id == 0xFFFF) dbp_net_send_fn(pkt, pktlen, src_client_id, true);   // broadcast to all but src
-		else if (is_host && dest_client_id)           dbp_net_send_fn(pkt, pktlen, dest_client_id, false); // send to dest
-	}
 
 	static void RETRO_CALLCONV receive(const void* pkt, size_t pktlen, uint16_t client_id)
 	{
 		DBP_ASSERT(dbp_net_client_id != client_id); // can't be from myself
 		if (pktlen < 1 || pktlen > 65535) { DBP_ASSERT(false); return; }
 
-		static size_t _sumlen, _sumnum; _sumlen += pktlen; _sumnum++; Bit32u DBP_GetTicks(); static Bit32u lastreport; Bit32u tick = DBP_GetTicks();
-		if (tick - lastreport >= 1000)
-		{
-			printf("[DOSBOXNET] Received %d bytes in %d packets in 1 second\n", (int)_sumlen, (int)_sumnum);
-			_sumlen = _sumnum = 0;
-			lastreport = ((tick - lastreport < 2000) ? (lastreport + 1000) : tick);
-		}
+		//static size_t _sumlen, _sumnum; _sumlen += pktlen; _sumnum++; Bit32u DBP_GetTicks(); static Bit32u lastreport; Bit32u tick = DBP_GetTicks();
+		//if (tick - lastreport >= 1000)
+		//{
+		//	printf("[DOSBOXNET] Received %d bytes in %d packets in 1 second\n", (int)_sumlen, (int)_sumnum);
+		//	_sumlen = _sumnum = 0;
+		//	lastreport = ((tick - lastreport < 2000) ? (lastreport + 1000) : tick);
+		//}
 
 		//printf("[DOSBOXNET] Received Packet - From: %d, Type: %d, Len: %d\n", client_id, *(Bit8u*)pkt, pktlen);
 		switch (*(const Bit8u*)pkt)
 		{
 			case DBP_Net::PKT_IPX:
 			case DBP_Net::PKT_NE2K:
-				handle_pkt((const Bit8u*)pkt, pktlen, true);
+			{
+				std::vector<Bit8u>& incoming = (*(const Bit8u*)pkt == DBP_Net::PKT_IPX ? dbp_net->IncomingIPX : dbp_net->IncomingNe2k);
+				dbp_net->IncomingMtx.Lock();
+				size_t incomingsz = incoming.size(), datalen = pktlen - 1; // reduce by packet type
+				incoming.resize(incomingsz + 2 + datalen);
+				Bit8u *pStore = &incoming[incomingsz];
+				NET_WRITE_LE16(pStore, (Bit16u)datalen);
+				memcpy(pStore + 2, (const Bit8u*)pkt + 1, datalen);
+				dbp_net->IncomingMtx.Unlock();
 				break;
+			}
 			case DBP_Net::PKT_MODEM:
 			{
-				//printf("            [MODEM]\n");
 				dbp_net->IncomingMtx.Lock();
 				size_t incomingsz = dbp_net->IncomingModem.size(), datalen = pktlen - 1; // reduce by packet type
 				dbp_net->IncomingModem.resize(incomingsz + datalen);
@@ -2436,7 +2407,21 @@ struct NetCallBacks
 			for (Bit8u* p = &dbp_net->OutgoingPackets[0], *pEnd = p + dbp_net->OutgoingPackets.size(); p < pEnd; p += 2 + len)
 			{
 				len = NET_READ_LE16(p) + 1; // add packet type byte
-				handle_pkt(p + 2, len);
+				const Bit8u *data = p + 3, *src_mac, *dest_mac;
+				if (p[2] == DBP_Net::PKT_IPX)
+				{
+					if (len < (sizeof(IPXHeader) + 1)) { DBP_ASSERT(false); return; }
+					src_mac = ((const IPXHeader*)data)->src.mac, dest_mac = ((const IPXHeader*)data)->dest.mac;
+				}
+				else // DBP_Net::PKT_NE2K
+				{
+					if (len < (sizeof(EthernetHeader) + 1)) { DBP_ASSERT(false); return; }
+					src_mac = ((const EthernetHeader*)data)->src_mac, dest_mac = ((const EthernetHeader*)data)->dest_mac;
+				}
+				uint16_t src_client_id = client_id_from_mac(src_mac), dest_client_id = client_id_from_mac(dest_mac);
+				//printf("[DOSBOXNET] Outgoing Packet - Len: %d - Src: %02x:%02x:%02x:%02x:%02x:%02x (#%d) - Dest: %02x:%02x:%02x:%02x:%02x:%02x (#%d)\n", len, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5], src_client_id, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], dest_client_id);
+				if (src_client_id == dest_client_id) { DBP_ASSERT(false); continue; }
+				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p + 2, len, dest_client_id, (dest_client_id == 0xFFFF));
 			}
 			dbp_net->OutgoingPackets.clear();
 		}
@@ -2446,7 +2431,7 @@ struct NetCallBacks
 			{
 				size_t len = (pEnd - p > 1023 ? (Bit32u)1023 : (Bit32u)(pEnd - p));
 				p[-1] = DBP_Net::PKT_MODEM; // prefix with packet type (space reserved by CLibretroModem::transmitByte)
-				dbp_net_send_fn(p-1, len + 1, 0, true);
+				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p-1, len + 1, 0xFFFF, true);
 			}
 			dbp_net->OutgoingModem.clear();
 		}
