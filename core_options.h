@@ -157,6 +157,20 @@ static retro_core_option_v2_definition option_defs[] =
 		"true"
 	},
 	{
+		"dosbox_pure_mouse_input",
+		"Mouse Input Mode", NULL,
+		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work)." "\n"
+		"In touchpad mode use drag to move, tap to click, two finger tap to right-click and press-and-hold to drag", NULL,
+		"Input",
+		{
+			{ "true", "Virtual mouse (default)" },
+			{ "direct", "Direct controlled mouse (not supported by all games)" },
+			{ "pad", "Touchpad mode (see description, best for touch screens)" },
+			{ "false", "Off (ignore mouse inputs)" },
+		},
+		"true"
+	},
+	{
 		"dosbox_pure_mouse_wheel",
 		"Bind Mouse Wheel To Key", NULL,
 		"Bind mouse wheel up and down to two keyboard keys to be able to use it in DOS games.", NULL,
@@ -209,14 +223,6 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "4.0", "400%" }, { "4.2" , "420%" }, { "4.4", "440%" }, { "4.6",  "460%" }, { "4.8", "480%" }, { "5.0",  "500%" },
 		},
 		"1.0"
-	},
-	{
-		"dosbox_pure_mouse_input",
-		"Advanced > Use Mouse Input", NULL,
-		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work).", NULL,
-		"Input",
-		{ { "true", "On (default)" }, { "false", "Off" } },
-		"true"
 	},
 	{
 		"dosbox_pure_auto_mapping",

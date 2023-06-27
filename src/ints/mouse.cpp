@@ -126,6 +126,9 @@ static struct {
 	bool in_UIR;
 	Bit8u mode;
 	Bit16s gran_x,gran_y;
+
+	float raw_x, raw_y;
+	bool vmware_updated;
 } mouse;
 
 bool Mouse_SetPS2State(bool use) {
@@ -229,6 +232,7 @@ INLINE void Mouse_AddEvent(Bit8u type) {
 		PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
 		PIC_ActivateIRQ(MOUSE_IRQ);
 	}
+	mouse.vmware_updated = true;
 }
 
 // ***************************************************************************
@@ -491,14 +495,26 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 				mouse.x = x*mouse.max_x;
 				mouse.y = y*mouse.max_y;
 			} else {
+#ifdef C_DBP_LIBRETRO // DBP: use same speed for emulate true and false
+				mouse.x += dx;
+				mouse.y += dy;
+#else
 				mouse.x += xrel;
 				mouse.y += yrel;
+#endif
 			}
 		} else { // Games faking relative movement through absolute coordinates. Quite surprising that this actually works..
+#ifdef C_DBP_LIBRETRO // DBP: use same speed for emualte true and false
+			mouse.x += dx;
+			mouse.y += dy;
+#else
 			mouse.x += xrel;
 			mouse.y += yrel;
+#endif
 		}
 	}
+	mouse.raw_x = x;
+	mouse.raw_y = y;
 
 	/* ignore constraints if using PS2 mouse callback in the bios */
 
@@ -730,6 +746,53 @@ static void Mouse_Used(void) {
 		Mouse_AutoLock(true);
 		autolock_enabled=true;
 	}
+}
+
+static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
+	if (reg_eax != 0x564D5868u) // magic number for all VMware calls (was 0xc75d0c2c on windows 98...)
+		return 0;
+
+	switch (reg_cx)
+	{
+		case 10: //CMD_GETVERSION:
+			reg_eax = 0x3442554a; // FIXME: should we respond with something resembling VMware?
+			reg_ebx = 0x564D5868;
+			break;
+		case 39: //CMD_ABSPOINTER_DATA:
+			reg_eax = ((mouse.buttons & 1) ? 0x20 : 0) | ((mouse.buttons & 2) ? 0x10 : 0) | ((mouse.buttons & 4) ? 0x08 : 0);
+			reg_ebx = (Bit32u)(mouse.raw_x * 0xFFFF);
+			reg_ecx = (Bit32u)(mouse.raw_y * 0xFFFF);
+			reg_edx = 0;//(mouse_wheel >= 0) ? mouse_wheel : 256 + mouse_wheel;
+			//mouse_wheel = 0;
+			break;
+		case 40: //CMD_ABSPOINTER_STATUS:
+			reg_eax = mouse.vmware_updated ? 4 : 0;
+			mouse.vmware_updated = false;
+			break;
+		case 41: //CMD_ABSPOINTER_COMMAND:
+			switch (reg_ebx)
+			{
+				case 0x45414552: //ABSPOINTER_ENABLE:
+					// can be safely ignored
+					break;
+				case 0xF5: //ABSPOINTER_RELATIVE:
+					//vmware_mouse = false;
+					//if (!MOUSE_IsLocked()) SDL_ShowCursor(SDL_ENABLE);
+					break;
+				case 0x53424152: //ABSPOINTER_ABSOLUTE:
+					//vmware_mouse = true;
+					//if (!MOUSE_IsLocked()) SDL_ShowCursor(SDL_DISABLE);
+					break;
+				default:
+					LOG_MSG("VMWARE: unknown mouse subcommand 0x%08x", reg_ebx);
+					break;
+			}
+			break;
+		default:
+			LOG_MSG("VMWARE: unknown command 0x%08x", reg_ecx);
+			break;
+	}
+	return reg_ax;
 }
 
 static Bitu INT33_Handler(void) {
@@ -1194,6 +1257,9 @@ void MOUSE_Init(Section* /*sec*/) {
 	Mouse_ResetHardware();
 	Mouse_Reset();
 	Mouse_SetSensitivity(50,50,50);
+
+	IO_RegisterReadHandler(0x5658, &Mouse_VMWare_PortRead, IO_MD); //VMWARE_PORT
+	IO_RegisterReadHandler(0x5659, &Mouse_VMWare_PortRead, IO_MD); //VMWARE_PORTHB
 }
 
 #include <dbp_serialize.h>

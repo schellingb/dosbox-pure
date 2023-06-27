@@ -132,7 +132,7 @@ static DBP_Port_Device dbp_port_devices[DBP_MAX_PORTS];
 static bool dbp_input_binds_modified;
 static bool dbp_bind_unused;
 static bool dbp_on_screen_keyboard;
-static bool dbp_mouse_input;
+static char dbp_mouse_input;
 static char dbp_auto_mapping_mode;
 static Bit16s dbp_bind_mousewheel, dbp_mouse_x, dbp_mouse_y;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
@@ -1480,7 +1480,7 @@ void GFX_Events()
 			case DBPET_MOUSEMOVE:
 			{
 				float mx = e.val*dbp_mouse_speed*dbp_mouse_speed_x, my = e.val2*dbp_mouse_speed; // good for 320x200?
-				Mouse_CursorMoved(mx, my, 0, 0, true);
+				Mouse_CursorMoved(mx, my, (dbp_mouse_x+0x7fff)/(float)0xFFFE, (dbp_mouse_y+0x7fff)/(float)0xFFFE, (dbp_mouse_input != 'd'));
 				break;
 			}
 			case DBPET_MOUSEDOWN: Mouse_ButtonPressed((Bit8u)e.val);  break;
@@ -1665,18 +1665,21 @@ static void DBP_RefreshInputBinds(bool set_input_descriptors, bool set_controlle
 	if (refresh_min_port < 2)
 	{
 		dbp_input_binds.clear();
-		if (dbp_mouse_input)
+		if (dbp_mouse_input != 'f')
 		{
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   NULL, DBPET_MOUSEDOWN, 0 });
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  NULL, DBPET_MOUSEDOWN, 1 });
-			dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, NULL, DBPET_MOUSEDOWN, 2 });
+			if (dbp_mouse_input != 'p')
+			{
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   NULL, DBPET_MOUSEDOWN, 0 });
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  NULL, DBPET_MOUSEDOWN, 1 });
+				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, NULL, DBPET_MOUSEDOWN, 2 });
+			}
 			if (dbp_bind_mousewheel)
 			{
 				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   NULL, DBPET_KEYDOWN, DBP_MAPPAIR_GET(-1, dbp_bind_mousewheel) });
 				dbp_input_binds.push_back({ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, NULL, DBPET_KEYDOWN, DBP_MAPPAIR_GET( 1, dbp_bind_mousewheel) });
 			}
 		}
-		refresh_min_port  = 0;
+		refresh_min_port = 0;
 	}
 	else
 	{
@@ -1759,7 +1762,7 @@ static void DBP_RefreshInputBinds(bool set_input_descriptors, bool set_controlle
 		{ 1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, "Button 4", DBPET_JOY2DOWN, 1 },
 		{ 0 }};
 
-	for (Bit8u port = refresh_min_port; port != DBP_MAX_PORTS; port++)
+	for (Bit8u port = refresh_min_port; port < DBP_MAX_PORTS; port++)
 	{
 		const Bit8u* mapping = (port == 0 && !dbp_custom_mapping.empty() ? &dbp_custom_mapping[0] : NULL);
 		const DBP_InputBind* binds = NULL;
@@ -2171,7 +2174,6 @@ static bool check_variables(bool is_startup = false)
 		static const char* advanced_options[] =
 		{
 			"dosbox_pure_mouse_speed_factor_x",
-			"dosbox_pure_mouse_input",
 			"dosbox_pure_auto_mapping",
 			"dosbox_pure_joystick_timed",
 			"dosbox_pure_keyboard_layout",
@@ -2348,7 +2350,7 @@ static bool check_variables(bool is_startup = false)
 
 	bool bind_unused = (retro_get_variable("dosbox_pure_bind_unused", "true")[0] != 'f');
 	bool on_screen_keyboard = (retro_get_variable("dosbox_pure_on_screen_keyboard", "true")[0] != 'f');
-	bool mouse_input = (retro_get_variable("dosbox_pure_mouse_input", "true")[0] != 'f');
+	char mouse_input = retro_get_variable("dosbox_pure_mouse_input", "true")[0];
 	if (bind_unused != dbp_bind_unused || on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 	{
 		dbp_bind_unused = bind_unused;
@@ -2925,6 +2927,46 @@ void retro_reset(void)
 	init_dosbox((dbp_content_path.empty() ? NULL : dbp_content_path.c_str()), false);
 }
 
+void retro_run_touchpad(bool has_press, Bit16s absx, Bit16s absy)
+{
+	static Bit8u last_presses, down_btn, is_move, is_tap;
+	static Bit16s lastx, lasty, remx, remy;
+	static Bit32u press_tick, down_tick;
+	Bit32u tick = DBP_GetTicks();
+	Bit8u presses = 0;
+	if (has_press) for (presses = 1; presses < 3; presses++) if (!input_state_cb(0, RETRO_DEVICE_POINTER, presses, RETRO_DEVICE_ID_POINTER_PRESSED)) break;
+	if (last_presses != presses)
+	{
+		const bool add_press = (presses > last_presses);
+		if (add_press)
+			press_tick = tick;
+		if (!down_tick && !add_press && press_tick && (!is_move || presses))
+			{ down_tick = tick; is_tap = true; down_btn = presses; DBP_QueueEvent(DBPET_MOUSEDOWN, down_btn); press_tick = 0; }
+		else if (down_tick && (!presses || add_press))
+			{ DBP_QueueEvent(DBPET_MOUSEUP, down_btn); down_tick = 0; }
+		if (!presses)
+			is_move = false;
+		if (!last_presses || !add_press)
+			lastx = absx, lasty = absy, remx = remy = 0;
+		last_presses = presses;
+	}
+	if (presses == 1 && (absx != lastx || absy != lasty))
+	{
+		int dx = absx - lastx, dy = absy - lasty;
+		if (is_move || abs(dx) >= 256 || abs(dy) >= 256)
+		{
+			lastx = absx; int tx = dx + dbp_mouse_x; dbp_mouse_x = (Bit16s)(tx < -32768 ? -32768 : (tx > 32767 ? 32767 : tx)); dx += remx; remx = (Bit16s)(dx % 32);
+			lasty = absy; int ty = dy + dbp_mouse_y; dbp_mouse_y = (Bit16s)(ty < -32768 ? -32768 : (ty > 32767 ? 32767 : ty)); dy += remy; remy = (Bit16s)(dy % 32);
+			DBP_QueueEvent(DBPET_MOUSEMOVE, dx / 32, dy / 32);
+			is_move = true;
+		}
+	}
+	if (!down_tick && presses && !is_move && press_tick && (tick - press_tick) >= 500)
+		{ down_tick = tick; is_tap = false; down_btn = presses - 1; DBP_QueueEvent(DBPET_MOUSEDOWN, down_btn); }
+	else if (down_tick && is_tap && (tick - down_tick) >= 100)
+		{ DBP_QueueEvent(DBPET_MOUSEUP, down_btn); down_tick = 0; }
+}
+
 void retro_run(void)
 {
 	#ifdef DBP_ENABLE_FPS_COUNTERS
@@ -2940,8 +2982,7 @@ void retro_run(void)
 	}
 	#endif
 
-	const bool startOrEnd = (dbp_state < DBPSTATE_RUNNING);
-	if (startOrEnd)
+	if (dbp_state < DBPSTATE_RUNNING)
 	{
 		if (dbp_state == DBPSTATE_EXITED || dbp_state == DBPSTATE_SHUTDOWN || dbp_state == DBPSTATE_REBOOT)
 		{
@@ -3061,7 +3102,7 @@ void retro_run(void)
 		if (toggled_intercept)
 			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
-		binds = intercept_binds + (dbp_mouse_input ? 0 : 5);
+		binds = intercept_binds + ((dbp_mouse_input != 'f') ? ((dbp_mouse_input != 'p') ? 0 : 3) : 5);
 		binds_end = &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)];
 
 		static bool warned_game_focus;
@@ -3080,21 +3121,21 @@ void retro_run(void)
 	}
 
 	// query mouse movement before querying mouse buttons
-	if (dbp_mouse_input)
+	if (dbp_mouse_input != 'f')
 	{
-		int16_t movex = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
-		int16_t movey = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
-		int16_t pressed = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
-		if (movex || movey || startOrEnd || pressed)
+		int16_t movx = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+		int16_t movy = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+		int16_t absx = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
+		int16_t absy = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
+		int16_t prss = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+		bool absvalid = (absx || absy || prss);
+		if (dbp_mouse_input == 'p')
+			retro_run_touchpad(!!prss, absx, absy);
+		else if (movx || movy || (absvalid && (absx != dbp_mouse_x || absy != dbp_mouse_y)))
 		{
-			Bit16s absx = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
-			Bit16s absy = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
-			//log_cb(RETRO_LOG_INFO, "[DOSBOX MOUSE] [%4d@%6d] Rel: %d,%d - Abs: %d,%d - Press: %d - Count: %d\n", dbp_framecount, DBP_GetTicks(), movex, movey, absx, absy, pressed, input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT));
-			if (movex || movey || absx != dbp_mouse_x || absy != dbp_mouse_y)
-			{
-				if (pressed || absx || absy) dbp_mouse_x = absx, dbp_mouse_y = absy;
-				DBP_QueueEvent(DBPET_MOUSEMOVE, movex, movey);
-			}
+			//log_cb(RETRO_LOG_INFO, "[DOSBOX MOUSE] [%4d@%6d] Rel: %d,%d - Abs: %d,%d - Press: %d - Count: %d\n", dbp_framecount, DBP_GetTicks(), movx, movy, absx, absy, prss, input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT));
+			if (absvalid) dbp_mouse_x = absx, dbp_mouse_y = absy;
+			DBP_QueueEvent(DBPET_MOUSEMOVE, movx, movy);
 		}
 	}
 	// query input states and generate input events
