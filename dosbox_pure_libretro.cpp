@@ -59,7 +59,7 @@ static retro_system_av_info av_info;
 static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_REBOOT, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
-static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable;
+static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
 static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
@@ -73,6 +73,8 @@ static std::string dbp_content_path;
 static std::string dbp_content_name;
 static retro_time_t dbp_boot_time;
 static size_t dbp_serializesize;
+static Bit16s dbp_content_year;
+static const Bit32s Cycles1981to1999[1+1999-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000, 55000, 66800, 93000, 125000, 200000, 350000 };
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active;
@@ -91,7 +93,6 @@ static std::vector<std::string> dbp_osimages;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
 static unsigned dbp_image_index;
 static bool dbp_legacy_save;
-static Bit16s dbp_content_year;
 
 // DOSBOX INPUT
 struct DBP_InputBind
@@ -387,6 +388,61 @@ static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0, DBP_I
 	dbp_event_queue_write_cursor = next;
 }
 
+static void DBP_ReportCoreMemoryMaps()
+{
+	// Find first PSP belonging to a running program
+	DOS_PSP psp(dos.psp());
+	for (Bit16u segParent; psp.GetSegment() && (segParent = psp.GetParent()) != 0;)
+	{
+		char fnamepsp[DOS_NAMELENGTH_ASCII];
+		DOS_PSP pspParent(segParent);
+		DOS_MCB(pspParent.GetSegment()-1).GetFileName(fnamepsp);
+		if (!*fnamepsp) break;
+		psp = pspParent;
+	}
+
+	extern const char* RunningProgram;
+	//log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] SetMemoryMaps - Program: %s - PSP: 0x%08x - ENV: 0x%08x\n", RunningProgram, PhysMake(psp.GetSegment(), 0), PhysMake(psp.GetEnvironment(), 0));
+	bool running_dos_game = (dbp_game_running && strcmp(RunningProgram, "BOOT"));
+	const size_t conventional_end = 640 * 1024, memtotal = (MEM_TotalPages() * 4096);
+
+	// Give access to entire memory to frontend (cheat and achievements support)
+	// Instead of raw [ENVIRONMENT] [GAME] [EXPANDED MEMORY] we switch the order to be
+	// [GAME] [ENVIRONMENT] [EXPANDED MEMORY] so regardless of the size of the OS environment
+	// the game memory (below 640k) is always at the same (virtual) address.
+
+	struct retro_memory_descriptor mdescs[3] = { 0 }, *mdesc_expandedmem;
+	if (running_dos_game)
+	{
+		const size_t psp_start = PhysMake(psp.GetSegment(), 0);
+		mdescs[0].flags      = RETRO_MEMDESC_SYSTEM_RAM;
+		mdescs[0].start      = 0;
+		mdescs[0].len        = (conventional_end - psp_start);
+		mdescs[0].ptr        = MemBase + psp_start;
+		mdescs[1].flags      = RETRO_MEMDESC_SYSTEM_RAM;
+		mdescs[1].start      = 0x00100000;
+		mdescs[1].len        = psp_start;
+		mdescs[1].ptr        = MemBase;
+		mdesc_expandedmem = &mdescs[2];
+	}
+	else
+	{
+		mdescs[0].flags      = RETRO_MEMDESC_SYSTEM_RAM;
+		mdescs[0].start      = 0x00100000;
+		mdescs[0].len        = conventional_end;
+		mdescs[0].ptr        = MemBase;
+		mdesc_expandedmem = &mdescs[1];
+	}
+	mdesc_expandedmem->flags = RETRO_MEMDESC_SYSTEM_RAM;
+	mdesc_expandedmem->start = 0x00200000;
+	mdesc_expandedmem->len   = memtotal - conventional_end;
+	mdesc_expandedmem->ptr   = MemBase + conventional_end;
+
+	struct retro_memory_map mmaps = { mdescs, (unsigned)(running_dos_game ? 3 : 2) };
+	environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
+	dbp_refresh_memmaps = false;
+}
+
 enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_ON_PAUSE_FRAME, TCM_RESUME_FRAME, TCM_FINISH_FRAME, TCM_ON_FINISH_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN, TCM_ON_SHUTDOWN };
 static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 {
@@ -395,7 +451,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 	switch (m)
 	{
 		case TCM_PAUSE_FRAME:
-			if (!dbp_frame_pending || dbp_pause_events) return;
+			if (!dbp_frame_pending || dbp_pause_events) goto case_TCM_EMULATION_PAUSED;
 			dbp_pause_events = true;
 			#ifdef DBP_ENABLE_WAITSTATS
 			{ retro_time_t t = time_cb(); semDidPause.Wait(); dbp_wait_pause += (Bit32u)(time_cb() - t); }
@@ -403,7 +459,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			semDidPause.Wait();
 			#endif
 			dbp_pause_events = dbp_frame_pending = dbp_paused_midframe;
-			return;
+			goto case_TCM_EMULATION_PAUSED;
 		case TCM_ON_PAUSE_FRAME:
 			DBP_ASSERT(dbp_pause_events && !dbp_paused_midframe);
 			dbp_paused_midframe = true;
@@ -422,7 +478,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			semDoContinue.Post();
 			return;
 		case TCM_FINISH_FRAME:
-			if (!dbp_frame_pending) return;
+			if (!dbp_frame_pending) goto case_TCM_EMULATION_PAUSED;
 			if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME);
 			#ifdef DBP_ENABLE_WAITSTATS
 			{ retro_time_t t = time_cb(); semDidPause.Wait(); dbp_wait_finish += (Bit32u)(time_cb() - t); }
@@ -431,7 +487,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			#endif
 			DBP_ASSERT(!dbp_paused_midframe);
 			dbp_frame_pending = false;
-			return;
+			goto case_TCM_EMULATION_PAUSED;
 		case TCM_ON_FINISH_FRAME:
 			semDidPause.Post();
 			#ifdef DBP_ENABLE_WAITSTATS
@@ -465,6 +521,8 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			dbp_state = DBPSTATE_EXITED;
 			semDidPause.Post();
 			return;
+		case_TCM_EMULATION_PAUSED:
+			if (dbp_refresh_memmaps) DBP_ReportCoreMemoryMaps();
 	}
 }
 
@@ -472,13 +530,12 @@ void DBP_SetRealModeCycles()
 {
 	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || render.frameskip.max > 1) return;
 
-	static const Bit16u Cycles1981to1993[1+1993-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000 };
 	int year = (dbp_game_running ? dbp_content_year : 0);
 	CPU_CycleMax = 
-		(year <= 1970 ?  3000 : // Unknown year, dosbox default
-		(year <  1981 ?   500 : // Very early 8086/8088 CPU
-		(year >  1993 ? 60000 : // Pentium 90 MHz
-		Cycles1981to1993[year - 1981]))); // Matching speed for year
+		(year <= 1970 ?   3000 : // Unknown year, dosbox default
+		(year <  1981 ?    500 : // Very early 8086/8088 CPU
+		(year >  1999 ? 500000 : // Pentium III, 600 MHz and later
+		Cycles1981to1999[year - 1981]))); // Matching speed for year
 
 	// Switch to dynamic core for newer real mode games 
 	if (CPU_CycleMax >= 8192 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
@@ -1095,6 +1152,7 @@ struct DBP_PadMapping
 
 static void DBP_Shutdown()
 {
+	// to be called on the main thread
 	if (dbp_state == DBPSTATE_SHUTDOWN || dbp_state == DBPSTATE_BOOT) return;
 	DBP_ThreadControl(TCM_SHUTDOWN);
 	if (!dbp_crash_message.empty())
@@ -1112,6 +1170,22 @@ static void DBP_Shutdown()
 	dbp_state = DBPSTATE_SHUTDOWN;
 }
 
+void DBP_ForceReset()
+{
+	// to be called on the main thread
+	retro_input_state_t tmp = input_state_cb;
+	input_state_cb = NULL;
+	retro_reset();
+	input_state_cb = tmp;
+}
+
+void DBP_OnBIOSReboot()
+{
+	// to be called on the DOSBox thread
+	dbp_biosreboot = true;
+	DBP_DOSBOX_ForceShutdown();
+}
+
 static double DBP_GetFPS()
 {
 	// More accurate then render.src.fps would be (1000.0 / vga.draw.delay.vtotal)
@@ -1119,12 +1193,6 @@ static double DBP_GetFPS()
 	if (dbp_latency != DBP_LATENCY_VARIABLE) return render.src.fps;
 	if (!dbp_targetrefreshrate && (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &dbp_targetrefreshrate) || dbp_targetrefreshrate < 1)) dbp_targetrefreshrate = 60.0f;
 	return dbp_targetrefreshrate;
-}
-
-void DBP_OnBIOSReboot()
-{
-	dbp_biosreboot = true;
-	DBP_DOSBOX_ForceShutdown();
 }
 
 void DBP_Crash(const char* msg)
@@ -1539,8 +1607,10 @@ void GFX_Events()
 void GFX_SetTitle(Bit32s cycles, int frameskip, bool paused)
 {
 	extern const char* RunningProgram;
+	bool was_game_running = dbp_game_running;
 	dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU"));
 	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] Program: %s - Cycles: %d - Frameskip: %d - Paused: %d\n", RunningProgram, cycles, frameskip, paused);
+	if (was_game_running != dbp_game_running) dbp_refresh_memmaps = true;
 	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000 && !dbp_content_year)
 	{
 		// Choose a reasonable base rate when switching to protected mode (avoid autoinput getting stuck with a very slow CPU)
@@ -2391,9 +2461,25 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_au
 	}
 }
 
-static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const std::string&, Section**) = NULL, const std::string* cfg = NULL)
+static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(const std::string&, Section**) = NULL, const std::string* cfg = NULL)
 {
-	DBP_ASSERT(dbp_state == DBPSTATE_BOOT);
+	if (dbp_state != DBPSTATE_BOOT)
+	{
+		DBP_Shutdown();
+		DBPArchiveZeroer ar;
+		DBPSerialize_All(ar);
+		extern const char* RunningProgram;
+		RunningProgram = "DOSBOX";
+		dbp_crash_message.clear();
+		dbp_state = DBPSTATE_BOOT;
+		dbp_throttle = { RETRO_THROTTLE_NONE };
+		dbp_game_running = false;
+		dbp_last_fastforward = false;
+		dbp_serializesize = 0;
+		dbp_intercept_gfx = NULL;
+		dbp_intercept_input = NULL;
+		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
+	}
 	if (!dbp_biosreboot) DBP_Run::ResetStartup();
 	control = new Config();
 	DOSBOX_Init();
@@ -2406,10 +2492,10 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 	PROGRAMS_MakeFile("LABEL.COM", DBP_PureLabelProgram);
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
 
+	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str());
 	const char *path_file, *path_ext; size_t path_namelen;
 	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext))
 	{
-		dbp_content_path = path;
 		dbp_content_name = std::string(path_file, path_namelen);
 	}
 
@@ -2428,13 +2514,6 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		Drives['C'-'A'] = uni;
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}
-
-	// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config at which point we cannot request input_state yet (RetroArch would crash)
-	bool force_start_menu = (dbp_biosreboot ? true : (!input_state_cb ? false : (
-		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LSHIFT) ||
-		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
-		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
-		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2))));
 
 	// Detect content year and auto mapping
 	if (firsttime && !loadcfg)
@@ -2549,7 +2628,8 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		DBP_PadMapping::Load();
 	}
 
-	if (!loadcfg && dbp_conf_loading != 'f' && !force_start_menu)
+	const bool force_puremenu = (dbp_biosreboot || forcemenu);
+	if (!loadcfg && dbp_conf_loading != 'f' && !force_puremenu)
 	{
 		const char* confpath = NULL; std::string strconfpath, confcontent;
 		if (dbp_conf_loading == 'i' && Drives['C'-'A']) // load confs 'i'nside content
@@ -2564,7 +2644,7 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		if (confpath && FindAndReadDosFile(confpath, confcontent))
 		{
 			delete control;
-			return init_dosbox(path, firsttime, init_dosbox_load_dosboxconf, &confcontent);
+			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
 		}
 	}
 
@@ -2579,11 +2659,11 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 	{
 		bool auto_mount = true;
 		autoexec->ExecuteDestroy();
-		if (!force_start_menu && dbp_menu_time != (char)-1 && path && (!strcasecmp(path_ext, "EXE") || !strcasecmp(path_ext, "COM") || !strcasecmp(path_ext, "BAT")))
+		if (!force_puremenu && dbp_menu_time != (char)-1 && path && (!strcasecmp(path_ext, "EXE") || !strcasecmp(path_ext, "COM") || !strcasecmp(path_ext, "BAT")))
 		{
 			((((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += ((path_ext[0]|0x20) == 'b' ? "call " : "")) += path_file) += '\n') += "Z:PUREMENU") += " -FINISH\n";
 		}
-		else if (!force_start_menu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
+		else if (!force_puremenu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
 		{
 			((static_cast<Section_line*>(autoexec)->data += '@') += "DOSBOX.BAT") += '\n';
 			auto_mount = false;
@@ -2591,7 +2671,7 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		else
 		{
 			// Boot into puremenu, it will take care of further auto start options
-			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_start_menu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
+			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
 		}
 		autoexec->ExecuteInit();
 
@@ -2605,6 +2685,7 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 		if (!firsttime) dbp_image_index = (active_disk_image_index >= dbp_images.size() ? 0 : active_disk_image_index);
 	}
 	dbp_biosreboot = false;
+	DBP_ReportCoreMemoryMaps();
 
 	struct Local
 	{
@@ -2620,7 +2701,6 @@ static bool init_dosbox(const char* path, bool firsttime, void(*loadcfg)(const s
 	dbp_frame_pending = true;
 	dbp_state = DBPSTATE_FIRST_FRAME;
 	Thread::StartDetached(Local::ThreadDOSBox);
-	return true;
 }
 
 void retro_init(void) //#3
@@ -2835,33 +2915,8 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	//static const struct retro_audio_callback rac = { CallBacks::audio_callback, CallBacks::audio_set_state_callback };
 	//bool use_audio_callback = environ_cb(RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK, (void*)&rac);
 
-	const char* path = (info ? info->path : NULL);
-
-	if (!init_dosbox(path, true)) return false;
-
-	DOS_PSP psp(dos.psp());
-	DOS_MCB env_mcb(psp.GetEnvironment() - 1);
-	PhysPt env_end = PhysMake(psp.GetEnvironment() + env_mcb.GetSize(), 0);
-
-	// Give access to entire memory to frontend (cheat and achievements support)
-	// Instead of raw [ENVIRONMENT] [GAME] [EXTENDED MEMORY] we switch the order to be
-	// [GAME] [ENVIRONMENT] [EXTENDED MEMORY] so irregardless of the size of the OS environment
-	// the game memory (below 640k) is always at the same (virtual) address.
-	struct retro_memory_descriptor mdescs[3] = { 0 };
-	mdescs[0].flags = RETRO_MEMDESC_SYSTEM_RAM;
-	mdescs[0].start = 0;
-	mdescs[0].ptr   = MemBase + env_end;
-	mdescs[0].len   = (640 * 1024) - env_end;
-	mdescs[1].flags = RETRO_MEMDESC_SYSTEM_RAM;
-	mdescs[1].start = mdescs[0].start + mdescs[0].len;
-	mdescs[1].ptr   = MemBase;
-	mdescs[1].len   = env_end;
-	mdescs[2].flags = RETRO_MEMDESC_SYSTEM_RAM;
-	mdescs[2].start = mdescs[1].start + mdescs[1].len;
-	mdescs[2].ptr   = MemBase + (640 * 1024);
-	mdescs[2].len   = (MEM_TotalPages() * 4096) - (640 * 1024);
-	struct retro_memory_map mmaps = { mdescs, 3 };
-	environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
+	if (info && info->path && *info->path) dbp_content_path = info->path;
+	init_dosbox(true);
 
 	bool support_achievements = true;
 	environ_cb(RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS, &support_achievements);
@@ -2881,7 +2936,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	{
 		// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config
 		DBP_ASSERT(dbp_biosreboot && dbp_state == DBPSTATE_EXITED);
-		retro_reset();
+		DBP_ForceReset();
 		DBP_ThreadControl(TCM_FINISH_FRAME);
 		DBP_ASSERT(!dbp_biosreboot && dbp_state == DBPSTATE_FIRST_FRAME);
 	}
@@ -2910,21 +2965,12 @@ void retro_set_controller_port_device(unsigned port, unsigned device) //#5
 
 void retro_reset(void)
 {
-	DBP_Shutdown();
-	DBPArchiveZeroer ar;
-	DBPSerialize_All(ar);
-	extern const char* RunningProgram;
-	RunningProgram = "DOSBOX";
-	dbp_crash_message.clear();
-	dbp_state = DBPSTATE_BOOT;
-	dbp_throttle = { RETRO_THROTTLE_NONE };
-	dbp_game_running = false;
-	dbp_last_fastforward = false;
-	dbp_serializesize = 0;
-	dbp_intercept_gfx = NULL;
-	dbp_intercept_input = NULL;
-	for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
-	init_dosbox((dbp_content_path.empty() ? NULL : dbp_content_path.c_str()), false);
+	// Calling input_state_cb before the first frame can be fatal (RetroArch would crash), but during retro_reset it should be fine
+	init_dosbox(false, input_state_cb && (
+		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LSHIFT) ||
+		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
+		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||
+		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2)));
 }
 
 void retro_run_touchpad(bool has_press, Bit16s absx, Bit16s absy)
@@ -2990,7 +3036,7 @@ void retro_run(void)
 			if (!dbp_crash_message.empty()) // unexpected shutdown
 				DBP_Shutdown();
 			else if (dbp_state == DBPSTATE_REBOOT || dbp_biosreboot)
-				retro_reset();
+				DBP_ForceReset();
 			else if (dbp_state == DBPSTATE_EXITED) // expected shutdown
 			{
 				#ifndef STATIC_LINKING
