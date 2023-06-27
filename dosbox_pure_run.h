@@ -329,10 +329,10 @@ struct DBP_Run
 	inline static void ResetAutoboot() { autoboot.use = autoboot.have = false; }
 	static char GetDosBoxMachineChar() { return *((const char*)control->GetSection("dosbox")->GetProp("machine")->GetValue()); }
 
-	static bool HandleStartup()
+	static bool HandleStartup(bool is_boot)
 	{
 		if (startup.mode == RUN_NONE) ReadAutoBoot();
-		if (startup.mode == RUN_NONE) return false;
+		if (startup.mode == RUN_NONE || !is_boot) return false;
 		Run(startup.mode, startup.info, startup.str);
 		return true;
 	}
