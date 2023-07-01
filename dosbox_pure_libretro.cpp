@@ -60,7 +60,7 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
-static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward;
+static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
@@ -255,7 +255,7 @@ static Bit32u dbp_lastfpstick, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fp
 #define DBP_FPSCOUNT(DBP_FPSCOUNT_VARNAME)
 #endif
 
-static void retro_notify(int duration, retro_log_level lvl, char const* format,...)
+void retro_notify(int duration, retro_log_level lvl, char const* format,...)
 {
 	static char buf[1024];
 	va_list ap;
@@ -278,6 +278,12 @@ static const char* retro_get_variable(const char* key, const char* default_value
 	return (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value ? var.value : default_value);
 }
 
+static void retro_set_visibility(const char* key, bool visible)
+{
+	retro_core_option_display disp = { key, visible };
+	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &disp);
+}
+
 // ------------------------------------------------------------------------------
 
 static void DBP_RefreshInputBinds(bool set_input_descriptors = false, bool set_controller_info = false, unsigned refresh_min_port = 0);
@@ -295,6 +301,7 @@ int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
 int MSCDEX_RemoveDrive(char driveLetter);
 void IDE_RefreshCDROMs();
 void IDE_SetupControllers(char force_cd_drive_letter = 0);
+void NET_SetupEthernet();
 bool MIDI_TSF_SwitchSF2(const char*);
 bool MIDI_Retro_HasOutputIssue();
 
@@ -1228,6 +1235,34 @@ bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
 	return (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res));
 }
 
+bool DBP_IsLowLatency()
+{
+	return dbp_latency == DBP_LATENCY_LOW;
+}
+
+void DBP_EnableNetwork()
+{
+	if (dbp_use_network) return;
+	dbp_use_network = true;
+
+	extern const char* RunningProgram;
+	bool running_dos_game = (dbp_had_game_running && strcmp(RunningProgram, "BOOT"));
+	if (running_dos_game && DBP_GetTicks() < 10000) { DBP_ForceReset(); return; }
+	retro_set_visibility("dosbox_pure_modem", true);
+
+	bool pauseThread = (dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
+	if (pauseThread) DBP_ThreadControl(TCM_PAUSE_FRAME);
+	Section* sec = control->GetSection("ipx");
+	sec->ExecuteDestroy(false);
+	sec->GetProp("ipx")->SetValue("true");
+	sec->ExecuteInit(false);
+	sec = control->GetSection("serial");
+	sec->ExecuteDestroy(false);
+	sec->GetProp("serial1")->SetValue((retro_get_variable("dosbox_pure_modem", "null")[0] == 'n') ? "libretro null" : "libretro");
+	sec->ExecuteInit(false);
+	if (pauseThread) DBP_ThreadControl(TCM_RESUME_FRAME);
+}
+
 #include "dosbox_pure_run.h"
 #include "dosbox_pure_osd.h"
 
@@ -1608,7 +1643,7 @@ void GFX_SetTitle(Bit32s cycles, int frameskip, bool paused)
 {
 	extern const char* RunningProgram;
 	bool was_game_running = dbp_game_running;
-	dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU"));
+	dbp_had_game_running |= (dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU")));
 	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] Program: %s - Cycles: %d - Frameskip: %d - Paused: %d\n", RunningProgram, cycles, frameskip, paused);
 	if (was_game_running != dbp_game_running) dbp_refresh_memmaps = true;
 	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000 && !dbp_content_year)
@@ -2206,17 +2241,9 @@ static bool check_variables(bool is_startup = false)
 			if (reInitSection) DBP_ThreadControl(TCM_RESUME_FRAME);
 			return true;
 		}
-
-		static void RetroVisibility(const char* key, bool visible)
-		{
-			retro_core_option_display disp;
-			disp.key = key;
-			disp.visible = visible;
-			if (environ_cb) environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &disp);
-		}
 	};
 
-	// Depending on this we call set_variables, which needs to be done before any RetroVisibility call
+	// Depending on this we call set_variables, which needs to be done before any retro_set_visibility call
 	const char* midi = retro_get_variable("dosbox_pure_midi", "");
 	if (dbp_system_cached)
 	{
@@ -2255,7 +2282,7 @@ static bool check_variables(bool is_startup = false)
 			"dosbox_pure_sblaster_adlib_emu",
 			"dosbox_pure_gus",
 		};
-		for (const char* i : advanced_options) Variables::RetroVisibility(i, show_advanced);
+		for (const char* i : advanced_options) retro_set_visibility(i, show_advanced);
 		dbp_last_hideadvanced = !show_advanced;
 		visibility_changed = true;
 	}
@@ -2315,7 +2342,7 @@ static bool check_variables(bool is_startup = false)
 		default:  dbp_latency = DBP_LATENCY_DEFAULT;  break;
 	}
 	if (toggled_variable) DBP_ThreadControl(dbp_pause_events ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
-	Variables::RetroVisibility("dosbox_pure_auto_target", (dbp_latency == DBP_LATENCY_LOW));
+	retro_set_visibility("dosbox_pure_auto_target", (dbp_latency == DBP_LATENCY_LOW));
 
 	switch (retro_get_variable("dosbox_pure_perfstats", "none")[0])
 	{
@@ -2335,8 +2362,8 @@ static bool check_variables(bool is_startup = false)
 
 	const char* cycles = retro_get_variable("dosbox_pure_cycles", "auto");
 	bool cycles_numeric = (cycles[0] >= '0' && cycles[0] <= '9');
-	Variables::RetroVisibility("dosbox_pure_cycles_scale", cycles_numeric);
-	Variables::RetroVisibility("dosbox_pure_cycle_limit", !cycles_numeric);
+	retro_set_visibility("dosbox_pure_cycles_scale", cycles_numeric);
+	retro_set_visibility("dosbox_pure_cycle_limit", !cycles_numeric);
 	if (cycles_numeric)
 	{
 		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(retro_get_variable("dosbox_pure_cycles_scale", "1.0")) + .499));
@@ -2352,17 +2379,21 @@ static bool check_variables(bool is_startup = false)
 	Variables::DosBoxSet("cpu", "core", ((!memcmp(RunningProgram, "BOOT", 5) && retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') ? "normal" : retro_get_variable("dosbox_pure_cpu_core", "auto")));
 	Variables::DosBoxSet("cpu", "cputype", retro_get_variable("dosbox_pure_cpu_type", "auto"), true);
 
-	Variables::RetroVisibility("dosbox_pure_svga", machine_is_svga);
-	Variables::RetroVisibility("dosbox_pure_svgamem", machine_is_svga);
-	Variables::RetroVisibility("dosbox_pure_voodoo", machine_is_svga);
-	Variables::RetroVisibility("dosbox_pure_voodoo_perf", machine_is_svga);
+	retro_set_visibility("dosbox_pure_modem", dbp_use_network);
+	if (dbp_use_network)
+		Variables::DosBoxSet("serial", "serial1", ((retro_get_variable("dosbox_pure_modem", "null")[0] == 'n') ? "libretro null" : "libretro"));
+
+	retro_set_visibility("dosbox_pure_svga", machine_is_svga);
+	retro_set_visibility("dosbox_pure_svgamem", machine_is_svga);
+	retro_set_visibility("dosbox_pure_voodoo", machine_is_svga);
+	retro_set_visibility("dosbox_pure_voodoo_perf", machine_is_svga);
 	if (machine_is_svga)
 	{
 		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "12mb"), true, true);
 		Variables::DosBoxSet("pci", "voodoo_perf", retro_get_variable("dosbox_pure_voodoo_perf", "1"), true);
 	}
 
-	Variables::RetroVisibility("dosbox_pure_cga", machine_is_cga);
+	retro_set_visibility("dosbox_pure_cga", machine_is_cga);
 	if (machine_is_cga)
 	{
 		const char* cga = retro_get_variable("dosbox_pure_cga", "early_auto");
@@ -2373,7 +2404,7 @@ static bool check_variables(bool is_startup = false)
 		DBP_CGA_SetModelAndComposite(cga_new_model, (!cga_mode || cga_mode[0] == 'a' ? 0 : ((cga_mode[0] == 'o' && cga_mode[1] == 'n') ? 1 : 2)));
 	}
 
-	Variables::RetroVisibility("dosbox_pure_hercules", machine_is_hercules);
+	retro_set_visibility("dosbox_pure_hercules", machine_is_hercules);
 	if (machine_is_hercules)
 	{
 		const char herc_mode = retro_get_variable("dosbox_pure_hercules", "white")[0];
@@ -2473,7 +2504,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		dbp_crash_message.clear();
 		dbp_state = DBPSTATE_BOOT;
 		dbp_throttle = { RETRO_THROTTLE_NONE };
-		dbp_game_running = false;
+		dbp_game_running = dbp_had_game_running = false;
 		dbp_last_fastforward = false;
 		dbp_serializesize = 0;
 		dbp_intercept_gfx = NULL;
@@ -2647,6 +2678,9 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
 		}
 	}
+
+	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
+	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
 
 	// Joysticks are refreshed after control modifications but needs to be done here also to happen on core restart
 	DBP_RefreshDosJoysticks();
@@ -2877,6 +2911,9 @@ void retro_init(void) //#3
 	};
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
+
+	const retro_netpacket_callback* DBP_Network_GetCallbacks(void);
+	environ_cb(RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE, (void*)DBP_Network_GetCallbacks());
 
 	struct retro_perf_callback perf;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) && perf.get_time_usec) time_cb = perf.get_time_usec;

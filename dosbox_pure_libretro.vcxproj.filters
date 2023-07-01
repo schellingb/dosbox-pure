@@ -34,6 +34,9 @@
     <ClCompile Include="src\cpu\paging.cpp">
       <Filter>src\cpu</Filter>
     </ClCompile>
+    <ClCompile Include="src\dbp_network.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
     <ClCompile Include="src\dbp_serialize.cpp">
       <Filter>src</Filter>
     </ClCompile>
@@ -345,6 +348,9 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="include\cross.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\dbp_network.h">
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="include\dbp_serialize.h">

@@ -36,6 +36,10 @@
 
 #include "cpu.h"
 
+#ifdef C_DBP_ENABLE_LIBRETRO_MODEM
+#include "dbp_network.h"
+#endif
+
 #define LOG_SER(x) log_ser 
 
 bool device_COM::Read(Bit8u * data,Bit16u * size) {
@@ -1096,9 +1100,13 @@ CSerial::CSerial(Bitu id, CommandLine* cmd) {
 	}
 
 
+#ifdef C_DBP_ENABLE_CAPTURE
 	if(dbg_serialtraffic|dbg_modemcontrol|dbg_register|dbg_interrupt|dbg_aux)
 		debugfp=OpenCaptureFile("serlog",".serlog.txt");
 	else debugfp=0;
+#else
+	debugfp=stderr;
+#endif
 
 	if(debugfp == 0) {
 		dbg_serialtraffic= 
@@ -1261,6 +1269,15 @@ public:
 			}
 			else if(type=="nullmodem") {
 				serialports[i] = new CNullModem (i, &cmd);
+				if (!serialports[i]->InstallationSuccessful)  {
+					delete serialports[i];
+					serialports[i] = NULL;
+				}
+			}
+#endif
+#ifdef C_DBP_ENABLE_LIBRETRO_MODEM
+			else if(type=="libretro") {
+				serialports[i] = new CLibretroModem (i, &cmd);
 				if (!serialports[i]->InstallationSuccessful)  {
 					delete serialports[i];
 					serialports[i] = NULL;

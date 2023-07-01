@@ -187,6 +187,7 @@
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
       <WarningLevel>Level2</WarningLevel>
     </ClCompile>
+    <ClCompile Include="src\dbp_network.cpp" />
     <ClCompile Include="src\dbp_serialize.cpp">
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
@@ -527,6 +528,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core_options.h" />
+    <ClInclude Include="include\dbp_network.h" />
     <ClInclude Include="include\dbp_serialize.h" />
     <ClInclude Include="libretro-common\include\libretro.h" />
     <ClInclude Include="include\bios.h" />

@@ -491,6 +491,17 @@ static retro_core_option_v2_definition option_defs[] =
 		"16"
 	},
 	{
+		"dosbox_pure_modem",
+		"Modem Type", NULL,
+		"Type of emulated modem on COM1 for netplay. With the dial-up modem, one side needs to dial any number to connect.", NULL,
+		"System",
+		{
+			{ "null", "Null Modem (Direct Serial)" },
+			{ "dial", "Dial-Up Modem (Hayes Standard)" },
+		},
+		"null"
+	},
+	{
 		"dosbox_pure_cpu_type",
 		"CPU Type (restart required)", NULL,
 		"Emulated CPU type. Auto is the fastest choice." "\n"
