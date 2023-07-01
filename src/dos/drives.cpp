@@ -257,7 +257,7 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	// this needs to run before MSCDEX_ShutDown and DOS_ShutDown
 	bool MSCDEX_HasDrive(char);
 	DBP_ASSERT(MSCDEX_HasDrive(-1) == false); // this fails had mscdex already shut down (confirm MSCDEX_ShutDown not yet called)
-	DBP_ASSERT(Drives['Z'-'A']->TestDir("")); // virtual drive still needs to exist (confirm DOS_ShutDown not yet called)
+	DBP_ASSERT(Drives['Z'-'A']->TestDir((char*)"")); // virtual drive still needs to exist (confirm DOS_ShutDown not yet called)
 
 	// need to make sure this is called before drives are deleted as it may contain disks mounted from files managed by drives
 	void BIOS_ShutdownDisks(void);
