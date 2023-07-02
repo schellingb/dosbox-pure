@@ -27,13 +27,14 @@
  */
 
 #include "dosbox.h"
-
 #include "regs.h"
 #include "setup.h"
 #include "callback.h"
 #include "pic.h"
+#include "cross.h"
 #include "dbp_network.h"
 #include "dbp_threads.h"
+#include <stdarg.h> /* va_list */
 
 struct DBP_Net
 {
