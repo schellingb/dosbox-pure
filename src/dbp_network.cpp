@@ -1280,6 +1280,7 @@ void CLibretroDualModem::SM_Poll(void)
 			//}
 			if (sm.echo) ModemBufAddB(rbuf, txval); //LOG_MSG("Echo back to queue: %x",txval);
 			if      (txval == 0xa) continue; //Real modem doesn't seem to skip this?
+			else if (txval == 0x1b) continue; //ESC as sent by Duke Nukem 3D before sending command
 			else if (txval == 0xd) SM_DoCommand(); // newline
 			else if (txval == 0x8 && sm.cmdpos > 0) --sm.cmdpos; // backspace
 			else if (txval != '+' && sm.cmdpos < 99) sm.cmdbuf[sm.cmdpos++] = txval;
