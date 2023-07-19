@@ -64,8 +64,8 @@ typedef struct {
 	struct {
 		int count;
 		int max;
-		Bitu index;
 #if 0
+		Bitu index;
 		Bit8u hadSkip[RENDER_SKIP_CACHE];
 #endif
 	} frameskip;
@@ -100,7 +100,9 @@ typedef struct {
 #ifdef VGA_KEEP_CHANGES
 	bool fullFrame;
 #endif
+#if 0
 	bool forceUpdate;
+#endif
 } Render_t;
 
 extern Render_t render;
@@ -109,8 +111,10 @@ void RENDER_SetSize(Bitu width,Bitu height,Bitu bpp,float fps,double ratio,bool 
 bool RENDER_StartUpdate(void);
 void RENDER_EndUpdate(bool abort);
 void RENDER_SetPal(Bit8u entry,Bit8u red,Bit8u green,Bit8u blue);
+#if 0
 bool RENDER_GetForceUpdate(void);
 void RENDER_SetForceUpdate(bool);
+#endif
 
 
 #endif

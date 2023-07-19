@@ -1287,8 +1287,14 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 	return GFX_GetBestMode(0);
 }
 
+Bit8u* GFX_GetPixels()
+{
+	return (Bit8u*)dbp_buffers[buffer_active^1].video;
+}
+
 bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 {
+	if (dbp_state == DBPSTATE_BOOT) return false;
 	DBP_FPSCOUNT(dbp_fpscount_gfxstart)
 	DBP_Buffer& buf = dbp_buffers[buffer_active^1];
 	pixels = (Bit8u*)buf.video;
@@ -1309,6 +1315,7 @@ bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 void GFX_EndUpdate(const Bit16u *changedLines)
 {
 	if (!changedLines) return;
+	if (dbp_state == DBPSTATE_BOOT) return;
 
 	buffer_active ^= 1;
 	DBP_Buffer& buf = dbp_buffers[buffer_active];
@@ -1329,6 +1336,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	// frameskip is best to be modified in this function (otherwise it can be off by one)
 	dbp_framecount += 1 + render.frameskip.max;
+	render.frameskip.max = (DBP_NeedFrameSkip(true) ? 1 : 0);
 
 	// handle frame skipping and CPU speed during fast forwarding
 	if (dbp_last_fastforward == (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD)) return;
@@ -1354,7 +1362,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	{
 		// If we switched to protected mode while locked (likely at startup) with auto adjust cycles on, choose a reasonable base rate
 		CPU_CycleMax = (old_pmode == cpu.pmode || !CPU_CycleAutoAdjust ? old_max : 20000);
-		render.frameskip.max = old_max = 0;
+		old_max = 0;
 		DBP_SetRealModeCycles();
 	}
 }
@@ -1392,7 +1400,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 	retro_time_t time_before = time_cb() - St.Paused;
 	St.Paused = 0;
 
-	if (force_skip || DBP_NeedFrameSkip(true))
+	if (force_skip)
 		return true;
 
 	if (dbp_latency != DBP_LATENCY_VARIABLE || dbp_state == DBPSTATE_FIRST_FRAME)
@@ -1431,7 +1439,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 	}
 
 	// Skip evaluating the performance of this frame if the display mode has changed
-	double modeHash = render.src.fps * render.src.width * render.src.height * (double)vga.mode;
+	double modeHash = (double)render.src.fps * render.src.width * render.src.height * ((double)vga.mode+1);
 	if (modeHash != St.LastModeHash)
 	{
 		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS@%4d] NEW VIDEO MODE %f|%d|%d|%d|%d|\n", St.HistoryCursor, render.src.fps, (int)render.src.width, (int)render.src.height, (int)vga.mode);

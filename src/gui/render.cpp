@@ -262,10 +262,12 @@ void RENDER_EndUpdate( bool abort ) {
 		for (i = 0;i<RENDER_SKIP_CACHE;i++) 
 			total += render.frameskip.hadSkip[i];
 		LOG_MSG( "Skipped frame %d %d", PIC_Ticks, (total * 100) / RENDER_SKIP_CACHE );
-#endif
 		if (RENDER_GetForceUpdate()) GFX_EndUpdate(0);
+#endif
 	}
+#if 0
 	render.frameskip.index = (render.frameskip.index + 1) & (RENDER_SKIP_CACHE - 1);
+#endif
 	render.updating=false;
 }
 
@@ -586,6 +588,7 @@ static void RENDER_CallBack( GFX_CallBackFunctions_t function ) {
 }
 
 void RENDER_SetSize(Bitu width,Bitu height,Bitu bpp,float fps,double ratio,bool dblw,bool dblh) {
+	DBP_ASSERT(fps > 1);
 	RENDER_Halt( );
 	if (!width || !height || width > SCALER_MAXWIDTH || height > SCALER_MAXHEIGHT) { 
 		return;	
@@ -637,6 +640,7 @@ static void ChangeScaler(bool pressed) {
 } */
 #endif
 
+#if 0
 bool RENDER_GetForceUpdate(void) {
 	return render.forceUpdate;
 }
@@ -644,6 +648,7 @@ bool RENDER_GetForceUpdate(void) {
 void RENDER_SetForceUpdate(bool f) {
 	render.forceUpdate = f;
 }
+#endif
 
 #if C_OPENGL
 static bool RENDER_GetShader(std::string& shader_path, char *old_src) {
@@ -801,9 +806,8 @@ void RENDER_Init(Section * sec) {
 
 void DBPSerialize_Render(DBPArchive& ar)
 {
-	Bit8u* current_pixels = NULL;
-	Bitu current_pitch = 0;
-	GFX_StartUpdate(current_pixels, current_pitch);
+	Bit8u* GFX_GetPixels();
+	Bit8u* current_pixels = GFX_GetPixels();
 	Bit32u render_offset = (render.scale.outWrite > current_pixels && render.scale.outWrite < current_pixels + render.src.width * 4 * render.src.height ? (render.scale.outWrite - current_pixels) : 0);
 	Bit8u loaded_src[sizeof(render.src)];
 
