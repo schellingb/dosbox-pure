@@ -126,10 +126,12 @@ static struct {
 	bool in_UIR;
 	Bit8u mode;
 	Bit16s gran_x,gran_y;
-
-	float raw_x, raw_y;
-	bool vmware_updated;
 } mouse;
+
+static struct {
+	float x, y;
+	bool updated;
+} mouse_vmware;
 
 bool Mouse_SetPS2State(bool use) {
 	if (use && (!ps2callbackinit)) {
@@ -232,7 +234,7 @@ INLINE void Mouse_AddEvent(Bit8u type) {
 		PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
 		PIC_ActivateIRQ(MOUSE_IRQ);
 	}
-	mouse.vmware_updated = true;
+	mouse_vmware.updated = true;
 }
 
 // ***************************************************************************
@@ -513,8 +515,8 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 #endif
 		}
 	}
-	mouse.raw_x = x;
-	mouse.raw_y = y;
+	mouse_vmware.x = x;
+	mouse_vmware.y = y;
 
 	/* ignore constraints if using PS2 mouse callback in the bios */
 
@@ -760,14 +762,14 @@ static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
 			break;
 		case 39: //CMD_ABSPOINTER_DATA:
 			reg_eax = ((mouse.buttons & 1) ? 0x20 : 0) | ((mouse.buttons & 2) ? 0x10 : 0) | ((mouse.buttons & 4) ? 0x08 : 0);
-			reg_ebx = (Bit32u)(mouse.raw_x * 0xFFFF);
-			reg_ecx = (Bit32u)(mouse.raw_y * 0xFFFF);
+			reg_ebx = (Bit32u)(mouse_vmware.x * 0xFFFF);
+			reg_ecx = (Bit32u)(mouse_vmware.y * 0xFFFF);
 			reg_edx = 0;//(mouse_wheel >= 0) ? mouse_wheel : 256 + mouse_wheel;
 			//mouse_wheel = 0;
 			break;
 		case 40: //CMD_ABSPOINTER_STATUS:
-			reg_eax = mouse.vmware_updated ? 4 : 0;
-			mouse.vmware_updated = false;
+			reg_eax = mouse_vmware.updated ? 4 : 0;
+			mouse_vmware.updated = false;
 			break;
 		case 41: //CMD_ABSPOINTER_COMMAND:
 			switch (reg_ebx)
