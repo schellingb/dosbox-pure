@@ -459,10 +459,18 @@ static retro_core_option_v2_definition option_defs[] =
 	{
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
-		"When enabled, the core's aspect ratio is set to what a CRT monitor would display." "\n\n", NULL, //end of Video section
+		"When enabled, the core's aspect ratio is set to what a CRT monitor would display.", NULL,
 		"Video",
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
+	},
+	{
+		"dosbox_pure_overscan",
+		"Overscan Border Size", NULL,
+		"When enabled, show a border around the display. Some games use the color of the border to convey information." "\n\n", NULL, //end of Video section
+		"Video",
+		{ { "0", "Off (default)" }, { "1", "Small" }, { "2", "Medium" }, { "3", "Large" } },
+		"0"
 	},
 
 	// System

@@ -77,8 +77,8 @@ static Bit16s dbp_content_year;
 static const Bit32s Cycles1981to1999[1+1999-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000, 55000, 66800, 93000, 125000, 200000, 350000 };
 
 // DOSBOX AUDIO/VIDEO
-static Bit8u buffer_active;
-static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], width, height; float ratio; } dbp_buffers[2];
+static Bit8u buffer_active, dbp_overscan;
+static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], width, height, border_color; float ratio; } dbp_buffers[2];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static double dbp_audio_remain;
@@ -1289,26 +1289,53 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 
 Bit8u* GFX_GetPixels()
 {
-	return (Bit8u*)dbp_buffers[buffer_active^1].video;
+	Bit8u* pixels = (Bit8u*)dbp_buffers[buffer_active^1].video;
+	if (dbp_overscan)
+	{
+		Bit32u w = (Bit32u)render.src.width, border = w * dbp_overscan / 160;
+		pixels += ((w + border * 2) * border + border) * 4;
+	}
+	return pixels;
 }
 
 bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 {
 	if (dbp_state == DBPSTATE_BOOT) return false;
 	DBP_FPSCOUNT(dbp_fpscount_gfxstart)
+	Bit32u full_width = (Bit32u)render.src.width, full_height = (Bit32u)render.src.height;
 	DBP_Buffer& buf = dbp_buffers[buffer_active^1];
 	pixels = (Bit8u*)buf.video;
-	pitch = render.src.width * 4;
-	float ratio = (float)render.src.width / render.src.height;
+	if (dbp_overscan)
+	{
+		Bit32u border = full_width * dbp_overscan / 160;
+		full_width += border * 2;
+		full_height += border * 2;
+		pixels += (full_width * border + border) * 4;
+	}
+	pitch = full_width * 4;
+
+	float ratio = (float)full_width / full_height;
 	if (render.aspect) ratio /= (float)render.src.ratio;
 	if (ratio < 1) ratio *= 2; //because render.src.dblw is not reliable
 	if (ratio > 2) ratio /= 2; //because render.src.dblh is not reliable
-	if (buf.width != render.src.width || buf.height != render.src.height || buf.ratio != ratio)
+	if (buf.width != full_width || buf.height != full_height || buf.ratio != ratio)
 	{
-		buf.width = (Bit32u)render.src.width;
-		buf.height = (Bit32u)render.src.height;
+		buf.width = full_width;
+		buf.height = full_height;
 		buf.ratio = ratio;
+		buf.border_color = 0xDEADBEEF; // force refresh
 	}
+
+	if (dbp_overscan)
+	{
+		Bit32u border_color = (Bit32u)GFX_GetRGB(vga.dac.rgb[vga.attr.overscan_color].red<<2, vga.dac.rgb[vga.attr.overscan_color].green<<2, vga.dac.rgb[vga.attr.overscan_color].blue<<2);
+		if (border_color != buf.border_color)
+		{
+			buf.border_color = border_color;
+			for (Bit32u* p = (Bit32u*)buf.video, *pEnd = p + full_width*full_height; p != pEnd;) *(p++) = border_color;
+		}
+	}
+
 	return true;
 }
 
@@ -2420,6 +2447,13 @@ static bool check_variables(bool is_startup = false)
 	}
 
 	Variables::DosBoxSet("render", "aspect", retro_get_variable("dosbox_pure_aspect_correction", "false"));
+
+	unsigned char new_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
+	if (new_overscan != dbp_overscan)
+	{
+		for (DBP_Buffer& buf : dbp_buffers) buf.border_color = 0xDEADBEEF; // force refresh
+		dbp_overscan = new_overscan;
+	}
 
 	const char* sblaster_conf = retro_get_variable("dosbox_pure_sblaster_conf", "A220 I7 D1 H5");
 	static const char sb_attribs[] = { 'A', 'I', 'D', 'H' };
