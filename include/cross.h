@@ -33,8 +33,26 @@
 #include <direct.h>
 #include <io.h>
 #define LONGTYPE(a) a##i64
+#if _MSC_VER >= 1900 // Pre-MSVC 2015 compilers don't implement snprintf, vsnprintf in a cross-platform manner
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
+#else
+#if _MSC_VER <= 1310
+#error _vscprintf and _vsnprintf_s not available
+#endif
+#define snprintf c99_snprintf
+#define vsnprintf c99_vsnprintf
+static inline int c99_vsnprintf(char *s, size_t sz, const char *fmt, va_list ap)
+{
+	if (!sz) return _vscprintf(fmt, ap);
+	int count = _vsnprintf_s(s, sz, sz - 1, fmt, ap);
+	return (count > -1 ? count : _vscprintf(fmt, ap));
+}
+static inline int c99_snprintf(char *s, size_t len, const char *fmt, ...)
+{
+	va_list ap; va_start(ap, fmt); int count = c99_vsnprintf(s, len, fmt, ap); va_end(ap); return count;
+}
+#endif
 #else										/* LINUX / GCC */
 #include <dirent.h>
 #include <unistd.h>
