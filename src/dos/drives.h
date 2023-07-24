@@ -705,4 +705,29 @@ private:
 	struct unionDriveImpl* impl;
 };
 
+class patchDrive : public DOS_Drive {
+public:
+	patchDrive(DOS_Drive& under, DOS_File* patchzip);
+	virtual ~patchDrive();
+	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
+	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
+	virtual bool Rename(char * oldname,char * newname);
+	virtual bool FileUnlink(char * name);
+	virtual bool FileExists(const char* name);
+	virtual bool RemoveDir(char * dir);
+	virtual bool MakeDir(char * dir);
+	virtual bool TestDir(char * dir);
+	virtual bool FindFirst(char * dir, DOS_DTA & dta, bool fcb_findfirst=false);
+	virtual bool FindNext(DOS_DTA & dta);
+	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
+	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual Bit8u GetMediaByte(void);
+	virtual bool isRemote(void);
+	virtual bool isRemovable(void);
+	virtual Bits UnMount(void);
+private:
+	struct patchDriveImpl* impl;
+};
+
 #endif

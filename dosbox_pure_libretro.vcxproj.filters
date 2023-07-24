@@ -100,6 +100,9 @@
     <ClCompile Include="src\dos\drive_overlay.cpp">
       <Filter>src\dos</Filter>
     </ClCompile>
+    <ClCompile Include="src\dos\drive_patch.cpp">
+      <Filter>src\dos</Filter>
+    </ClCompile>
     <ClCompile Include="src\dos\drive_union.cpp">
       <Filter>src\dos</Filter>
     </ClCompile>

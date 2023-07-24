@@ -762,6 +762,18 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		}
 		drive = new zipDrive(new rawFile(zip_file_h, false), dbp_legacy_save);
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
+		if (ext[3] == 'Z' || ext[3] == 'z')
+		{
+			// Load .DOSC patch file overlay for .DOSZ
+			if (path_no_fragment.empty()) path_no_fragment.append(path);
+			path_no_fragment.back() = (ext[3] == 'Z' ? 'C' : 'c');
+			FILE* c_file_h = fopen_wrap(path_no_fragment.c_str(), "rb");
+			if (c_file_h)
+			{
+				DOS_Drive* patchdrive = new patchDrive(*drive, new rawFile(c_file_h, false));
+				drive = new unionDrive(*drive, *patchdrive, true, true);
+			}
+		}
 		if (boot && letter == 'C') return drive;
 	}
 	else if (!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC") || !strcasecmp(ext, "TC"))
