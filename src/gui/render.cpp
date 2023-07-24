@@ -806,7 +806,7 @@ void RENDER_Init(Section * sec) {
 
 void DBPSerialize_Render(DBPArchive& ar)
 {
-	Bit8u* GFX_GetPixels();
+	extern Bit8u* GFX_GetPixels();
 	Bit8u* current_pixels = GFX_GetPixels();
 	Bit32u render_offset = (render.scale.outWrite > current_pixels && render.scale.outWrite < current_pixels + render.src.width * 4 * render.src.height ? (render.scale.outWrite - current_pixels) : 0);
 	Bit8u loaded_src[sizeof(render.src)];
