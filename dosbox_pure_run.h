@@ -397,30 +397,59 @@ struct DBP_Run
 	static void ProcessAutoInput()
 	{
 		extern Bitu PIC_Ticks;
-		static Bitu InpTickStart, InpNextTick, InpDelay; static KBD_KEYS InpReleaseKey;
+		static Bitu InpTickStart, InpNextTick; static Bit32u InpDelay, InpReleaseKey;
 		if (autoinput.ptr == autoinput.str.c_str())
-			InpTickStart = PIC_Ticks, InpNextTick = 0, InpDelay = 70, InpReleaseKey = KBD_NONE;
+			InpTickStart = PIC_Ticks, InpNextTick = 0, InpDelay = 70, InpReleaseKey = 0;
 
 		Bitu InpDoneTicks = PIC_Ticks - InpTickStart;
 		while (InpDoneTicks >= InpNextTick)
 		{
-			if (InpReleaseKey != KBD_NONE)
+			if (InpReleaseKey)
 			{
-				KEYBOARD_AddKey(InpReleaseKey, false);
-				InpReleaseKey = KBD_NONE;
+				if (InpReleaseKey & 0x100) { KEYBOARD_AddKey(KBD_rightalt, false); InpReleaseKey &= 0xFF; }
+				if (InpReleaseKey & 0x80) { KEYBOARD_AddKey(KBD_leftshift, false); InpReleaseKey &= 0x7F; }
+				KEYBOARD_AddKey((KBD_KEYS)InpReleaseKey, false);
+				InpReleaseKey = 0;
 				if (*autoinput.ptr) { InpNextTick += InpDelay; continue; }
 			}
 			if (!*autoinput.ptr) { autoinput.ptr = NULL; break; }
 
-			const char *cmd = autoinput.ptr, *cmdEnd = cmd + 1, *cmdNext = cmdEnd, *cmdColon = NULL;
-			if (cmd[0] == '(' && (cmdNext = strchr(cmdEnd, ')')) != NULL)
+			const char *cmd = autoinput.ptr, *cmdNext = cmd + 1, *cmdColon = NULL;
+			bool bShift = false, bAltGr = false;
+			char tmp;
+			Bit32u i = 0, cmdlen = 1;
+
+			if (cmd[0] != '(' || cmd[1] == '(')
+			{
+				if (!(cmd[0] != '(')) cmdNext++; // Treat (( as textinput (
+				KBD_KEYS mappedkey = KBD_NONE;
+				char DBP_DOS_KeyboardLayout_MapChar(char c, bool& bShift, bool& bAltGr);
+				switch ((tmp = DBP_DOS_KeyboardLayout_MapChar(cmd[0], bShift, bAltGr)))
+				{
+					case '\x1B': i = KBD_esc;          break;
+					case '-':    i = KBD_minus;        break;
+					case '=':    i = KBD_equals;       break;
+					case '\b':   i = KBD_backspace;    break;
+					case '\t':   i = KBD_tab;          break;
+					case '[':    i = KBD_leftbracket;  break;
+					case ']':    i = KBD_rightbracket; break;
+					case ';':    i = KBD_semicolon;    break;
+					case '\'':   i = KBD_quote;        break;
+					case '`':    i = KBD_grave;        break;
+					case '\\':   i = KBD_backslash;    break;
+					case ',':    i = KBD_comma;        break;
+					case '.':    i = KBD_period;       break;
+					case '/':    i = KBD_slash;        break;
+					default: cmd = &tmp;
+				}
+			}
+			else if ((cmdNext = strchr(cmdNext, ')')) != NULL)
 			{
 				if ((cmdColon = strchr(++cmd, ':')) != NULL && cmdColon >= cmdNext-1) cmdColon = NULL;
-				cmdEnd = (cmdColon ? cmdColon : cmdNext);
+				cmdlen = (Bit32u)((cmdColon ? cmdColon : cmdNext) - cmd);
 				cmdNext++;
 			}
 
-			int i, cmdlen = (int)(cmdEnd - cmd);
 			static const char* DBP_Commands[KBD_LAST+2] =
 			{
 				"","1","2","3","4","5","6","7","8","9","0","q","w","e","r","t","y","u","i","o","p","a","s","d","f","g","h","j","k","l","z","x","c","v","b","n","m",
@@ -430,9 +459,10 @@ struct DBP_Run
 				"kpdivide","kpmultiply","kpminus","kpplus","kpenter","kpperiod",
 				"wait","delay",
 			};
-			for (i = 0; i != KBD_LAST+2; i++)
-				if (!strncasecmp(DBP_Commands[i], cmd, cmdlen) && DBP_Commands[i][cmdlen] == '\0')
-					break;
+			if (i == 0)
+				for (; i != KBD_LAST+2; i++)
+					if (!strncasecmp(DBP_Commands[i], cmd, cmdlen) && DBP_Commands[i][cmdlen] == '\0')
+						break;
 
 			if (i == KBD_LAST+0 && cmdColon) // wait command
 			{
@@ -440,7 +470,7 @@ struct DBP_Run
 			}
 			else if (i == KBD_LAST+1 && cmdColon) // delay command
 			{
-				InpDelay = atoi(cmdColon+1);
+				InpDelay = (Bit32u)atoi(cmdColon+1);
 			}
 			else if (i < KBD_LAST && cmdColon && (!strncasecmp(cmdColon+1, "down", 4) || strncasecmp(cmdColon+1, "up", 2))) // key command
 			{
@@ -448,8 +478,10 @@ struct DBP_Run
 			}
 			else if (i < KBD_LAST) // key press
 			{
+				if (bShift) KEYBOARD_AddKey(KBD_leftshift, true);
+				if (bAltGr) KEYBOARD_AddKey(KBD_rightalt, true);
 				KEYBOARD_AddKey((KBD_KEYS)i, true);
-				InpReleaseKey = (KBD_KEYS)i;
+				InpReleaseKey = (i | (bShift ? 0x80 : 0) | (bAltGr ? 0x100 : 0));
 				InpNextTick += 70; // fixed press duration
 			}
 			else

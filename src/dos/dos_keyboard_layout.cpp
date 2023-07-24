@@ -89,8 +89,8 @@ public:
 	const char* get_layout_name();
 	const char* main_language_code();
 
-
-private:
+//DBP: For DBP_DOS_KeyboardLayout_MapChar below
+//private:
 	static const Bit8u layout_pages=12;
 	Bit16u current_layout[(MAX_SCAN_CODE+1)*layout_pages];
 	struct {
@@ -1341,4 +1341,22 @@ void DOS_KeyboardLayout_Init(Section* sec) {
 	test = new DOS_KeyboardLayout(sec);
 	sec->AddDestroyFunction(&DOS_KeyboardLayout_ShutDown,true);
 //	MAPPER_AddHandler(switch_keyboard_layout,MK_f2,MMOD1|MMOD2,"sw_layout","Switch Layout");
+}
+
+char DBP_DOS_KeyboardLayout_MapChar(char c, bool& bShift, bool& bAltGr)
+{
+	static const char charToScanCode[56*2+1] = " \x1B" "1234567890-=\b\tqwertyuiop[]  asdfghjkl;'` \\zxcvbnm,./  * !@#$%^&*()_+  QWERTYUIOP{}  ASDFGHJKL:\"~ |ZXCVBNM<>?  ";
+	bShift = bAltGr = false;
+	if (loaded_layout)
+	{
+		for (Bit16u* p = loaded_layout->current_layout, *pEnd = p + 55*keyboard_layout::layout_pages; p != pEnd; p += keyboard_layout::layout_pages)
+		{
+			if ((char)p[0] == c) { } else if ((char)p[1] == c) bShift = true; else if ((char)p[2] == c || (char)p[4] == c || (char)p[6] == c) bAltGr = true; else continue;
+			char mapped = charToScanCode[(p - loaded_layout->current_layout) / keyboard_layout::layout_pages];
+			return (mapped ? mapped : c);
+		}
+	}
+	const char* psc = strchr(charToScanCode, c);
+	if (psc > charToScanCode+56) { bShift = true; c = psc[-56]; }
+	return c;
 }
