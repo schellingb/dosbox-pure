@@ -2546,8 +2546,189 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_au
 	}
 }
 
+static void init_dosbox_load_doszyml(const std::string& yml, Section** ref_autoexec)
+{
+	struct Local
+	{
+		const char *Key, *End, *Next, *KeyX, *Val, *ValX;
+		int cpu_cycles = 0, cpu_hz = 0, cpu_year = 0;
+		bool Parse(const char *yml_key, const char* db_section, const char* db_key, ...)
+		{
+			if (yml_key && (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key])) return false;
+			va_list ap; va_start(ap, db_key); std::string val;
+			for (;;)
+			{
+				const char* mapFrom = va_arg(ap, const char*);
+				if (!*mapFrom) { va_end(ap); return false; }
+				if (*mapFrom == '~')
+				{
+					val.append(Val, (size_t)(ValX - Val));
+				}
+				else if (*mapFrom == '/')
+				{
+					char buf[32];
+					sprintf(buf, "%d", (atoi(Val) / 1024));
+					val = buf;
+				}
+				else
+				{
+					const char* mapTo = va_arg(ap, const char*);
+					if (strncmp(mapFrom, Val, (size_t)(ValX - Val))) continue;
+					val.append(mapTo);
+				}
+				Property* prop = control->GetSection(db_section)->GetProp(db_key);
+				bool res = (prop->SetValue(val) && !strcasecmp(prop->GetValue().ToString().c_str(), val.c_str()));
+				if (res) prop->OnChangedByConfigProgram();
+				va_end(ap);
+				return res;
+			}
+		}
+		bool ParseCPU(const char *yml_key)
+		{
+			if (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key]) return false;
+			switch (yml_key[4])
+			{
+				case 'c': // cpu_cycles
+					return ((cpu_cycles = atoi(Val)) >= 100);
+				case 'h': // cpu_hz
+					return ((cpu_hz = atoi(Val)) >= 500);
+				case 'y': // cpu_year
+					return ((cpu_year = atoi(Val)) >= 1970);
+			}
+			return false;
+		}
+		bool ParseRun(const char *yml_key, Section* autoexec)
+		{
+			if (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key]) return false;
+			if (dbp_biosreboot) return true; // ignore run keys on bios reboot
+			DBP_Run::ResetAutoboot();
+			switch (yml_key[4])
+			{
+				case 'i': // run_input
+					DBP_Run::autoinput.ptr = NULL;
+					DBP_Run::autoinput.str.clear();
+					DBP_Run::autoinput.str.append(Val, (size_t)(ValX - Val));
+					break;
+				case 'p': // run_path
+					DBP_Run::startup.str = std::string(Val, (size_t)(ValX - Val));
+					if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTIMG) goto exec2bootimg;
+					DBP_Run::startup.mode = DBP_Run::RUN_EXEC;
+					break;
+				case 'b': // run_boot
+				case 'm': // run_mount
+					{
+						int imgidx = -1;
+						for (DBP_Image& i : dbp_images)
+							if (i.path.size() == 4+(ValX - Val) && i.path[0] == '$' && !strncasecmp(&i.path[4], Val, (ValX - Val)))
+								{ imgidx = (int)(&i - &dbp_images[0]); break; }
+						if (imgidx == -1) return false;
+						dbp_images[imgidx].remount = true;
+					}
+					if (yml_key[4] == 'm') break; // run_mount
+					if (DBP_Run::startup.mode == DBP_Run::RUN_EXEC)
+					{
+						exec2bootimg:
+						((static_cast<Section_line*>(autoexec)->data += '@') += DBP_Run::startup.str) += '\n';
+					}
+					DBP_Run::startup.mode = DBP_Run::RUN_BOOTIMG;
+					DBP_Run::startup.info = 0;
+					break;
+			}
+			return true;
+		}
+	} l;
+	for (l.Key = yml.c_str(), l.End = l.Key+yml.size(); l.Key < l.End; l.Key = l.Next + 1)
+	{
+		for (l.Next = l.Key; *l.Next != '\n' && *l.Next != '\r' && *l.Next; l.Next++) {}
+		if (l.Next == l.Key || *l.Key == '#') continue;
+		for (l.KeyX = l.Key; *l.KeyX && *l.KeyX != ':' && *l.KeyX > ' '; l.KeyX++) {}
+		if (*l.KeyX != ':' || l.KeyX == l.Key || l.KeyX[1] != ' ' ) goto syntaxerror;
+		for (l.Val = l.KeyX + 2; *l.Val == ' '; l.Val++) {}
+		for (l.ValX = l.Val; *l.ValX && *l.ValX != '\r' && *l.ValX != '\n' && (*l.ValX != '#' || l.ValX[-1] != ' '); l.ValX++) {}
+		while (l.ValX[-1] == ' ') l.ValX--;
+		if (l.ValX <= l.Val) goto syntaxerror;
+		switch (*l.Key)
+		{
+			case 'c':
+				if (0
+						||l.Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
+						||l.ParseCPU("cpu_cycles")||l.ParseCPU("cpu_hz")||l.ParseCPU("cpu_year")
+					) break; else goto syntaxerror;
+			case 'm':
+				if (0
+						||l.Parse("mem_size", "dosbox", "memsize", "/")
+						||l.Parse("mem_xms", "dos", "xms" , "true","true" , "false","false" , "")
+						||l.Parse("mem_ems", "dos", "ems" , "true","true" , "false","false" , "")
+						||l.Parse("mem_umb", "dos", "umb" , "true","true" , "false","false" , "")
+					) break; else goto syntaxerror;
+			case 'v':
+				if (0
+						||l.Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "generic_ega","ega" , "generic_vga","vgaonly" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
+						||l.Parse("video_memory", "dosbox", "vmemsize", "/")
+						||l.Parse("video_voodoo", "pci", "voodoo" , "true","12mb" , "false","false" , "")
+					) break; else goto syntaxerror;
+			case 's':
+				if (0
+						||l.Parse("sound_card", "sblaster", "sbtype" , "sb16","sb16" , "sb1","sb1" , "sb2","sb2" , "sbpro1","sbpro1" , "sbpro2","sbpro2" , "gameblaster","gb" , "none","none" , "")
+						||l.Parse("sound_port", "sblaster", "sbbase" , "~")
+						||l.Parse("sound_irq", "sblaster", "irq", "~")
+						||l.Parse("sound_dma", "sblaster", "dma", "~")
+						||l.Parse("sound_hdma", "sblaster", "hdma", "~")
+						||l.Parse("sound_mpu401", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
+						||l.Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
+					) break; else goto syntaxerror;
+			case 'r':
+				if (0
+					||l.ParseRun("run_path", *ref_autoexec)
+					||l.ParseRun("run_boot", *ref_autoexec)
+					||l.ParseRun("run_mount", *ref_autoexec)
+					||l.ParseRun("run_input", *ref_autoexec)
+				) break; else goto syntaxerror;
+		}
+		continue;
+		syntaxerror:
+		retro_notify(0, RETRO_LOG_ERROR, "Error in DOSZ.YML: %.*s", (int)(l.Next-l.Key), l.Key);
+		continue;
+	}
+	if (l.cpu_cycles || l.cpu_year || l.cpu_hz)
+	{
+		if (l.cpu_cycles) {}
+		else if (l.cpu_year)
+		{
+			l.cpu_cycles = (int)(
+				(l.cpu_year < 1981 ? 500 : // Very early 8086/8088 CPU
+				(l.cpu_year > 1999 ? (500000 + ((l.cpu_year - 2000) * 200000)) : // Pentium III, 600 MHz and later
+				Cycles1981to1999[l.cpu_year - 1981]))); // Matching speed for year
+		}
+		else
+		{
+			float cycle_per_hz = .3f; // default with auto (just a bad guess)
+			switch (*(const char*)control->GetSection("cpu")->GetProp("cputype")->GetValue())
+			{
+				case 'p': cycle_per_hz = .55700f; break; // Pentium (586):  Mhz * 557.00
+				case '4': cycle_per_hz = .38000f; break; // 486:            Mhz * 380.00
+				case '3': cycle_per_hz = .18800f; break; // 386:            Mhz * 188.00
+				case '2': cycle_per_hz = .09400f; break; // AT (286):       Mhz *  94.00
+				case '8': cycle_per_hz = .05828f; break; // XT (8088/8086): Mhz *  58.28
+			}
+			l.cpu_cycles = (int)(l.cpu_hz * cycle_per_hz + .4999f);
+		}
+		char buf[32];
+		l.ValX = (l.Val = buf) + sprintf(buf, "%d", (int)l.cpu_cycles);
+		if (l.Parse(NULL, "cpu", "cycles", "~") && l.cpu_cycles >= 8192) // Switch to dynamic core for newer real mode games 
+			{ l.ValX = (l.Val = "dynamic") + 7; l.Parse(NULL, "cpu", "core", "~"); }
+	}
+}
+
 static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(const std::string&, Section**) = NULL, const std::string* cfg = NULL)
 {
+	if (loadcfg)
+	{
+		DBP_ASSERT(dbp_state == DBPSTATE_BOOT && control != NULL && !first_shell);
+		delete control;
+		DBPArchiveZeroer ar;
+		DBPSerialize_All(ar);
+	}
 	if (dbp_state != DBPSTATE_BOOT)
 	{
 		DBP_Shutdown();
@@ -2713,6 +2894,13 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		DBP_PadMapping::Load();
 	}
 
+	if (!loadcfg && Drives['C'-'A'] && Drives['C'-'A']->FileExists("$C:\\DOSZ.YML"+4))
+	{
+		std::string ymlcontent;
+		if (FindAndReadDosFile("$C:\\DOSZ.YML", ymlcontent))
+			return init_dosbox(firsttime, forcemenu, init_dosbox_load_doszyml, &ymlcontent);
+	}
+
 	const bool force_puremenu = (dbp_biosreboot || forcemenu);
 	if (!loadcfg && dbp_conf_loading != 'f' && !force_puremenu)
 	{
@@ -2727,10 +2915,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
 		}
 		if (confpath && FindAndReadDosFile(confpath, confcontent))
-		{
-			delete control;
 			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
-		}
 	}
 
 	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
