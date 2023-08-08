@@ -1,3 +1,38 @@
+// Customization when compiling for DOSBox Pure
+#define STB_VORBIS_NO_PUSHDATA_API
+#define STB_VORBIS_NO_STDIO
+#define STB_VORBIS_TRACKFILE
+
+// Avoid name conflicts when statically linking with RetroArch
+#define stb_vorbis_get_info                       dbpstb_vorbis_get_info
+#define stb_vorbis_get_comment                    dbpstb_vorbis_get_comment
+#define stb_vorbis_get_error                      dbpstb_vorbis_get_error
+#define stb_vorbis_close                          dbpstb_vorbis_close
+#define stb_vorbis_get_sample_offset              dbpstb_vorbis_get_sample_offset
+#define stb_vorbis_get_file_offset                dbpstb_vorbis_get_file_offset
+#define stb_vorbis_open_pushdata                  dbpstb_vorbis_open_pushdata
+#define stb_vorbis_decode_frame_pushdata          dbpstb_vorbis_decode_frame_pushdata
+#define stb_vorbis_flush_pushdata                 dbpstb_vorbis_flush_pushdata
+#define stb_vorbis_decode_filename                dbpstb_vorbis_decode_filename
+#define stb_vorbis_decode_memory                  dbpstb_vorbis_decode_memory
+#define stb_vorbis_open_trackfile                 dbpstb_vorbis_open_trackfile
+#define stb_vorbis_open_memory                    dbpstb_vorbis_open_memory
+#define stb_vorbis_open_filename                  dbpstb_vorbis_open_filename
+#define stb_vorbis_open_file                      dbpstb_vorbis_open_file
+#define stb_vorbis_open_file_section              dbpstb_vorbis_open_file_section
+#define stb_vorbis_seek_frame                     dbpstb_vorbis_seek_frame
+#define stb_vorbis_seek                           dbpstb_vorbis_seek
+#define stb_vorbis_seek_start                     dbpstb_vorbis_seek_start
+#define stb_vorbis_stream_length_in_samples       dbpstb_vorbis_stream_length_in_samples
+#define stb_vorbis_stream_length_in_seconds       dbpstb_vorbis_stream_length_in_seconds
+#define stb_vorbis_get_frame_float                dbpstb_vorbis_get_frame_float
+#define stb_vorbis_get_frame_short_interleaved    dbpstb_vorbis_get_frame_short_interleaved
+#define stb_vorbis_get_frame_short                dbpstb_vorbis_get_frame_short
+#define stb_vorbis_get_samples_float_interleaved  dbpstb_vorbis_get_samples_float_interleaved
+#define stb_vorbis_get_samples_float              dbpstb_vorbis_get_samples_float
+#define stb_vorbis_get_samples_short_interleaved  dbpstb_vorbis_get_samples_short_interleaved
+#define stb_vorbis_get_samples_short              dbpstb_vorbis_get_samples_short
+
 // Ogg Vorbis audio decoder - v1.22 - public domain
 // http://nothings.org/stb_vorbis/
 //
@@ -274,12 +309,11 @@ STB_VORBIS_DEF int stb_vorbis_decode_memory(const unsigned char *mem, int len, i
 
 #ifdef STB_VORBIS_TRACKFILE
 STB_VORBIS_DEF stb_vorbis * stb_vorbis_open_trackfile(void *trk, bool (*trkread)(void*,Bit8u*,int), bool (*trkseek)(void*,int,int), Bit32u (*trktell)(void*), unsigned int stream_len);
-#else
+#endif
 STB_VORBIS_DEF stb_vorbis * stb_vorbis_open_memory(const unsigned char *data, int len,
                                   int *error, const stb_vorbis_alloc *alloc_buffer);
 // create an ogg vorbis decoder from an ogg vorbis stream in memory (note
 // this must be the entire stream!). on failure, returns NULL and sets *error
-#endif
 
 #ifndef STB_VORBIS_NO_STDIO
 STB_VORBIS_DEF stb_vorbis * stb_vorbis_open_filename(const char *filename,
@@ -813,13 +847,15 @@ struct stb_vorbis
    uint32 f_start;
    int close_on_free;
 #endif
+
 #ifdef STB_VORBIS_TRACKFILE
    void *trk;
    bool (*trkread)(void *trk, Bit8u *buffer, int count);
    bool (*trkseek)(void *trk, int pos, int dos_seek_mode);
    Bit32u (*trktell)(void *trk);
+   const uint8 *trkmem;
+   const uint8 *trkmemstart;
 #else
-
    uint8 *stream;
    uint8 *stream_start;
    uint8 *stream_end;
@@ -5167,6 +5203,55 @@ STB_VORBIS_DEF stb_vorbis * stb_vorbis_open_trackfile(void *trk, bool (*trkread)
       f = vorbis_alloc(&p);
       if (f) {
          *f = p;
+         vorbis_pump_first_frame(f);
+         return f;
+      }
+   }
+   vorbis_deinit(&p);
+   return NULL;
+}
+
+static bool memory_trkread(stb_vorbis* trk, Bit8u *buffer, int count)
+{
+   int rem = (int)(trk->trkmemstart + trk->stream_len - trk->trkmem);
+   int get = (count > rem ? rem : count);
+   memcpy(buffer, trk->trkmem, (size_t)get);
+   trk->trkmem += get;
+   return get == count;
+}
+static bool memory_trkseek(stb_vorbis* trk, int pos, int dos_seek_mode)
+{
+   Bit32s len = (Bit32s)trk->stream_len, seekto;
+   switch (dos_seek_mode)
+   {
+      case DOS_SEEK_SET: seekto = (Bit32s)pos; break;
+      case DOS_SEEK_CUR: seekto = (Bit32s)(trk->trkmem + pos - trk->trkmemstart); break;
+      case DOS_SEEK_END: seekto = (Bit32s)(len + pos); break;
+      default: return false;
+   }
+   trk->trkmem = trk->trkmemstart + (seekto > 0 ? (seekto < len ? seekto : len) : 0);
+   return true;
+}
+static Bit32u memory_trktell(stb_vorbis* trk)
+{
+   return (Bit32u)(trk->trkmem - trk->trkmemstart);
+}
+STB_VORBIS_DEF stb_vorbis * stb_vorbis_open_memory(const unsigned char *data, int len, int *error, const stb_vorbis_alloc *alloc)
+{
+   stb_vorbis *f, p;
+   vorbis_init(&p, NULL);
+   p.trk = &p;
+   p.trkmem = data;
+   p.trkmemstart = data;
+   p.trkread = (bool(*)(void*, Bit8u*, int))memory_trkread;
+   p.trkseek = (bool(*)(void*, int, int))memory_trkseek;
+   p.trktell = (Bit32u(*)(void*))memory_trktell;
+   p.stream_len = (uint32)len;
+   if (start_decoder(&p)) {
+      f = vorbis_alloc(&p);
+      if (f) {
+         *f = p;
+         f->trk = f;
          vorbis_pump_first_frame(f);
          return f;
       }

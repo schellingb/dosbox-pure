@@ -117,10 +117,6 @@ int CDROM_Interface_Image::BinaryFile::getLength()
 
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 
-#define STB_VORBIS_NO_PUSHDATA_API
-#define STB_VORBIS_NO_STDIO
-#define STB_VORBIS_TRACKFILE
-#define STB_VORBIS_STATIC // Avoid issues when statically linking with RetroArch
 #include "stb_vorbis.inl"
 
 CDROM_Interface_Image::AudioFile::AudioFile(const char *filename, bool &error, const char *relative_to) : TrackFile(filename, error, relative_to), last_seek(0), vorb(NULL)

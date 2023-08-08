@@ -2115,11 +2115,11 @@ static void set_variables(bool force_midi_scan = false)
 				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
 					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
 				else if (entry_len < 4 || entry_name[entry_len - 4] != '.') { } // all files we access have a 3 letter extentions
-				else if (!strcasecmp(entry_name + entry_len - 3, "SF2") || (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
+				else if (!strcasecmp(entry_name + entry_len - 3, "SF2") || !strcasecmp(entry_name + entry_len - 3, "SF3") || (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
 				{
 					dynstr.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-					dynstr.push_back(entry_name[entry_len-1] == '2' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
-					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] == '2' ? 4 : 12));
+					dynstr.push_back(entry_name[entry_len-1] <= '3' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] <= '3' ? 4 : 12));
 				}
 				else if (!strcasecmp(entry_name + entry_len - 3, "IMG") || !strcasecmp(entry_name + entry_len - 3, "IMA") || !strcasecmp(entry_name + entry_len - 3, "VHD"))
 				{
@@ -2171,10 +2171,10 @@ static void set_variables(bool force_midi_scan = false)
 		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
 		size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 : dynstr.size());
 		for (size_t f = 0; f != numfiles; f += 2)
-			if (dynstr[f].back() == '2')
+			if (dynstr[f].back() <= '3')
 				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
 		for (size_t f = 0; f != numfiles; f += 2)
-			if (dynstr[f].back() != '2')
+			if (dynstr[f].back() > '3')
 				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
 		def.values[i++] = { "disabled", "Disabled" };
 		def.values[i++] = { "frontend", "Frontend MIDI driver" };

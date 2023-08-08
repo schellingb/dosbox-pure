@@ -18,7 +18,11 @@
 
 #include "mixer.h"
 
+#define STB_VORBIS_HEADER_ONLY
+#include "../dos/stb_vorbis.inl"
+
 #define TSF_IMPLEMENTATION
+#define TSF_STATIC
 #include "tsf.h"
 
 static void MIDI_TSF_CallBack(Bitu len);
@@ -37,7 +41,7 @@ struct MidiHandler_tsf : public MidiHandler
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len <= 4 || strcasecmp(conf + conf_len - 4, ".sf2")) return false;
+		if (conf_len <= 4 || (strcasecmp(conf + conf_len - 4, ".sf2") && strcasecmp(conf + conf_len - 4, ".sf3"))) return false;
 
 		DBP_ASSERT(!f);
 		f = fopen_wrap(conf, "rb");
