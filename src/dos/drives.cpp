@@ -316,33 +316,32 @@ void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH])
 	}
 }
 
-bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
-	Bit8u i, drive = DOS_DRIVES;
-	for (i = 0; i < DOS_DRIVES; i++) {
+Bit8u DriveGetIndex(DOS_Drive* drv)
+{
+	for (Bit8u i = 0; i < DOS_DRIVES; i++) {
 		if (!Drives[i]) continue;
-		if (Drives[i] == drv) {
-			drive = i;
-			break;
-		}
+		if (Drives[i] == drv) return i;
 		unionDrive* ud = dynamic_cast<unionDrive*>(Drives[i]);
-		if (ud && ud->IsShadowedDrive(drv)) {
-			drive = i;
-			break;
-		}
+		if (ud && ud->IsShadowedDrive(drv)) return i;
 	}
+	return DOS_DRIVES;
+}
+
+bool DriveForceCloseFile(DOS_Drive* drv, const char* name)
+{
+	Bit8u drive = DriveGetIndex(drv);
+	if (drive == DOS_DRIVES) return false;
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	bool found_file = false;
-	if (drive != DOS_DRIVES) {
-		for (i = 0; i < DOS_FILES; i++) {
-			DOS_File *f = Files[i];
-			if (!f || f->GetDrive() != drive || !f->name) continue;
-			const char* fname = f->name;
-			DOSPATH_REMOVE_ENDINGDOTS(fname);
-			if (strcasecmp(name, fname)) continue;
-			DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
-			while (f->refCtr > 0) { if (f->IsOpen()) f->Close(); f->RemoveRef(); }
-			found_file = true;
-		}
+	for (Bit8u i = 0; i < DOS_FILES; i++) {
+		DOS_File *f = Files[i];
+		if (!f || f->GetDrive() != drive || !f->name) continue;
+		const char* fname = f->name;
+		DOSPATH_REMOVE_ENDINGDOTS(fname);
+		if (strcasecmp(name, fname)) continue;
+		DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
+		while (f->refCtr > 0) { if (f->IsOpen()) f->Close(); f->RemoveRef(); }
+		found_file = true;
 	}
 	return found_file;
 }

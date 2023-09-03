@@ -441,6 +441,154 @@ struct miniz
 	}
 };
 
+struct sdefl
+{
+	// BASED ON SMALL DEFLATE
+	// Small Deflate (public domain)
+	// By Micha Mettke - https://gist.github.com/vurtun/760a6a2a198b706a7b1a6197aa5ac747
+
+	enum { WIN_SIZ = (1 << 15), HASH_BITS = 19, HASH_SIZ = (1 << HASH_BITS) };
+	int bits, cnt, tbl[HASH_SIZ], prv[WIN_SIZ];
+
+	Bit32u Run(unsigned char *out, const unsigned char *in, int in_len, int lvl = 9)
+	{
+		enum { WIN_MSK = WIN_SIZ-1, MIN_MATCH = 4, MAX_MATCH = 258, HASH_MSK = HASH_SIZ-1, NIL = -1, LVL_MIN = 0, LVL_DEF = 5, LVL_MAX = 8 };
+		#define R2(n) n, n + 128, n + 64, n + 192
+		#define R4(n) R2(n), R2(n + 32), R2(n + 16), R2(n + 48)
+		#define R6(n) R4(n), R4(n +  8), R4(n +  4), R4(n + 12)
+		static const unsigned char sdefl_mirror[256] = { R6(0), R6(2), R6(1), R6(3) };
+		#undef R6
+		#undef R4
+		#undef R2
+
+		struct defl
+		{
+			static unsigned char* put(unsigned char *dst, struct sdefl *s, int code, int bitcnt)
+			{
+				s->bits |= (code << s->cnt);
+				s->cnt += bitcnt;
+				while (s->cnt >= 8) { *dst++ = (unsigned char)(s->bits & 0xFF); s->bits >>= 8; s->cnt -= 8; }
+				return dst;
+			}
+			static int ilog2(int n)
+			{
+				#define it(n) n,n,n,n, n,n,n,n, n,n,n,n ,n,n,n,n
+				static const signed char tbl[256] = {-1,0,1,1,2,2,2,2,3,3,3,3,3,3,3,3,it(4),it(5),it(5),it(6),it(6),it(6),it(6),it(7),it(7),it(7),it(7),it(7),it(7),it(7),it(7)};
+				int tt, t;
+				return (((tt = (n >> 16))) ? ((t = (tt >> 8)) ? 24+tbl[t]: 16+tbl[tt]) : ((t = (n >> 8)) ? 8+tbl[t]: tbl[n]));
+				#undef it
+			}
+			static int npow2(int n)
+			{
+				n--; n |= n >> 1; n |= n >> 2; n |= n >> 4; n |= n >> 8; n |= n >> 16; return (int)++n;
+			}
+			static unsigned uload32(const void *p)
+			{
+				unsigned int n = 0;
+				memcpy(&n, p, sizeof(n));
+				return n;
+			}
+			static unsigned hash32(const void *p)
+			{
+				unsigned n = uload32(p);
+				return (n*0x9E377989)>>(32-HASH_BITS);
+			}
+		};
+
+		int p = 0, max_chain = (lvl < 8) ? (1<<(lvl+1)): (1<<13);
+		unsigned char *q = out;
+
+		bits = cnt = 0;
+		for (p = 0; p < HASH_SIZ; ++p) tbl[p] = NIL;
+
+		p = 0;
+		q = defl::put(q, this, 0x01, 1); /* block */
+		q = defl::put(q, this, 0x01, 2); /* static huffman */
+		while (p < in_len){
+			int run, best_len = 0, dist = 0;
+			int max_match = ((in_len-p)>MAX_MATCH) ? MAX_MATCH:(in_len-p);
+			if (max_match > MIN_MATCH){
+				int limit = ((p-WIN_SIZ)<NIL)?NIL:(p-WIN_SIZ);
+				int chain_len = max_chain;
+				int i = tbl[defl::hash32(&in[p])];
+				while (i > limit) {
+					if (in[i+best_len] == in[p+best_len] && (defl::uload32(&in[i]) == defl::uload32(&in[p]))){
+						int n = MIN_MATCH;
+						while (n < max_match && in[i+n] == in[p+n]) n++;
+						if (n > best_len) {
+							best_len = n;
+							dist = p - i;
+							if (n == max_match) break;
+						}
+					}
+					if (!(--chain_len)) break;
+					i = prv[i&WIN_MSK];
+				}
+			}
+			if (lvl >= 5 && best_len >= MIN_MATCH && best_len < max_match){
+				const int x = p + 1;
+				int tar_len = best_len + 1;
+				int limit = ((x-WIN_SIZ)<NIL)?NIL:(x-WIN_SIZ);
+				int chain_len = max_chain;
+				int i = tbl[defl::hash32(&in[p])];
+				while (i > limit) {
+					if (in[i+best_len] == in[x+best_len] && (defl::uload32(&in[i]) == defl::uload32(&in[x]))){
+						int n = MIN_MATCH;
+						while (n < tar_len && in[i+n] == in[x+n]) n++;
+						if (n == tar_len) {
+							best_len = 0;
+							break;
+						}
+					}
+					if (!(--chain_len)) break;
+					i = prv[i&WIN_MSK];
+				}
+			}
+			if (best_len >= MIN_MATCH) {
+				static const short lxmin[] = {0,11,19,35,67,131};
+				static const short dxmax[] = {0,6,12,24,48,96,192,384,768,1536,3072,6144,12288,24576};
+				static const short lmin[] = {11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227};
+				static const short dmin[] = {1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577};
+
+				/* length encoding */
+				int lc = best_len;
+				int lx = defl::ilog2(best_len - 3) - 2;
+				if (!(lx = (lx < 0) ? 0: lx)) lc += 254;
+				else if (best_len >= 258) lx = 0, lc = 285;
+				else lc = ((lx-1) << 2) + 265 + ((best_len - lxmin[lx]) >> lx);
+
+				if (lc <= 279) q = defl::put(q, this, sdefl_mirror[(lc - 256) << 1], 7);
+				else q = defl::put(q, this, sdefl_mirror[0xc0 - 280 + lc], 8);
+				if (lx) q = defl::put(q, this, best_len - lmin[lc - 265], lx);
+
+				/* distance encoding */
+				int dc = dist - 1;
+				int dx = defl::ilog2(defl::npow2(dist) >> 2);
+				if ((dx = (dx < 0) ? 0: dx))
+					dc = ((dx + 1) << 1) + (dist > dxmax[dx]);
+				q = defl::put(q, this, sdefl_mirror[dc << 3], 5);
+				if (dx) q = defl::put(q, this, dist - dmin[dc], dx);
+				run = best_len;
+			} else {
+				int c = in[p];
+				if (c <= 143) q = defl::put(q, this, sdefl_mirror[0x30+c], 8);
+				else q = defl::put(q, this, 1 + 2 * sdefl_mirror[0x90 - 144 + c], 9);
+				run = 1;
+			}
+			while (run-- != 0) {
+				unsigned h = defl::hash32(&in[p]);
+				prv[p&WIN_MSK] = tbl[h];
+				tbl[h] = p++;
+			}
+		}
+		/* zlib partial flush */
+		q = defl::put(q, this, 0, 7);
+		q = defl::put(q, this, 2, 10);
+		q = defl::put(q, this, 2, 3);
+		return (Bit32u)(q - out);
+	}
+};
+
 struct oz_unshrink
 {
 	// BASED ON OZUNSHRINK
@@ -1133,10 +1281,10 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 	Bit32u cursor_block;
 	SeekCursor* cursors;
 
-	//Zip_DeflateMemoryUnpacker test;
+	enum { SEEK_CURSOR_MAX_DEFL = 128 + (sizeof(SeekCursor) + 9) / 10 * 11, SEEK_CACHE_CURSOR_STEPS = 20 };
+	struct SeekCache { zipDrive* drv; std::string path; Bit32u cache_count; } * seek_cache;
 
-	Zip_DeflateUnpacker(Zip_Archive& _archive, const Zip_File& f) : archive(_archive)
-		//, test(archive, f)
+	Zip_DeflateUnpacker(Zip_Archive& _archive, const Zip_File& f, zipDrive* drv, const char* path) : archive(_archive), seek_cache(NULL)
 	{
 		//printf("[%s] OPENED FILE!\n", f.name);
 		DBP_ASSERT(f.ofs_past_header);
@@ -1149,20 +1297,53 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 		cursors = (SeekCursor*)calloc(cursor_count, sizeof(SeekCursor));
 		Reset(f);
 
-		//if (f.uncomp_size > 30*1024*1024)
-		//{
-		//	std::vector<Bit8u> mem_data;
-		//	mem_data.resize(f.comp_size);
-		//	archive.Read(f.data_ofs, &mem_data[0], f.comp_size);
-		//	FILE* w = fopen("S:\\inflated30.bin", "wb");
-		//	fwrite(&mem_data[0], mem_data.size(), 1, w);
-		//	fclose(w);
-		//}
+		// Read seek cache file for larger files
+		Bit8u drive_idx;
+		if (cursor_count > 50 && (drive_idx = DriveGetIndex(drv)) != DOS_DRIVES)
+		{
+			seek_cache = new SeekCache;
+			seek_cache->drv = drv;
+			seek_cache->path = path;
+			seek_cache->cache_count = 0;
+			std::string::size_type separator = seek_cache->path.rfind('.');
+			int extlen = (separator == std::string::npos ? 9 : (int)(seek_cache->path.length() - separator));
+			if (extlen <= 4) seek_cache->path.resize(seek_cache->path.length() - extlen);
+			seek_cache->path.append(".SKC"); // seek cache extension
+
+			DOS_File *df;
+			if (Drives[drive_idx]->FileOpen(&df, (char*)seek_cache->path.c_str(), OPEN_READ))
+			{
+				DBP_STATIC_ASSERT(sizeof(SeekCursor) < 0xFFFF); // for DOS_File max read/write length
+				df->AddRef();
+				Bit8u* compbuf = new Bit8u[sizeof(SeekCursor)];
+				Bit16u hdrin[4], hdrtest[4] = { (Bit16u)0x5344, (Bit16u)sizeof(SeekCursor), (Bit16u)(f.comp_size>>16), (Bit16u)f.comp_size }, sz;
+				bool valid = (df->Read((Bit8u*)hdrin, &(sz = (Bit16u)sizeof(hdrin))) && !memcmp(hdrin, hdrtest, sizeof(hdrin)));
+				for (Bit16u idx_complen[2]; valid; seek_cache->cache_count++)
+				{
+					if (!df->Read((Bit8u*)idx_complen, &(sz = sizeof(idx_complen))) || sz != sizeof(idx_complen) || idx_complen[0] >= cursor_count || idx_complen[1] >= sizeof(SeekCursor)) break;
+					if (idx_complen[1])
+					{
+						if (!df->Read(compbuf, &(sz = idx_complen[1])) || sz != idx_complen[1]) valid = false;
+						else zipDrive::Uncompress(compbuf, idx_complen[1], (Bit8u*)&cursors[idx_complen[0]], sizeof(SeekCursor));
+					}
+					else if (!df->Read((Bit8u*)&cursors[idx_complen[0]], &(sz = sizeof(SeekCursor))) || sz != sizeof(SeekCursor)) valid = false;
+				}
+				df->Close();
+				delete df;
+				delete[] compbuf;
+				if (!valid)
+				{
+					Drives[drive_idx]->FileUnlink((char*)seek_cache->path.c_str());
+					seek_cache->cache_count = 0;
+				}
+			}
+		}
 	}
 
 	~Zip_DeflateUnpacker()
 	{
 		free(cursors);
+		if (seek_cache) delete seek_cache;
 	}
 
 	void Reset(const Zip_File& f)
@@ -1214,7 +1395,6 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 			if (out_buf_ofs > want_from)
 			{
 				DBP_ASSERT(out_buf_ofs - want_from <= WRITE_BLOCK);
-				//DBP_ASSERT(!memcmp(&test.mem_data[0] + want_from, write_buf + (want_from & (WRITE_BLOCK-1)), out_buf_ofs - want_from));
 				Bit32u have_to = (out_buf_ofs > want_to ? want_to : out_buf_ofs);
 				Bit32u have_size = have_to - want_from;
 				memcpy(p_res, write_buf + (want_from & (WRITE_BLOCK-1)), have_size);
@@ -1263,6 +1443,44 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 					cursors[idx].m_num_extra               = inflator.m_num_extra;
 					cursors[idx].m_dist_from_out_buf_start = inflator.m_dist_from_out_buf_start;
 					memcpy(cursors[idx].write_buf, write_buf, sizeof(write_buf));
+
+					// Write a seek cache next to the compressed file for larger files
+					if (seek_cache && idx > 50 && (idx % SEEK_CACHE_CURSOR_STEPS) == 0)
+					{
+						Bit32u cursor_count = (f.uncomp_size + (cursor_block - 1)) / cursor_block, cursor_got = 0;
+						for (Bit32u ii = 0; ii < cursor_count; ii += SEEK_CACHE_CURSOR_STEPS)
+							if (cursors[ii].cursor_out)
+								cursor_got++;
+						//printf("[%s] CURSORS FOR SEEK CACHE: %d / %d\n", f.name, cursor_got, (cursor_count+(SEEK_CACHE_CURSOR_STEPS-1))/SEEK_CACHE_CURSOR_STEPS);
+						if (cursor_got > cursor_count / (SEEK_CACHE_CURSOR_STEPS*2) && cursor_got > seek_cache->cache_count && (cursor_got >= seek_cache->cache_count + 5 || cursor_got == (cursor_count+(SEEK_CACHE_CURSOR_STEPS-1))/SEEK_CACHE_CURSOR_STEPS) && cursor_count <= 0xFFFF)
+						{
+							DOS_File *df;
+							Bit8u drive_idx = DriveGetIndex(seek_cache->drv);
+							if (drive_idx != DOS_DRIVES && Drives[drive_idx]->FileCreate(&df, (char*)seek_cache->path.c_str(), DOS_ATTR_ARCHIVE))
+							{
+								df->AddRef();
+								sdefl* compressor = new sdefl;
+								Bit8u* compbuf = new Bit8u[SEEK_CURSOR_MAX_DEFL];
+								Bit16u hdr[4] = { (Bit16u)0x5344, (Bit16u)sizeof(SeekCursor), (Bit16u)(f.comp_size>>16), (Bit16u)f.comp_size }, idx_complen[2], sz;
+								df->Write((Bit8u*)hdr, &(sz = (Bit16u)sizeof(hdr)));
+								for (idx_complen[0] = 0; idx_complen[0] < cursor_count; idx_complen[0] += SEEK_CACHE_CURSOR_STEPS)
+								{
+									if (!cursors[idx_complen[0]].cursor_out) continue;
+									Bit32u complen = compressor->Run(compbuf, (const unsigned char*)&cursors[idx_complen[0]], sizeof(SeekCursor));
+									DBP_ASSERT(complen < SEEK_CURSOR_MAX_DEFL);
+									idx_complen[1] = (complen < (sizeof(SeekCursor)-10) ? (Bit16u)complen : (Bit16u)0); // store compressed only when beneficial
+									df->Write((Bit8u*)idx_complen, &(sz = (Bit16u)sizeof(idx_complen)));
+									if (idx_complen[1]) df->Write((Bit8u*)compbuf, &idx_complen[1]);
+									else df->Write((Bit8u*)&cursors[idx_complen[0]], &(sz = (Bit16u)sizeof(SeekCursor)));
+								}
+								df->Close();
+								delete df;
+								delete[] compbuf;
+								delete compressor;
+							}
+							seek_cache->cache_count = cursor_got;
+						}
+					}
 				}
 			}
 		}
@@ -1276,7 +1494,7 @@ struct Zip_Handle : public DOS_File
 	Bit32u ofs;
 	Zip_File* src;
 
-	Zip_Handle(Zip_Archive& archive, Zip_File* _src, Bit32u _flags, const char* path) : ofs(0), src(_src)
+	Zip_Handle(Zip_Archive& archive, Zip_File* _src, Bit32u _flags, zipDrive* drv, const char* path) : ofs(0), src(_src)
 	{
 		_src->refs++;
 		date = _src->date;
@@ -1289,7 +1507,7 @@ struct Zip_Handle : public DOS_File
 			else if (_src->method == ZIP_Unpacker::METHOD_DEFLATED)
 			{
 				enum { MINIMAL_SIZE = (sizeof(Zip_DeflateUnpacker) + sizeof(Zip_DeflateUnpacker::SeekCursor)) };
-				if (_src->uncomp_size > MINIMAL_SIZE) _src->unpacker = new Zip_DeflateUnpacker(archive, *_src);
+				if (_src->uncomp_size > MINIMAL_SIZE) _src->unpacker = new Zip_DeflateUnpacker(archive, *_src, drv, path);
 				else                                  _src->unpacker = new Zip_DeflateMemoryUnpacker(archive, *_src);
 			}
 			else if (_src->method == ZIP_Unpacker::METHOD_STORED)   _src->unpacker = new Zip_StoredUnpacker(archive);
@@ -1657,7 +1875,7 @@ bool zipDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 	if (!e->AsFile()->ofs_past_header && !impl->SetOfsPastHeader(*e->AsFile()))
 		return FALSE_SET_DOSERR(DATA_INVALID); //ZIP error
 
-	*file = new Zip_Handle(impl->archive, e->AsFile(), flags, name);
+	*file = new Zip_Handle(impl->archive, e->AsFile(), flags, this, name);
 	return true;
 }
 

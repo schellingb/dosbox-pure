@@ -568,7 +568,12 @@ unionDrive::unionDrive(DOS_Drive& under, const char* save_file, bool autodelete_
 
 bool unionDrive::IsShadowedDrive(const DOS_Drive* drv) const
 {
-	return (this == drv || &impl->over == drv || &impl->under == drv);
+	if (this == drv || &impl->over == drv || &impl->under == drv) return true;
+	unionDrive* overud = dynamic_cast<unionDrive*>(&impl->over);
+	if (overud && overud->IsShadowedDrive(drv)) return true;
+	unionDrive* underud = dynamic_cast<unionDrive*>(&impl->under);
+	if (underud && underud->IsShadowedDrive(drv)) return true;
+	return false;
 }
 
 unionDrive::~unionDrive()
