@@ -665,7 +665,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 				if (ihdr == -1)
 				{
 					for (ihdr = i - 1; list[ihdr].type != IT_NONE; ihdr--) {}
-					for (inxt = i + 1; inxt < list.size() && list[inxt].type != IT_NONE; inxt++) {}
+					for (inxt = i + 1; inxt < (int)list.size() && list[inxt].type != IT_NONE; inxt++) {}
 					if (list[sel].type != IT_NONE && !hide_sel && sel > ihdr && sel < inxt)
 						buf.AlphaBlendFillRect(l-97, y, 195, lh+xtra, buf.BGCOL_SELECTION | blend);
 					buf.Print(lh, l-84, y, list[ihdr].str.c_str(), buf.COL_HEADER);

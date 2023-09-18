@@ -326,14 +326,14 @@ struct Patch_File : Patch_Entry
 					{
 						case 0: // SourceRead
 							if (outputOffset + len > sourceLen) return false;
-							memcpy(&target[outputOffset], &source[outputOffset], len);
+							memcpy(&target[outputOffset], &source[outputOffset], (size_t)len);
 							break;
 						case 1: // TargetRead
 							if (len > (Bit32u)-1 || !Local::Read(df, &target[outputOffset], (Bit32u)len)) return false;
 							break;
 						case 2: // SourceCopy
 							if (!GetVarLenInt(df, data) || (sourceRelativeOffset += (Bit64s)(data >> 1) * ((data & 1) ? -1 : 1)) + len > sourceLen) return false;
-							memcpy(&target[outputOffset], &source[sourceRelativeOffset], len);
+							memcpy(&target[outputOffset], &source[sourceRelativeOffset], (size_t)len);
 							sourceRelativeOffset += len;
 							break;
 						case 3: // TargetCopy
