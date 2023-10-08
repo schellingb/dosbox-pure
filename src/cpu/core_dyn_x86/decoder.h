@@ -282,6 +282,13 @@ static void dyn_save_critical_regs(void) {
 	gen_releasereg(DREG(CYCLES));
 }
 
+static void dyn_save_vmware_relevant_regs(void) {
+	// VMware interface uses these registers for bidirectional communication with guest side tools, they have to be up to date when reading the magic IO port
+	gen_releasereg(DREG(EAX));
+	gen_releasereg(DREG(ECX));
+	//gen_releasereg(DREG(EBX)); // currently unused by Mouse_VMWare_PortRead
+}
+
 static void dyn_set_eip_last_end(DynReg * endreg) {
 	gen_protectflags();
 	gen_lea(endreg,DREG(EIP),0,0,decode.code-decode.code_start);
@@ -2747,7 +2754,7 @@ restart_prefix:
 			if (!decode.big_op)
 				gen_call_function((void*)&dyn_io_readW,"%Dw",DREG(EDX));
 			else
-				gen_call_function((void*)&dyn_io_readD,"%Dw",DREG(EDX));
+				dyn_save_vmware_relevant_regs(),gen_call_function((void*)&dyn_io_readD,"%Dw",DREG(EDX));
 			dyn_check_bool_exception_al();
 			gen_mov_host(&core_dyn.readdata,DREG(EAX),decode.big_op?4:2);
 			break;

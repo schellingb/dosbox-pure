@@ -751,7 +751,8 @@ static void Mouse_Used(void) {
 }
 
 static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
-	if (reg_eax != 0x564D5868u) // magic number for all VMware calls (was 0xc75d0c2c on windows 98...)
+	//LOG_MSG("VMWARE: Port Read %x - Len: %u - 0x%08x - %x", (int)port, (int)iolen, reg_eax, reg_ebx);
+	if (reg_eax != 0x564D5868u) // magic number for all VMware calls
 		return 0;
 
 	switch (reg_cx)
@@ -1260,8 +1261,7 @@ void MOUSE_Init(Section* /*sec*/) {
 	Mouse_Reset();
 	Mouse_SetSensitivity(50,50,50);
 
-	IO_RegisterReadHandler(0x5658, &Mouse_VMWare_PortRead, IO_MD); //VMWARE_PORT
-	IO_RegisterReadHandler(0x5659, &Mouse_VMWare_PortRead, IO_MD); //VMWARE_PORTHB
+	IO_RegisterReadHandler(0x5658, &Mouse_VMWare_PortRead, IO_MD, 2); //VMWARE_PORT, VMWARE_PORTHB
 }
 
 #include <dbp_serialize.h>
