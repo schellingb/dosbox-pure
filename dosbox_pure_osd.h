@@ -887,12 +887,12 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_BOOTIMG, 0, "[ Boot from Disk Image ]");
 			fs_count++;
 		}
-		if (dbp_osimages.size())
+		if (!dbp_strict_mode && dbp_osimages.size())
 		{
 			list.emplace_back(IT_BOOTOSLIST, 0, "[ Run Installed Operating System ]");
 			fs_count++;
 		}
-		if ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (img_count == 1 && iso_count == 1))
+		if (!dbp_strict_mode && ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (img_count == 1 && iso_count == 1)))
 		{
 			list.emplace_back(IT_INSTALLOSSIZE, 0, "[ Boot and Install New Operating System ]");
 			fs_count++;
@@ -914,8 +914,8 @@ struct DBP_PureMenuState : DBP_MenuState
 		sel = (fs_count && exe_count ? fs_count + 1 : 0);
 
 		if (list.empty()) { list.emplace_back(IT_NONE, 0, "No executable file found"); list.emplace_back(IT_NONE); sel = 2; }
-		if (DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
-		else if (dbp_game_running) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
+		if (DBP_FullscreenOSD && !dbp_strict_mode) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
+		else if (dbp_game_running && !dbp_strict_mode) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
 		if (!DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
 		if (list.back().type == IT_NONE) list.pop_back();
 		if (!initial_scan) { if (old_sel < (int)list.size()) sel = old_sel; return; }
@@ -1154,6 +1154,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		else if (ok_type)
 		{
 			handle_result:
+			if (dbp_strict_mode && (ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_COMMANDLINE || (ok_type == IT_CLOSEOSD && DBP_FullscreenOSD))) return;
 			if (ok_type != IT_CLOSEOSD)
 			{
 				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_COMMANDLINE));

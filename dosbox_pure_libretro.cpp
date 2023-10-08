@@ -60,7 +60,7 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
-static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running;
+static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running, dbp_strict_mode;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
@@ -2336,6 +2336,11 @@ static bool check_variables(bool is_startup = false)
 
 	dbp_auto_mapping_mode = retro_get_variable("dosbox_pure_auto_mapping", "true")[0];
 
+	bool old_strict_mode = dbp_strict_mode;
+	dbp_strict_mode = (retro_get_variable("dosbox_pure_strict_mode", "false")[0] == 't');
+	if (old_strict_mode != dbp_strict_mode && dbp_state != DBPSTATE_BOOT && !dbp_game_running)
+		dbp_state = DBPSTATE_REBOOT;
+
 	char mchar = (dbp_reboot_machine ? dbp_reboot_machine : retro_get_variable("dosbox_pure_machine", "svga")[0]);
 	int mch = (dbp_state != DBPSTATE_BOOT ? machine : -1);
 	bool machine_is_svga = (mch == MCH_VGA && svgaCard != SVGA_None), machine_is_cga = (mch == MCH_CGA), machine_is_hercules = (mch == MCH_HERC);
@@ -2776,7 +2781,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 			union_underlay = new memoryDrive();
 			if (path) DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext);
 		}
-		unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true);
+		unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true, dbp_strict_mode);
 		Drives['C'-'A'] = uni;
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}

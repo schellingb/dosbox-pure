@@ -88,6 +88,17 @@ static retro_core_option_v2_definition option_defs[] =
 		"false"
 	},
 	{
+		"dosbox_pure_strict_mode",
+		"Use Strict Mode", NULL,
+		"Disable the command line, running installed operating systems and using .BAT/.COM/.EXE/DOSZ.YML files from the save game.", NULL,
+		"Emulation",
+		{
+			{ "false", "Off" },
+			{ "true", "On" },
+		},
+		"false"
+	},
+	{
 		"dosbox_pure_menu_time",
 		"Advanced > Start Menu", NULL,
 		"Set the behavior of the start menu before and after launching a game." "\n"

@@ -149,7 +149,7 @@ struct unionDriveImpl
 	Bit32u save_size;
 	bool writable, autodelete_under, autodelete_over, dirty;
 
-	unionDriveImpl(DOS_Drive& _under, DOS_Drive* _over, const char* _save_file, bool _autodelete_under, bool _autodelete_over = false)
+	unionDriveImpl(DOS_Drive& _under, DOS_Drive* _over, const char* _save_file, bool _autodelete_under, bool _autodelete_over = false, bool strict_mode = false)
 		: save_mem(_over ? NULL : new memoryDrive()), under(_under), over(_over ? *_over : *save_mem), save_size(0),
 		  autodelete_under(_autodelete_under), autodelete_over(_autodelete_over || save_mem), dirty(false)
 	{
@@ -160,7 +160,7 @@ struct unionDriveImpl
 		{
 			DBP_ASSERT(!_over && writable);
 			save_file = _save_file;
-			ReadSaveFile();
+			ReadSaveFile(strict_mode);
 		}
 	}
 
@@ -244,12 +244,14 @@ struct unionDriveImpl
 		return true;
 	}
 
-	void ReadSaveFile()
+	void ReadSaveFile(bool strict_mode)
 	{
 		struct Loader
 		{
 			zipDrive* zip;
 			unionDriveImpl* impl;
+			bool strict_mode;
+			Loader(zipDrive* _zip, unionDriveImpl* _impl, bool _strict_mode) : zip(_zip), impl(_impl), strict_mode(_strict_mode) {}
 			static void LoadFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
 			{
 				Loader& l = *(Loader*)data;
@@ -272,6 +274,12 @@ struct unionDriveImpl
 					while (Union_Modification::Deserialize(ptr, l.impl->modifications)) {}
 					return;
 				}
+				if (l.strict_mode)
+				{
+					size_t pathlen = strlen(path);
+					const char* ext = (pathlen > 4 ? path+pathlen-4 : NULL);
+					if (ext && (!memcmp(ext, ".EXE", 4) || !memcmp(ext, ".COM", 4) || !memcmp(ext, ".BAT", 4) || !strcmp(path, "DOSZ.YML"))) return;
+				}
 				CreateParentDirs(*l.impl->save_mem, path);
 				if (!l.impl->save_mem->CloneEntry(l.zip, path)) { DBP_ASSERT(0); }
 				l.impl->save_size += size;
@@ -280,9 +288,7 @@ struct unionDriveImpl
 		FILE* zip_file_h = fopen_wrap(save_file.c_str(), "rb");
 		if (!zip_file_h) return;
 
-		Loader l;
-		l.zip = new zipDrive(new rawFile(zip_file_h, false), false);
-		l.impl = this;
+		Loader l(new zipDrive(new rawFile(zip_file_h, false), false), this, strict_mode);
 		DriveFileIterator(l.zip, Loader::LoadFiles, (Bitu)&l);
 		delete l.zip; // calls fclose
 	}
@@ -561,7 +567,7 @@ unionDrive::unionDrive(DOS_Drive& under, DOS_Drive& over, bool autodelete_under,
 	label.SetLabel(under.GetLabel(), false, true);
 }
 
-unionDrive::unionDrive(DOS_Drive& under, const char* save_file, bool autodelete_under) : impl(new unionDriveImpl(under, NULL,  save_file, autodelete_under))
+unionDrive::unionDrive(DOS_Drive& under, const char* save_file, bool autodelete_under, bool strict_mode) : impl(new unionDriveImpl(under, NULL, save_file, autodelete_under, false, strict_mode))
 {
 	label.SetLabel(under.GetLabel(), false, true);
 }
