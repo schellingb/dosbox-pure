@@ -24,6 +24,8 @@
 #include <time.h>
 #include <vector>
 
+#define TRUE_RESET_DOSERR (dos.errorcode = save_errorcode, true)
+
 static void CreateParentDirs(DOS_Drive& drv, const char* path)
 {
 	char dir_path[DOS_PATHLENGTH + 1], *p_dir_path = dir_path;
@@ -191,7 +193,7 @@ struct unionDriveImpl
 		return (under.FileExists(path) || over.FileExists(path) || over.TestDir(path) || under.TestDir(path));
 	}
 
-	bool UnionUnlink(DOS_Drive* drv, char* path, Union_Modification::Type type)
+	bool UnionUnlink(DOS_Drive* drv, char* path, Union_Modification::Type type, const Bit16u save_errorcode)
 	{
 		if (!writable || !*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
 		Union_Modification* m = modifications.Get(path);
@@ -204,22 +206,22 @@ struct unionDriveImpl
 			bool in_under = (under.FileExists(path) || under.TestDir(path));
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //re-mark deletion
 			else modifications.Remove(path); //remove redirect
-			return true;
+			return TRUE_RESET_DOSERR;
 		}
 		if (type == Union_Modification::TFILE ? over.FileUnlink(path) : over.RemoveDir(path))
 		{
 			ForceCloseFileAndScheduleSave(drv, path);
 			bool in_under = (under.FileExists(path) || under.TestDir(path));
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //mark deletion
-			return TRUE_CLEAR_DOSERR();
+			return TRUE_RESET_DOSERR;
 		}
 		if (type == Union_Modification::TFILE ? under.FileExists(path) : under.TestDir(path))
 		{
 			ForceCloseFileAndScheduleSave(drv, path);
 			modifications.Put(path, new Union_Modification(path)); //mark deletion
-			return true;
+			return TRUE_RESET_DOSERR;
 		}
-		return false;
+		return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	}
 
 	bool UnionTest(char* path, Union_Modification::Type type)
@@ -289,7 +291,9 @@ struct unionDriveImpl
 		if (!zip_file_h) return;
 
 		Loader l(new zipDrive(new rawFile(zip_file_h, false), false), this, strict_mode);
+		const Bit16u save_errorcode = dos.errorcode;
 		DriveFileIterator(l.zip, Loader::LoadFiles, (Bitu)&l);
+		dos.errorcode = save_errorcode;
 		delete l.zip; // calls fclose
 	}
 
@@ -501,12 +505,22 @@ struct Union_WriteHandle : public DOS_File
 	virtual bool Write(Bit8u* data, Bit16u* size)
 	{
 		if (!OPEN_IS_WRITING(flags)) return FALSE_SET_DOSERR(ACCESS_DENIED);
-		if (!*size) return true;
-		if (!dirty) dirty = true;
 		if (need_copy_on_write)
 		{
 			if (!real_file) return FALSE_SET_DOSERR(INVALID_HANDLE);
 
+			Bit32u org_pos = 0, start_pos = 0;
+			real_file->Seek(&org_pos, SEEK_CUR);
+			if (!*size)
+			{
+				// size 0 resizes/truncates the file, not needed if seek pos is already at end
+				Bit32u realfilesize = 0;
+				real_file->Seek(&realfilesize, SEEK_END);
+				if (realfilesize == org_pos) return true;
+			}
+			real_file->Seek(&start_pos, SEEK_SET);
+
+			const Bit16u save_errorcode = dos.errorcode;
 			DOS_File *clone_write;
 			if (!impl->over.FileCreate(&clone_write, name, DOS_ATTR_ARCHIVE))
 			{
@@ -520,9 +534,6 @@ struct Union_WriteHandle : public DOS_File
 			clone_write->AddRef();
 
 			Bit8u buf[4096];
-			Bit32u org_pos = 0, start_pos = 0;
-			real_file->Seek(&org_pos, SEEK_CUR);
-			real_file->Seek(&start_pos, SEEK_SET);
 			for (Bit16u read; real_file->Read(buf, &(read = sizeof(buf))) && read;)
 			{
 				Bit16u write = read;
@@ -545,7 +556,9 @@ struct Union_WriteHandle : public DOS_File
 			real_file->Seek(&org_pos, SEEK_SET);
 			real_file->flags = flags;
 			need_copy_on_write = false;
+			dos.errorcode = save_errorcode;
 		}
+		if (!dirty) dirty = true;
 		return real_file->Write(data, size);
 	}
 
@@ -596,6 +609,7 @@ bool unionDrive::FileOpen(DOS_File * * file, char * path, Bit32u flags)
 	Union_Modification* m = impl->modifications.Get(path);
 	if (m && m->IsRedirect() && m->RedirectType() == Union_Modification::TDIR) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 	if (m && m->IsDelete()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
+	const Bit16u save_errorcode = dos.errorcode;
 	if (OPEN_IS_WRITING(flags))
 	{
 		if (!impl->writable) return FALSE_SET_DOSERR(ACCESS_DENIED);
@@ -653,14 +667,14 @@ bool unionDrive::FileOpen(DOS_File * * file, char * path, Bit32u flags)
 			need_copy_on_write = true;
 		}
 		*file = new Union_WriteHandle(impl, real_file, flags, path_org, need_copy_on_write); 
-		return TRUE_CLEAR_DOSERR();
+		return TRUE_RESET_DOSERR;
 	}
 	else // open readable
 	{
 		// No need to call AddRef on the opened file here, it will be done by our caller
 		if (m && m->IsRedirect()) return impl->under.FileOpen(file, m->RedirectSource(), flags);
 		if (!impl->over.FileOpen(file, path, flags) && !impl->under.FileOpen(file, path, flags)) return false;
-		return TRUE_CLEAR_DOSERR();
+		return TRUE_RESET_DOSERR;
 	}
 }
 
@@ -670,6 +684,7 @@ bool unionDrive::FileCreate(DOS_File** file, char * path, Bit16u attributes)
 	if ((attributes & DOS_ATTR_DIRECTORY) || !*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
 	if (!impl->UnionPrepareCreate(path, true)) return false;
 
+	const Bit16u save_errorcode = dos.errorcode;
 	DOS_File *real_file;
 	if (!impl->over.FileCreate(&real_file, path, attributes))
 	{
@@ -682,7 +697,7 @@ bool unionDrive::FileCreate(DOS_File** file, char * path, Bit16u attributes)
 	}
 	*file = new Union_WriteHandle(impl, real_file, OPEN_READWRITE, path_org, false);
 	impl->ScheduleSave();
-	return TRUE_CLEAR_DOSERR();
+	return TRUE_RESET_DOSERR;
 }
 
 bool unionDrive::Rename(char * oldpath, char * newpath)
@@ -730,26 +745,27 @@ bool unionDrive::Rename(char * oldpath, char * newpath)
 			old_m->RedirectSetNewPath(newpath);
 			impl->modifications.Put(newpath, old_m);
 		}
-		return TRUE_CLEAR_DOSERR();
+		return true;
 	}
 	if (in_under)
 	{
 		// mark deletion
 		impl->modifications.Put(oldpath, new Union_Modification(oldpath)); //MDEL
 	}
+	const Bit16u save_errorcode = dos.errorcode;
 	if (!impl->over.Rename(oldpath, newpath))
 	{
 		// mark redirect
 		DBP_ASSERT(in_under);
 		impl->modifications.Put(newpath, new Union_Modification(newpath, oldpath, is_file)); //MRED
 	}
-	return TRUE_CLEAR_DOSERR();
+	return TRUE_RESET_DOSERR;
 }
 
 bool unionDrive::FileUnlink(char * path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(path);
-	return impl->UnionUnlink(this, path, Union_Modification::TFILE);
+	return impl->UnionUnlink(this, path, Union_Modification::TFILE, dos.errorcode);
 }
 
 bool unionDrive::FileExists(const char* path)
@@ -762,14 +778,16 @@ bool unionDrive::FileExists(const char* path)
 bool unionDrive::MakeDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
+	const Bit16u save_errorcode = dos.errorcode;
 	if (!impl->UnionPrepareCreate(dir_path, false) || !impl->over.MakeDir(dir_path)) return false;
 	impl->ScheduleSave();
-	return TRUE_CLEAR_DOSERR();
+	return TRUE_RESET_DOSERR;
 }
 
 bool unionDrive::RemoveDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
+	const Bit16u save_errorcode = dos.errorcode;
 	bool not_empty = false;
 	RealPt save_dta = dos.dta();
 	dos.dta(dos.tables.tempdta);
@@ -784,7 +802,7 @@ bool unionDrive::RemoveDir(char* dir_path)
 	}
 	dos.dta(save_dta);
 	if (not_empty) return FALSE_SET_DOSERR(ACCESS_DENIED); // not empty
-	return impl->UnionUnlink(this, dir_path, Union_Modification::TDIR);
+	return impl->UnionUnlink(this, dir_path, Union_Modification::TDIR, save_errorcode);
 }
 
 bool unionDrive::TestDir(char* dir_path)
@@ -844,9 +862,11 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 			FileStat(s.dir, &stat); // both '.' and '..' return the stats from the current dir
 			if (~attr & (Bit8u)stat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 			dta.SetResult(dotted, 0, stat.date, stat.time, (Bit8u)stat.attr);
-			return TRUE_CLEAR_DOSERR();
+			return true;
 		}
 	}
+
+	const Bit16u save_errorcode = dos.errorcode;
 	switch (s.step)
 	{
 		case 2:
@@ -871,7 +891,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (impl->over.FileExists(dta_path) || impl->over.TestDir(dta_path)) continue;
 				if (impl->modifications.Get(dta_name, DOS_NAMELENGTH_ASCII, s.dir_hash)) continue;
 				dta.SetDirID(my_dir_id);
-				return TRUE_CLEAR_DOSERR();
+				return TRUE_RESET_DOSERR;
 			}
 
 		case_over_find_first:
@@ -893,7 +913,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (dta_attr & DOS_ATTR_VOLUME) continue;
 				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
 				dta.SetDirID(my_dir_id);
-				return TRUE_CLEAR_DOSERR();
+				return TRUE_RESET_DOSERR;
 			}
 
 		case_over_done:
@@ -914,7 +934,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (!impl->under.FileStat(m->RedirectSource(), &filestat)) continue;
 				if (~attr & (Bit8u)filestat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 				dta.SetResult(redirect_newname, filestat.size, filestat.date, filestat.time, (Bit8u)filestat.attr);
-				return TRUE_CLEAR_DOSERR();
+				return TRUE_RESET_DOSERR;
 			}
 			s.step = -1;
 			impl->free_search_ids.push_back(dta.GetDirID());

@@ -2933,6 +2933,9 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	// For DBP we modified init_line to always run Z:\AUTOEXEC.BAT and not just any AUTOEXEC.BAT of the current drive/directory
 	DOS_SetDrive('C'-'A');
 
+	// Clear any dos errors that could have been set by drive file access until now
+	dos.errorcode = DOSERR_NONE;
+
 	if (autoexec)
 	{
 		bool auto_mount = true;
