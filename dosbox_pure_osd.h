@@ -1132,18 +1132,30 @@ struct DBP_PureMenuState : DBP_MenuState
 		else if (ok_type == IT_BOOTOSLIST)
 		{
 			list.clear();
-			const char* filename;
-			std::string savefile = DBP_GetSaveFile(SFT_VIRTUALDISK, &filename);
-
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Operating System Disk Image");
 			list.emplace_back(IT_NONE);
 			for (const std::string& im : dbp_osimages)
 				{ list.emplace_back(IT_BOOTOS, (Bit16s)(&im - &dbp_osimages[0])); list.back().str.assign(im.c_str(), im.size()-4); }
 			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_NONE, INFO_WARN, "To Refresh: Audio Options > MIDI Output > Scan System Directory"); }
+			char ramdisk = retro_get_variable("dosbox_pure_bootos_ramdisk", "false")[0];
+			if (ramdisk == 't')
+			{
+				list.emplace_back(IT_NONE);
+				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the C: drive will be discarded");
+			}
+			else if (ramdisk == 'd')
+			{
+				const char *save_c_name; std::string save_c = DBP_GetSaveFile(SFT_DIFFDISK, &save_c_name);
+				list.emplace_back(IT_NONE);
+				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the C: drive will be stored in the following location:");
+				if (save_c_name > &save_c[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&save_c[0], save_c_name - &save_c[0]); }
+				list.emplace_back(IT_NONE, INFO_WARN, save_c_name);
+			}
+			const char *save_d_name; std::string save_d = DBP_GetSaveFile(SFT_VIRTUALDISK, &save_d_name);
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be stored in the following location:");
-			if (filename > &savefile[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&savefile[0], filename - &savefile[0]); }
-			list.emplace_back(IT_NONE, INFO_WARN, filename);
+			if (save_d_name > &save_d[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&save_d[0], save_d_name - &save_d[0]); }
+			list.emplace_back(IT_NONE, INFO_WARN, save_d_name);
 			ResetSel(2, true);
 		}
 		else if (ok_type == IT_SHELLLIST)

@@ -31,7 +31,178 @@
 //DBP: for mem_readb_inline and mem_writeb_inline
 #include "paging.h"
 
-#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
+#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+struct discardDisk
+{
+	std::vector<Bit8u*> tempwrites;
+	
+	~discardDisk()
+	{
+		for (Bit8u* p : tempwrites)
+			delete p;
+	}
+
+	bool Read_AbsoluteSector(Bit32u sectnum, void* data, Bit32u sector_size)
+	{
+		const Bit8u* tempwrite = (tempwrites.size() <= sectnum ? NULL : tempwrites[sectnum]);
+		if (!tempwrite) return false;
+		memcpy(data, tempwrite, sector_size);
+		return true;
+	}
+
+	void Write_AbsoluteSector(Bit32u sectnum, const void* data, Bit32u sector_size)
+	{
+		if (tempwrites.size() <= sectnum)
+			tempwrites.resize(sectnum + 1);
+
+		Bit8u*& tempwrite = tempwrites[sectnum];
+		if (!tempwrite)
+			tempwrite = (Bit8u*)malloc(sector_size);
+		memcpy(tempwrite, data, sector_size);
+	}
+};
+
+struct differencingDisk
+{
+	enum ddDefs : Bit32u
+	{
+		BYTESPERSECTOR    = 512,
+		NULL_CURSOR       = (Bit32u)-1,
+	};
+
+	struct ffddBuf { Bit8u data[BYTESPERSECTOR]; };
+	struct ffddSec { Bit32u cursor = NULL_CURSOR; };
+	std::vector<ffddBuf>  diffSectorBufs;
+	std::vector<ffddSec>  diffSectors;
+	std::vector<Bit32u>   diffFreeCursors;
+	std::string           savePath;
+	FILE*                 saveFile = NULL;
+	Bit32u                saveEndCursor = 0;
+
+	~differencingDisk()
+	{
+		if (saveFile)
+			fclose(saveFile);
+	}
+
+	void SetupSave(const char* inSavePath, Bit32u sect_disk_end)
+	{
+		DBP_ASSERT(inSavePath && *inSavePath);
+		if (FILE* f = fopen_wrap(inSavePath, "rb+"))
+		{
+			saveFile = f;
+			char fhead[5];
+			if (!fread(fhead, sizeof(fhead), 1, f) || memcmp(fhead, "FFDD\x1", sizeof(fhead))) goto invalid_file;
+			Bit32u cursor = sizeof(fhead);
+			for (Bit32u sectnumval; fread(&sectnumval, sizeof(sectnumval), 1, f); cursor += (Bit32u)(sizeof(sectnumval) + BYTESPERSECTOR))
+			{
+				fseek(f, BYTESPERSECTOR, SEEK_CUR);
+				if (sectnumval != 0xFFFFFFFF)
+				{
+					Bit32u sectnum = var_read(&sectnumval);
+					if (sectnum >= sect_disk_end) goto invalid_file;
+					if (sectnum >= diffSectors.size()) diffSectors.resize(sectnum + 1);
+					diffSectors[sectnum].cursor = cursor;
+				}
+				else diffFreeCursors.push_back(cursor);
+			}
+			saveEndCursor = cursor;
+		}
+		else if (0)
+		{
+			invalid_file:
+			LOG_MSG("[DOSBOX] Invalid disk save file %s", inSavePath);
+			fclose(f);
+			saveFile = NULL;
+		}
+		else
+		{
+			savePath = inSavePath; // remember until needed
+		}
+	}
+
+	bool WriteDiff(Bit32u sectnum, const void* data, const void* unmodified)
+	{
+		if (sectnum >= diffSectors.size()) diffSectors.resize(sectnum + 128);
+		Bit32u *cursor_ptr = &diffSectors[sectnum].cursor, cursor_val = *cursor_ptr;
+
+		int is_different;
+		if (!unmodified)
+		{
+			is_different = false; // to be equal it must be filled with zeroes
+			for (Bit64u* p = (Bit64u*)data, *pEnd = p + (BYTESPERSECTOR / sizeof(Bit64u)); p != pEnd; p++)
+				if (*p) { is_different = true; break; }
+		}
+		else is_different = memcmp(unmodified, data, BYTESPERSECTOR);
+
+		if (is_different)
+		{
+			if (!saveFile && !savePath.empty())
+			{
+				saveFile = fopen(savePath.c_str(), "wb+");
+				if (saveFile) { fwrite("FFDD\x1", 5, 1, saveFile); saveEndCursor = 5; };
+				savePath.clear();
+			}
+			if (cursor_val == NULL_CURSOR && diffFreeCursors.size())
+			{
+				*cursor_ptr = cursor_val = diffFreeCursors.back();
+				diffFreeCursors.pop_back();
+			}
+			if (saveFile)
+			{
+				if (cursor_val == NULL_CURSOR)
+				{
+					Bit32u sectnumval;
+					var_write(&sectnumval, sectnum);
+					*cursor_ptr = cursor_val = saveEndCursor;
+					saveEndCursor += sizeof(sectnumval) + BYTESPERSECTOR;
+					fseek_wrap(saveFile, cursor_val, SEEK_SET);
+					fwrite(&sectnumval, sizeof(sectnumval), 1, saveFile);
+				}
+				else
+					fseek_wrap(saveFile, cursor_val + sizeof(sectnum), SEEK_SET);
+				fwrite(data, BYTESPERSECTOR, 1, saveFile);
+			}
+			else
+			{
+				if (cursor_val == NULL_CURSOR)
+				{
+					*cursor_ptr = cursor_val = (Bit32u)diffSectorBufs.size();
+					diffSectorBufs.resize(cursor_val + 1);
+				}
+				memcpy(diffSectorBufs[cursor_val].data, data, BYTESPERSECTOR);
+			}
+			return true;
+		}
+		else if (cursor_val != NULL_CURSOR)
+		{
+			if (saveFile)
+			{
+				// mark sector in diff file as free
+				Bit32u sectnumval = 0xFFFFFFFF;
+				fseek_wrap(saveFile, cursor_val, SEEK_SET);
+				fwrite(&sectnumval, sizeof(sectnumval), 1, saveFile);
+			}
+			diffFreeCursors.push_back(cursor_val);
+			*cursor_ptr = NULL_CURSOR;
+			return true;
+		}
+		return false;
+	}
+
+	bool GetDiff(Bit32u sectnum, void* data)
+	{
+		Bit32u cursor = (sectnum >= diffSectors.size() ? NULL_CURSOR : diffSectors[sectnum].cursor);
+		if (cursor == NULL_CURSOR) return false;
+		if (saveFile)
+		{
+			fseek_wrap(saveFile, cursor + sizeof(sectnum), SEEK_SET);
+			return !!fread(data, BYTESPERSECTOR, 1, saveFile);
+		}
+		memcpy(data, diffSectorBufs[cursor].data, BYTESPERSECTOR);
+		return true;
+	}
+};
 
 #ifdef _MSC_VER
 #pragma pack (1)
@@ -71,7 +242,6 @@ struct fatFromDOSDrive
 		SECT_BOOT         = 32,
 		CACHECOUNT        = 256,
 		KEEPOPENCOUNT     = 4,
-		NULL_CURSOR       = (Bit32u)-1,
 	};
 
 	partTable  mbr;
@@ -87,24 +257,15 @@ struct fatFromDOSDrive
 	std::vector<Bit8u>    fat;
 	Bit32u sect_disk_end, sect_files_end, sect_files_start, sect_dirs_start, sect_root_start, sect_fat2_start, sect_fat1_start;
 
-	struct ffddBuf { Bit8u data[BYTESPERSECTOR]; };
-	struct ffddSec { Bit32u cursor = NULL_CURSOR; };
-	std::vector<ffddBuf>  diffSectorBufs;
-	std::vector<ffddSec>  diffSectors;
-	std::vector<Bit32u>   diffFreeCursors;
-	std::string           savePath;
-	FILE*                 saveFile = NULL;
-	Bit32u                saveEndCursor = 0;
 	Bit8u                 cacheSectorData[CACHECOUNT][BYTESPERSECTOR];
 	Bit32u                cacheSectorNumber[CACHECOUNT];
+	differencingDisk      difference;
 	DOS_File*             openFiles[KEEPOPENCOUNT];
 	Bit32u                openIndex[KEEPOPENCOUNT];
 	Bit32u                openCursor = 0;
 
 	~fatFromDOSDrive()
 	{
-		if (saveFile)
-			fclose(saveFile);
 		for (DOS_File* df : openFiles)
 			if (df) { df->Close(); delete df; }
 	}
@@ -487,39 +648,7 @@ struct fatFromDOSDrive
 		}
 
 		if (inSavePath)
-		{
-			if (FILE* f = fopen_wrap(inSavePath, "rb+"))
-			{
-				saveFile = f;
-				char fhead[5];
-				if (!fread(fhead, sizeof(fhead), 1, f) || memcmp(fhead, "FFDD\x1", sizeof(fhead))) goto invalid_file;
-				Bit32u cursor = sizeof(fhead);
-				for (Bit32u sectnumval; fread(&sectnumval, sizeof(sectnumval), 1, f); cursor += (Bit32u)(sizeof(sectnumval) + BYTESPERSECTOR))
-				{
-					fseek(f, BYTESPERSECTOR, SEEK_CUR);
-					if (sectnumval != 0xFFFFFFFF)
-					{
-						Bit32u sectnum = var_read(&sectnumval);
-						if (sectnum >= sect_disk_end) goto invalid_file;
-						if (sectnum >= diffSectors.size()) diffSectors.resize(sectnum + 1);
-						diffSectors[sectnum].cursor = cursor;
-					}
-					else diffFreeCursors.push_back(cursor);
-				}
-				saveEndCursor = cursor;
-			}
-			else if (0)
-			{
-				invalid_file:
-				LOG_MSG("[DOSBOX] Invalid disk save file %s", inSavePath);
-				fclose(f);
-				saveFile = NULL;
-			}
-			else
-			{
-				savePath = inSavePath; // remember until needed
-			}
-		}
+			difference.SetupSave(inSavePath, sect_disk_end);
 	}
 
 	static void chs_write(Bit8u* chs, Bit32u lba)
@@ -545,72 +674,12 @@ struct fatFromDOSDrive
 
 		if (readOnly) return 0; // just return without error to avoid bluescreens in Windows 9x
 
-		if (sectnum >= diffSectors.size()) diffSectors.resize(sectnum + 128);
-		Bit32u *cursor_ptr = &diffSectors[sectnum].cursor, cursor_val = *cursor_ptr;
-
-		int is_different;
 		Bit8u filebuf[BYTESPERSECTOR];
 		void* unmodified = GetUnmodifiedSector(sectnum, filebuf);
-		if (!unmodified)
-		{
-			is_different = false; // to be equal it must be filled with zeroes
-			for (Bit64u* p = (Bit64u*)data, *pEnd = p + (BYTESPERSECTOR / sizeof(Bit64u)); p != pEnd; p++)
-				if (*p) { is_different = true; break; }
-		}
-		else is_different = memcmp(unmodified, data, BYTESPERSECTOR);
 
-		if (is_different)
-		{
-			if (!saveFile && !savePath.empty())
-			{
-				saveFile = fopen(savePath.c_str(), "wb+");
-				if (saveFile) { fwrite("FFDD\x1", 5, 1, saveFile); saveEndCursor = 5; };
-				savePath.clear();
-			}
-			if (cursor_val == NULL_CURSOR && diffFreeCursors.size())
-			{
-				*cursor_ptr = cursor_val = diffFreeCursors.back();
-				diffFreeCursors.pop_back();
-			}
-			if (saveFile)
-			{
-				if (cursor_val == NULL_CURSOR)
-				{
-					Bit32u sectnumval;
-					var_write(&sectnumval, sectnum);
-					*cursor_ptr = cursor_val = saveEndCursor;
-					saveEndCursor += sizeof(sectnumval) + BYTESPERSECTOR;
-					fseek_wrap(saveFile, cursor_val, SEEK_SET);
-					fwrite(&sectnumval, sizeof(sectnumval), 1, saveFile);
-				}
-				else
-					fseek_wrap(saveFile, cursor_val + sizeof(sectnum), SEEK_SET);
-				fwrite(data, BYTESPERSECTOR, 1, saveFile);
-			}
-			else
-			{
-				if (cursor_val == NULL_CURSOR)
-				{
-					*cursor_ptr = cursor_val = (Bit32u)diffSectorBufs.size();
-					diffSectorBufs.resize(cursor_val + 1);
-				}
-				memcpy(diffSectorBufs[cursor_val].data, data, BYTESPERSECTOR);
-			}
+		if (difference.WriteDiff(sectnum, data, unmodified))
 			cacheSectorNumber[sectnum % CACHECOUNT] = (Bit32u)-1; // invalidate cache
-		}
-		else if (cursor_val != NULL_CURSOR)
-		{
-			if (saveFile)
-			{
-				// mark sector in diff file as free
-				Bit32u sectnumval = 0xFFFFFFFF;
-				fseek_wrap(saveFile, cursor_val, SEEK_SET);
-				fwrite(&sectnumval, sizeof(sectnumval), 1, saveFile);
-			}
-			diffFreeCursors.push_back(cursor_val);
-			*cursor_ptr = NULL_CURSOR;
-			cacheSectorNumber[sectnum % CACHECOUNT] = (Bit32u)-1; // invalidate cache
-		}
+
 		return 0;
 	}
 
@@ -679,22 +748,17 @@ struct fatFromDOSDrive
 		}
 		cacheSectorNumber[sectorHash] = sectnum;
 
-		void *src;
-		Bit32u cursor = (sectnum >= diffSectors.size() ? NULL_CURSOR : diffSectors[sectnum].cursor);
-		if (cursor != NULL_CURSOR)
+		if (difference.GetDiff(sectnum, data))
 		{
-			if (saveFile)
-			{
-				fseek_wrap(saveFile, cursor + sizeof(sectnum), SEEK_SET);
-				src = (fread(cachedata, BYTESPERSECTOR, 1, saveFile) ? cachedata : NULL);
-			}
-			else src = diffSectorBufs[cursor].data;
+			memcpy(cachedata, data, BYTESPERSECTOR);
 		}
-		else src = GetUnmodifiedSector(sectnum, cachedata);
-	
-		if (src) memcpy(data, src, BYTESPERSECTOR);
-		else memset(data, 0, BYTESPERSECTOR);
-		if (src != cachedata) memcpy(cachedata, data, BYTESPERSECTOR);
+		else
+		{
+			void *src = GetUnmodifiedSector(sectnum, cachedata);
+			if (src) memcpy(data, src, BYTESPERSECTOR);
+			else memset(data, 0, BYTESPERSECTOR);
+			if (src != cachedata) memcpy(cachedata, data, BYTESPERSECTOR);
+		}
 		return 0;
 	}
 };
@@ -826,7 +890,6 @@ void swapInNextDisk(bool pressed) {
 }
 #endif
 
-
 Bit8u imageDisk::Read_Sector(Bit32u head,Bit32u cylinder,Bit32u sector,void * data) {
 	Bit32u sectnum;
 
@@ -836,20 +899,17 @@ Bit8u imageDisk::Read_Sector(Bit32u head,Bit32u cylinder,Bit32u sector,void * da
 }
 
 Bit8u imageDisk::Read_AbsoluteSector(Bit32u sectnum, void * data) {
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
 	if (ffdd) return ffdd->ReadSector(sectnum, data);
 	#endif
 
-	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	const Bit8u* tempwrite = (tempwrites.size() <= sectnum ? NULL : tempwrites[sectnum]);
-	if (tempwrite)
-	{
-		memcpy(data, tempwrite, sector_size);
-		return 0;
-	}
-	#endif
+	if (discard && discard->Read_AbsoluteSector(sectnum, data, sector_size))
+		return 0x00;
 
-	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	if (differencing && differencing->GetDiff(sectnum, data))
+		return 0x00;
+
 	Bit64u bytenum = (Bit64u)sectnum * sector_size;
 	if (last_action==WRITE || bytenum!=current_fpos) dos_file->Seek64(&bytenum, DOS_SEEK_SET);
 	DBP_ASSERT(sector_size <= 0xFFFF);
@@ -877,27 +937,30 @@ Bit8u imageDisk::Write_Sector(Bit32u head,Bit32u cylinder,Bit32u sector,void * d
 	return Write_AbsoluteSector(sectnum, data);
 }
 
-
 Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 	#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
 	if (ffdd) return ffdd->WriteSector(sectnum, data);
 	#endif
 
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	if (!OPEN_IS_WRITING(dos_file->flags))
+	if (discard)
 	{
-		if (tempwrites.size() <= sectnum)
-			tempwrites.resize(sectnum + 1);
-
-		Bit8u*& tempwrite = tempwrites[sectnum];
-		if (!tempwrite)
-			tempwrite = (Bit8u*)malloc(sector_size);
-		memcpy(tempwrite, data, sector_size);
-		return 0;
+		discard->Write_AbsoluteSector(sectnum, data, sector_size);
+		return 0x00;
 	}
-	#endif
 
-	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	if (differencing)
+	{
+		Bit64u unmodified_fpos = (Bit64u)sectnum * differencingDisk::BYTESPERSECTOR;
+		if (unmodified_fpos != current_fpos) dos_file->Seek64(&unmodified_fpos, DOS_SEEK_SET);
+		current_fpos = unmodified_fpos + differencingDisk::BYTESPERSECTOR;
+		Bit8u buf[differencingDisk::BYTESPERSECTOR];
+		Bit16u read_size = (Bit16u)differencingDisk::BYTESPERSECTOR;
+		const void* unmodified = (dos_file->Read(buf, &read_size) ? buf : NULL);
+		differencing->WriteDiff(sectnum, data, unmodified);
+		return 0x00;
+	}
+
 	Bit64u bytenum = (Bit64u)sectnum * sector_size;
 	if (last_action==READ || bytenum!=current_fpos) dos_file->Seek64(&bytenum, DOS_SEEK_SET);
 	DBP_ASSERT(sector_size <= 0xFFFF);
@@ -939,6 +1002,15 @@ Bit32u imageDisk::Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len)
 	return len;
 }
 
+void imageDisk::SetDifferencingDisk(const char* savePath)
+{
+	if (sector_size != differencingDisk::BYTESPERSECTOR) { E_Exit("Cannot use differencing disk on image with %d bytes per sector", sector_size); return; }
+	if (discard) { delete discard; discard = NULL; }
+	if (differencing) delete differencing;
+	differencing = new differencingDisk();
+	differencing->SetupSave(savePath, heads*cylinders*sectors);
+}
+
 imageDisk::~imageDisk()
 {
 	for (Bit16u i=0;i<DOS_DRIVES;i++)
@@ -952,8 +1024,6 @@ imageDisk::~imageDisk()
 		if (dos_file->IsOpen()) dos_file->Close();
 		if (dos_file->RemoveRef() <= 0) delete dos_file;
 	}
-	for (Bit8u* p : tempwrites)
-		delete p;
 #ifdef C_DBP_ENABLE_DISKSWAP
 	for(int i=0;i<MAX_SWAPPABLE_DISKS;i++)
 		if (diskSwap[i] == this)
@@ -962,6 +1032,8 @@ imageDisk::~imageDisk()
 	for(int i=0;i<MAX_DISK_IMAGES;i++)
 		if (imageDiskList[i] == this)
 			imageDiskList[i] = NULL;
+	if (discard) delete discard;
+	if (differencing) delete differencing;
 #ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
 	if (ffdd) delete ffdd;
 #endif
@@ -970,9 +1042,6 @@ imageDisk::~imageDisk()
 imageDisk::imageDisk(DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk)
 #else
 imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk)
-#endif
-#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
-	: ffdd(NULL)
 #endif
 {
 	heads = 0;
@@ -985,6 +1054,8 @@ imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool i
 	DBP_ASSERT(imgFile->refCtr >= 1);
 	dos_file = imgFile;
 	dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
+	if (!OPEN_IS_WRITING(dos_file->flags))
+		discard = new discardDisk();
 	#else
 	diskimg = imgFile;
 	fseek(diskimg,0,SEEK_SET);

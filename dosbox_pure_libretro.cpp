@@ -655,7 +655,7 @@ static void DBP_Unmount(char drive)
 			i.mounted = false;
 }
 
-enum DBP_SaveFileType { SFT_GAMESAVE, SFT_VIRTUALDISK, _SFT_LAST_SAVE_DIRECTORY, SFT_SYSTEMDIR, SFT_NEWOSIMAGE };
+enum DBP_SaveFileType { SFT_GAMESAVE, SFT_VIRTUALDISK, SFT_DIFFDISK, _SFT_LAST_SAVE_DIRECTORY, SFT_SYSTEMDIR, SFT_NEWOSIMAGE };
 static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filename = NULL, Bit32u* out_diskhash = NULL)
 {
 	std::string res;
@@ -698,6 +698,10 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 			res.resize(res.size() - 32 + sprintf(&res[res.size() - 32], (hash == 0x11111111 ? ".sav" : "-%08X.sav"), hash));
 			if (out_diskhash) *out_diskhash = hash;
 		}
+		else if (type == SFT_DIFFDISK)
+		{
+			res.append("-CDRIVE.sav");
+		}
 	}
 	else if (type == SFT_NEWOSIMAGE)
 	{
@@ -711,7 +715,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 		}
 	}
 	if (out_filename) *out_filename = res.c_str() + dir_len;
-	return res;
+	return std::move(res);
 }
 
 static void DBP_SetDriveLabelFromContentPath(DOS_Drive* drive, const char *path, char letter = 'C', const char *path_file = NULL, const char *ext = NULL, bool forceAppendExtension = false)

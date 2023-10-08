@@ -563,11 +563,16 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_bootos_ramdisk",
-		"Advanced > Discard OS Disk Modifications (restart required)", NULL,
-		"When running an installed operating system, modifications to the C: drive will not be saved permanently." "\n"
-		"This allows the content to be closed any time without worry of file system or registry corruption.", NULL,
+		"Advanced > OS Disk Modifications (restart required)", NULL,
+		"When running an installed operating system, modifications to the C: drive will be made on the disk image by default." "\n"
+		"Setting it to 'Discard' allows the content to be closed any time without worry of file system or registry corruption." "\n"
+		"When using 'Save Difference Per Content' the disk image must never be modified again, otherwise existing differences become unusable.", NULL,
 		"System",
-		{ { "false", "Off (default)" }, { "true", "On" } },
+		{
+			{ "false", "Keep (default)" },
+			{ "true", "Discard" },
+			{ "diff", "Save Difference Per Content" },
+		},
 		"false"
 	},
 	{

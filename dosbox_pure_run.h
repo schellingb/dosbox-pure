@@ -233,7 +233,8 @@ struct DBP_Run
 			char ramdisk = (is_install ? 'f' : retro_get_variable("dosbox_pure_bootos_ramdisk", "false")[0]);
 
 			// Now mount OS hard disk image as C: drive
-			BatchFileBoot::MountOSIMG('C', path.c_str(), "OS image", (ramdisk != 't'), true);
+			if (BatchFileBoot::MountOSIMG('C', path.c_str(), "OS image", (ramdisk == 'f'), true) && ramdisk == 'd')
+				imageDiskList['C'-'A']->SetDifferencingDisk(DBP_GetSaveFile(SFT_DIFFDISK).c_str());
 		}
 		else if (!imageDiskList['C'-'A'] && Drives['C'-'A'])
 		{

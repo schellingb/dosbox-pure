@@ -64,6 +64,7 @@ public:
 	imageDisk(class DOS_File *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk);
 	~imageDisk();
 	Bit32u Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len);
+	void SetDifferencingDisk(const char* savePath);
 	#else
 	imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool isHardDisk);
 	~imageDisk() { if(diskimg != NULL) { fclose(diskimg); }	};
@@ -71,14 +72,12 @@ public:
 	#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
 	imageDisk(class DOS_Drive *useDrive, Bit32u freeSpaceMB = 0, const char* savePath = NULL, Bit32u driveSerial = 0, const StringToPointerHashMap<void>* fileFilter = NULL);
 	void Set_GeometryForHardDisk();
-	struct fatFromDOSDrive* ffdd;
 	#endif
 
 	bool hardDrive;
 	bool active;
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	class DOS_File* dos_file;
-	std::vector<Bit8u*> tempwrites;
 	#else
 	FILE *diskimg;
 	#endif
@@ -90,6 +89,11 @@ public:
 private:
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	Bit64u current_fpos;
+	#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
+	struct fatFromDOSDrive* ffdd = NULL;
+	#endif
+	struct discardDisk* discard = NULL;
+	struct differencingDisk* differencing = NULL;
 	#else
 	Bit32u current_fpos;
 	#endif
