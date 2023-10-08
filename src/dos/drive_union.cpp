@@ -585,6 +585,12 @@ unionDrive::unionDrive(DOS_Drive& under, const char* save_file, bool autodelete_
 	label.SetLabel(under.GetLabel(), false, true);
 }
 
+void unionDrive::AddUnder(DOS_Drive& add_under, bool autodelete_under)
+{
+	((DOS_Drive**)impl)[1] = new unionDrive(add_under, impl->under, autodelete_under, impl->autodelete_under);
+	impl->autodelete_under = true;
+}
+
 bool unionDrive::IsShadowedDrive(const DOS_Drive* drv) const
 {
 	if (this == drv || &impl->over == drv || &impl->under == drv) return true;

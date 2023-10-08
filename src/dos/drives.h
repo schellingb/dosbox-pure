@@ -681,6 +681,7 @@ class unionDrive : public DOS_Drive {
 public:
 	unionDrive(DOS_Drive& under, DOS_Drive& over, bool autodelete_under = false, bool autodelete_over = false);
 	unionDrive(DOS_Drive& under, const char* save_file = NULL, bool autodelete_under = false, bool strict_mode = false);
+	void AddUnder(DOS_Drive& add_under, bool autodelete_under = false);
 	bool IsShadowedDrive(const DOS_Drive* drv) const;
 	virtual ~unionDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);

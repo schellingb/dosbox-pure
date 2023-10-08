@@ -844,7 +844,7 @@ struct DBP_OnScreenKeyboardState
 
 struct DBP_PureMenuState : DBP_MenuState
 {
-	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD };
+	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD };
 	enum { INFO_HEADER = 0x0B, INFO_WARN = 0x0A };
 
 	int exe_count, fs_count;
@@ -858,6 +858,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		if (DBP_Run::autoboot.use)
 		{
 			if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTOS) GoToSubMenu(IT_BOOTOSLIST);
+			if (DBP_Run::startup.mode == DBP_Run::RUN_SHELL) GoToSubMenu(IT_SHELLLIST);
 			if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG);
 			int idx = MenuIndexByString(DBP_Run::startup.str.c_str());
 			if (idx != -1) ResetSel(idx);
@@ -890,6 +891,11 @@ struct DBP_PureMenuState : DBP_MenuState
 		if (!dbp_strict_mode && dbp_osimages.size())
 		{
 			list.emplace_back(IT_BOOTOSLIST, 0, "[ Run Installed Operating System ]");
+			fs_count++;
+		}
+		if (!dbp_strict_mode && dbp_shellzips.size())
+		{
+			list.emplace_back(IT_SHELLLIST, 0, "[ Run System Shell ]");
 			fs_count++;
 		}
 		if (!dbp_strict_mode && ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (img_count == 1 && iso_count == 1)))
@@ -1140,6 +1146,16 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_NONE, INFO_WARN, filename);
 			ResetSel(2, true);
 		}
+		else if (ok_type == IT_SHELLLIST)
+		{
+			list.clear();
+			list.emplace_back(IT_NONE, INFO_HEADER, "Select System Shell");
+			list.emplace_back(IT_NONE);
+			for (const std::string& im : dbp_shellzips)
+				{ list.emplace_back(IT_RUNSHELL, (Bit16s)(&im - &dbp_shellzips[0])); list.back().str.assign(im.c_str(), im.size()-5); }
+			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_NONE, INFO_WARN, "To Refresh: Audio Options > MIDI Output > Scan System Directory"); }
+			ResetSel(2, true);
+		}
 		else if (((res == RES_CANCEL && list.back().type == IT_CLOSEOSD) || res == RES_CLOSESCREENKEYBOARD) && !DBP_FullscreenOSD)
 		{
 			ok_type = IT_CLOSEOSD;
@@ -1154,10 +1170,10 @@ struct DBP_PureMenuState : DBP_MenuState
 		else if (ok_type)
 		{
 			handle_result:
-			if (dbp_strict_mode && (ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_COMMANDLINE || (ok_type == IT_CLOSEOSD && DBP_FullscreenOSD))) return;
+			if (dbp_strict_mode && (ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || (ok_type == IT_CLOSEOSD && DBP_FullscreenOSD))) return;
 			if (ok_type != IT_CLOSEOSD)
 			{
-				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_COMMANDLINE));
+				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE));
 				if (!show_popup && dbp_game_running)
 				{
 					popupsel = 0;
@@ -1171,7 +1187,8 @@ struct DBP_PureMenuState : DBP_MenuState
 					(ok_type == IT_BOOTIMG_MACHINE ? DBP_Run::RUN_BOOTIMG :
 					(ok_type == IT_BOOTOS ? DBP_Run::RUN_BOOTOS :
 					(ok_type == IT_INSTALLOS ? DBP_Run::RUN_INSTALLOS :
-					(ok_type == IT_COMMANDLINE ? DBP_Run::RUN_COMMANDLINE : DBP_Run::RUN_NONE)))))),
+					(ok_type == IT_RUNSHELL ? DBP_Run::RUN_SHELL :
+					(ok_type == IT_COMMANDLINE ? DBP_Run::RUN_COMMANDLINE : DBP_Run::RUN_NONE))))))),
 					item.info, item.str, true);
 
 				// Show menu again on image boot when machine needs to change but there are EXE files (some games need to run a FIX.EXE before booting)

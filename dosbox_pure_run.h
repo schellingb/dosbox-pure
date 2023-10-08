@@ -53,7 +53,6 @@ struct DBP_Run
 		BatchFileExec(const std::string& _exe) : BatchFile(first_shell,"Z:\\AUTOEXEC.BAT","","") { filename = _exe; }
 		virtual bool ReadLine(char * line)
 		{
-			char *p = (char*)filename.c_str(), *f = strrchr(p, '\\') + 1, *fext;
 			*(line++) = '@';
 			switch (location++)
 			{
@@ -61,6 +60,7 @@ struct DBP_Run
 				{
 					ConsoleClearScreen();
 
+					char *p = (char*)filename.c_str(), *f = strrchr(p, '\\') + 1, *fext;
 					DOS_SetDefaultDrive(p[0]-'A');
 					if (f - p > 3)
 					{
@@ -272,7 +272,34 @@ struct DBP_Run
 		RunBatchFile(new BatchFileBoot(!is_install ? 'C' : 'A'));
 	}
 
-	enum EMode { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_COMMANDLINE };
+	static void RunShell(int shellidx)
+	{
+		if (!Drives['C'-'A']) return;
+		if (dbp_had_game_running) { DBP_OnBIOSReboot(); return; }
+		dbp_had_game_running = true;
+
+		unionDrive* base_drive = dynamic_cast<unionDrive*>(Drives['C'-'A']);
+		if (!base_drive) return;
+		std::string path = DBP_GetSaveFile(SFT_SYSTEMDIR).append(dbp_shellzips[shellidx]);
+		FILE* zip_file_h = fopen_wrap(path.c_str(), "rb");
+		if (!zip_file_h) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "System Shell", path.c_str()); return; }
+		base_drive->AddUnder(*new zipDrive(new rawFile(zip_file_h, false), false), true);
+
+		const char* exes[] = { "C:\\WINDOWS.BAT", "C:\\AUTOEXEC.BAT", "C:\\WINDOWS\\WIN.COM" };
+		for (const char* exe : exes)
+			if (Drives['C'-'A']->FileExists(exe + 3))
+				{ RunBatchFile(new BatchFileExec(exe)); return; }
+
+		ConsoleClearScreen();
+		Bit16u sz;
+		DOS_WriteFile(STDOUT, (Bit8u*)"To auto run the shell, make sure one of these files exist:\r\n", &(sz = sizeof("To auto run the shell, make sure one of these files exist:\r\n")-1));
+		for (const char* exe : exes) { DOS_WriteFile(STDOUT, (Bit8u*)"\r\n- ", &(sz = 4)); DOS_WriteFile(STDOUT, (Bit8u*)exe, &(sz = (Bit16u)strlen(exe))); }
+		DOS_WriteFile(STDOUT, (Bit8u*)"\r\n\r\n", &(sz = 4));
+		KEYBOARD_AddKey(KBD_enter, true);
+		KEYBOARD_AddKey(KBD_enter, false);
+	}
+
+	enum EMode { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_COMMANDLINE };
 	static struct Startup { EMode mode; int info; std::string str; } startup;
 	static struct Autoboot { bool have, use; int skip, hash; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr; } autoinput;
@@ -296,7 +323,7 @@ struct DBP_Run
 				autoboot.hash = AutobootHash();
 				autoboot.have = true;
 				char autostr[DOS_PATHLENGTH + 32], *pautostr = autostr;
-				if (mode != RUN_EXEC) { autostr[0] = (mode == RUN_BOOTOS ? 'O' : 'I'); autostr[1] = '*'; pautostr = autostr + 2; }
+				if (mode != RUN_EXEC) { autostr[0] = (mode == RUN_BOOTOS ? 'O' : (mode == RUN_SHELL ? 'S' : 'I')); autostr[1] = '*'; pautostr = autostr + 2; }
 				char* autoend = pautostr + snprintf(pautostr, (&autostr[sizeof(autostr)] - pautostr), "%s", startup.str.c_str());
 				if (autoboot.skip) autoend += snprintf(autoend, (&autostr[sizeof(autostr)] - autoend), "\r\n%d", autoboot.skip);
 				if (!DriveCreateFile(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)autostr, (Bit32u)(autoend - autostr))) { DBP_ASSERT(false); }
@@ -329,6 +356,8 @@ struct DBP_Run
 			BootImage();
 		else if (mode == RUN_BOOTOS || mode == RUN_INSTALLOS)
 			BootOS(mode == RUN_INSTALLOS, startup.info);
+		else if (mode == RUN_SHELL)
+			RunShell(startup.info);
 	}
 
 	inline static void ResetStartup() { startup.mode = RUN_NONE; }
@@ -352,6 +381,7 @@ struct DBP_Run
 		{
 			startup.mode = RUN_EXEC;
 			if      (autostr[1] == '*' && autostr[0] == 'O') { startup.mode = RUN_BOOTOS;  pautostr += 2; }
+			if      (autostr[1] == '*' && autostr[0] == 'S') { startup.mode = RUN_SHELL;   pautostr += 2; }
 			else if (autostr[1] == '*' && autostr[0] == 'I') { startup.mode = RUN_BOOTIMG; pautostr += 2; }
 			char *nameend = strchr(pautostr, '\n'), *skip = nameend;
 			while (skip && *skip && *skip <= ' ') skip++;
@@ -376,6 +406,11 @@ struct DBP_Run
 				for (const std::string& im : dbp_osimages)
 					if (im.size() == (pautostrend - pautostr) + 4 && !memcmp(pautostr, im.c_str(), im.size() - 4))
 						{ startup.info = (int)(&im - &dbp_osimages[0]); goto auto_ok; }
+				break;
+			case RUN_SHELL:
+				for (const std::string& im : dbp_shellzips)
+					if (im.size() == (pautostrend - pautostr) + 5 && !memcmp(pautostr, im.c_str(), im.size() - 5))
+						{ startup.info = (int)(&im - &dbp_shellzips[0]); goto auto_ok; }
 				break;
 			case RUN_BOOTIMG:
 				for (const char* it : DBP_MachineNames)

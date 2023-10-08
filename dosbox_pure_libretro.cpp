@@ -89,7 +89,7 @@ static dbp_intercept_gfx_func dbp_intercept_gfx;
 // DOSBOX DISC MANAGEMENT
 struct DBP_Image { std::string path; bool mounted = false, remount = false, image_disk = false; char drive; };
 static std::vector<DBP_Image> dbp_images;
-static std::vector<std::string> dbp_osimages;
+static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
 static unsigned dbp_image_index;
 static bool dbp_legacy_save;
@@ -2094,6 +2094,7 @@ static void set_variables(bool force_midi_scan = false)
 	static std::vector<std::string> dynstr;
 	dynstr.clear();
 	dbp_osimages.clear();
+	dbp_shellzips.clear();
 	std::string path, subdir;
 	const char *system_dir = NULL;
 	struct retro_vfs_interface_info vfs = { 3, NULL };
@@ -2101,7 +2102,7 @@ static void set_variables(bool force_midi_scan = false)
 	if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
 	{
 		std::vector<std::string> subdirs;
-		subdirs.push_back(std::string());
+		subdirs.emplace_back();
 		while (subdirs.size())
 		{
 			std::swap(subdir, subdirs.back());
@@ -2111,30 +2112,35 @@ static void set_variables(bool force_midi_scan = false)
 			while (vfs.iface->readdir(dir))
 			{
 				const char* entry_name = vfs.iface->dirent_get_name(dir);
-				size_t entry_len = strlen(entry_name);
+				size_t ln = strlen(entry_name);
 				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
-					subdirs.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-				else if (entry_len < 4 || entry_name[entry_len - 4] != '.') { } // all files we access have a 3 letter extentions
-				else if (!strcasecmp(entry_name + entry_len - 3, "SF2") || !strcasecmp(entry_name + entry_len - 3, "SF3") || (entry_len > 12 && !strcasecmp(entry_name + entry_len - 12, "_CONTROL.ROM")))
+					subdirs.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				else if ((ln > 4 && (!strcasecmp(entry_name + ln - 4, ".SF2") || !strcasecmp(entry_name + ln - 4, ".SF3"))) || (ln > 12 && !strcasecmp(entry_name + ln - 12, "_CONTROL.ROM")))
 				{
-					dynstr.push_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-					dynstr.push_back(entry_name[entry_len-1] <= '3' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
-					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[entry_len-1] <= '3' ? 4 : 12));
+					dynstr.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+					dynstr.emplace_back(entry_name[ln-1] <= '3' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[ln-1] <= '3' ? 4 : 12));
 				}
-				else if (!strcasecmp(entry_name + entry_len - 3, "IMG") || !strcasecmp(entry_name + entry_len - 3, "IMA") || !strcasecmp(entry_name + entry_len - 3, "VHD"))
+				else if (ln > 4 && (!strcasecmp(entry_name + ln - 4, ".IMG") || !strcasecmp(entry_name + ln - 4, ".IMA") || !strcasecmp(entry_name + ln - 4, ".VHD")))
 				{
 					int32_t entry_size = 0;
-					std::string subpath = path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name);
+					std::string subpath(subdir); subpath.append(subdir.length() ? "/" : "").append(entry_name);
 					FILE* f = fopen_wrap(path.assign(system_dir).append("/").append(subpath).c_str(), "rb");
 					Bit64u fsize = 0; if (f) { fseek_wrap(f, 0, SEEK_END); fsize = (Bit64u)ftell_wrap(f); fclose(f); }
 					if (fsize < 1024*1024*7 || (fsize % 512)) continue; // min 7MB hard disk image made up of 512 byte sectors
-					dbp_osimages.push_back(subpath);
+					dbp_osimages.push_back(std::move(subpath));
 				}
-				else if (entry_len == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
+				else if (ln > 5 && !strcasecmp(entry_name + ln - 5, ".DOSZ"))
+				{
+					dbp_shellzips.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				}
+				else if (ln == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
 				{
 					std::string content;
 					FindAndReadDosFile(path.assign(system_dir).append("/").append(entry_name).c_str(), content);
 					dynstr.clear();
+					dbp_osimages.clear();
+					dbp_shellzips.clear();
 					for (const char *pLine = content.c_str(), *pEnd = pLine + content.size() + 1, *p = pLine; p != pEnd; p++)
 					{
 						if (*p >= ' ') continue;
@@ -2142,7 +2148,7 @@ static void set_variables(bool force_midi_scan = false)
 						if ((p[-3]|0x21) == 's' || dynstr.size() & 1) // check ROM/rom/SF2/sf2 extension, always add description from odd rows
 							dynstr.emplace_back(pLine, p - pLine);
 						else
-							dbp_osimages.emplace_back(pLine, p - pLine);
+							((p[-1]|0x20) == 'z' ? dbp_shellzips : dbp_osimages).emplace_back(pLine, p - pLine);
 						pLine = p + 1;
 					}
 					if (dynstr.size() & 1) dynstr.pop_back();
@@ -2156,11 +2162,11 @@ static void set_variables(bool force_midi_scan = false)
 	}
 	if (force_midi_scan || (!dbp_system_cached && time_cb() - scan_start > 2000000 && system_dir))
 	{
-		FILE* f = fopen_wrap(path.assign(system_dir).append("/").append("DOSBoxPureMidiCache.txt").c_str(), "w");
-		if (f)
+		if (FILE* f = fopen_wrap(path.assign(system_dir).append("/").append("DOSBoxPureMidiCache.txt").c_str(), "w"))
 		{
 			for (const std::string& s : dynstr) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
 			for (const std::string& s : dbp_osimages) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
+			for (const std::string& s : dbp_shellzips) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
 			fclose(f);
 		}
 	}
@@ -2202,7 +2208,7 @@ static void set_variables(bool force_midi_scan = false)
 			if (v2def.category_key)
 			{
 				// Build desc string "CATEGORY > V2DESC"
-				dynstr.push_back(v2def.category_key);
+				dynstr.emplace_back(v2def.category_key);
 				dynstr.back().append(" > ").append(v2def.desc);
 			}
 			v1defs.push_back({ v2def.key, (v2def.category_key ? dynstr.back().c_str() : v2def.desc), v2def.info, {}, v2def.default_value });
