@@ -750,6 +750,8 @@ static void Mouse_Used(void) {
 	}
 }
 
+//DBP: Added VMware mouse protocol support from DOSBox Staging by FeralChild64
+//     Source: https://github.com/FeralChild64/dosbox-staging/commit/d183abd
 static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
 	//LOG_MSG("VMWARE: Port Read %x - Len: %u - 0x%08x - %x", (int)port, (int)iolen, reg_eax, reg_ebx);
 	if (reg_eax != 0x564D5868u) // magic number for all VMware calls
