@@ -1476,7 +1476,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 		switch (atapi_cmd[0]) {
 			case 0x03: /* REQUEST SENSE */
-				prepare_read(0,IDEMIN((unsigned int)sense_length,(unsigned int)(atapi_cmd[4] ? (atapi_cmd[4]+4) : host_maximum_byte_count)));
+				prepare_read(0,IDEMIN((unsigned int)sense_length,(unsigned int)host_maximum_byte_count));
 				memcpy(sector,sense,sense_length);
 				set_sense(0); /* clear sense data now after it has been copied */
 
@@ -1556,7 +1556,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 			case 0x12: /* INQUIRY */
 				/* NTS: the state of atapi_to_host doesn't seem to matter. */
 				generate_mmc_inquiry();
-				prepare_read(0,IDEMIN((unsigned int)36,(unsigned int)(atapi_cmd[4] ? atapi_cmd[4] : host_maximum_byte_count)));
+				prepare_read(0,IDEMIN((unsigned int)36,(unsigned int)host_maximum_byte_count));
 
 				feature = 0x00;
 				state = IDE_DEV_DATA_READ;
@@ -3158,7 +3158,7 @@ struct IDEATADevice : public IDEDevice {
 			case 0xA1: /* IDENTIFY PACKET DEVICE */
 				/* We are not an ATAPI packet device.
 				 * Most MS-DOS drivers and Windows 95 like to issue both IDENTIFY ATA and IDENTIFY ATAPI commands.
-				 * I also gather from some contributers on the github comments that people think our "Unknown IDE/ATA command"
+				 * I also gather from some contributors on the github comments that people think our "Unknown IDE/ATA command"
 				 * error message is part of some other error in the emulation. Rather than put up with that, we'll just
 				 * silently abort the command with an error. */
 				abort_normal();
