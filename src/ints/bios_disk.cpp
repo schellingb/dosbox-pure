@@ -143,7 +143,8 @@ struct differencingDisk
 				if (saveFile) { fwrite("FFDD\x1", 5, 1, saveFile); saveEndCursor = 5; };
 				savePath.clear();
 			}
-			if (cursor_val == NULL_CURSOR && diffFreeCursors.size())
+			const bool reuseFree = (cursor_val == NULL_CURSOR && diffFreeCursors.size());
+			if (reuseFree)
 			{
 				*cursor_ptr = cursor_val = diffFreeCursors.back();
 				diffFreeCursors.pop_back();
@@ -152,13 +153,16 @@ struct differencingDisk
 			{
 				if (cursor_val == NULL_CURSOR)
 				{
+					*cursor_ptr = cursor_val = saveEndCursor;
+					saveEndCursor += sizeof(sectnum) + BYTESPERSECTOR;
+					writeSectNum:
 					Bit32u sectnumval;
 					var_write(&sectnumval, sectnum);
-					*cursor_ptr = cursor_val = saveEndCursor;
-					saveEndCursor += sizeof(sectnumval) + BYTESPERSECTOR;
 					fseek_wrap(saveFile, cursor_val, SEEK_SET);
 					fwrite(&sectnumval, sizeof(sectnumval), 1, saveFile);
 				}
+				else if (reuseFree)
+					goto writeSectNum;
 				else
 					fseek_wrap(saveFile, cursor_val + sizeof(sectnum), SEEK_SET);
 				fwrite(data, BYTESPERSECTOR, 1, saveFile);
@@ -1118,7 +1122,7 @@ void imageDisk::Set_GeometryForHardDisk()
 		bootbuffer.headcount = var_read(&bootbuffer.headcount);
 		Bit32u setSect = bootbuffer.sectorspertrack;
 		Bit32u setHeads = bootbuffer.headcount;
-		Bit32u setCyl = (mbrData.pentry[m].absSectStart + mbrData.pentry[m].partSize) / (setSect * setHeads);
+		Bit32u setCyl = (mbrData.pentry[m].absSectStart + mbrData.pentry[m].partSize + setSect * setHeads - 1) / (setSect * setHeads);
 		Set_Geometry(setHeads, setCyl, setSect, 512);
 		return;
 	}
