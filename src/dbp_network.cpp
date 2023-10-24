@@ -42,11 +42,10 @@ struct DBP_Net
 	enum { PKT_IPX, PKT_NE2K, PKT_MODEM };
 	std::vector<Bit8u> IncomingIPX, IncomingNe2k, IncomingModem, OutgoingPackets, OutgoingModem;
 	Mutex IncomingMtx, OutgoingMtx;
-	union Addr { Bit8u raw[10]; struct { Bit8u ipxnetworknum[4], mac[6]; }; };
+	union Addr { Bit8u ipxnetworknum[4], mac[6]; };
 };
 
 static bool dbp_net_connected;
-static Bit16u dbp_net_client_id;
 static DBP_Net::Addr dbp_net_addr;
 static DBP_Net* dbp_net;
 const char* dbp_net_msg;
@@ -63,6 +62,15 @@ inline Bit16u NET_READ_BE16(const void* p) { return (((Bit16u)(((const Bit8u *)(
 inline void NET_WRITE_LE16(void* p, Bit16u v) { ((Bit8u*)(p))[0] = (Bit8u)((Bit16u)(v) & 0xFF); ((Bit8u*)(p))[1] = (Bit8u)(((Bit16u)(v) >> 8) & 0xFF); }
 inline void NET_WRITE_BE16(void* p, Bit16u v) { ((Bit8u*)(p))[0] = (Bit8u)(((Bit16u)(v) >> 8) & 0xFF); ((Bit8u*)(p))[1] = (Bit8u)((Bit16u)(v) & 0xFF); }
 #endif
+
+static void DBP_Net_InitMac(uint16_t client_id = 0)
+{
+	dbp_net_addr.mac[0] = DBP_Net::FIRST_MAC_OCTET;
+	dbp_net_addr.mac[1] = 0xb0;
+	dbp_net_addr.mac[2] = 0xc9;
+	dbp_net_addr.mac[3] = 0x00;
+	NET_WRITE_BE16(&dbp_net_addr.mac[4], client_id);
+}
 
 #ifdef C_DBP_ENABLE_LIBRETRO_IPX
 
@@ -566,7 +574,7 @@ struct DOSIPX
 					dbp_net_addr.mac[3], dbp_net_addr.mac[2],
 					dbp_net_addr.mac[1], dbp_net_addr.mac[0]);
 
-				Bit8u * addrptr = (Bit8u *)&dbp_net_addr.raw;
+				Bit8u * addrptr = (Bit8u *)&dbp_net_addr;
 				for(Bit16u i=0;i<10;i++)
 					real_writeb(SegValue(es),reg_si+i,addrptr[i]);
 				break;
@@ -1438,9 +1446,7 @@ bool CLibretroDualModem::NM_DoReceive()
 #define BX_PANIC(...) {}
 #endif
 
-struct EthernetHeader {
-	Bit8u dest_mac[6], src_mac[6], type_and_length[2];
-};
+struct EthernetHeader { Bit8u dest_mac[6], src_mac[6], type_and_length[2]; };
 
 struct NE2K
 {
@@ -1582,54 +1588,47 @@ struct NE2K
 		int base_irq, tx_timer_active;
 	} s;
 
-	IO_ReadHandleObject ReadHandler8[0x20];
-	IO_WriteHandleObject WriteHandler8[0x20];
-	IO_ReadHandleObject ReadHandler16[0x10];
-	IO_WriteHandleObject WriteHandler16[0x10];
+	IO_ReadHandleObject ReadHandler;
+	IO_WriteHandleObject WriteHandler;
 
 	NE2K()
 	{
-		memcpy(s.physaddr, dbp_net_addr.mac, 6);
 		s.base_address = (Bit32u)0x300;
 		s.base_irq = (int)10;
-		
+		init_mac();
+
 		//BX_DEBUG(("Init $Id: ne2k.cc,v 1.56.2.1 2004/02/02 22:37:22 cbothamy Exp $"));
 		BX_INFO("port 0x%x/32 irq %d mac %02x:%02x:%02x:%02x:%02x:%02x",
 				(unsigned int)(s.base_address), (int)(s.base_irq),
 				s.physaddr[0], s.physaddr[1], s.physaddr[2], s.physaddr[3], s.physaddr[4], s.physaddr[5]);
 
-		// Initialise the mac address area by doubling the physical address
-		s.macaddr[0]  = s.physaddr[0];
-		s.macaddr[1]  = s.physaddr[0];
-		s.macaddr[2]  = s.physaddr[1];
-		s.macaddr[3]  = s.physaddr[1];
-		s.macaddr[4]  = s.physaddr[2];
-		s.macaddr[5]  = s.physaddr[2];
-		s.macaddr[6]  = s.physaddr[3];
-		s.macaddr[7]  = s.physaddr[3];
-		s.macaddr[8]  = s.physaddr[4];
-		s.macaddr[9]  = s.physaddr[4];
-		s.macaddr[10] = s.physaddr[5];
-		s.macaddr[11] = s.physaddr[5];
-
-		// ne2k signature
-		for (Bitu i = 12; i < 32; i++)
-			s.macaddr[i] = 0x57;
-
 		// Bring the register state into power-up state
 		reset();
 
 		// install I/O-handlers and timer
-		for(Bitu i = 0; i < 0x20; i++) {
-			ReadHandler8[i].Install((i+s.base_address), dosbox_read_handler, IO_MB|IO_MW);
-			WriteHandler8[i].Install((i+s.base_address), dosbox_write_handler, IO_MB|IO_MW);
-		}
+		ReadHandler.Install(s.base_address, dosbox_read_handler, IO_MB|IO_MW, 0x20);
+		WriteHandler.Install(s.base_address, dosbox_write_handler, IO_MB|IO_MW, 0x20);
 		TIMER_AddTickHandler(dosbox_tick_handler);
 	}
 
 	~NE2K() {
 		TIMER_DelTickHandler(dosbox_tick_handler);
 		PIC_RemoveEvents(dosbox_tx_event);
+	}
+
+	void init_mac()
+	{
+		if (dbp_net_addr.mac[0] != DBP_Net::FIRST_MAC_OCTET) DBP_Net_InitMac(); // force init, though might change later (which would probably confuse an OS)
+
+		memcpy(s.physaddr, dbp_net_addr.mac, 6);
+
+		// Initialise the mac address area by doubling the physical address
+		for (Bitu i = 0; i < 12; i++)
+			s.macaddr[i] = s.physaddr[i>>1];
+
+		// ne2k signature
+		for (Bitu i = 12; i < 32; i++)
+			s.macaddr[i] = 0x57;
 	}
 
 	// reset - restore state to power-up, cancelling all i/o
@@ -1743,7 +1742,9 @@ struct NE2K
 				}
 				s.ISR.pkt_tx = 1;
 			}
-		} else if (value & 0x04) {
+		}
+		else if (value & 0x04)
+		{
 			// start-tx and no loopback
 			if (s.CR.stop || !s.CR.start)
 				{ BX_PANIC("CR write - tx start, dev in reset"); }
@@ -1781,7 +1782,7 @@ struct NE2K
 			//LOG_MSG("send packet command");
 			//s.tx_timer_index = (64 + 96 + 4*8 +s.tx_bytes*8)/10;
 			s.tx_timer_active = 1;
-			PIC_AddEvent(dosbox_tx_event,(float)((64 + 96 + 4*8 +s.tx_bytes*8)/10000.0),0);
+			PIC_AddEvent(dosbox_tx_event,(float)((64 + 96 + 4*8 +s.tx_bytes*8)/20000.0),0);
 
 			// Schedule a timer to trigger a tx-complete interrupt
 			// The number of microseconds is the bit-time / 10.
@@ -1790,6 +1791,70 @@ struct NE2K
 			// the number of bits in the frame (s.tx_bytes * 8).
 			/* TODO: Code transmit timer */
 			//bx_pc_system.activate_timer(s.tx_timer_index, (64 + 96 + 4*8 +s.tx_bytes*8)/10, 0); // not continuous
+
+			// Simplistic detection of DHCP discover/request packets and respond with an offer/ack containing an IP address generated from the client id (enough for Win 9x)
+			struct DHCPPacket
+			{
+				Bit8u eth_dest_mac[6], eth_src_mac[6], eth_type_and_length[2],
+					ip_ihl_ver, ip_tos, ip_len[2], ip_ident[2], ip_offset[2], ip_ttl, ip_protocol, ip_hdrchksum[2], ip_source[4], ip_dest[4],
+					udp_srcport[2], udp_destport[2], udp_len[2], udp_chksum[2],
+					dhcp_bootmsgtype, dhcp_hwtype, dhcp_adrlen, dhcp_hops, dhcp_txid[4], dhcp_time[2], dhcp_flags[2], dhcp_curip[4], dhcp_newip[4], dhcp_srvip[4], dhcp_relay[4],
+					dhcp_clientmac[6], dhcp_clientmacpadding[10], dhcp_srvname[64], dhcp_bootfile[128], dhcp_cookie[4], dhcp_opt1[3];
+			};
+			const DHCPPacket& inp = *(const DHCPPacket*)&s.mem[s.tx_page_start*256 - BX_NE2K_MEMSTART];
+			if (s.tx_bytes >= sizeof(DHCPPacket)
+				&& inp.dhcp_cookie[0] == 0x63 && inp.dhcp_cookie[1] == 0x82 && inp.dhcp_cookie[2] == 0x53 && inp.dhcp_cookie[3] == 0x63 && inp.dhcp_bootmsgtype == 1
+				&& inp.eth_dest_mac[0] == 0xFF && inp.eth_type_and_length[0] == 0x8 && inp.ip_protocol == 17 && inp.udp_srcport[1] == 68 && inp.udp_destport[1] == 67
+				&& s.DCR.loop != 0 && s.TCR.loop_cntl == 0) // don't receive in loopback modes
+			{
+				struct Local { static void WriteChkSum(const Bit8u* p, const Bit8u* pEnd, Bit8u* res, Bit32u sum = 0)
+				{
+					Bit8u x = (Bit8u)(res - p) & 1; sum -= res[x^1] + (res[x] << 8); // negate existing checksum
+					for (Bit8u f = 255; p != pEnd; f = ~f) sum += (*p++) * ((int)f + 1); // sum bytes
+					sum = ((sum >> 16) + (sum & 0x0000ffff)); sum += (sum >> 16); sum = ~sum; // ones-complement
+					NET_WRITE_BE16(res, sum);
+				}};
+
+				Bit8u outbuf[590] = {0};
+				DHCPPacket& outp = *(DHCPPacket*)outbuf;
+				memcpy(&outp, &inp, sizeof(DHCPPacket));
+
+				// Validate check sum code with incoming checksums
+				DBP_ASSERT((Local::WriteChkSum(&inp.ip_ihl_ver, inp.udp_srcport,               (Bit8u*)inp.ip_hdrchksum                                                          ), outp.ip_hdrchksum[0] == inp.ip_hdrchksum[0] && outp.ip_hdrchksum[1] == inp.ip_hdrchksum[1]));
+				DBP_ASSERT((Local::WriteChkSum(inp.ip_source,   inp.eth_dest_mac + s.tx_bytes, (Bit8u*)inp.udp_chksum,    17 + s.tx_bytes - (int)(inp.udp_srcport - (Bit8u*)&inp)), outp.udp_chksum[0]   == inp.udp_chksum[0]   && outp.udp_chksum[1]   == inp.udp_chksum[1]  ));
+
+				// Write response IP header fields
+				outp.eth_src_mac[4] = outp.eth_src_mac[5] = 0xFE; // fake DHCP servers mac address
+				NET_WRITE_BE16(outp.ip_len, (sizeof(outbuf) - (&outp.ip_ihl_ver - (Bit8u*)&outp)));
+				outp.ip_ident[0] = outp.ip_ident[1] = 0;
+				memcpy(outp.ip_source, "\xc0\xa8\xfe\xfe", 4); // 192.168.254.254
+				Local::WriteChkSum(&outp.ip_ihl_ver, outp.udp_srcport, (Bit8u*)outp.ip_hdrchksum);
+
+				// Write response UDP header fields
+				outp.udp_srcport[1] = 67;
+				outp.udp_destport[1] = 68;
+				NET_WRITE_BE16(outp.udp_len, (sizeof(outbuf) - (outp.udp_srcport - (Bit8u*)&outp)));
+
+				// Write response DHCP fields
+				DBP_ASSERT(inp.dhcp_opt1[0] == 53 && inp.dhcp_opt1[1] == 1 && (inp.dhcp_opt1[2] == 1 || inp.dhcp_opt1[2] == 3)); // expect DHCP Message Type Discover or Request
+				Bit16u client_id = NET_READ_BE16(&dbp_net_addr.mac[4]);
+				outp.dhcp_bootmsgtype = 2; // Boot Reply
+				memcpy(outp.dhcp_srvip, "\xc0\xa8\xfe\xfe", 4); // 192.168.254.254
+				memcpy(outp.dhcp_newip, "\xc0\xa8\xfe\xfe", 2); // 192.168.
+				outp.dhcp_newip[2] = client_id / 253; outp.dhcp_newip[3] = 1 + (client_id % 253); // fill in last two digits
+				outp.dhcp_opt1[2] = (inp.dhcp_opt1[2] == 1 ? 2 : 5); // Discover => Offer, Request => Ack (DORA)
+				memcpy(&outp + 1, // fixed remaining options
+					"\x36\x04\xc0\xa8\xfe\xfe" // Option: (54) DHCP Server Identifier (192.168.254.254)
+					"\x33\x04\x7f\xff\xff\xff" // Option: (51) IP Address Lease Time
+					"\x01\x04\xff\xff\x00\x00" // Option: (1) Subnet Mask (255.255.0.0)
+					"\x03\x04\xc0\xa8\xfe\xfe" // Option: (3) Router
+					"\x06\x04\xc0\xa8\xfe\xfe" // Option: (6) Domain Name Server
+					"\xff", 34);               // Option: (255) End
+
+				// Calculate UDP checksum and directly receive DHCP response packet
+				Local::WriteChkSum(outp.ip_source, outp.eth_dest_mac + sizeof(outbuf), outp.udp_chksum, 17 + sizeof(outbuf) - (int)(inp.udp_srcport - (Bit8u*)&inp));
+				rx_frame(outbuf, sizeof(outbuf));
+			}
 		} // end transmit-start branch
 
 		// Linux probes for an interrupt by setting up a remote-DMA read
@@ -2699,7 +2764,8 @@ void NET_ShutdownEthernet()
 
 void IPX_ShutDown(Section* sec) {
 	if (DOSIPX::self) { delete DOSIPX::self; DOSIPX::self = NULL; }
-	NET_ShutdownEthernet(); // also call this here because NE2K doesn't have its own Section to register a shutdown function
+	extern bool DBP_IsShuttingDown();
+	if (DBP_IsShuttingDown()) NET_ShutdownEthernet(); // also call this here because NE2K doesn't have its own Section to register a shutdown function
 }
 
 void IPX_Init(Section* sec) {
@@ -2718,13 +2784,8 @@ struct NetCallBacks
 	{
 		LOG_MSG("[DOSBOXNET] Multiplayer session ready! ClientId: %d", client_id);
 		if (!dbp_net) dbp_net = new DBP_Net; else cleanup();
-		dbp_net_client_id = client_id;
-		dbp_net_addr.mac[0] = DBP_Net::FIRST_MAC_OCTET;
-		dbp_net_addr.mac[1] = 0xb0;
-		dbp_net_addr.mac[2] = 0xc9;
-		dbp_net_addr.mac[3] = 0x00;
-		dbp_net_addr.mac[4] = (Bit8u)(client_id >> 8);
-		dbp_net_addr.mac[5] = (Bit8u)(client_id & 255);
+		DBP_Net_InitMac(client_id);
+		if (NE2K::self) NE2K::self->init_mac();
 		dbp_net_connected = true;
 		dbp_net_send_fn = send_fn;
 		void DBP_EnableNetwork();
@@ -2734,12 +2795,12 @@ struct NetCallBacks
 	static inline Bit16u client_id_from_mac(const Bit8u* mac)
 	{
 		// Consider unknown first octet to be a multicast of some sort
-		return (mac[0] == DBP_Net::FIRST_MAC_OCTET ? (Bit16u)((mac[4] << 8) | mac[5]) : (Bit16u)0xFFFF);
+		return (mac[0] == DBP_Net::FIRST_MAC_OCTET ? NET_READ_BE16(&mac[4]) : (Bit16u)0xFFFF);
 	}
 
 	static void RETRO_CALLCONV receive(const void* pkt, size_t pktlen, uint16_t client_id)
 	{
-		DBP_ASSERT(dbp_net_client_id != client_id); // can't be from myself
+		DBP_ASSERT(NET_READ_BE16(&dbp_net_addr.mac[4]) != client_id); // can't be from myself
 		if (pktlen < 1 || pktlen > 65535) { DBP_ASSERT(false); return; }
 
 		#if 0 // log traffic summary
@@ -2828,8 +2889,9 @@ struct NetCallBacks
 					if (len < (sizeof(EthernetHeader) + 1)) { DBP_ASSERT(false); return; }
 					src_mac = ((const EthernetHeader*)data)->src_mac, dest_mac = ((const EthernetHeader*)data)->dest_mac;
 				}
-				DBP_ASSERT(!memcmp(src_mac, dbp_net_addr.mac, 6)); // maybe? maybe not? probably...
 				DBP_ASSERT(memcmp(dest_mac, dbp_net_addr.mac, 6)); // maybe? maybe not? probably...
+				//DBP_ASSERT(!memcmp(src_mac, dbp_net_addr.mac, 6)); // can fail during startup of Win9x, so allow it
+				//DBP_ASSERT(client_id_from_mac(src_mac) != client_id_from_mac(dest_mac)); // can fail during startup of Win9x, so allow it
 				// Currently we alwyas send everything NE2K wants to (IPX filters itself in DOSIPX::sendPacket)
 				// For example, TCP/IP might use multicasts (01-00-5e mac addresses) that we just broadcast to everyone and have the endpoint figure it out
 				// IPX on the other hand we cannot send to the wrong target as (some implementations?) think every packet is destined for them
@@ -2840,7 +2902,6 @@ struct NetCallBacks
 				//}
 				uint16_t src_client_id = client_id_from_mac(src_mac), dest_client_id = client_id_from_mac(dest_mac);
 				//printf("[DOSBOXNET] Outgoing Packet - Len: %d - Src: %02x:%02x:%02x:%02x:%02x:%02x (#%d) - Dest: %02x:%02x:%02x:%02x:%02x:%02x (#%d)\n", len, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5], src_client_id, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], dest_client_id);
-				if (src_client_id == dest_client_id) { DBP_ASSERT(false); continue; }
 				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p + 2, len, dest_client_id, (dest_client_id == 0xFFFF));
 			}
 			dbp_net->OutgoingPackets.clear();
