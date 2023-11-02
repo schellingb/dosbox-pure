@@ -152,14 +152,6 @@ static retro_core_option_v2_definition option_defs[] =
 
 	// Input
 	{
-		"dosbox_pure_bind_unused",
-		"Bind Unused Buttons", NULL,
-		"Bind all unused controller buttons to keyboard keys.\nCan be remapped in the Controls section of the core settings.", NULL,
-		"Input",
-		{ { "true", "On" }, { "false", "Off" } },
-		"true"
-	},
-	{
 		"dosbox_pure_on_screen_keyboard",
 		"Enable On Screen Keyboard", NULL,
 		"Enable the On Screen Keyboard feature which can be activated with the L3 button on the controller.", NULL,
@@ -287,7 +279,7 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
 		},
-		"50"
+		"70"
 	},
 	{
 		"dosbox_pure_joystick_analog_deadzone",
