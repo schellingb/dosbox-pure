@@ -42,7 +42,7 @@ struct DBP_Net
 	enum { PKT_IPX, PKT_NE2K, PKT_MODEM };
 	std::vector<Bit8u> IncomingIPX, IncomingNe2k, IncomingModem, OutgoingPackets, OutgoingModem;
 	Mutex IncomingMtx, OutgoingMtx;
-	union Addr { Bit8u ipxnetworknum[4], mac[6]; };
+	struct Addr { Bit8u ipxnetworknum[4], mac[6]; };
 };
 
 static bool dbp_net_connected;
