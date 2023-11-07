@@ -175,6 +175,13 @@ static bool MakeEnv(char * name,Bit16u * segment) {
 		envsize += 2;									/* account for trailing \0\0 */
 	}
 	Bit16u size=long2para(envsize+ENV_KEEPFREE);
+
+#ifdef C_DBP_RELIABLE_MEMORY_ADDRESSES
+	// We allocate a minimum of 256 bytes of memory for a program environment block
+	// This is to provide more stable memory addresses for external peeking and poking (i.e. game cheats)
+	if (size < 16) size = 16;
+#endif
+
 	if (!DOS_AllocateMemory(segment,&size)) return false;
 	envwrite=PhysMake(*segment,0);
 	if (parentenv) {

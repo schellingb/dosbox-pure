@@ -379,21 +379,13 @@ static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0, DBP_I
 
 static void DBP_ReportCoreMemoryMaps()
 {
-	// Find first PSP belonging to a running program
-	DOS_PSP psp(dos.psp());
-	for (Bit16u segParent; psp.GetSegment() && (segParent = psp.GetParent()) != 0;)
-	{
-		char fnamepsp[DOS_NAMELENGTH_ASCII];
-		DOS_PSP pspParent(segParent);
-		DOS_MCB(pspParent.GetSegment()-1).GetFileName(fnamepsp);
-		if (!*fnamepsp) break;
-		psp = pspParent;
-	}
-
 	extern const char* RunningProgram;
-	//log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] SetMemoryMaps - Program: %s - PSP: 0x%08x - ENV: 0x%08x\n", RunningProgram, PhysMake(psp.GetSegment(), 0), PhysMake(psp.GetEnvironment(), 0));
-	bool running_dos_game = (dbp_game_running && strcmp(RunningProgram, "BOOT"));
+	const bool booted_os = !strcmp(RunningProgram, "BOOT");
 	const size_t conventional_end = 640 * 1024, memtotal = (MEM_TotalPages() * 4096);
+
+	#ifndef NDEBUG
+	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] ReportCoreMemoryMaps - Program: %s - Booted OS: %d\n", RunningProgram, (int)booted_os);
+	#endif
 
 	// Give access to entire memory to frontend (cheat and achievements support)
 	// Instead of raw [ENVIRONMENT] [GAME] [EXPANDED MEMORY] we switch the order to be
@@ -401,16 +393,16 @@ static void DBP_ReportCoreMemoryMaps()
 	// the game memory (below 640k) is always at the same (virtual) address.
 
 	struct retro_memory_descriptor mdescs[3] = { 0 }, *mdesc_expandedmem;
-	if (running_dos_game)
+	if (!booted_os)
 	{
-		const size_t psp_start = PhysMake(psp.GetSegment(), 0);
+		const size_t prog_start = PhysMake((DOS_MEM_START + 2 + 5 + 17), 0); // see mcb_sizes in DOS_SetupMemory
 		mdescs[0].flags      = RETRO_MEMDESC_SYSTEM_RAM;
 		mdescs[0].start      = 0;
-		mdescs[0].len        = (conventional_end - psp_start);
-		mdescs[0].ptr        = MemBase + psp_start;
+		mdescs[0].len        = (conventional_end - prog_start);
+		mdescs[0].ptr        = MemBase + prog_start;
 		mdescs[1].flags      = RETRO_MEMDESC_SYSTEM_RAM;
 		mdescs[1].start      = 0x00100000;
-		mdescs[1].len        = psp_start;
+		mdescs[1].len        = prog_start;
 		mdescs[1].ptr        = MemBase;
 		mdesc_expandedmem = &mdescs[2];
 	}
@@ -427,7 +419,7 @@ static void DBP_ReportCoreMemoryMaps()
 	mdesc_expandedmem->len   = memtotal - conventional_end;
 	mdesc_expandedmem->ptr   = MemBase + conventional_end;
 
-	struct retro_memory_map mmaps = { mdescs, (unsigned)(running_dos_game ? 3 : 2) };
+	struct retro_memory_map mmaps = { mdescs, (unsigned)(!booted_os ? 3 : 2) };
 	environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
 	dbp_refresh_memmaps = false;
 }
@@ -1912,6 +1904,9 @@ void GFX_Events()
 			dbp_intercept_input(e.type, e.val, e.val2, dbp_intercept_data);
 			if (!DBP_IS_RELEASE_EVENT(e.type)) continue;
 		}
+		#if 0
+		if (e.type == DBPET_KEYDOWN && e.val == KBD_b) { DBP_DumpPSPs(); }
+		#endif
 		switch (e.type)
 		{
 			case DBPET_KEYDOWN: KEYBOARD_AddKey((KBD_KEYS)e.val, true);  break;
@@ -1985,7 +1980,7 @@ void GFX_SetTitle(Bit32s cycles, int frameskip, bool paused)
 	bool was_game_running = dbp_game_running;
 	dbp_had_game_running |= (dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU")));
 	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] Program: %s - Cycles: %d - Frameskip: %d - Paused: %d\n", RunningProgram, cycles, frameskip, paused);
-	if (was_game_running != dbp_game_running) dbp_refresh_memmaps = true;
+	if (was_game_running != dbp_game_running && !strcmp(RunningProgram, "BOOT")) dbp_refresh_memmaps = true;
 	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000 && !dbp_content_year)
 	{
 		// Choose a reasonable base rate when switching to protected mode (avoid autoinput getting stuck with a very slow CPU)
