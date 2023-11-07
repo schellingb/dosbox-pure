@@ -2468,7 +2468,7 @@ static bool check_variables(bool is_startup = false)
 	}
 	DBPArchive::accomodate_delta_encoding = (dbp_serializemode == DBPSERIALIZE_REWIND);
 	dbp_conf_loading = retro_get_variable("dosbox_pure_conf", "false")[0];
-	dbp_menu_time = (char)atoi(retro_get_variable("dosbox_pure_menu_time", "5"));
+	dbp_menu_time = (char)atoi(retro_get_variable("dosbox_pure_menu_time", "99"));
 
 	const char* cycles = retro_get_variable("dosbox_pure_cycles", "auto");
 	bool cycles_numeric = (cycles[0] >= '0' && cycles[0] <= '9');
@@ -3378,13 +3378,18 @@ void retro_run(void)
 				DBP_ForceReset();
 			else if (dbp_state == DBPSTATE_EXITED) // expected shutdown
 			{
+				// On statically linked platforms shutdown would exit the frontend, so don't do that. Just tint the screen red and sleep
 				#ifndef STATIC_LINKING
-				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, 0);
-				#else
-				// On statically linked platforms shutdown would exit the frontend, so don't do that. Just tint the screen red and sleep.
-				for (Bit8u *p = (Bit8u*)buf.video, *pEnd = p + sizeof(buf.video); p < pEnd; p += 56) p[2] = 255;
-				retro_sleep(10);
+				if (dbp_menu_time >= 0 && dbp_menu_time < 99) // only auto shut down for users that want auto shut down in general
+				{
+					environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, 0);
+				}
+				else
 				#endif
+				{
+					for (Bit8u *p = (Bit8u*)buf.video, *pEnd = p + sizeof(buf.video); p < pEnd; p += 56) p[2] = 255;
+					retro_sleep(10);
+				}
 			}
 
 			// submit last frame

@@ -1467,11 +1467,10 @@ static void DBP_PureMenuProgram(Program** make)
 			opentime = DBP_GetTicks();
 			DBP_FullscreenOSD = true;
 			DBP_PureMenuState* ms = new DBP_PureMenuState();
-			bool always_show_menu = (dbp_menu_time == (char)-1 || (m == M_FINISH && (opentime - dbp_lastmenuticks) < 500));
 			bool runsoloexe = (ms->exe_count == 1 && ms->fs_count <= 1);
 
 			#ifndef STATIC_LINKING
-			if (m == M_FINISH && !always_show_menu && (runsoloexe || DBP_Run::autoboot.use))
+			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (opentime - dbp_lastmenuticks) < 500)
 			{
 				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
 				sprintf(msgbuf, "* GAME ENDED - EXITTING IN %d SECONDS - PRESS ANY KEY TO CONTINUE *", dbp_menu_time);
@@ -1488,7 +1487,7 @@ static void DBP_PureMenuProgram(Program** make)
 				m = M_NORMAL;
 			}
 
-			if (m == M_BOOT && runsoloexe && !always_show_menu)
+			if (m == M_BOOT && runsoloexe && dbp_menu_time != (char)-1)
 				ms->DoInput(DBP_MenuState::RES_OK, ms->list[ms->sel].type, 0);
 			else if (m != M_BOOT || ms->exe_count != 0 || ms->fs_count != 0 || Drives['C'-'A'] || Drives['A'-'A'] || Drives['D'-'A'])
 				DBP_StartOSD(DBPOSD_MAIN, ms);

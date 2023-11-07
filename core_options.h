@@ -105,16 +105,15 @@ static retro_core_option_v2_definition option_defs[] =
 		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'.", NULL,
 		"Emulation",
 		{
+			{ "99", "Show at start, show again after game exit (default)" },
 #ifndef STATIC_LINKING
 			{ "5", "Show at start, shut down core 5 seconds after auto started game exit" },
 			{ "3", "Show at start, shut down core 3 seconds after auto started game exit" },
 			{ "0", "Show at start, shut down core immediately after auto started game exit" },
-#else
-			{ "5", "Show at start, show again after game exit (default)" },
 #endif
 			{ "-1", "Always show menu on startup and after game exit, ignore auto start setting" },
 		},
-		"5"
+		"99"
 	},
 	{
 		"dosbox_pure_latency",
