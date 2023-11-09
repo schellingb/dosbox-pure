@@ -747,10 +747,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 			path_no_fragment.back() = (ext[3] == 'Z' ? 'C' : 'c');
 			FILE* c_file_h = fopen_wrap(path_no_fragment.c_str(), "rb");
 			if (c_file_h)
-			{
-				DOS_Drive* patchdrive = new patchDrive(*drive, new rawFile(c_file_h, false));
-				drive = new unionDrive(*drive, *patchdrive, true, true);
-			}
+				drive = new patchDrive(drive, true, new rawFile(c_file_h, false));
 		}
 		if (boot && letter == 'C') return drive;
 	}

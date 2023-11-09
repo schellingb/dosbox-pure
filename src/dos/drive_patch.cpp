@@ -26,16 +26,11 @@
 struct Patch_Entry
 {
 protected:
-	Patch_Entry(Bit16u _attr, const char* _name, Bit16u _date = 0, Bit16u _time = 0) : date(_date), time(_time), attr(_attr)
+	Patch_Entry(Bit16u _attr, const char* _name, Bit16u _date, Bit16u _time) : date(_date), time(_time), attr(_attr)
 	{
-		if (date == 0 && time == 0)
-		{
-			time_t curtime = ::time(NULL);
-			tm* t = localtime(&curtime);
-			time = (t ? DOS_PackTime((Bit16u)t->tm_hour,(Bit16u)t->tm_min,(Bit16u)t->tm_sec) : 0);
-			date = (t ? DOS_PackDate((Bit16u)(t->tm_year+1900),(Bit16u)(t->tm_mon+1),(Bit16u)t->tm_mday) : 0);
-		}
-		SetName(_name);
+		size_t namesize = strlen(_name) + 1;
+		if (namesize > sizeof(name)) { DBP_ASSERT(false); namesize = sizeof(name); }
+		memcpy(name, _name, namesize);
 	}
 	~Patch_Entry() {}
 
@@ -44,12 +39,6 @@ public:
 	inline bool IsDirectory() { return ((attr & DOS_ATTR_DIRECTORY) != 0); }
 	inline struct Patch_File*      AsFile()      { return (Patch_File*)this;      }
 	inline struct Patch_Directory* AsDirectory() { return (Patch_Directory*)this; }
-	void SetName(const char* _name)
-	{
-		size_t namesize = strlen(_name) + 1;
-		if (namesize > sizeof(name)) { DBP_ASSERT(false); namesize = sizeof(name); }
-		memcpy(name, _name, namesize);
-	}
 
 	Bit16u date, time, attr;
 	char name[DOS_NAMELENGTH_ASCII];
@@ -63,18 +52,18 @@ struct Patch_File : Patch_Entry
 	bool patched;
 	char patchpath[DOS_PATHLENGTH+1];
 
-	Patch_File(EType _type, Bit16u _attr, const char* filename, Bit16u _date = 0, Bit16u _time = 0) : Patch_Entry(_attr, filename, _date, _time), refs(0), type(_type), patched(false) { DBP_ASSERT(IsFile()); }
+	Patch_File(EType _type, Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time) : Patch_Entry(_attr, filename, _date, _time), refs(0), type(_type), patched(false) { DBP_ASSERT(IsFile()); }
 
-	inline Bit32u Size(DOS_Drive& under, zipDrive& patchzip)
+	inline Bit32u Size(DOS_Drive& under, zipDrive* patchzip)
 	{
 		if (type == TYPE_RAW)
 		{
 			FileStat_Block stat;
-			patchzip.FileStat(patchpath, &stat);
+			patchzip->FileStat(patchpath, &stat);
 			return stat.size;
 		}
 
-		if (!patched) DoPatch(under, patchzip);
+		if (!patched) DoPatch(under, *patchzip);
 
 		return (Bit32u)mem_data.size();
 	}
@@ -452,7 +441,7 @@ struct Patch_Directory: Patch_Entry
 {
 	StringToPointerHashMap<Patch_Entry> entries;
 
-	Patch_Directory(Bit16u _attr, const char* dirname, Bit16u _date = 0, Bit16u _time = 0) : Patch_Entry(_attr, dirname, _date, _time) { DBP_ASSERT(IsDirectory()); }
+	Patch_Directory(Bit16u _attr, const char* dirname, Bit16u _date, Bit16u _time) : Patch_Entry(_attr, dirname, _date, _time) { DBP_ASSERT(IsDirectory()); }
 
 	~Patch_Directory()
 	{
@@ -468,6 +457,7 @@ struct Patch_Search
 {
 	Patch_Directory* dir;
 	Bit32u index;
+	Bit16u over_id;
 };
 
 struct patchDriveImpl
@@ -477,16 +467,18 @@ struct patchDriveImpl
 	std::vector<Patch_Search> searches;
 	std::vector<Bit16u> free_search_ids;
 	DOS_Drive& under;
-	zipDrive& patchzip;
+	zipDrive* patchzip;
+	bool autodelete_under;
 
-	patchDriveImpl(DOS_Drive& _under, DOS_File* _patchzip) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, ""), under(_under), patchzip(*(new zipDrive(_patchzip, false)))
+	patchDriveImpl(DOS_Drive& _under, bool _autodelete_under, DOS_File* _patchzip) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0, 0), under(_under), patchzip(_patchzip ? new zipDrive(_patchzip, false) : NULL), autodelete_under(_autodelete_under)
 	{
-		DriveFileIterator(&patchzip, LoadFiles, (Bitu)this);
+		DriveFileIterator(patchzip, LoadFiles, (Bitu)this);
 	}
 
 	~patchDriveImpl()
 	{
-		delete &patchzip;
+		if (patchzip) delete patchzip;
+		if (autodelete_under) delete &under;
 	}
 
 	static void LoadFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
@@ -510,7 +502,7 @@ struct patchDriveImpl
 		else if (ext && (!strcmp(ext + 1, "IPS") || !strcmp(ext + 1, "BPS") || !strcmp(ext + 1, "XDE") || !strcmp(ext + 1, "VCD")))
 		{
 			char fullname[256], underpath[DOS_PATHLENGTH+1];
-			if (!self.patchzip.GetLongFileName(path, fullname)) strcpy(fullname, name);
+			if (!self.patchzip->GetLongFileName(path, fullname)) strcpy(fullname, name);
 			int undernamelen = (int)(strrchr(fullname, '.') - fullname), dirlen = (int)(name - path);
 			if (undernamelen < 1 || undernamelen > DOS_NAMELENGTH) return; // to be patched file name length longer than 8.3?
 
@@ -557,7 +549,7 @@ struct patchDriveImpl
 	}
 };
 
-patchDrive::patchDrive(DOS_Drive& under, DOS_File* patchzip) : impl(new patchDriveImpl(under, patchzip)) { }
+patchDrive::patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip) : impl(new patchDriveImpl(*under, autodelete_under, patchzip)) { }
 
 patchDrive::~patchDrive()
 {
@@ -571,11 +563,11 @@ bool patchDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 	if (OPEN_IS_WRITING(flags)) return FALSE_SET_DOSERR(ACCESS_DENIED);
 	DOSPATH_REMOVE_ENDINGDOTS_KEEP(name);
 	Patch_Entry* e = impl->Get(name);
-	if (!e || e->IsDirectory()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
+	if (!e || e->IsDirectory()) return impl->under.FileOpen(file, name, flags);
 	if (e->AsFile()->type == Patch_File::TYPE_RAW)
-		return impl->patchzip.FileOpen(file, name, flags);
+		return impl->patchzip->FileOpen(file, name, flags);
 	
-	if (!e->AsFile()->patched) e->AsFile()->DoPatch(impl->under, impl->patchzip);
+	if (!e->AsFile()->patched) e->AsFile()->DoPatch(impl->under, *impl->patchzip);
 	*file = new Patch_Handle(e->AsFile(), flags, name_org);
 	return true;
 }
@@ -599,7 +591,7 @@ bool patchDrive::FileExists(const char* name)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Patch_Entry* p = impl->Get(name);
-	return (p && p->IsFile());
+	return (p ? p->IsFile() : impl->under.FileExists(name));
 }
 
 bool patchDrive::RemoveDir(char* dir_path)
@@ -615,16 +607,19 @@ bool patchDrive::MakeDir(char* dir_path)
 bool patchDrive::TestDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
-	return (!dir_path[0] || impl->directories.Get(dir_path));
+	return (!dir_path[0] || impl->directories.Get(dir_path) || impl->under.TestDir(dir_path));
 }
 
 bool patchDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
+	const Bit16u save_errorcode = dos.errorcode;
 	Patch_Directory* dir = (!dir_path[0] ? &impl->root : impl->directories.Get(dir_path));
-	if (!dir) return FALSE_SET_DOSERR(PATH_NOT_FOUND);
+	Bit16u over_id = (impl->under.FindFirst(dir_path, dta, fcb_findfirst) ? dta.GetDirID() : 0xFFFF);
+	if (!dir && over_id == 0xFFFF) return FALSE_SET_DOSERR(PATH_NOT_FOUND);
+	dos.errorcode = save_errorcode;
 
-	Patch_Search s = { dir, 0 };
+	Patch_Search s = { dir, (over_id == 0xFFFF ? (Bit32u)0 : (Bit32u)2), over_id };
 	if (impl->free_search_ids.empty())
 	{
 		dta.SetDirID((Bit16u)impl->searches.size());
@@ -633,19 +628,37 @@ bool patchDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 	else
 	{
 		dta.SetDirID(impl->free_search_ids.back());
+		impl->searches[impl->free_search_ids.back()] = s;
 		impl->free_search_ids.pop_back();
-		impl->searches[dta.GetDirID()] = s;
 	}
 
-	if (DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
+	if (s.index || DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
 	return FindNext(dta);
 }
 
 bool patchDrive::FindNext(DOS_DTA & dta)
 {
-	if (dta.GetDirID() >= impl->searches.size()) return FALSE_SET_DOSERR(ACCESS_DENIED);
-	Patch_Search& s = impl->searches[dta.GetDirID()];
-	if (!s.dir) return FALSE_SET_DOSERR(NO_MORE_FILES);
+	const Bit16u my_dir_id = dta.GetDirID();
+	if (my_dir_id >= impl->searches.size()) return FALSE_SET_DOSERR(ACCESS_DENIED);
+	Patch_Search& s = impl->searches[my_dir_id];
+	if (s.index == 0xFFFFFFFF) return FALSE_SET_DOSERR(NO_MORE_FILES);
+
+	if (s.over_id != 0xFFFF) for (;;)
+	{
+		const Bit16u save_errorcode = dos.errorcode;
+		dta.SetDirID(s.over_id);
+		bool have_more = impl->under.FindNext(dta);
+		s.over_id = dta.GetDirID();
+		dta.SetDirID(my_dir_id);
+		dos.errorcode = save_errorcode;
+		if (!have_more) { s.over_id = 0xFFFF; break; }
+
+		char dta_name[DOS_NAMELENGTH_ASCII];Bit32u dta_size;Bit16u dta_date;Bit16u dta_time;Bit8u dta_attr;
+		dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
+		if ((dta_attr & DOS_ATTR_VOLUME) || (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') || !s.dir || !s.dir->entries.Get(dta_name))
+			return true;
+	}
+
 	Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];
 	dta.GetSearchParams(attr,pattern);
 	while (s.index < 2)
@@ -656,16 +669,17 @@ bool patchDrive::FindNext(DOS_DTA & dta)
 		dta.SetResult(dotted, 0, s.dir->date, s.dir->time, (Bit8u)s.dir->attr);
 		return true;
 	}
-	for (Bit32u i = s.dir->entries.Capacity() - (s.index++ - 2); i--; s.index++) // iterate reverse to better deal with "DEL *.*"
+	if (s.dir) while (s.index++ - 2 < s.dir->entries.Capacity())
 	{
-		Patch_Entry* e = s.dir->entries.GetAtIndex(i);
+		Patch_Entry* e = s.dir->entries.GetAtIndex(s.index - 3);
 		if (!e || !WildFileCmp(e->name, pattern)) continue;
 		if (~attr & (Bit8u)e->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 		dta.SetResult(e->name, (e->IsFile() ? e->AsFile()->Size(impl->under, impl->patchzip) : 0), e->date, e->time, (Bit8u)e->attr);
 		return true;
 	}
-	s.dir = NULL;
-	impl->free_search_ids.push_back(dta.GetDirID());
+
+	s.index = 0xFFFFFFFF;
+	impl->free_search_ids.push_back(my_dir_id);
 	return FALSE_SET_DOSERR(NO_MORE_FILES);
 }
 
@@ -673,7 +687,7 @@ bool patchDrive::FileStat(const char* name, FileStat_Block * const stat_block)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Patch_Entry* p = impl->Get(name);
-	if (!p) return false;
+	if (!p) return impl->under.FileStat(name, stat_block);
 	stat_block->attr = p->attr;
 	stat_block->size = (p->IsFile() ? p->AsFile()->Size(impl->under, impl->patchzip) : 0);
 	stat_block->date = p->date;
@@ -685,17 +699,14 @@ bool patchDrive::GetFileAttr(char * name, Bit16u * attr)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	Patch_Entry* p = impl->Get(name);
-	if (!p) return false;
+	if (!p) return impl->under.GetFileAttr(name, attr);
 	*attr = p->attr;
 	return true;
 }
 
 bool patchDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)
 {
-	// return dummy numbers (not above 0x7FFF which seems to be needed for some games)
-	*_bytes_sector = 512;
-	*_sectors_cluster = 32;
-	*_total_clusters = 32765; // 512MB
+	impl->under.AllocationInfo(_bytes_sector, _sectors_cluster, _total_clusters, _free_clusters);
 	*_free_clusters = 0;
 	return true;
 }

@@ -708,7 +708,7 @@ private:
 
 class patchDrive : public DOS_Drive {
 public:
-	patchDrive(DOS_Drive& under, DOS_File* patchzip);
+	patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip = NULL);
 	virtual ~patchDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
