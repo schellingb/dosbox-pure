@@ -3207,8 +3207,8 @@ void retro_init(void) //#3
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk_control_callback))
 		environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, (void*)&disk_control_callback);
 
-	const retro_netpacket_callback* DBP_Network_GetCallbacks(void);
-	environ_cb(RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE, (void*)DBP_Network_GetCallbacks());
+	void DBP_Network_SetCallbacks(retro_environment_t envcb);
+	DBP_Network_SetCallbacks(environ_cb);
 
 	struct retro_perf_callback perf;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) && perf.get_time_usec) time_cb = perf.get_time_usec;

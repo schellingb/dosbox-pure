@@ -2780,7 +2780,7 @@ static retro_netpacket_send_t dbp_net_send_fn;
 
 struct NetCallBacks
 {
-	static void RETRO_CALLCONV start(uint16_t client_id, retro_netpacket_send_t send_fn)
+	static void RETRO_CALLCONV start(uint16_t client_id, retro_netpacket_send_t send_fn, retro_netpacket_poll_receive_t poll_receive_fn)
 	{
 		LOG_MSG("[DOSBOXNET] Multiplayer session ready! ClientId: %d", client_id);
 		if (!dbp_net) dbp_net = new DBP_Net; else cleanup();
@@ -2795,7 +2795,7 @@ struct NetCallBacks
 	static inline Bit16u client_id_from_mac(const Bit8u* mac)
 	{
 		// Consider unknown first octet to be a multicast of some sort
-		return (mac[0] == DBP_Net::FIRST_MAC_OCTET ? NET_READ_BE16(&mac[4]) : (Bit16u)0xFFFF);
+		return (mac[0] == DBP_Net::FIRST_MAC_OCTET ? NET_READ_BE16(&mac[4]) : (Bit16u)RETRO_NETPACKET_BROADCAST);
 	}
 
 	static void RETRO_CALLCONV receive(const void* pkt, size_t pktlen, uint16_t client_id)
@@ -2900,9 +2900,8 @@ struct NetCallBacks
 				//	printf("[DOSBOXNET] IGNORING Packet - Len: %d - Src: %02x:%02x:%02x:%02x:%02x:%02x (#%d) - Dest: %02x:%02x:%02x:%02x:%02x:%02x (#%d)\n", len, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5], client_id_from_mac(src_mac), dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], client_id_from_mac(dest_mac));
 				//	continue;
 				//}
-				uint16_t src_client_id = client_id_from_mac(src_mac), dest_client_id = client_id_from_mac(dest_mac);
-				//printf("[DOSBOXNET] Outgoing Packet - Len: %d - Src: %02x:%02x:%02x:%02x:%02x:%02x (#%d) - Dest: %02x:%02x:%02x:%02x:%02x:%02x (#%d)\n", len, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5], src_client_id, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], dest_client_id);
-				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p + 2, len, dest_client_id, (dest_client_id == 0xFFFF));
+				//printf("[DOSBOXNET] Outgoing Packet - Len: %d - Src: %02x:%02x:%02x:%02x:%02x:%02x (#%d) - Dest: %02x:%02x:%02x:%02x:%02x:%02x (#%d)\n", len, src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5], client_id_from_mac(src_mac), dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], client_id_from_mac(dest_mac));
+				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p + 2, len, client_id_from_mac(dest_mac));
 			}
 			dbp_net->OutgoingPackets.clear();
 		}
@@ -2912,7 +2911,7 @@ struct NetCallBacks
 			{
 				size_t len = (pEnd - p > 1023 ? (Bit32u)1023 : (Bit32u)(pEnd - p));
 				p[-1] = DBP_Net::PKT_MODEM; // prefix with packet type (space reserved by CLibretroModem::transmitByte)
-				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p-1, len + 1, 0xFFFF, true);
+				dbp_net_send_fn(RETRO_NETPACKET_RELIABLE, p-1, len + 1, RETRO_NETPACKET_BROADCAST);
 			}
 			dbp_net->OutgoingModem.clear();
 		}
@@ -2936,9 +2935,15 @@ struct NetCallBacks
 	}
 };
 
-void DBP_Network_Flush() { if (dbp_net_send_fn) dbp_net_send_fn(0,0,0,0,0); }
+#if 0 // disabled aggressive latency reduction
+void DBP_Network_Flush()
+{
+	if (dbp_net_poll_receive_fn) dbp_net_poll_receive_fn();
+	if (dbp_net_send_fn) NetCallBacks::SendOutgoing(RETRO_NETPACKET_RELIABLE|RETRO_NETPACKET_FLUSH_HINT);
+}
+#endif
 
-const retro_netpacket_callback* DBP_Network_GetCallbacks(void)
+void DBP_Network_SetCallbacks(retro_environment_t envcb)
 {
 	static const retro_netpacket_callback packet_callback =
 	{
@@ -2946,5 +2951,27 @@ const retro_netpacket_callback* DBP_Network_GetCallbacks(void)
 		NetCallBacks::stop, NetCallBacks::poll,
 		//NetCallBacks::connected, NetCallBacks::disconnected,
 	};
-	return &packet_callback;
+	envcb(RETRO_ENVIRONMENT_SET_NETPACKET_INTERFACE, (void*)&packet_callback);
+
+	// We provide backwards compatibility with the deprecated environment call 76
+	#define RETRO_ENVIRONMENT_SET_NETPACKET76_INTERFACE 76
+	typedef void (RETRO_CALLCONV *retro_netpacket76_send_t)(int flags, const void* buf, size_t len, uint16_t client_id, bool broadcast);
+	typedef void (RETRO_CALLCONV *retro_netpacket76_start_t)(uint16_t client_id, retro_netpacket76_send_t send_fn);
+	struct retro_netpacket76_callback { retro_netpacket76_start_t start; retro_netpacket_receive_t receive; retro_netpacket_stop_t stop; retro_netpacket_poll_t poll; retro_netpacket_connected_t connected; retro_netpacket_disconnected_t disconnected; };
+	static retro_netpacket76_send_t dbp_net76_send_fn;
+	struct NetCallBacks76
+	{
+		static void RETRO_CALLCONV wrapsend76(int flags, const void* buf, size_t len, uint16_t client_id)
+		{
+			dbp_net76_send_fn(flags, buf, len, client_id, (client_id == RETRO_NETPACKET_BROADCAST));
+		}
+		static void RETRO_CALLCONV start76(uint16_t client_id, retro_netpacket76_send_t send_fn)
+		{
+			NetCallBacks::start(client_id, NULL, NULL);
+			dbp_net76_send_fn = send_fn;
+			dbp_net_send_fn = wrapsend76;
+		}
+	};
+	static const retro_netpacket76_callback packet76_callback = { NetCallBacks76::start76, NetCallBacks::receive, NetCallBacks::stop, NetCallBacks::poll };
+	envcb(RETRO_ENVIRONMENT_SET_NETPACKET76_INTERFACE, (void*)&packet76_callback);
 }
