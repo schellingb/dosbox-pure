@@ -280,6 +280,9 @@ static  struct imagePlayer {
 	bool	GetCueFrame(int &frames, std::istream &in);
 	bool	GetCueString(std::string &str, std::istream &in);
 	bool	AddTrack(Track &curr, int &shift, int prestart, int &totalPregap, int currPregap);
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE
+	bool	LoadChdFile(char *filename);
+#endif
 
 static	int	refCount;
 	std::vector<Track>	tracks;

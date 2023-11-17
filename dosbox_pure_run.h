@@ -113,9 +113,9 @@ struct DBP_Run
 			return true;
 		}
 
-		static bool HaveISO()
+		static bool HaveCDImage()
 		{
-			for (DBP_Image& i : dbp_images) if ((i.path[i.path.size()-2]|0x25) != 'm') return true; //0x25 recognizes IMG/IMA/VHD but not ISO/CUE/INS
+			for (DBP_Image& i : dbp_images) if (i.IsCD()) return true;
 			return false;
 		}
 
@@ -161,7 +161,7 @@ struct DBP_Run
 
 			// If there is no mounted hard disk image but a D: drive, setup the CDROM IDE controller
 			if (!imageDiskList['C'-'A'] && Drives['D'-'A'])
-				IDE_SetupControllers(BatchFileBoot::HaveISO() ? 'D' : 0);
+				IDE_SetupControllers(BatchFileBoot::HaveCDImage() ? 'D' : 0);
 
 			// Install the NE2000 network card
 			NET_SetupEthernet();
@@ -214,11 +214,11 @@ struct DBP_Run
 			dbp_osimages.emplace_back(filename);
 		}
 
-		const bool have_iso = BatchFileBoot::HaveISO();
+		const bool have_cd_image = BatchFileBoot::HaveCDImage();
 		if (!path.empty())
 		{
 			// When booting an external disk image as C:, use whatever is C: in DOSBox DOS as the second hard disk in the booted OS (it being E: in Drives[] doesn't matter)
-			char newC = ((have_iso || DBP_IsMounted('D')) ? 'E' : 'D'); // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
+			char newC = ((have_cd_image || DBP_IsMounted('D')) ? 'E' : 'D'); // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
 			if (imageDiskList['C'-'A'])
 				imageDiskList[newC-'A'] = imageDiskList['C'-'A'];
 			else if (!BatchFileBoot::MountOSIMG(newC, (dbp_content_path + ".img").c_str(), "D: drive image", true, false) && Drives['C'-'A'])
@@ -256,7 +256,7 @@ struct DBP_Run
 		}
 
 		// Setup IDE controllers for the hard drives and one CDROM drive (if any CDROM image is mounted)
-		IDE_SetupControllers(have_iso ? 'D' : 0);
+		IDE_SetupControllers(have_cd_image ? 'D' : 0);
 
 		// Install the NE2000 network card
 		NET_SetupEthernet();

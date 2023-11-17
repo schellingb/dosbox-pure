@@ -337,6 +337,9 @@ bool CDROM_Interface_Image::SetDevice(char* path, int /*forceCD*/)
 {
 	if (LoadCueSheet(path)) return true;
 	if (LoadIsoFile(path)) return true;
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE
+	if (LoadChdFile(path)) return true;
+#endif
 	
 	// print error message on dosbox console
 	char buf[MAX_LINE_LENGTH];
@@ -479,7 +482,7 @@ CDROM_Interface::atapi_res CDROM_Interface_Image::ReadSectorsAtapi(void* buffer,
 				return CDROM_Interface::ATAPI_ILLEGAL_MODE; // illegal request - illegal mode for this track
 
 		int raw_off = 0;
-		bool t_is_raw = (t->sectorSize == RAW_SECTOR_SIZE), can_read = true;
+		bool t_is_raw = (t->sectorSize >= RAW_SECTOR_SIZE), can_read = true;
 		switch (readSectorType)
 		{
 			case 0: break; /* All types */
@@ -579,14 +582,50 @@ int CDROM_Interface_Image::GetTrack(int sector)
 
 bool CDROM_Interface_Image::ReadSector(Bit8u *buffer, bool raw, unsigned long sector)
 {
+	/*
+	Mode 1:        12 sync bytes, 4 header bytes, 2048 bytes cooked user data, 288 bytes EDC/ECC
+	Mode 2 Form 2: 12 sync bytes, 4 header bytes, 2336 bytes user data (with 8 bytes subheader before cooked data)
+
+	ISO
+		attr: 0x40 - sectorSize: 2048 (COOKED_SECTOR_SIZE) - mode2: false - cooked seek:  0  (CanReadPVD(file, COOKED_SECTOR_SIZE, false))
+		attr: 0x40 - sectorSize: 2352 (RAW_SECTOR_SIZE)    - mode2: false - cooked seek: 16  (CanReadPVD(file, RAW_SECTOR_SIZE, false))
+		attr: 0x40 - sectorSize: 2448 (CHD_SECTOR_SIZE)    - mode2: false - cooked seek: 16  (CanReadPVD(file, 2448, false))
+		attr: 0x40 - sectorSize: 2336 (MODE2_DATA_SIZE)    - mode2: true  - cooked seek:  8  (CanReadPVD(file, 2336, true))
+		attr: 0x40 - sectorSize: 2352 (RAW_SECTOR_SIZE)    - mode2: true  - cooked seek: 24  (CanReadPVD(file, RAW_SECTOR_SIZE, true))
+
+	CUE
+		attr: 0    - sectorSize: 2352 (RAW_SECTOR_SIZE)    - mode2: false - cooked seek: 16  (type == "AUDIO")
+		attr: 0x40 - sectorSize: 2352 (RAW_SECTOR_SIZE)    - mode2: false - cooked seek: 16  (type == "MODE1/2352")
+		attr: 0x40 - sectorSize: 2048 (COOKED_SECTOR_SIZE) - mode2: false - cooked seek:  0  (type == "MODE1/2048")
+		attr: 0x40 - sectorSize: 2048 (COOKED_SECTOR_SIZE) - mode2: false - cooked seek:  0  (type == "MODE2/2048")
+		attr: 0x40 - sectorSize: 2336 (MODE2_DATA_SIZE)    - mode2: true  - cooked seek:  8  (type == "MODE2/2336")
+		attr: 0x40 - sectorSize: 2352 (RAW_SECTOR_SIZE)    - mode2: true  - cooked seek: 24  (type == "MODE2/2352")
+
+	CHD (sectorSize is always 2448, datasize is from chdman source, total seek needs to be to start of cooked data)
+		attr: 0    - datasize:   2352 (RAW_SECTOR_SIZE)    - mode2: false - cooked seek: 16  (!strcmp(Type, "AUDIO")) (total seek: 16)
+		attr: 0x40 - datasize:   2352 (RAW_SECTOR_SIZE)    - mode2: false - cooked seek: 16  (!strcmp(Type, "MODE1_RAW")) (total seek: 16)
+		attr: 0x40 - datasize:   2048 (COOKED_SECTOR_SIZE) - mode2: false - cooked seek: 16  (!strcmp(Type, "MODE1")) (cooked_sector_shift: -16 - total seek: 0)
+		attr: 0x40 - datasize:   2048 (COOKED_SECTOR_SIZE) - mode2: false - cooked seek: 16  (!strcmp(Type, "MODE2_FORM1")) (cooked_sector_shift: -16 - total seek: 0)
+		attr: 0x40 - datasize:   2324 (FORM2_DATA_SIZE)    - mode2: true  - cooked seek: 24  (!strcmp(Type, "MODE2_FORM2")) (cooked_sector_shift = -24 - total seek: 0)
+		attr: 0x40 - datasize:   2336 (MODE2_DATA_SIZE)    - mode2: true  - cooked seek: 24  (!strcmp(Type, "MODE2")) (cooked_sector_shift = -16 - total seek: 8)
+		attr: 0x40 - datasize:   2336 (MODE2_DATA_SIZE)    - mode2: true  - cooked seek: 24  (!strcmp(Type, "MODE2_FORM_MIX")) (cooked_sector_shift = -16 - total seek: 8)
+		attr: 0x40 - datasize:   2352 (RAW_SECTOR_SIZE)    - mode2: true  - cooked seek: 24  (!strcmp(Type, "MODE2_RAW")) (total seek: 24)
+	*/
+
 	int track = GetTrack(sector) - 1;
 	if (track < 0) return false;
 	
 	int seek = tracks[track].skip + (sector - tracks[track].start) * tracks[track].sectorSize;
 	int length = (raw ? RAW_SECTOR_SIZE : COOKED_SECTOR_SIZE);
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE
+	if (tracks[track].sectorSize < RAW_SECTOR_SIZE) { if (raw) return false; }
+	else { if (!tracks[track].mode2 && !raw) seek += 16; }
+	if (tracks[track].mode2 && !raw) seek += (tracks[track].sectorSize >= RAW_SECTOR_SIZE ? 24 : 8);
+#else
 	if (tracks[track].sectorSize != RAW_SECTOR_SIZE && raw) return false;
 	if (tracks[track].sectorSize == RAW_SECTOR_SIZE && !tracks[track].mode2 && !raw) seek += 16;
 	if (tracks[track].mode2 && !raw) seek += 24;
+#endif
 
 	return tracks[track].file->read(buffer, seek, length);
 }
@@ -684,6 +723,11 @@ bool CDROM_Interface_Image::LoadIsoFile(char* filename)
 	} else if (CanReadPVD(track.file, RAW_SECTOR_SIZE, true)) {
 		track.sectorSize = RAW_SECTOR_SIZE;
 		track.mode2 = true;		
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE // added detection for 2448 sector size
+	} else if (CanReadPVD(track.file, 2448, false)) {
+		track.sectorSize = 2448;
+		track.mode2 = false;
+#endif
 	} else {
 		//DBP: Added cleanup
 		delete track.file;
@@ -793,6 +837,12 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 				track.sectorSize = RAW_SECTOR_SIZE;
 				track.attr = 0x40;
 				track.mode2 = false;
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE // added Mode 2 form 1 detection, which is equivalent to MODE1/2048
+			} else if (type == "MODE2/2048") { 
+				track.sectorSize = COOKED_SECTOR_SIZE;
+				track.attr = 0x40;
+				track.mode2 = false;
+#endif
 			} else if (type == "MODE2/2336") {
 				track.sectorSize = 2336;
 				track.attr = 0x40;
@@ -1067,6 +1117,149 @@ void CDROM_Interface_Image::ClearTracks()
 	}
 	tracks.clear();
 }
+
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE
+bool CDROM_Interface_Image::LoadChdFile(char* filename)
+{
+	//DBP: Call ClearTracks here which actually clears the tracks correctly (the call to LoadCueSheet can actually leave tracks that need clearing after an error)
+	ClearTracks(); //tracks.clear();
+
+	enum { CHD_V5_HEADER_SIZE = 124, CHD_V5_UNCOMPMAPENTRYBYTES = 4, CD_MAX_SECTOR_DATA = 2352, CD_MAX_SUBCODE_DATA = 96, CD_FRAME_SIZE = CD_MAX_SECTOR_DATA + CD_MAX_SUBCODE_DATA };
+	enum { METADATA_HEADER_SIZE = 16, CDROM_TRACK_METADATA_TAG = 1128813650, CDROM_TRACK_METADATA2_TAG = 1128813618, CD_TRACK_PADDING = 4 };
+
+	struct ChdFile : public BinaryFile
+	{
+		ChdFile(const char *filename, bool &error) : BinaryFile(filename, error), memory(NULL), cooked_sector_shift(0) { }
+		virtual ~ChdFile() { free(memory); }
+		Bit8u *memory, *sector_to_track;
+		Bit32u *hunkmap, *paddings;
+		int hunkbytes, cooked_sector_shift;
+
+		static Bit32u get_bigendian_uint32(const Bit8u *base) { return (base[0] << 24) | (base[1] << 16) | (base[2] << 8) | base[3]; }
+		static Bit64u get_bigendian_uint64(const Bit8u *base) { return ((Bit64u)base[0] << 56) | ((Bit64u)base[1] << 48) | ((Bit64u)base[2] << 40) | ((Bit64u)base[3] << 32) | ((Bit64u)base[4] << 24) | ((Bit64u)base[5] << 16) | ((Bit64u)base[6] << 8) | (Bit64u)base[7]; }
+
+		virtual bool read(Bit8u *buffer, int seek, int count)
+		{
+			DBP_ASSERT((seek / CD_FRAME_SIZE) == ((seek + count) / CD_FRAME_SIZE)); // read only inside one sector
+			int track = sector_to_track[seek / CD_FRAME_SIZE];
+			seek += paddings[track];
+			const int hunk = (seek / hunkbytes), hunk_ofs = (seek % hunkbytes), hunk_pos = (int)hunkmap[hunk];
+			if (!hunk_pos) { memset(buffer, 0, count); return true; }
+			if (!BinaryFile::read(buffer, hunk_pos + hunk_ofs + (count == COOKED_SECTOR_SIZE ? cooked_sector_shift : 0), count)) return false;
+			if (track) // CHD audio endian swap
+				for (Bit8u *p = buffer + (seek & 1), *pEnd = buffer + count, tmp; p < pEnd; p += 2)
+					{ tmp = p[0]; p[0] = p[1]; p[1] = tmp; }
+			return true;
+		}
+	};
+
+	bool not_chd;
+	ChdFile* chd = new ChdFile(filename, not_chd);
+	if (not_chd)
+	{
+		err:
+		tracks.clear();
+		delete chd;
+		if (!not_chd) GFX_ShowMsg("Invalid or sunsupported CHD file, must be an uncompressed version 5 CD image");
+		return false;
+	}
+
+	// Read CHD header and check signature
+	Bit8u rawheader[CHD_V5_HEADER_SIZE];
+	if (!chd->BinaryFile::read(rawheader, 0, CHD_V5_HEADER_SIZE) || memcmp(rawheader, "MComprHD", 8)) { not_chd = true; goto err; }
+
+	// Check supported version, flags and compression
+	Bit32u hdr_length = ChdFile::get_bigendian_uint32(&rawheader[8]);
+	Bit32u hdr_version = ChdFile::get_bigendian_uint32(&rawheader[12]);
+	if (hdr_version != 5 || hdr_length != CHD_V5_HEADER_SIZE) goto err; // only ver 5 is supported
+	if (ChdFile::get_bigendian_uint32(&rawheader[16])) goto err; // compression is not supported
+
+	// Make sure it's a CD image
+	DBP_STATIC_ASSERT(CD_MAX_SECTOR_DATA == RAW_SECTOR_SIZE);
+	Bit32u unitsize = ChdFile::get_bigendian_uint32(&rawheader[60]);
+	chd->hunkbytes = (int)ChdFile::get_bigendian_uint32(&rawheader[56]);
+	if (unitsize != CD_FRAME_SIZE || (chd->hunkbytes % CD_FRAME_SIZE) || !chd->hunkbytes) goto err; // not CD sector size
+
+	// Read file offsets for hunk mapping and track meta data
+	Bit64u filelen = (Bit64u)chd->BinaryFile::getLength();
+	Bit64u logicalbytes = ChdFile::get_bigendian_uint64(&rawheader[32]);
+	Bit64u mapoffset = ChdFile::get_bigendian_uint64(&rawheader[40]);
+	Bit64u metaoffset = ChdFile::get_bigendian_uint64(&rawheader[48]);
+	if (mapoffset < CHD_V5_HEADER_SIZE || mapoffset >= filelen || metaoffset < CHD_V5_HEADER_SIZE || metaoffset >= filelen || !logicalbytes) goto err;
+
+	// Read track meta data
+	Track empty_track = { 0, 0, 0, 0, 0, CD_FRAME_SIZE, false, chd };
+	for (Bit64u metaentry_offset = metaoffset, metaentry_prev = 0, metaentry_next; metaentry_offset != 0; metaentry_prev = metaentry_offset, metaentry_offset = metaentry_next)
+	{
+		char meta[256], mt_type[32], mt_subtype[32];
+		Bit8u raw_meta_header[METADATA_HEADER_SIZE];
+		if (!chd->BinaryFile::read(raw_meta_header, (int)metaentry_offset, sizeof(raw_meta_header))) goto err;
+		Bit32u metaentry_metatag = ChdFile::get_bigendian_uint32(&raw_meta_header[0]);
+		Bit32u metaentry_length = (ChdFile::get_bigendian_uint32(&raw_meta_header[4]) & 0x00ffffff);
+		metaentry_next = ChdFile::get_bigendian_uint64(&raw_meta_header[8]);
+		if (metaentry_metatag != CDROM_TRACK_METADATA_TAG && metaentry_metatag != CDROM_TRACK_METADATA2_TAG) continue;
+		if (!chd->BinaryFile::read((Bit8u*)meta, (int)(metaentry_offset + METADATA_HEADER_SIZE), (int)(metaentry_length > sizeof(meta) ? sizeof(meta) : metaentry_length))) goto err;
+		printf("%.*s\n", metaentry_length, meta);
+
+		int mt_track_no = 0, mt_frames = 0, mt_pregap = 0;
+		if (sscanf(meta,
+			(metaentry_metatag == CDROM_TRACK_METADATA2_TAG ? "TRACK:%d TYPE:%30s SUBTYPE:%30s FRAMES:%d PREGAP:%d" : "TRACK:%d TYPE:%30s SUBTYPE:%30s FRAMES:%d"),
+			&mt_track_no, mt_type, mt_subtype, &mt_frames, &mt_pregap) < 4) continue;
+
+		// Add CHD tracks without using AddTrack because it's much simpler, we also support an incoming unsorted track list
+		while (tracks.size() < (size_t)(mt_track_no)) { empty_track.number++; tracks.push_back(empty_track); }
+		bool isAudio = !strcmp(mt_type, "AUDIO"), isMode2Form1 = (!isAudio && !strcmp(mt_type, "MODE2_FORM1")); // treated equivalent to MODE1
+		Track& track = tracks[mt_track_no - 1];
+		track.attr = (isAudio ? 0 : 0x40);
+		track.start = mt_pregap;
+		track.length = mt_frames - mt_pregap;
+		track.mode2 = (mt_type[4] == '2' && !isMode2Form1);
+		if (isAudio) continue;
+
+		// Negate offset done in CDROM_Interface_Image::ReadSector (see table in that function for how to handle all track types)
+		if (isMode2Form1 || !strcmp(mt_type, "MODE1") || !strcmp(mt_type, "MODE2") || !strcmp(mt_type, "MODE2_FORM_MIX")) chd->cooked_sector_shift = -16;
+		else if (!strcmp(mt_type, "MODE2_FORM2")) chd->cooked_sector_shift = -24;
+	}
+
+	Bit32u trackcount = (Bit32u)tracks.size();
+	if (!trackcount || trackcount > 127) goto err; // no tracks found
+
+	// Add leadout track for chd, just calculate it manually and skip AddTrack (which would call TrackFile::getLength).
+	// AddTrack would wrongfully change the length of the last track. By doing this manually we don't need ChdFile::getLength.
+	empty_track.number++;
+	empty_track.file = NULL;
+	tracks.push_back(empty_track);
+
+	DBP_STATIC_ASSERT(CHD_V5_UNCOMPMAPENTRYBYTES == sizeof(Bit32u));
+	Bit32u hunkcount = ((logicalbytes + chd->hunkbytes - 1) / chd->hunkbytes), sectorcount = (logicalbytes / CD_FRAME_SIZE);
+	Bit32u allocate_bytes = (hunkcount * CHD_V5_UNCOMPMAPENTRYBYTES) + (trackcount * sizeof(Bit32u)) + (sectorcount);
+	chd->memory = (Bit8u*)malloc(allocate_bytes);
+	chd->hunkmap = (Bit32u*)chd->memory;
+	chd->paddings = (Bit32u*)(chd->hunkmap + hunkcount);
+	chd->sector_to_track = (Bit8u*)(chd->paddings + trackcount);
+
+	// Read hunk mapping and convert to file offsets
+	if (!chd->BinaryFile::read((Bit8u*)chd->hunkmap, (int)mapoffset, hunkcount * CHD_V5_UNCOMPMAPENTRYBYTES)) goto err;
+	for (Bit32u i = 0; i != hunkcount; i++) chd->hunkmap[i] = ChdFile::get_bigendian_uint32((Bit8u*)&chd->hunkmap[i]) * chd->hunkbytes;
+
+	// Now set physical start offsets for tracks and calculate CHD paddings. In CHD files tracks are padded to a to a 4-sector boundary.
+	// Thus we need to give ChdFile::read a means to figure out the padding that applies to the physical sector number it is reading.
+	for (Bit32u sector = 0, total_chd_padding = 0, i = 0;; i++)
+	{
+		int physical_sector = (i ? tracks[i - 1].start + tracks[i - 1].length : 0); // without CHD padding
+		tracks[i].start += physical_sector; // += to add to mt_pregap
+		if (i == trackcount) break; // leadout only needs start
+		tracks[i].skip = tracks[i].start * CD_FRAME_SIZE; // physical address
+
+		Bit32u sector_end = (tracks[i].start + tracks[i].length);
+		memset(chd->sector_to_track + sector, (int)i, (sector_end - sector));
+		sector = sector_end;
+		total_chd_padding += ((CD_TRACK_PADDING - ((physical_sector + total_chd_padding) % CD_TRACK_PADDING)) % CD_TRACK_PADDING);
+		chd->paddings[i] = (total_chd_padding * CD_FRAME_SIZE);
+	}
+	return true;
+}
+#endif
 
 void CDROM_Image_Destroy(Section*) {
 #if defined(C_SDL_SOUND)

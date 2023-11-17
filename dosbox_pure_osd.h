@@ -961,13 +961,13 @@ struct DBP_PureMenuState : DBP_MenuState
 	void RefreshFileList(bool initial_scan)
 	{
 		list.clear();
-		exe_count = fs_count = 0; int iso_count = 0, img_count = 0; bool bootimg = false;
+		exe_count = fs_count = 0; int cd_count = 0, hd_count = 0; bool bootimg = false;
 
 		for (DBP_Image& image : dbp_images)
 		{
 			list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]));
 			DBP_GetImageLabel(image, list.back().str);
-			((list.back().str[list.back().str.size()-2]|0x25) == 'm' ? img_count : iso_count)++; //0x25 recognizes IMG/IMA/VHD but not ISO/CUE/INS
+			(image.IsCD() ? cd_count : hd_count)++;
 			fs_count++;
 			if (image.image_disk) bootimg = true;
 		}
@@ -986,7 +986,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_SHELLLIST, 0, "[ Run System Shell ]");
 			fs_count++;
 		}
-		if (!dbp_strict_mode && ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (img_count == 1 && iso_count == 1)))
+		if (!dbp_strict_mode && ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (hd_count == 1 && cd_count == 1)))
 		{
 			list.emplace_back(IT_INSTALLOSSIZE, 0, "[ Boot and Install New Operating System ]");
 			fs_count++;

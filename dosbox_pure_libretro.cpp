@@ -87,7 +87,7 @@ typedef void(*dbp_intercept_gfx_func)(DBP_Buffer& buf, void* data);
 static dbp_intercept_gfx_func dbp_intercept_gfx;
 
 // DOSBOX DISC MANAGEMENT
-struct DBP_Image { std::string path; bool mounted = false, remount = false, image_disk = false; char drive; };
+struct DBP_Image { std::string path; bool mounted = false, remount = false, image_disk = false; char drive; bool IsCD() { size_t n = path.size(); const char* ext = (n > 3 ? &*(path.end()-3) : NULL); return (ext && !((ext[1]|0x20) == 'm' || (ext[0]|0x20) == 'v')); } };
 static std::vector<DBP_Image> dbp_images;
 static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
@@ -801,7 +801,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		if (!letter) letter = (disk->hardDrive ? 'D' : 'A');
 		media_byte = (disk->hardDrive ? 0xF8 : (disk->active ? disk->GetBiosType() : 0));
 	}
-	else if (!strcasecmp(ext, "ISO") || !strcasecmp(ext, "CUE") || !strcasecmp(ext, "INS"))
+	else if (!strcasecmp(ext, "ISO") || !strcasecmp(ext, "CHD") || !strcasecmp(ext, "CUE") || !strcasecmp(ext, "INS"))
 	{
 		MOUNT_ISO:
 		if (letter < 'D') letter = 'D';
@@ -2072,7 +2072,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 	info->library_version  = "0.9.7";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
-	info->valid_extensions = "zip|dosz|exe|com|bat|iso|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf";
+	info->valid_extensions = "zip|dosz|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf";
 }
 
 void retro_set_environment(retro_environment_t cb) //#2
@@ -2850,7 +2850,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 				const char* fext = (data == ('C'-'A') ? strrchr(fname, '.') : NULL);
 				if (fext++)
 				{
-					bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
+					bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
 					if (isFS && !strncmp(fext, "IM", 2) && (size < 163840 || (size <= 2949120 && (size % 20480) && (size % 20480) != 1024))) isFS = false; //validate floppy images
 					if (isFS && !strcmp(fext, "INS"))
 					{
