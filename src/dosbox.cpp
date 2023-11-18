@@ -947,6 +947,11 @@ void DOSBOX_Init(void) {
 	Pbool = secprop->Add_bool("umb",Property::Changeable::WhenIdle,true);
 	Pbool->Set_help("Enable UMB support.");
 
+#ifdef C_DBP_LIBRETRO
+	Pint = secprop->Add_int("memlimit", Property::Changeable::OnlyAtStart,0);
+	Pint->Set_help("Limit free conventional memory (default to all available, specified in kilobytes < 640)");
+#endif
+
 	secprop->AddInitFunction(&DOS_KeyboardLayout_Init,true);
 	Pstring = secprop->Add_string("keyboardlayout",Property::Changeable::WhenIdle, "auto");
 	Pstring->Set_help("Language code of the keyboard layout (or none).");

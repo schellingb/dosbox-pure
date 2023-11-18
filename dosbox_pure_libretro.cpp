@@ -383,10 +383,6 @@ static void DBP_ReportCoreMemoryMaps()
 	const bool booted_os = !strcmp(RunningProgram, "BOOT");
 	const size_t conventional_end = 640 * 1024, memtotal = (MEM_TotalPages() * 4096);
 
-	#ifndef NDEBUG
-	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] ReportCoreMemoryMaps - Program: %s - Booted OS: %d\n", RunningProgram, (int)booted_os);
-	#endif
-
 	// Give access to entire memory to frontend (cheat and achievements support)
 	// Instead of raw [ENVIRONMENT] [GAME] [EXPANDED MEMORY] we switch the order to be
 	// [GAME] [ENVIRONMENT] [EXPANDED MEMORY] so regardless of the size of the OS environment
@@ -395,7 +391,10 @@ static void DBP_ReportCoreMemoryMaps()
 	struct retro_memory_descriptor mdescs[3] = { 0 }, *mdesc_expandedmem;
 	if (!booted_os)
 	{
-		const size_t prog_start = PhysMake((DOS_MEM_START + 2 + 5 + 17), 0); // see mcb_sizes in DOS_SetupMemory
+		Bit16u seg_prog_start = (DOS_MEM_START + 2 + 5); // see mcb_sizes in DOS_SetupMemory
+		while (DOS_MCB(seg_prog_start).GetPSPSeg() == 0x40) // tempmcb2 from DOS_SetupMemory and "memlimit" dos config
+			seg_prog_start += (Bit16u)(1 + DOS_MCB(seg_prog_start).GetSize()); // skip past fake loadfix segment blocks
+		const size_t prog_start = PhysMake(seg_prog_start, 0);
 		mdescs[0].flags      = RETRO_MEMDESC_SYSTEM_RAM;
 		mdescs[0].start      = 0;
 		mdescs[0].len        = (conventional_end - prog_start);
@@ -418,6 +417,10 @@ static void DBP_ReportCoreMemoryMaps()
 	mdesc_expandedmem->start = 0x00200000;
 	mdesc_expandedmem->len   = memtotal - conventional_end;
 	mdesc_expandedmem->ptr   = MemBase + conventional_end;
+
+	#ifndef NDEBUG
+	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] ReportCoreMemoryMaps - Program: %s - Booted OS: %d - Program Memory: %d KB\n", RunningProgram, (int)booted_os, (mdescs[0].len / 1024));
+	#endif
 
 	struct retro_memory_map mmaps = { mdescs, (unsigned)(!booted_os ? 3 : 2) };
 	environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
@@ -2713,6 +2716,7 @@ static void init_dosbox_load_doszyml(const std::string& yml, Section** ref_autoe
 						||l.Parse("mem_xms", "dos", "xms" , "true","true" , "false","false" , "")
 						||l.Parse("mem_ems", "dos", "ems" , "true","true" , "false","false" , "")
 						||l.Parse("mem_umb", "dos", "umb" , "true","true" , "false","false" , "")
+						||l.Parse("mem_doslimit", "dos", "memlimit", "~")
 					) break; else goto syntaxerror;
 			case 'v':
 				if (0
@@ -2728,6 +2732,7 @@ static void init_dosbox_load_doszyml(const std::string& yml, Section** ref_autoe
 						||l.Parse("sound_dma", "sblaster", "dma", "~")
 						||l.Parse("sound_hdma", "sblaster", "hdma", "~")
 						||l.Parse("sound_mpu401", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
+						||l.Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
 						||l.Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
 					) break; else goto syntaxerror;
 			case 'r':

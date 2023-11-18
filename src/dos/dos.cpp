@@ -1322,6 +1322,25 @@ public:
 		dos.version.minor=0;
 		dos.direct_output=false;
 		dos.internal_output=false;
+
+#ifdef C_DBP_LIBRETRO
+		int memlimit = static_cast<Section_prop *>(configuration)->Get_int("memlimit");
+		if (memlimit && memlimit < 640)
+		{
+			Bit16u blocklimit = (Bit16u)(memlimit * (1024 / 16)), segment = 0, blocks = 0xFFFF;
+			DBP_ASSERT(!DOS_AllocateMemory(&segment, &blocks));
+			DOS_AllocateMemory(&segment, &blocks);
+			if (blocklimit < blocks)
+			{
+				blocks -= blocklimit;
+				if (DOS_AllocateMemory(&segment, &blocks))
+				{
+					DOS_MCB mcb((Bit16u)(segment-1));
+					mcb.SetPSPSeg(0x40); // use same fake segment as LOADFIX::Run
+				}
+			}
+		}
+#endif
 	}
 	~DOS(){
 		for (Bit16u i=0;i<DOS_DRIVES;i++) delete Drives[i];
