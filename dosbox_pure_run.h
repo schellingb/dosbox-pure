@@ -115,7 +115,7 @@ struct DBP_Run
 
 		static bool HaveCDImage()
 		{
-			for (DBP_Image& i : dbp_images) if (i.IsCD()) return true;
+			for (DBP_Image& i : dbp_images) if (DBP_Image_IsCD(i)) return true;
 			return false;
 		}
 

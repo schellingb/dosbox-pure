@@ -90,7 +90,7 @@ static retro_core_option_v2_definition option_defs[] =
 	{
 		"dosbox_pure_strict_mode",
 		"Use Strict Mode", NULL,
-		"Disable the command line, running installed operating systems and using .BAT/.COM/.EXE/DOSZ.YML files from the save game.", NULL,
+		"Disable the command line, running installed operating systems and using .BAT/.COM/.EXE/DOS.YML files from the save game.", NULL,
 		"Emulation",
 		{
 			{ "false", "Off" },

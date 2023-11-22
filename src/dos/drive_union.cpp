@@ -279,7 +279,7 @@ struct unionDriveImpl
 				{
 					size_t pathlen = strlen(path);
 					const char* ext = (pathlen > 4 ? path+pathlen-4 : NULL);
-					if (ext && (!memcmp(ext, ".EXE", 4) || !memcmp(ext, ".COM", 4) || !memcmp(ext, ".BAT", 4) || !strcmp(path, "DOSZ.YML"))) return;
+					if (ext && (!memcmp(ext, ".EXE", 4) || !memcmp(ext, ".COM", 4) || !memcmp(ext, ".BAT", 4) || !strcmp(path, "DOS.YML"))) return;
 				}
 				CreateParentDirs(*l.impl->save_mem, path);
 				if (!l.impl->save_mem->CloneEntry(l.zip, path)) { DBP_ASSERT(0); }
@@ -590,16 +590,6 @@ void unionDrive::AddUnder(DOS_Drive& add_under, bool autodelete_under)
 	impl->autodelete_under = true;
 }
 
-bool unionDrive::IsShadowedDrive(const DOS_Drive* drv) const
-{
-	if (this == drv || impl->over == drv || impl->under == drv) return true;
-	unionDrive* overud = dynamic_cast<unionDrive*>(impl->over);
-	if (overud && overud->IsShadowedDrive(drv)) return true;
-	unionDrive* underud = dynamic_cast<unionDrive*>(impl->under);
-	if (underud && underud->IsShadowedDrive(drv)) return true;
-	return false;
-}
-
 unionDrive::~unionDrive()
 {
 	ForceCloseAll();
@@ -875,7 +865,6 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 	switch (s.step)
 	{
 		case 2:
-			dta.SetDirID(0);
 			if (!impl->under->FindFirst(s.dir, dta, s.fcb_findfirst)) goto case_over_find_first;
 			s.sub_dirID = dta.GetDirID();
 			/* fall through */
@@ -900,7 +889,6 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 			}
 
 		case_over_find_first:
-			dta.SetDirID(0);
 			if (!impl->over->FindFirst(s.dir, dta, s.fcb_findfirst)) goto case_over_done;
 			s.sub_dirID = dta.GetDirID();
 			/* fall through */
@@ -992,6 +980,7 @@ bool unionDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster
 	return true;
 }
 
+bool unionDrive::GetShadows(DOS_Drive*& a, DOS_Drive*& b) { a = impl->under; b = impl->over; return true; }
 Bit8u unionDrive::GetMediaByte(void) { return impl->over->GetMediaByte(); }
 bool unionDrive::isRemote(void) { return false; }
 bool unionDrive::isRemovable(void) { return false; }

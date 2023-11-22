@@ -494,7 +494,7 @@ bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
 bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fcb_findfirst);
 Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len);
 DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize = NULL, bool* writable = NULL, char const* relative_to = NULL);
-bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize = 1024*1024, char const* relative_to = NULL);
+bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize = 1024*1024);
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
 bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes);
 Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc = 0);
@@ -682,7 +682,6 @@ public:
 	unionDrive(DOS_Drive& under, DOS_Drive& over, bool autodelete_under = false, bool autodelete_over = false);
 	unionDrive(DOS_Drive& under, const char* save_file = NULL, bool autodelete_under = false, bool strict_mode = false);
 	void AddUnder(DOS_Drive& add_under, bool autodelete_under = false);
-	bool IsShadowedDrive(const DOS_Drive* drv) const;
 	virtual ~unionDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
@@ -698,6 +697,7 @@ public:
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
 	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);
@@ -723,6 +723,7 @@ public:
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);

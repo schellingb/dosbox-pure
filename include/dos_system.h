@@ -273,6 +273,7 @@ public:
 	virtual bool FileExists(const char* name)=0;
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block)=0;
 	virtual bool GetLongFileName(const char* name, char longname[256]) { return false; }
+	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b) { return false; }
 	virtual Bit8u GetMediaByte(void)=0;
 	virtual void SetDir(const char* path) { strcpy(curdir,path); };
 	virtual void EmptyCache(void) { };

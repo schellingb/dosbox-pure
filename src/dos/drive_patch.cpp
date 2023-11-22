@@ -711,6 +711,7 @@ bool patchDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster
 	return true;
 }
 
+bool patchDrive::GetShadows(DOS_Drive*& a, DOS_Drive*& b) { a = &impl->under; b = impl->patchzip; return true; }
 Bit8u patchDrive::GetMediaByte(void) { return 0xF8;  } //Hard Disk
 bool patchDrive::isRemote(void) { return false; }
 bool patchDrive::isRemovable(void) { return false; }

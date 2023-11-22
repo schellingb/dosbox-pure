@@ -318,12 +318,12 @@ void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH])
 
 Bit8u DriveGetIndex(DOS_Drive* drv)
 {
-	for (Bit8u i = 0; i < DOS_DRIVES; i++) {
-		if (!Drives[i]) continue;
-		if (Drives[i] == drv) return i;
-		unionDrive* ud = dynamic_cast<unionDrive*>(Drives[i]);
-		if (ud && ud->IsShadowedDrive(drv)) return i;
-	}
+	struct Local { static bool Compare(DOS_Drive *outer, DOS_Drive *inner)
+	{
+		DOS_Drive *a, *b;
+		return (outer == inner || (outer->GetShadows(a, b) && (Compare(a, inner) || Compare(b, inner))));
+	}};
+	for (Bit8u i = 0; i < DOS_DRIVES; i++) if (Drives[i] && Local::Compare(Drives[i], drv)) return i;
 	return DOS_DRIVES;
 }
 
@@ -493,15 +493,15 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	return dos_file;
 }
 
-bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize, char const* relative_to)
+bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
 {
-	Bit32u filesize;
-	DOS_File* df = FindAndOpenDosFile(filename, &filesize, NULL, relative_to);
 	if (!df) return false;
+	Bit32u curlen = (Bit32u)out.size(), filesize = 0, seekzero = 0;
+	df->Seek(&filesize, DOS_SEEK_END);
+	df->Seek(&seekzero, DOS_SEEK_SET);
 	if (!filesize || filesize > maxsize) { df->Close(); delete df; return false; }
-	out.resize(filesize + 1);
-	out[filesize] = '\0';
-	Bit8u* buf = (Bit8u*)&out[0];
+	out.resize(curlen + filesize);
+	Bit8u* buf = (Bit8u*)&out[curlen];
 	for (Bit16u read; filesize; filesize -= read, buf += read)
 	{
 		read = (Bit16u)(filesize > 0xFFFF ? 0xFFFF : filesize);

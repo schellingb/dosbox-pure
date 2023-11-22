@@ -87,7 +87,7 @@ typedef void(*dbp_intercept_gfx_func)(DBP_Buffer& buf, void* data);
 static dbp_intercept_gfx_func dbp_intercept_gfx;
 
 // DOSBOX DISC MANAGEMENT
-struct DBP_Image { std::string path; bool mounted = false, remount = false, image_disk = false; char drive; bool IsCD() { size_t n = path.size(); const char* ext = (n > 3 ? &*(path.end()-3) : NULL); return (ext && !((ext[1]|0x20) == 'm' || (ext[0]|0x20) == 'v')); } };
+struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false; char drive; int dirlen; };
 static std::vector<DBP_Image> dbp_images;
 static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
@@ -546,29 +546,51 @@ static bool DBP_NeedFrameSkip(bool in_emulation)
 	return true;
 }
 
-static unsigned DBP_AppendImage(const char* entry, bool sorted)
+bool DBP_Image_IsCD(const DBP_Image& image)
+{
+	const char* ext = (image.path.size() > 3 ? &*(image.path.end()-3) : NULL);
+	return (ext && !((ext[1]|0x20) == 'm' || (ext[0]|0x20) == 'v'));
+}
+
+const char* DBP_Image_Label(const DBP_Image& image)
+{
+	return (image.longpath.length() ? image.longpath : image.path).c_str() + image.dirlen;
+}
+
+static unsigned DBP_AppendImage(const char* in_path, bool sorted)
 {
 	// insert into image list ordered alphabetically, ignore already known images
 	unsigned insert_index;
 	for (insert_index = 0; insert_index != (unsigned)dbp_images.size(); insert_index++)
 	{
-		if (dbp_images[insert_index].path == entry) return insert_index;
-		if (sorted && dbp_images[insert_index].path > entry) { break; }
+		if (dbp_images[insert_index].path == in_path) return insert_index;
+		if (sorted && dbp_images[insert_index].path > in_path) { break; }
 	}
-	dbp_images.insert(dbp_images.begin() + insert_index, DBP_Image());
-	dbp_images[insert_index].path = entry;
-	return insert_index;
-}
 
-static void DBP_GetImageLabel(const DBP_Image& image, std::string& out)
-{
-	const char* img = image.path.c_str();
-	char longname[256];
-	if (img[0] == '$' && Drives[img[1]-'A'] && Drives[img[1]-'A']->GetLongFileName(img+4, longname))
-		img = longname;
-	const char *lastSlash = strrchr(img, '/'), *lastBackSlash = strrchr(img, '\\');
-	const char *basePath = (lastSlash && lastSlash > lastBackSlash ? lastSlash + 1 : (lastBackSlash ? lastBackSlash + 1 : img));
-	out = basePath;
+	dbp_images.insert(dbp_images.begin() + insert_index, DBP_Image());
+	DBP_Image& i = dbp_images[insert_index];
+	i.path = in_path;
+
+	for (char longname[256], *path = &i.path[0], *pRoot = (path[0] == '$' && i.path.length() > 4 && Drives[path[1]-'A'] ? path + 4 : NULL), *p = pRoot, *pNext; p; p = pNext)
+	{
+		if ((pNext = strchr(p, '\\')) != NULL) *pNext = '\0';
+		if (Drives[path[1]-'A']->GetLongFileName(i.path.c_str() + 4, longname))
+		{
+			if (!i.longpath.length()) i.longpath.append(pRoot, (p - pRoot));
+			i.longpath.append(longname);
+		}
+		else if (i.longpath.length())
+		{
+			i.longpath.append(p, ((pNext ? pNext : path + i.path.length()) - p));
+		}
+		if (pNext) { *(pNext++) = '\\'; if (i.longpath.length()) i.longpath += '\\'; }
+	}
+
+	const char* labelpath = (i.longpath.length() ? i.longpath : i.path).c_str();
+	const char *lastSlash = strrchr(labelpath, '/'), *lastBackSlash = strrchr(labelpath, '\\');
+	i.dirlen = (int)((lastSlash && lastSlash > lastBackSlash ? lastSlash + 1 : (lastBackSlash ? lastBackSlash + 1 : labelpath)) - labelpath);
+
+	return insert_index;
 }
 
 static bool DBP_ExtractPathInfo(const char* path, const char ** out_path_file = NULL, size_t* out_namelen = NULL, const char ** out_ext = NULL, const char ** out_fragment = NULL, char* out_letter = NULL)
@@ -2184,7 +2206,7 @@ static void set_variables(bool force_midi_scan = false)
 				else if (ln == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
 				{
 					std::string content;
-					FindAndReadDosFile(path.assign(system_dir).append("/").append(entry_name).c_str(), content);
+					ReadAndClose(FindAndOpenDosFile(path.assign(system_dir).append("/").append(entry_name).c_str()), content);
 					dynstr.clear();
 					dbp_osimages.clear();
 					dbp_shellzips.clear();
@@ -2602,7 +2624,7 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_au
 	}
 }
 
-static void init_dosbox_load_doszyml(const std::string& yml, Section** ref_autoexec)
+static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoexec)
 {
 	struct Local
 	{
@@ -2675,7 +2697,8 @@ static void init_dosbox_load_doszyml(const std::string& yml, Section** ref_autoe
 					{
 						int imgidx = -1;
 						for (DBP_Image& i : dbp_images)
-							if (i.path.size() == 4+(ValX - Val) && i.path[0] == '$' && !strncasecmp(&i.path[4], Val, (ValX - Val)))
+							if ((i.path.size() == 4+(ValX - Val) && i.path[0] == '$' && !strncasecmp(&i.path[4], Val, (ValX - Val)))
+								|| (i.longpath.size() == (ValX - Val) &&  !strncasecmp(&i.longpath[0], Val, (ValX - Val))))
 								{ imgidx = (int)(&i - &dbp_images[0]); break; }
 						if (imgidx == -1) return false;
 						dbp_images[imgidx].remount = true;
@@ -2745,7 +2768,7 @@ static void init_dosbox_load_doszyml(const std::string& yml, Section** ref_autoe
 		}
 		continue;
 		syntaxerror:
-		retro_notify(0, RETRO_LOG_ERROR, "Error in DOSZ.YML: %.*s", (int)(l.Next-l.Key), l.Key);
+		retro_notify(0, RETRO_LOG_ERROR, "Error in DOS.YML: %.*s", (int)(l.Next-l.Key), l.Key);
 		continue;
 	}
 	if (l.cpu_cycles || l.cpu_year || l.cpu_hz)
@@ -2952,11 +2975,20 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		}
 	}
 
-	if (!loadcfg && Drives['C'-'A'] && Drives['C'-'A']->FileExists("$C:\\DOSZ.YML"+4))
+	if (!loadcfg && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOS.YML"))
 	{
+		DOS_Drive* drvarr[3] = { Drives['C'-'A'], };
+		if (drvarr[0]->GetShadows(drvarr[0], drvarr[2])) drvarr[0]->GetShadows(drvarr[0], drvarr[1]);
 		std::string ymlcontent;
-		if (FindAndReadDosFile("$C:\\DOSZ.YML", ymlcontent))
-			return init_dosbox(firsttime, forcemenu, init_dosbox_load_doszyml, &ymlcontent);
+		for (DOS_Drive* drv : drvarr)
+		{
+			DOS_File *df;
+			if (!drv || !drv->FileOpen(&df, (char*)"DOS.YML", OPEN_READ)) continue;
+			df->AddRef();
+			if (ymlcontent.length()) ymlcontent += '\n';
+			ReadAndClose(df, ymlcontent);
+		}
+		if (ymlcontent.length()) return init_dosbox(firsttime, forcemenu, init_dosbox_load_dos_yml, &ymlcontent);
 	}
 
 	const bool force_puremenu = (dbp_biosreboot || forcemenu);
@@ -2972,7 +3004,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		{
 			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
 		}
-		if (confpath && FindAndReadDosFile(confpath, confcontent))
+		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
 			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
 	}
 
@@ -3174,9 +3206,7 @@ void retro_init(void) //#3
 		static bool RETRO_CALLCONV get_image_label(unsigned index, char *label, size_t len)
 		{
 			if (index >= dbp_images.size()) return false;
-			std::string lbl;
-			DBP_GetImageLabel(dbp_images[index], lbl);
-			safe_strncpy(label, lbl.c_str(), len);
+			safe_strncpy(label, DBP_Image_Label(dbp_images[index]), len);
 			return true;
 		}
 

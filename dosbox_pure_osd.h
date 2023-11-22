@@ -965,9 +965,8 @@ struct DBP_PureMenuState : DBP_MenuState
 
 		for (DBP_Image& image : dbp_images)
 		{
-			list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]));
-			DBP_GetImageLabel(image, list.back().str);
-			(image.IsCD() ? cd_count : hd_count)++;
+			list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]), DBP_Image_Label(image));
+			(DBP_Image_IsCD(image) ? cd_count : hd_count)++;
 			fs_count++;
 			if (image.image_disk) bootimg = true;
 		}

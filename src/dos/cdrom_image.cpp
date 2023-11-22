@@ -790,7 +790,7 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	bool canAddTrack = false;
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 	std::string dosfilebuf;
-	if (!FindAndReadDosFile(cuefile, dosfilebuf)) return false;
+	if (!ReadAndClose(FindAndOpenDosFile(cuefile), dosfilebuf)) return false;
 	istringstream inString(dosfilebuf);
 	istream& in = (istream&)inString;
 #else
