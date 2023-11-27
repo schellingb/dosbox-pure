@@ -19,7 +19,8 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Joystick emulation](#joystick-emulation)
     * [On-screen keyboard](#on-screen-keyboard)
     * [Gamepad mapper](#gamepad-mapper)
-	* [3dfx Voodoo Emulation](#3dfx-voodoo-emulation)
+    * [3dfx Voodoo Emulation](#3dfx-voodoo-emulation)
+    * [Multiplayer](#multiplayer)
     * [MIDI playback with SoundFonts](#midi-playback-with-soundfonts)
     * [Cheats support](#cheats-support)
     * [Save states](#save-states)
@@ -37,7 +38,6 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Save file handling](#save-file-handling)
 * [Features not yet implemented](#features-not-yet-implemented)
     * [Store ZIP seek index into save file](#store-zip-seek-index-into-save-file)
-* [Unsupported features](#unsupported-features)
 * [Building](#building)
     * [Windows](#windows)
     * [Linux](#linux)
@@ -112,13 +112,13 @@ the gamepad while selecting `Restart` in the core menu.
 
 ### Automated controller mappings
 When a game is loaded, DOSBox Pure will try to detect the game and apply a controller mapping.  
-To see the applied mapping, check the `Port 1 Controls` screen in the RetroArch menu.
-It will show `Detected Automatic Key Mapping: <GAMENAME>`. Additionally you can set the core option
+To see the applied mapping, check Controller Port 1 under the "Controller Mapper" tab of the start menu.
+It will show `Mapping: <GAMENAME>`. Additionally you can set the core option
 `Input > Advanced > Automatic Game Pad Mappings` to `Enable with notification on game detection`.
 
 ### Mouse emulation
-Under the `Controls` screen in the RetroArch menu there are 2 mouse emulation modes available by
-switching the `Device Type` setting of any port with left/right. There is `Mouse with Left Analog Stick` and
+Under the "Controller Mapper" screen in the start menu there are 2 mouse emulation modes available by
+switching the `Preset` setting of any port. There is `Mouse with Left Analog Stick` and
 `Mouse with Right Analog Stick`.  
 When choosing left stick, the face buttons (B/A) will be used as left/right mouse buttons.  
 For the right stick the shoulder buttons L/R will be used as left/right mouse buttons.  
@@ -126,18 +126,15 @@ The X button is the middle mouse button and L2/R2 can be used to speed up or slo
 There is also the core option `Input > Mouse Sensitivity` to increase/decrease mouse movement speed.
 
 ### Keyboard emulation
-For games that don't have automated controller mappings or are not detected successfully,
-by default the option `Input > Bind Unused Buttons` will assign all unused buttons on the game pad with
-some default key.  
-If the `Device Type` under the `Controls` screen in the RetroArch menu of any port is set to
-`Generic Keyboard Bindings` all buttons will be assigned with a keyboard key.
-Additionally it can be set to `Custom Keyboard Bindings` which will allow fully customizable mappings.
+For games that don't have automated controller mappings or are not detected successfully the core will map
+generic keyboard keys to all buttons. Use the "Controller Mapper" screen in the start menu or the
+[On-screen keyboard](#on-screen-keyboard) to freely customize all the mapped buttons.
 
 ### Joystick emulation
-There are multiple DOS era joysticks available as mappings under the `Controls` screen in the RetroArch menu.  
-`Gravis GamePad (1 D-Pad, 4 Buttons)`, `Basic joystick (2 Axes, 2 Buttons)`,
-`ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)` and `Control both DOS joysticks (4 axes, 4 buttons)`.  
-These can be assigned to any port and the button layout can be remapped as with any other device type.
+There are multiple DOS era joysticks available as mappings under the "Controller Mapper" screen in the start menu.  
+`Gravis GamePad (4 Buttons)`, `First 2 Button Joystick` (2 Axes), `Second 2 Button Joystick` (2 Axes),
+`ThrustMaster Flight Stick` (3 axes, 4 buttons, 1 hat) and `Both DOS Joysticks` (4 axes, 4 buttons).  
+These can be assigned to any port and the button layout can be freely remapped.
 
 ### On-screen keyboard
 ![On-Screen Keyboard](images/onscreenkeyboard.png)
@@ -148,6 +145,8 @@ the move speed.
 If the cursor is moved above the middle of the screen the keyboard will move to the top.
 The button can be remapped in the controls menu and there is also a core options to disable it entirely.
 
+The L3 button can be changed to a different button with the [Gamepad mapper](#gamepad-mapper).
+
 ### Gamepad mapper
 ![Gamepad mapper](images/padmapper.png)
 
@@ -155,7 +154,7 @@ If you need even more customization of the controls than provided by the [Automa
 or the various presets for [mouse](#mouse-emulation), [keyboard](#keyboard-emulation) and [joysticks](#joystick-emulation) you can use
 the gamepad mapper.
 
-To open it, click the "PAD MAPPER" button in the [On-screen keyboard](#on-screen-keyboard).
+To open it, select "CONTROLLER MAPPER" in the start menu or click the "PAD MAPPER" button in the [On-screen keyboard](#on-screen-keyboard).
 
 It is available any time in-game and changes are immediately saved and applied when closing the mapper. Up to 4 functions can be mapped
 for any button/direction of the gamepad. A mapping can be to any function of the 3 emulated input devices: keyboard, mouse or joystick.
@@ -173,6 +172,13 @@ There are two core options related to this feature:
 - `Video > 3dfx Voodoo Performance Settings`: Some options to modify the rendering behavior are available. Setting
   it to 'low quality' only gives a small performance improvement. Disabling multi-threading is possible for example
   if your device gets too hot while using it but in general is not recommended.
+
+### Multiplayer
+The core emulates an IPX DOS driver and a serial modem (configurable to be a null modem or dial-up modem) as well as a
+NE2000 network card to be used in a [booted operating system ](#installing-an-operating-system). To use it just host
+or connect a multiplayer game with a supported frontend (RetroArch 1.16 and newer).
+
+To use the NE2000 card make sure to configure the Windows 95/98 driver to use base address port to 0x300 and base IRQ to 10.
 
 ### MIDI playback with SoundFonts
 If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
@@ -271,9 +277,6 @@ Afterwards there is an index buffer which will be used to decompress random loca
 and file access will be much faster.  
 This index buffer is stored into the game save file to avoid having to slowly rebuild it
 every time the same game is launched.
-
-## Unsupported features
-For now, serial port and IPX emulation from base DOSBox have been removed.
 
 ## Building
 DOSBox Pure has no dependency requirements besides a C++ compiler and the standard library.
