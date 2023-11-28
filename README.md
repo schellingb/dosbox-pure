@@ -36,8 +36,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Change disk label with label command](#change-disk-label-with-label-command)
     * [Keyboard layout defaults to US](#keyboard-layout-defaults-to-us)
     * [Save file handling](#save-file-handling)
-* [Features not yet implemented](#features-not-yet-implemented)
-    * [Store ZIP seek index into save file](#store-zip-seek-index-into-save-file)
+    * [Reading large files in ZIPs](#reading-large-files-in-zips)
 * [Building](#building)
     * [Windows](#windows)
     * [Linux](#linux)
@@ -269,14 +268,12 @@ The bigger the save, the less often it will be written out.
 Up to 1MB of total save data, it will be written out 2 seconds after the last file modification.
 Then gradually until at max 59MB and more, it will be written out 60 seconds after the last file modification.
 
-### Store ZIP seek index into save file
+### Reading large files in ZIPs
 When a DOS games opens a large file and wants to read some data from near the end of the file,
 DOSBox Pure needs to decompress the entire file to do that. This can be most noticeable when mounting
-CD-ROM images from inside ZIP files.  
-Afterwards there is an index buffer which will be used to decompress random locations of the file
-and file access will be much faster.  
-This index buffer is stored into the game save file to avoid having to slowly rebuild it
-every time the same game is launched.
+CD-ROM images from inside ZIP files. Afterwards there is an index buffer which will be used to decompress
+random locations of the file and file access will be much faster. This index buffer is stored into the
+game save file to avoid having to slowly rebuild it every time the same game is launched.
 
 ## Building
 DOSBox Pure has no dependency requirements besides a C++ compiler and the standard library.
