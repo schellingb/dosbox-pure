@@ -1273,3 +1273,26 @@ void CDROM_Image_Init(Section* section) {
 	section->AddDestroyFunction(CDROM_Image_Destroy, false);
 #endif
 }
+
+#include <dbp_serialize.h>
+
+void DBPSerialize_CDPlayer(DBPArchive& ar_outer)
+{
+	DBPArchiveOptional ar(ar_outer, CDROM_Interface_Image::player.channel, (CDROM_Interface_Image::player.cd != NULL));
+	if (ar.IsSkip()) return;
+
+	ar << CDROM_Interface_Image::player.currFrame << CDROM_Interface_Image::player.targetFrame
+		<< CDROM_Interface_Image::player.isPlaying << CDROM_Interface_Image::player.isPaused
+		<< CDROM_Interface_Image::player.ctrlUsed;
+	ar.Serialize(CDROM_Interface_Image::player.ctrlData);
+
+	if (ar.mode == DBPArchive::MODE_LOAD && CDROM_Interface_Image::player.isPlaying && !CDROM_Interface_Image::player.cd)
+	{
+		CDROM_Interface_Image* img = NULL;
+		for (int i = 2; i != 10; i++)
+			if ((img = (Drives[i] && dynamic_cast<isoDrive*>(Drives[i]) ? dynamic_cast<CDROM_Interface_Image*>(((isoDrive*)Drives[i])->GetInterface()) : NULL)) != NULL)
+				break;
+		CDROM_Interface_Image::player.cd = img;
+		if (!img) CDROM_Interface_Image::player.isPlaying = false;
+	}
+}

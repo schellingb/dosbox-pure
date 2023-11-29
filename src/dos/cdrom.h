@@ -289,6 +289,8 @@ static	int	refCount;
 typedef	std::vector<Track>::iterator	track_it;
 	std::string	mcn;
 	Bit8u	subUnit;
+
+	friend void DBPSerialize_CDPlayer(struct DBPArchive& ar);
 };
 
 #ifdef C_DBP_NATIVE_CDROM
