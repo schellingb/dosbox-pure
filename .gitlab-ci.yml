@@ -186,7 +186,7 @@ libretro-build-tvos-arm64:
 #    - .libretro-wiiu-static-retroarch-master
 #    - .core-defs
 
-## Nintendo Switch
+# Nintendo Switch
 libretro-build-libnx-aarch64:
   extends:
     - .libretro-libnx-static-retroarch-master

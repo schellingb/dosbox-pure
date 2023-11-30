@@ -128,8 +128,8 @@ else ifeq ($(platform),libnx)
   OUTNAME := dosbox_pure_libretro_libnx.a
   export DEPSDIR = $(CURDIR)
   include $(DEVKITPRO)/libnx/switch_rules
-  COMMONFLAGS += -I$(LIBNX)/include/ -ftls-model=local-exec -specs=$(LIBNX)/switch.specs
-  COMMONFLAGS += $(INCLUDE) -D__SWITCH__ -DHAVE_LIBNX -fpic
+  COMMONFLAGS += -I$(LIBNX)/include/ -D__SWITCH__ -DHAVE_LIBNX
+  COMMONFLAGS += -march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC
   STATIC_LINKING = 1
 else ifeq ($(platform),gcw0)
   # You must used the toolchain built on or around 2014-08-20
