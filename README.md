@@ -25,6 +25,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Cheats support](#cheats-support)
     * [Save states](#save-states)
     * [Rewind support](#rewind-support)
+    * [Shared system shells (like Windows 3)](#shared-system-shells-like-windows-3)
     * [Booter games](#booter-games)
     * [Loading M3U8 files](#loading-m3u8-files)
 * [Tips](#tips)
@@ -174,10 +175,10 @@ There are two core options related to this feature:
 
 ### Multiplayer
 The core emulates an IPX DOS driver and a serial modem (configurable to be a null modem or dial-up modem) as well as a
-NE2000 network card to be used in a [booted operating system ](#installing-an-operating-system). To use it just host
+NE2000 network card to be used in a [booted operating system](#installing-an-operating-system). To use it, just host
 or connect a multiplayer game with a supported frontend (RetroArch 1.16 and newer).
 
-To use the NE2000 card make sure to configure the Windows 95/98 driver to use base address port to 0x300 and base IRQ to 10.
+To use the NE2000 card make sure to configure the Windows 95/98 driver to use base address port set to 0x300 and base IRQ set to 10.
 
 ### MIDI playback with SoundFonts
 If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
@@ -199,6 +200,20 @@ Save states might not be compatible across different versions of DOSBox Pure.
 ### Rewind support
 Using the core option `Save States Support`, rewinding can be enabled.  
 Keep in mind that rewind support comes at a high performance cost.
+
+### Shared system shells (like Windows 3)
+If DOSBox Pure finds any `.DOSZ` zip files in the `system` directory of the frontend, they will
+get listed in the start menu under a sub-menu with the name `[ Run System Shell ]`.
+
+When a shell is selected, DOSBox Pure will underlay the content of the shell's DOSZ zip file as
+the base of the file system of the C: drive.
+This way, one installation of (for example) Windows 3.1 can be used for multiple games, keeping the
+Windows installation and games in separate ZIP files.
+
+On startup it will look for any of the following files to automatically start the shell:
+- C:\WINDOWS.BAT
+- C:\AUTOEXEC.BAT
+- C:\WINDOWS\WIN.COM
 
 ### Booter games
 When loading a ZIP file which contains a floppy or hard-disk image or loading such a disk image directly,
