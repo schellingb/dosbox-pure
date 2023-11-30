@@ -752,7 +752,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	imageDisk* disk = NULL;
 	CDROM_Interface* cdrom = NULL;
 	Bit8u media_byte = 0;
-
+	const char* error_type = "content";
 	if (!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ"))
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
@@ -760,8 +760,8 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		FILE* zip_file_h = fopen_wrap(path, "rb");
 		if (!zip_file_h)
 		{
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "ZIP", path, "");
-			return NULL;
+			error_type = "ZIP";
+			goto TRY_DIRECTORY;
 		}
 		drive = new zipDrive(new rawFile(zip_file_h, false), dbp_legacy_save);
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
@@ -833,33 +833,23 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
 		if (DBP_IsMounted(letter)) DBP_Unmount(letter); // needs to be done before constructing isoDrive as it registers itself with MSCDEX overwriting the current drives registration
 		int error = -1;
-		drive = new isoDrive(letter, path, 0xF8, error);
+		isoDrive* iso = new isoDrive(letter, path, 0xF8, error);
 		if (error)
 		{
-			delete drive;
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "CD-ROM image", path, "");
-			return NULL;
+			delete iso;
+			error_type = "CD-ROM image";
+			goto TRY_DIRECTORY;
 		}
-		cdrom = ((isoDrive*)drive)->GetInterface();
-	}
-	else if (!strcasecmp(ext, "EXE") || !strcasecmp(ext, "COM") || !strcasecmp(ext, "BAT") || !strcasecmp(ext, "conf") || ext[-1] != '.')
-	{
-		if (!letter) letter = (boot ? 'C' : 'D');
-		if (!unmount_existing && Drives[letter-'A']) return NULL;
-		std::string dir; dir.assign(path, (ext[-1] == '.' ? path_file : ext) - path).append(ext[-1] == '.' ? "" : "/"); // must end with slash
-		strreplace((char*)dir.c_str(), (CROSS_FILESPLIT == '\\' ? '/' : '\\'), CROSS_FILESPLIT); // required by localDrive
-		drive = new localDrive(dir.c_str(), 512, 32, 32765, 16000, 0xF8);
-		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
-		if (ext[-1] == '.' && (ext[2]|0x20) == 'n') dbp_conf_loading = 'o'; // conf loading mode set to 'o'utside will load the requested .conf file
-		path = NULL; // don't treat as disk image, but always register with Drives even if is_boot
+		cdrom = iso->GetInterface();
+		drive = iso;
 	}
 	else if (!strcasecmp(ext, "M3U") || !strcasecmp(ext, "M3U8"))
 	{
 		FILE* m3u_file_h = fopen_wrap(path, "rb");
 		if (!m3u_file_h)
 		{
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "M3U", path, "");
-			return NULL;
+			error_type = "M3U";
+			goto TRY_DIRECTORY;
 		}
 		fseek(m3u_file_h, 0, SEEK_END);
 		size_t m3u_file_size = ftell(m3u_file_h);
@@ -882,10 +872,32 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		delete [] m3u;
 		return NULL;
 	}
-	else // unknown extension
+	else // path or executable file
 	{
-		DBP_ASSERT(false);
-		return NULL;
+		TRY_DIRECTORY:
+		if (!letter) letter = (boot ? 'C' : 'D');
+		if (!unmount_existing && Drives[letter-'A']) return NULL;
+		bool isDir = (strcasecmp(ext, "EXE") && strcasecmp(ext, "COM") && strcasecmp(ext, "BAT") && strcasecmp(ext, "conf"));
+
+		std::string dir;
+		if (isDir) { char c = dir.assign(path).back(); if (c != '/' && c != '\\') dir += '/'; } // must end with slash
+		else if (path_file != path) dir.assign(path, path_file - path);
+		else dir.assign("./");
+		strreplace((char*)dir.c_str(), (CROSS_FILESPLIT == '\\' ? '/' : '\\'), CROSS_FILESPLIT); // required by localDrive
+
+		dir_information* dirp = open_directory(dir.c_str());
+		if (!dirp)
+		{
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", error_type, path, "");
+			return NULL;
+		}
+		close_directory(dirp);
+
+		localDrive* localdrive = new localDrive(dir.c_str(), 512, 32, 32765, 16000, 0xF8);
+		DBP_SetDriveLabelFromContentPath(localdrive, path, letter, path_file, ext);
+		if (!isDir && (ext[2]|0x20) == 'n') dbp_conf_loading = 'o'; // conf loading mode set to 'o'utside will load the requested .conf file
+		drive = localdrive;
+		path = NULL; // don't treat as disk image, but always register with Drives even if is_boot
 	}
 
 	if (DBP_IsMounted(letter))
