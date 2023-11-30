@@ -1,5 +1,5 @@
 #
-#  Copyright (C) 2020-2022 Bernhard Schelling
+#  Copyright (C) 2020-2023 Bernhard Schelling
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ SOURCES := \
   src/*/*/*.cpp
 
 CPUFLAGS := $(MAKE_CPUFLAGS)
-STRIPCMD := strip --strip-all
+STRIPCMD := $(or $(STRIP),strip) --strip-all
 ifneq ($(ISWIN),)
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
@@ -58,7 +58,7 @@ else ifneq (,$(findstring ios,$(platform)))
     MINVERSION = -miphoneos-version-min=5.0
   endif
   COMMONFLAGS += $(MINVERSION) -Wno-ignored-optimization-argument -Wno-unknown-warning-option
-  STRIPCMD := strip -xS
+  STRIPCMD := $(or $(STRIP),strip) -xS
 else ifeq ($(platform),tvos-arm64)
   ifeq ($(IOSSDK),)
     IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
@@ -67,7 +67,7 @@ else ifeq ($(platform),tvos-arm64)
   CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
   LDFLAGS := -Wl,-dead_strip
   COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option
-  STRIPCMD := strip -xS
+  STRIPCMD := $(or $(STRIP),strip) -xS
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= c++
@@ -81,7 +81,7 @@ else ifneq ($(ISMAC),)
   endif
   COMMONFLAGS  += $(ARCHFLAGS)
   LDFLAGS      += $(ARCHFLAGS)
-  STRIPCMD := strip -xS
+  STRIPCMD := $(or $(STRIP),strip) -xS
 else ifeq ($(platform),windows) # For MSYS2 only
   OUTNAME := dosbox_pure_libretro.dll
   CXX     ?= g++
