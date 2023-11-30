@@ -1849,7 +1849,7 @@ struct NE2K
 					"\x01\x04\xff\xff\x00\x00" // Option: (1) Subnet Mask (255.255.0.0)
 					"\x03\x04\xc0\xa8\xfe\xfe" // Option: (3) Router
 					"\x06\x04\xc0\xa8\xfe\xfe" // Option: (6) Domain Name Server
-					"\xff", 34);               // Option: (255) End
+					"\xff", 31);               // Option: (255) End
 
 				// Calculate UDP checksum and directly receive DHCP response packet
 				Local::WriteChkSum(outp.ip_source, outp.eth_dest_mac + sizeof(outbuf), outp.udp_chksum, 17 + sizeof(outbuf) - (int)(inp.udp_srcport - (Bit8u*)&inp));
