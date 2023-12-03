@@ -687,6 +687,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 				size_t pathlen = strlen(path);
 				if (pathlen >= 2 && path[pathlen-1] == '.' && (path[pathlen-2] == '.' || path[pathlen-2] == '\\')) return; // skip . and ..
 				if (dbp_vdisk_filter.Get(path)) return;
+				if (pathlen > 4 && !memcmp(&path[pathlen-4], ".SKC", 4)) { dbp_vdisk_filter.Put(path, (void*)(size_t)true); return; } // remove ZIP seek caches
 				Bit32u& hash = *(Bit32u*)data;
 				Bit8u arr[] = { (Bit8u)(size>>24), (Bit8u)(size>>16), (Bit8u)(size>>8), (Bit8u)(size), (Bit8u)(date>>8), (Bit8u)(date), (Bit8u)(time>>8), (Bit8u)(time), attr };
 				hash = DriveCalculateCRC32(arr, sizeof(arr), DriveCalculateCRC32((const Bit8u*)path, pathlen, hash));
