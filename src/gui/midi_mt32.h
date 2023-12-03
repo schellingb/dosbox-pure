@@ -191,7 +191,7 @@ struct MidiHandler_mt32 : public MidiHandler
 		RomFile control_rom_file(f_control); fclose(f_control); f_control = NULL;
 		RomFile pcm_rom_file(f_pcm);         fclose(f_pcm);     f_pcm     = NULL;
 
-		syn = new MT32Emu::Synth(NULL);
+		syn = new MT32Emu::Synth();
 		const MT32Emu::ROMImage *control = MT32Emu::ROMImage::makeROMImage(&control_rom_file), *pcm = MT32Emu::ROMImage::makeROMImage(&pcm_rom_file);
 		syn->open(*control, *pcm, MT32Emu::DEFAULT_MAX_PARTIALS, MT32Emu::AnalogOutputMode_ACCURATE);
 		MT32Emu::ROMImage::freeROMImage(control);
