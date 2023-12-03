@@ -20,6 +20,7 @@
 #include "support.h"
 #include "cross.h"
 #include "mt32emu.h"
+#include "../dos/drives.h"
 
 static void MIDI_MT32_CallBack(Bitu len);
 
@@ -28,22 +29,24 @@ struct MidiHandler_mt32 : public MidiHandler
 	MidiHandler_mt32() : MidiHandler(), chan(NULL), mo(NULL), f_control(NULL), f_pcm(NULL), syn(NULL) {}
 	MixerChannel*   chan;
 	MixerObject*    mo;
-	FILE*           f_control;
-	FILE*           f_pcm;
+	DOS_File*       f_control;
+	DOS_File*       f_pcm;
 	MT32Emu::Synth* syn;
 
 	const char * GetName(void) { return "mt32"; };
 
 	struct RomFile : public MT32Emu::File
 	{
-		RomFile(FILE* f) : data(NULL), size(0)
+		RomFile(DOS_File* f) : data(NULL), size(0)
 		{
 			if (!f) return;
-			fseek(f, 0, SEEK_END);
-			size = (size_t)ftell_wrap(f);
-			fseek(f, 0, SEEK_SET);
+			Bit32u begin = 0;
+			f->Seek(&size, SEEK_END);
+			f->Seek(&begin, SEEK_SET);
 			data = new Bit8u[size];
-			if (!fread(data, size, 1, f)) {}
+			for (Bit32u sz = size, p = 0; sz;) { Bit16u read = (Bit16u)(sz > 0xFFFF ? 0xFFFF : sz); if (!f->Read(data+p, &read)) break; sz -= read; p += read; }
+			f->Close();
+			delete f;
 
 			SHA1_CTX ctx;
 			SHA1_CTX::SHA1Process(&ctx, (const unsigned char*)data, size);
@@ -70,7 +73,7 @@ struct MidiHandler_mt32 : public MidiHandler
 
 		char sha1Digest[41];
 		Bit8u *data;
-		size_t size;
+		Bit32u size;
 
 		struct SHA1_CTX
 		{
@@ -153,20 +156,25 @@ struct MidiHandler_mt32 : public MidiHandler
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len <= 12 || strcasecmp(conf + conf_len - 12, "_CONTROL.ROM")) return false;
+		if (conf_len <= 12 || strcasecmp(conf + conf_len - 4, ".ROM")) return false;
 
 		DBP_ASSERT(!f_control);
-		f_control = fopen_wrap(conf, "rb");
+		f_control = FindAndOpenDosFile(conf);
 		if (!f_control) return false;
 
-		// Try to open the matching _PCM file using the same capitalization used for _CONTROL
-		std::string confPCM(conf, conf_len - 12 + 1);
-		char charC = conf[conf_len - 12 + 1], charO = conf[conf_len - 12 + 2];
-		confPCM.append(charC == 'C' ? "P" : "p").append(charO == 'O' ? "CM" : "cm").append(conf + conf_len - 4);
+		// When using the $ prefix, we are loading a fixed file name from the mounted C drive via FindAndOpenDosFile
+		const char* pcmpath = "$C:\\MT32_PCM.ROM";
+		std::string pcmpathstr;
+		if (*conf != '$')
+		{
+			// Try to open the matching _PCM file using the same capitalization used for _CONTROL
+			char charC = conf[conf_len - 12 + 1], charO = conf[conf_len - 12 + 2];
+			pcmpath = pcmpathstr.assign(conf, conf_len - 12 + 1).append(charC == 'C' ? "P" : "p").append(charO == 'O' ? "CM" : "cm").append(conf + conf_len - 4).c_str();
+		}
 
 		DBP_ASSERT(!f_pcm);
-		f_pcm = fopen_wrap(confPCM.c_str(), "rb");
-		if (!f_pcm) { fclose(f_control); return false; }
+		f_pcm = FindAndOpenDosFile(pcmpath);
+		if (!f_pcm) { f_control->Close(); delete f_control; f_control = NULL; return false; }
 
 		DBP_ASSERT(!mo && !chan);
 		mo = new MixerObject;
@@ -176,11 +184,11 @@ struct MidiHandler_mt32 : public MidiHandler
 
 	void Close(void)
 	{
-		if (f_control) { fclose(f_control);        f_control = NULL; }
-		if (f_pcm)     { fclose(f_pcm);            f_pcm     = NULL; }
-		if (syn)       { syn->close(); delete syn; syn       = NULL; }
-		if (chan)      { chan->Enable(false);      chan      = NULL; }
-		if (mo)        { delete mo;                mo        = NULL; } // also deletes chan!
+		if (f_control) { f_control->Close(); delete f_control; f_control = NULL; }
+		if (f_pcm)     { f_pcm->Close(); delete f_pcm;         f_pcm     = NULL; }
+		if (syn)       { syn->close(); delete syn;             syn       = NULL; }
+		if (chan)      { chan->Enable(false);                  chan      = NULL; }
+		if (mo)        { delete mo;                            mo        = NULL; } // also deletes chan!
 	};
 
 	bool LoadSynth()
@@ -188,8 +196,8 @@ struct MidiHandler_mt32 : public MidiHandler
 		if (syn) return true;
 		if (!f_control || !f_pcm) return false;
 
-		RomFile control_rom_file(f_control); fclose(f_control); f_control = NULL;
-		RomFile pcm_rom_file(f_pcm);         fclose(f_pcm);     f_pcm     = NULL;
+		RomFile control_rom_file(f_control); f_control = NULL;
+		RomFile pcm_rom_file(f_pcm);         f_pcm     = NULL;
 
 		syn = new MT32Emu::Synth();
 		const MT32Emu::ROMImage *control = MT32Emu::ROMImage::makeROMImage(&control_rom_file), *pcm = MT32Emu::ROMImage::makeROMImage(&pcm_rom_file);

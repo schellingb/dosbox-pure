@@ -2897,7 +2897,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 					{
 						// Make sure this is an actual CUE file with an INS extension
 						Bit8u cmd[6];
-						if (size >= 16384 || DriveReadFileBytes(Drives['C'-'A'], path, cmd, (Bit16u)sizeof(cmd)) != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) isFS = false;
+						if (size >= 16384 || DriveReadFileBytes(Drives[data], path, cmd, (Bit16u)sizeof(cmd)) != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) isFS = false;
 					}
 					if (isFS)
 					{
@@ -2988,9 +2988,10 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		}
 	}
 
-	if (!loadcfg && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOS.YML"))
+	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
+	if (!loadcfg && drive_c->FileExists("DOS.YML"))
 	{
-		DOS_Drive* drvarr[3] = { Drives['C'-'A'], };
+		DOS_Drive* drvarr[3] = { drive_c, };
 		if (drvarr[0]->GetShadows(drvarr[0], drvarr[2])) drvarr[0]->GetShadows(drvarr[0], drvarr[1]);
 		std::string ymlcontent;
 		for (DOS_Drive* drv : drvarr)
@@ -3008,10 +3009,10 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	if (!loadcfg && dbp_conf_loading != 'f' && !force_puremenu)
 	{
 		const char* confpath = NULL; std::string strconfpath, confcontent;
-		if (dbp_conf_loading == 'i' && Drives['C'-'A']) // load confs 'i'nside content
+		if (dbp_conf_loading == 'i') // load confs 'i'nside content
 		{
-			if (Drives['C'-'A']->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
-			else if (Drives['C'-'A']->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+			if (drive_c->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
+			else if (drive_c->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
 		}
 		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
 		{
@@ -3019,6 +3020,18 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		}
 		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
 			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
+	}
+
+	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
+	const char* mountedMidi;
+	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists("$C:\\MT32_PCM.ROM"+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
+	{
+		Section* sec = control->GetSection("midi");
+		Property* prop = sec->GetProp("midiconfig");
+		sec->ExecuteDestroy(false);
+		prop->SetValue(mountedMidi);
+		prop->OnChangedByConfigProgram();
+		sec->ExecuteInit(false);
 	}
 
 	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
@@ -3042,7 +3055,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		{
 			((((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += ((path_ext[0]|0x20) == 'b' ? "call " : "")) += path_file) += '\n') += "Z:PUREMENU") += " -FINISH\n";
 		}
-		else if (!force_puremenu && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
+		else if (!force_puremenu && drive_c->FileExists("DOSBOX.BAT"))
 		{
 			((static_cast<Section_line*>(autoexec)->data += '@') += "DOSBOX.BAT") += '\n';
 			auto_mount = false;
