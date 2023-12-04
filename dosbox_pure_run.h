@@ -312,24 +312,7 @@ struct DBP_Run
 		std::swap(startup.str, str); // remember to set cursor again and for rebooting a different IT_RUN
 
 		if (write_auto_boot)
-		{
-			if (autoboot.have && !autoboot.use)
-			{
-				autoinput.str.clear();
-				autoboot.have = false;
-				Drives['C'-'A']->FileUnlink((char*)"AUTOBOOT.DBP");
-			}
-			else if (autoboot.use && (!autoboot.have || autoboot.hash != AutobootHash()) && mode != RUN_INSTALLOS && mode != RUN_COMMANDLINE)
-			{
-				autoboot.hash = AutobootHash();
-				autoboot.have = true;
-				char autostr[DOS_PATHLENGTH + 32], *pautostr = autostr;
-				if (mode != RUN_EXEC) { autostr[0] = (mode == RUN_BOOTOS ? 'O' : (mode == RUN_SHELL ? 'S' : 'I')); autostr[1] = '*'; pautostr = autostr + 2; }
-				char* autoend = pautostr + snprintf(pautostr, (&autostr[sizeof(autostr)] - pautostr), "%s", startup.str.c_str());
-				if (autoboot.skip) autoend += snprintf(autoend, (&autostr[sizeof(autostr)] - autoend), "\r\n%d", autoboot.skip);
-				if (!DriveCreateFile(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)autostr, (Bit32u)(autoend - autostr))) { DBP_ASSERT(false); }
-			}
-		}
+			WriteAutoBoot();
 
 		char mchar;
 		if (dbp_game_running || (mode == RUN_BOOTIMG && info && info != (mchar = GetDosBoxMachineChar())))
@@ -375,59 +358,96 @@ struct DBP_Run
 
 	static void ReadAutoBoot()
 	{
-		char autostr[DOS_PATHLENGTH + 32] = {0,1}, *pautostr = autostr; const char *cpath;
-		char* pautostrend = autostr + DriveReadFileBytes(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)autostr, (Bit16u)(sizeof(autostr) - 1));
-		*pautostrend = '\0';
-		if ((autoboot.have = (pautostrend != autostr)) == true)
+		char buf[DOS_PATHLENGTH + 32 + 256 + 1];
+		Bit16u autostrlen = DriveReadFileBytes(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)buf, (Bit16u)(sizeof(buf)-1));
+		autoboot.have = !!autostrlen;
+
+		const char* cpath = (autostrlen ? NULL : strrchr(dbp_content_path.c_str(), '#'));
+		if (cpath && (dbp_content_path.c_str() + dbp_content_path.length() - cpath) <= DOS_PATHLENGTH)
+			autostrlen = (Bit16u)sprintf(buf, "%s%s", (cpath[1] && cpath[2] == ':' ? "" : "C:\\"), cpath + 1);
+
+		for (char *p = buf, *pEnd = p + autostrlen, *line, line_no = 1; p != pEnd; line_no++)
 		{
-			startup.mode = RUN_EXEC;
-			if      (autostr[1] == '*' && autostr[0] == 'O') { startup.mode = RUN_BOOTOS;  pautostr += 2; }
-			if      (autostr[1] == '*' && autostr[0] == 'S') { startup.mode = RUN_SHELL;   pautostr += 2; }
-			else if (autostr[1] == '*' && autostr[0] == 'I') { startup.mode = RUN_BOOTIMG; pautostr += 2; }
-			char *nameend = strchr(pautostr, '\n'), *skip = nameend;
-			while (skip && *skip && *skip <= ' ') skip++;
-			autoboot.skip = (skip ? atoi(skip) : 0);
-			pautostrend = (nameend ? nameend : pautostrend) - 1;
-			while (pautostrend != pautostr && *pautostrend <= ' ') pautostrend--;
-			*(++pautostrend) = '\0';
+			while (p != pEnd && *p <= ' ') p++;
+			if (p == pEnd) break;
+			for (line = p; p != pEnd && *p >= ' ';) p++;
+			*p = '\0'; // for strcmp/atoi/DOS_FileExists/assign
+			if (line_no == 1)
+			{
+				const char linetype = (line[1] == '*' ? line[0] : 0), *startup_str = line + (linetype ? 2 : 0);
+				if (linetype == 0)
+				{
+					startup.mode = RUN_EXEC;
+					if (DOS_FileExists(startup_str)) goto auto_ok;
+				}
+				else if (linetype == 'O')
+				{
+					startup.mode = RUN_BOOTOS;
+					for (const std::string& im : dbp_osimages)
+						if (im.size() == (p - startup_str) + 4 && !memcmp(startup_str, im.c_str(), im.size() - 4))
+							{ startup.info = (int)(&im - &dbp_osimages[0]); goto auto_ok; }
+				}
+				else if (linetype == 'S')
+				{
+					startup.mode = RUN_SHELL;
+					for (const std::string& im : dbp_shellzips)
+						if (im.size() == (p - startup_str) + 5 && !memcmp(startup_str, im.c_str(), im.size() - 5))
+							{ startup.info = (int)(&im - &dbp_shellzips[0]); goto auto_ok; }
+				}
+				else if (linetype == 'I')
+				{
+					startup.mode = RUN_BOOTIMG;
+					for (const char* it : DBP_MachineNames)
+						if (!strcmp(it, startup_str))
+							{ startup.info = (Bit16s)(it[0]|0x20); goto auto_ok; }
+				}
+				startup.mode = RUN_NONE;
+				continue;
+				auto_ok:
+				startup.str.assign(startup_str);
+			}
+			else if (line_no == 2)
+			{
+				autoboot.skip = atoi(line);
+			}
+			else if (line_no == 3)
+			{
+				for (const DBP_Image& i : dbp_images)
+					if (!strcmp(DBP_Image_Label(i), line))
+						{ if (!i.mounted) DBP_Mount((unsigned)(&i - &dbp_images[0]), true); break; }
+			}
 		}
-		else if ((cpath = strrchr(dbp_content_path.c_str(), '#')) != NULL)
-		{
-			startup.mode = RUN_EXEC;
-			safe_strncpy(pautostr + ((cpath[1] && cpath[2] == ':') ? 0 : sprintf(pautostr, "C:\\")), cpath + 1, DOS_PATHLENGTH + 16);
-			pautostrend = pautostr + strlen(pautostr);
-		}
-		startup.str.assign(pautostr);
-		switch (pautostr[0] ? startup.mode : RUN_NONE)
-		{
-			case RUN_EXEC:
-				if (DOS_FileExists(pautostr)) goto auto_ok;
-				break;
-			case RUN_BOOTOS:
-				for (const std::string& im : dbp_osimages)
-					if (im.size() == (pautostrend - pautostr) + 4 && !memcmp(pautostr, im.c_str(), im.size() - 4))
-						{ startup.info = (int)(&im - &dbp_osimages[0]); goto auto_ok; }
-				break;
-			case RUN_SHELL:
-				for (const std::string& im : dbp_shellzips)
-					if (im.size() == (pautostrend - pautostr) + 5 && !memcmp(pautostr, im.c_str(), im.size() - 5))
-						{ startup.info = (int)(&im - &dbp_shellzips[0]); goto auto_ok; }
-				break;
-			case RUN_BOOTIMG:
-				for (const char* it : DBP_MachineNames)
-					if (!strcmp(it, pautostr))
-						{ startup.info = (Bit16s)(it[0]|0x20); goto auto_ok; }
-				break;
-		}
-		startup.mode = RUN_NONE;
-		auto_ok:
 		autoboot.use = (startup.mode != RUN_NONE);
 		autoboot.hash = AutobootHash();
 	}
 
+	static void WriteAutoBoot()
+	{
+		if (autoboot.have && !autoboot.use)
+		{
+			autoinput.str.clear();
+			autoboot.have = false;
+			Drives['C'-'A']->FileUnlink((char*)"AUTOBOOT.DBP");
+		}
+		else if (autoboot.use && (!autoboot.have || autoboot.hash != AutobootHash()) && startup.mode != RUN_INSTALLOS && startup.mode != RUN_COMMANDLINE)
+		{
+			DBP_ASSERT(startup.mode == RUN_EXEC || startup.mode == RUN_BOOTOS || startup.mode == RUN_SHELL || startup.mode == RUN_BOOTIMG);
+			autoboot.hash = AutobootHash();
+			autoboot.have = true;
+			const char* img = NULL;
+			for (const DBP_Image& i : dbp_images) { if (i.mounted) { if (&i != &dbp_images[0]) img = DBP_Image_Label(i); break; } }
+			char buf[DOS_PATHLENGTH + 32 + 256], *p = buf;
+			if (startup.mode != RUN_EXEC) { *(p++) = (startup.mode == RUN_BOOTOS ? 'O' : (startup.mode == RUN_SHELL ? 'S' : 'I')); *(p++) = '*'; }
+			p += snprintf(p, (&buf[sizeof(buf)] - p), "%s", startup.str.c_str()); // line 1
+			if (img || autoboot.skip) p += snprintf(p, (&buf[sizeof(buf)] - p), "\r\n%d", autoboot.skip); // line 2
+			if (img) p += snprintf(p, (&buf[sizeof(buf)] - p), "\r\n%s", img); // line 3
+			if (!DriveCreateFile(Drives['C'-'A'], "AUTOBOOT.DBP", (Bit8u*)buf, (Bit32u)(p - buf))) { DBP_ASSERT(false); }
+		}
+	}
+
 	static int AutobootHash()
 	{
-		return (14 * autoboot.skip) ^ (int)StringToPointerHashMap<void>::Hash(startup.str.c_str());
+		return (13 * autoboot.skip) ^ (int)StringToPointerHashMap<void>::Hash(startup.str.c_str()) ^ (93911 * dbp_image_index);
 	}
 
 	static void ProcessAutoInput()
