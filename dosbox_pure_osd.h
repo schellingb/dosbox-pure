@@ -1038,7 +1038,7 @@ struct DBP_PureMenuState : DBP_MenuState
 	int MenuIndexByString(const char* findit)
 	{
 		for (Item& it : list)
-			if ((it.type == IT_RUN || it.type == IT_BOOTOS || it.type == IT_BOOTIMG_MACHINE) && it.str == findit)
+			if ((it.type == IT_RUN || it.type == IT_BOOTOS || it.type == IT_BOOTIMG_MACHINE || it.type == IT_RUNSHELL) && it.str == findit)
 				return (int)(&it - &list[0]);
 		return -1;
 	}
@@ -1081,7 +1081,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				buf.Print(lh, lblx, y, (mounted ? "UNMOUNT " : "MOUNT "), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 				buf.Print(lh, lblx + buf.CW*lbllen, y, item.str.c_str(), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 			}
-			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE)
+			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE || item.type == IT_RUNSHELL)
 			{
 				int off = ((item.type != IT_RUN || multidrive) ? 0 : 3), len = strlen - off, lblx = (w - buf.CW*len) / 2;
 				buf.Print(lh, lblx,       y, item.str.c_str() + off, (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
