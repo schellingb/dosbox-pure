@@ -1433,7 +1433,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 		static void InterceptInputAnyPress(DBP_Event_Type type, int val, int val2, void* self)
 		{
-			if (type == DBPET_KEYUP || type == DBPET_MOUSEUP || type == DBPET_JOY1UP || type == DBPET_JOY2UP)
+			if (type == DBPET_KEYDOWN || type == DBPET_MOUSEDOWN || type == DBPET_JOY1DOWN || type == DBPET_JOY2DOWN)
 				if ((DBP_GetTicks() - ((Menu*)self)->opentime) > 300)
 					((Menu*)self)->pressedAnyKey = true;
 		}
@@ -1460,7 +1460,7 @@ static void DBP_PureMenuProgram(Program** make)
 		{
 			enum { M_NORMAL, M_BOOT, M_FINISH } m = (cmd->FindExist("-BOOT") ? M_BOOT : cmd->FindExist("-FINISH") ? M_FINISH : M_NORMAL);
 
-			if (DBP_Run::HandleStartup(m == M_BOOT))
+			if (DBP_Run::HandleStartup(m == M_BOOT && dbp_menu_time >= 0))
 				return;
 
 			opentime = DBP_GetTicks();
@@ -1469,7 +1469,7 @@ static void DBP_PureMenuProgram(Program** make)
 			bool runsoloexe = (ms->exe_count == 1 && ms->fs_count <= 1);
 
 			#ifndef STATIC_LINKING
-			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (opentime - dbp_lastmenuticks) < 500)
+			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (opentime - dbp_lastmenuticks) >= 500)
 			{
 				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
 				sprintf(msgbuf, "* GAME ENDED - EXITTING IN %d SECONDS - PRESS ANY KEY TO CONTINUE *", dbp_menu_time);
