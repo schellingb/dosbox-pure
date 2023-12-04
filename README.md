@@ -21,7 +21,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Gamepad mapper](#gamepad-mapper)
     * [3dfx Voodoo Emulation](#3dfx-voodoo-emulation)
     * [Multiplayer](#multiplayer)
-    * [MIDI playback with SoundFonts](#midi-playback-with-soundfonts)
+    * [MIDI playback with SoundFonts or MT-32](#midi-playback-with-soundfonts-or-mt-32)
     * [Cheats support](#cheats-support)
     * [Save states](#save-states)
     * [Rewind support](#rewind-support)
@@ -84,10 +84,12 @@ any CD-ROM images available they will appear as the E: drive.
 
 There are two core options related to this feature:
 
-- `System > Advanced > Discard Disk Modifications`: If set, while running an installed operating system,
-  modifications to the C: drive will not be saved permanently. This allows the content to be closed any
-  time without worry of file system or registry corruption. Make sure to finish setting up the OS
-  by setting the screen resolution and installing device drivers first before setting this option.
+- `System > Advanced > OS Disk Modifications`: When running an installed operating system, modifications
+  to the C: drive will be made on the disk image by default. Setting it to 'Discard' will never save any
+  changes made on C: but allows the content to be closed any time without worry of file system or registry
+  corruption. The third option 'Save Difference Per Content' will store any changes made to the C: drive
+  into a file in the frontends save directory, but the OS disk image must never be modified again once used,
+  otherwise existing differences become unusable.
 - `System > Advanced > Force Normal Core in OS`: If you encounter program errors or crashes inside the
   installed operating system, this option can be used to switch to a more compatible but slower
   mode. The option can be toggled on and off as needed.
@@ -125,6 +127,14 @@ For the right stick the shoulder buttons L/R will be used as left/right mouse bu
 The X button is the middle mouse button and L2/R2 can be used to speed up or slow down mouse movement.  
 There is also the core option `Input > Mouse Sensitivity` to increase/decrease mouse movement speed.
 
+The behavior of a real mouse or touch screen can be controlled by the `Input > Mouse Input Mode` option.
+- Virtual mouse (default) (best used when the frontend [grabs the mouse input](#playing-with-keyboard-and-mouse))
+- Direct controlled mouse (not supported by all games)
+- Touchpad mode (drag to move, tap to click, etc., best for touch screens)
+- Off (ignore mouse/touch inputs)
+
+In Windows 3.x it is possible to use [this driver](https://github.com/NattyNarwhal/vmwmouse) for direct controlled mouse support.
+
 ### Keyboard emulation
 For games that don't have automated controller mappings or are not detected successfully the core will map
 generic keyboard keys to all buttons. Use the "Controller Mapper" screen in the start menu or the
@@ -143,7 +153,7 @@ By pressing L3 on the gamepad (usually by pushing in the left analog stick) the 
 The cursor can be controlled with the controller (or mouse or keyboard) and L2/R2 will speed up or slow down
 the move speed.  
 If the cursor is moved above the middle of the screen the keyboard will move to the top.
-The button can be remapped in the controls menu and there is also a core options to disable it entirely.
+The button can be remapped in the controls menu and there is also a core option to disable it entirely.
 
 The L3 button can be changed to a different button with the [Gamepad mapper](#gamepad-mapper).
 
@@ -180,10 +190,13 @@ or connect a multiplayer game with a supported frontend (RetroArch 1.16 and newe
 
 To use the NE2000 card make sure to configure the Windows 95/98 driver to use base address port set to 0x300 and base IRQ set to 10.
 
-### MIDI playback with SoundFonts
+### MIDI playback with SoundFonts or MT-32
 If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
-can be selected via the `Audio > MIDI SoundFont` core option.  
-This sound font will then be used to play General Midi and Sound Canvas music.
+can be selected via the `Audio > MIDI SoundFont` core option. This sound font will then be used to play General Midi and Sound Canvas music.
+
+If the `system` directory contains a pair of `_control.rom` and `_pcm.rom` files, an MT-32 synthesizer can be emulated with them.
+
+Alternatively if the content mounted to the C: drive contains a file named DOSBOX.SF2 or MT32_CONTROL.ROM/MT32_PCM.ROM, it will be used as a per-game override to the core option.
 
 ### Cheats support
 DOSBox Pure exposes its memory for cheats in the libretro frontend.  
