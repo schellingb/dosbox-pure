@@ -60,7 +60,7 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
-static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running, dbp_strict_mode;
+static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
@@ -92,7 +92,6 @@ static std::vector<DBP_Image> dbp_images;
 static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
 static unsigned dbp_image_index;
-static bool dbp_legacy_save;
 
 // DOSBOX INPUT
 struct DBP_InputBind
@@ -2416,6 +2415,7 @@ static bool check_variables(bool is_startup = false)
 			"dosbox_pure_sblaster_adlib_mode",
 			"dosbox_pure_sblaster_adlib_emu",
 			"dosbox_pure_gus",
+			"dosbox_pure_swapstereo",
 		};
 		for (const char* i : advanced_options) retro_set_visibility(i, show_advanced);
 		dbp_last_hideadvanced = !show_advanced;
@@ -2457,6 +2457,8 @@ static bool check_variables(bool is_startup = false)
 
 	const char* audiorate = retro_get_variable("dosbox_pure_audiorate", DBP_DEFAULT_SAMPLERATE_STRING);
 	Variables::DosBoxSet("mixer", "rate", audiorate, false, true);
+	Variables::DosBoxSet("mixer", "swapstereo", retro_get_variable("dosbox_pure_swapstereo", "false"));
+	dbp_swapstereo = (bool)control->GetSection("mixer")->GetProp("swapstereo")->GetValue(); // to also get dosbox.conf override
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{
@@ -3695,7 +3697,11 @@ void retro_run(void)
 
 	// submit audio
 	//log_cb(RETRO_LOG_INFO, "[retro_run] Submit %d samples (remain %f) - Had: %d - Left: %d\n", mixSamples, dbp_audio_remain, haveSamples, DBP_MIXER_DoneSamplesCount());
-	if (mixSamples) audio_batch_cb(dbp_audio, mixSamples);
+	if (mixSamples)
+	{
+		if (dbp_swapstereo) for (int16_t *p = dbp_audio, *pEnd = p + mixSamples*2; p != pEnd; p += 2) std::swap(p[0], p[1]);
+		audio_batch_cb(dbp_audio, mixSamples);
+	}
 
 	if (tpfActual)
 	{

@@ -686,7 +686,15 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_gus",
 		"Advanced > Enable Gravis Ultrasound (restart required)", NULL,
 		"Enable Gravis Ultrasound emulation. Settings are fixed at port 0x240, IRQ 5, DMA 3." "\n"
-		"If the ULTRADIR variable needs to be different than the default 'C:\\ULTRASND' you need to issue 'SET ULTRADIR=...' in the command line or in a batch file." "\n\n", NULL, //end of Audio > Advanced section
+		"If the ULTRADIR variable needs to be different than the default 'C:\\ULTRASND' you need to issue 'SET ULTRADIR=...' in the command line or in a batch file.", NULL,
+		"Audio",
+		{ { "false", "Off (default)" }, { "true", "On" } },
+		"false"
+	},
+	{
+		"dosbox_pure_swapstereo",
+		"Advanced > Swap Stereo Channels", NULL,
+		"Swap the left and the right audio channel." "\n\n", NULL, //end of Audio > Advanced section
 		"Audio",
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"

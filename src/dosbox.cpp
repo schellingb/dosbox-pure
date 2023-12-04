@@ -713,6 +713,10 @@ void DOSBOX_Init(void) {
 	Pint->SetMinMax(0,100);
 	Pint->Set_help("How many milliseconds of data to keep on top of the blocksize.");
 
+#ifdef C_DBP_LIBRETRO
+	secprop->Add_bool("swapstereo",Property::Changeable::WhenIdle,false);
+#endif
+
 	secprop=control->AddSection_prop("midi",&MIDI_Init,true);//done
 	secprop->AddInitFunction(&MPU401_Init,true);//done
 
