@@ -6,7 +6,7 @@ corename = "DOSBox-pure"
 categories = "Emulator"
 license = "GPLv2"
 permissions = ""
-display_version = "0.9.7"
+display_version = "0.9.8"
 
 # Hardware Information
 manufacturer = "Microsoft"
