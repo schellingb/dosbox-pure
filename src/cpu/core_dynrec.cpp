@@ -136,6 +136,11 @@ static struct {
 
 #include "dyn_cache.h"
 
+//DBP: Fix compilation for OpenDingux
+#ifdef MIPSEL
+#undef MIPSEL
+#endif
+
 #define X86			0x01
 #define X86_64		0x02
 #define MIPSEL		0x03

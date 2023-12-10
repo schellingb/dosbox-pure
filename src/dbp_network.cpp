@@ -35,6 +35,7 @@
 #include "dbp_network.h"
 #include "dbp_threads.h"
 #include <stdarg.h> /* va_list */
+#include <stdlib.h> /* realloc, free */ 
 
 struct DBP_Net
 {
