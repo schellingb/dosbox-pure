@@ -283,7 +283,7 @@ int MSCDEX_RemoveDrive(char driveLetter);
 void IDE_RefreshCDROMs();
 void IDE_SetupControllers(char force_cd_drive_letter = 0);
 void NET_SetupEthernet();
-bool MIDI_TSF_SwitchSF2(const char*);
+bool MIDI_TSF_SwitchSF(const char*);
 bool MIDI_Retro_HasOutputIssue();
 
 static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0, DBP_InputBind *binds = NULL, DBP_InputBind *binds_end = NULL)
@@ -2196,11 +2196,11 @@ static void set_variables(bool force_midi_scan = false)
 				size_t ln = strlen(entry_name);
 				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
 					subdirs.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-				else if ((ln > 4 && (!strcasecmp(entry_name + ln - 4, ".SF2") || !strcasecmp(entry_name + ln - 4, ".SF3"))) || (ln > 12 && !strcasecmp(entry_name + ln - 12, "_CONTROL.ROM")))
+				else if ((ln > 4 && !strncasecmp(entry_name + ln - 4, ".SF", 3)) || (ln > 12 && !strcasecmp(entry_name + ln - 12, "_CONTROL.ROM")))
 				{
 					dynstr.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-					dynstr.emplace_back(entry_name[ln-1] <= '3' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
-					dynstr.back().append(": ").append(path, 0, path.size() - (entry_name[ln-1] <= '3' ? 4 : 12));
+					dynstr.emplace_back((entry_name[ln-2]|0x20) == 'f' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+					dynstr.back().append(": ").append(path, 0, path.size() - ((entry_name[ln-2]|0x20) == 'f' ? 4 : 12));
 				}
 				else if (ln > 4 && (!strcasecmp(entry_name + ln - 4, ".IMG") || !strcasecmp(entry_name + ln - 4, ".IMA") || !strcasecmp(entry_name + ln - 4, ".VHD")))
 				{
@@ -2226,7 +2226,7 @@ static void set_variables(bool force_midi_scan = false)
 					{
 						if (*p >= ' ') continue;
 						if (p == pLine) { pLine++; continue; }
-						if ((p[-3]|0x21) == 's' || dynstr.size() & 1) // check ROM/rom/SF2/sf2 extension, always add description from odd rows
+						if ((p[-3]|0x21) == 's' || dynstr.size() & 1) // check ROM/rom/SF*/sf* extension, always add description from odd rows
 							dynstr.emplace_back(pLine, p - pLine);
 						else
 							((p[-1]|0x20) == 'z' ? dbp_shellzips : dbp_osimages).emplace_back(pLine, p - pLine);
@@ -2258,10 +2258,10 @@ static void set_variables(bool force_midi_scan = false)
 		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
 		size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 : dynstr.size());
 		for (size_t f = 0; f != numfiles; f += 2)
-			if (dynstr[f].back() <= '3')
+			if (((&dynstr[f].back())[-1]|0x20) == 'f') // .SF* extension soundfont
 				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
 		for (size_t f = 0; f != numfiles; f += 2)
-			if (dynstr[f].back() > '3')
+			if (((&dynstr[f].back())[-1]|0x20) != 'f') // .ROM extension munt rom
 				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
 		def.values[i++] = { "disabled", "Disabled" };
 		def.values[i++] = { "frontend", "Frontend MIDI driver" };
@@ -2354,7 +2354,7 @@ static bool check_variables(bool is_startup = false)
 			if (reInitSection) DBP_ThreadControl(TCM_PAUSE_FRAME);
 			if (reInitSection)
 			{
-				if (!strcmp(var_name, "midiconfig") && MIDI_TSF_SwitchSF2(new_value))
+				if (!strcmp(var_name, "midiconfig") && MIDI_TSF_SwitchSF(new_value))
 				{
 					// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
 				}

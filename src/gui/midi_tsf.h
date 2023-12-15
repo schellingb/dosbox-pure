@@ -43,7 +43,7 @@ struct MidiHandler_tsf : public MidiHandler
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len <= 4 || (strcasecmp(conf + conf_len - 4, ".sf2") && strcasecmp(conf + conf_len - 4, ".sf3"))) return false;
+		if (conf_len <= 4 || strncasecmp(conf + conf_len - 4, ".sf", 3)) return false;
 
 		DBP_ASSERT(!f);
 		f = FindAndOpenDosFile(conf);
@@ -68,7 +68,7 @@ struct MidiHandler_tsf : public MidiHandler
 	static int tsf_stream_dosfile_skip(DOS_File* f, unsigned int count) { return !!f->Seek(&count, DOS_SEEK_CUR); }
 	static int tsf_stream_dosfile_read(DOS_File* f, Bit8u* p, unsigned int sz)
 	{
-		for (Bit16u read; sz; sz -= read, p += read) { read = (Bit16u)(sz > 0xFFFF ? 0xFFFF : sz); if (!f->Read(p, &read)) return false; }
+		for (Bit16u read; sz; sz -= read, p += read) { read = (Bit16u)(sz > 0xFFFF ? 0xFFFF : sz); if (!f->Read(p, &read) || !read) return false; }
 		return true;
 	}
 
@@ -142,7 +142,7 @@ static void MIDI_TSF_CallBack(Bitu len)
 	Midi_tsf.chan->AddSamples_s16(len, (Bit16s*)MixTemp);
 }
 
-bool MIDI_TSF_SwitchSF2(const char* path)
+bool MIDI_TSF_SwitchSF(const char* path)
 {
 	if (midi.handler != &Midi_tsf) return false;
 
