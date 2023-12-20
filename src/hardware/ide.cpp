@@ -728,7 +728,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 	}
 
 	void set_sense(unsigned char SK,unsigned char ASC=0,unsigned char ASCQ=0,unsigned int info=0) {
-		const unsigned int len = 18 + 0xB;
+		const unsigned int len = 18;
 		memset(sense,0,len);
 		sense_length = len;
 
