@@ -421,9 +421,9 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		{
 			strcpy(p_dos, Drives[drive]->curdir);
 			p_dos += strlen(p_dos);
-			*(p_dos++) = '\\';
 		}
-		if (p_dos == dos_path)
+		bool transformed = (p_dos != dos_path);
+		if (!transformed)
 		{
 			// try open path untransformed (works on localDrive and with paths without long file names)
 			if (writable && Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READWRITE))
@@ -431,7 +431,6 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 			if (Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READ))
 				goto get_file_size_write_protected;
 		}
-		bool transformed = false;
 		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos < p_dos_end; nDir = ++n)
 		{
 			while (*n != '/' && *n != '\\' && n != nEnd) n++;
@@ -440,7 +439,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 			{
 				// Remove the last parent directory in dos_path on ..
 				transformed = true;
-				while (p_dos > dos_path && *p_dos != '\\') p_dos--;
+				while (p_dos > dos_path && *(--p_dos) != '\\') {}
 				continue;
 			}
 
