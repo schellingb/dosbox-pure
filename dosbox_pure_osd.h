@@ -1419,7 +1419,7 @@ static void DBP_PureMenuProgram(Program** make)
 {
 	struct Menu : Program
 	{
-		Bit32u opentime;
+		Bit32u opentime, pressedKey;
 		char msgbuf[100];
 		bool pressedAnyKey;
 
@@ -1433,13 +1433,17 @@ static void DBP_PureMenuProgram(Program** make)
 
 		static void InterceptInputAnyPress(DBP_Event_Type type, int val, int val2, void* self)
 		{
-			if (type == DBPET_KEYDOWN || type == DBPET_MOUSEDOWN || type == DBPET_JOY1DOWN || type == DBPET_JOY2DOWN)
-				if ((DBP_GetTicks() - ((Menu*)self)->opentime) > 300)
-					((Menu*)self)->pressedAnyKey = true;
+			bool down = (type == DBPET_KEYDOWN || type == DBPET_MOUSEDOWN || type == DBPET_JOY1DOWN || type == DBPET_JOY2DOWN);
+			bool up = (type == DBPET_KEYUP || type == DBPET_MOUSEUP || type == DBPET_JOY1UP || type == DBPET_JOY2UP);
+			if ((!down && !up) || (DBP_GetTicks() - ((Menu*)self)->opentime) < 300) return;
+			const Bit32u key = ((Bit32u)type + (down ? 1 : 0) + (((Bit32u)val + 1) << 8));
+			if (down) ((Menu*)self)->pressedKey = key;
+			else if (((Menu*)self)->pressedKey == key) ((Menu*)self)->pressedAnyKey = true;
 		}
 
 		bool WaitAnyKeyPress(Bit32u tick_limit = 0)
 		{
+			pressedKey = 0;
 			pressedAnyKey = false;
 			DBP_KEYBOARD_ReleaseKeys(); // any unintercepted CALLBACK_* can set a key down
 			dbp_intercept_data = this;
