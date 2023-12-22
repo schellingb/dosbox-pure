@@ -111,7 +111,7 @@ static const char* DBP_KBDNAMES[] =
 };
 static std::vector<DBP_InputBind> dbp_input_binds;
 static std::vector<Bit8u> dbp_custom_mapping;
-static bool dbp_port_active[DBP_MAX_PORTS];
+static Bit8u dbp_port_mode[DBP_MAX_PORTS];
 static bool dbp_input_binds_modified;
 static bool dbp_on_screen_keyboard;
 static char dbp_mouse_input;
@@ -999,12 +999,13 @@ static void DBP_Remount(char drive1, char drive2)
 struct DBP_PadMapping
 {
 	enum { DBP_PADMAP_MAXSIZE_PORT = (1 + (16 * (1 + 4)) + (4 * (1 + 8))), DBP_PADMAP_MAXSIZE_TOTAL = DBP_MAX_PORTS * DBP_PADMAP_MAXSIZE_PORT };
-	enum EPreset : int { PRESET_NONE, PRESET_AUTOMAPPED, PRESET_GENERICKEYBOARD, PRESET_MOUSE_LEFT_ANALOG, PRESET_MOUSE_RIGHT_ANALOG, PRESET_GRAVIS_GAMEPAD, PRESET_BASIC_JOYSTICK_1, PRESET_BASIC_JOYSTICK_2, PRESET_THRUSTMASTER_FLIGHTSTICK, PRESET_BOTH_DOS_JOYSTICKS, PRESET_CUSTOM };
+	enum EPreset : Bit8u { PRESET_NONE, PRESET_AUTOMAPPED, PRESET_GENERICKEYBOARD, PRESET_MOUSE_LEFT_ANALOG, PRESET_MOUSE_RIGHT_ANALOG, PRESET_GRAVIS_GAMEPAD, PRESET_BASIC_JOYSTICK_1, PRESET_BASIC_JOYSTICK_2, PRESET_THRUSTMASTER_FLIGHTSTICK, PRESET_BOTH_DOS_JOYSTICKS, PRESET_CUSTOM };
+	enum EPortMode : Bit8u { MODE_DISABLED, MODE_MAPPER, MODE_PRESET_AUTOMAPPED, MODE_PRESET_GENERICKEYBOARD, MODE_PRESET_LAST = MODE_PRESET_AUTOMAPPED + (PRESET_CUSTOM - PRESET_AUTOMAPPED) - 1, MODE_KEYBOARD, MODE_KEYBOARD_MOUSE1, MODE_KEYBOARD_MOUSE2 };
 
 	inline static EPreset DefaultPreset(Bit8u port) { return ((port || !dbp_auto_mapping) ? PRESET_GENERICKEYBOARD : PRESET_AUTOMAPPED); }
-	inline static bool IsCustomized(Bit8u port) { return (dbp_port_active[port] && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
+	inline static bool IsCustomized(Bit8u port) { return (dbp_port_mode[port] == MODE_MAPPER && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
 	inline static const char* GetPortPresetName(Bit8u port) { return GetPresetName(GetPreset(port)); }
-	inline static void FillGenericKeys(Bit8u port) { Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true); }
+	inline static void FillGenericKeys(Bit8u port) { Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true, true); }
 	inline static const char* GetKeyAutoMapButtonLabel(Bit8u key) { return FindAutoMapButtonLabel(1, 0, &key); }
 
 	static void Load()
@@ -1042,6 +1043,7 @@ struct DBP_PadMapping
 		}
 		else
 		{
+			RefreshDosJoysticks(); // do after bindings change
 			dbp_custom_mapping.resize(DBP_PADMAP_MAXSIZE_PORT * (last_port + 1));
 			Bit8u *data = &dbp_custom_mapping[0], *pBind = data, *pEnd = data, *pCount;
 			for (Bit8u port = 0; port <= last_port; port++)
@@ -1109,7 +1111,7 @@ struct DBP_PadMapping
 	static void SetPreset(Bit8u port, EPreset preset)
 	{
 		for (size_t i = dbp_input_binds.size(); i--;) { if (dbp_input_binds[i].port == port) { dbp_input_binds.erase(dbp_input_binds.begin() + i); } }
-		Apply(port, PresetBinds(preset, port));
+		Apply(port, PresetBinds(preset, port), true);
 	}
 
 	static EPreset GetPreset(Bit8u port, EPreset check_one = PRESET_NONE)
@@ -1155,6 +1157,88 @@ struct DBP_PadMapping
 		return FindAutoMapButtonLabel(bind_count, isAnalog, bind_buf);
 	}
 
+	static void SetPortMode(unsigned port, unsigned device)
+	{
+		Bit8u devtype = (Bit8u)(device & RETRO_DEVICE_MASK), subclass = (Bit8u)((device >> RETRO_DEVICE_TYPE_SHIFT) - 1), mode = MODE_DISABLED;
+		bool is_joy = (devtype == RETRO_DEVICE_JOYPAD || devtype == RETRO_DEVICE_ANALOG), is_key = (devtype == RETRO_DEVICE_KEYBOARD);
+		if      (is_joy && subclass == 99 && dbp_auto_mapping) mode = PRESET_AUTOMAPPED;
+		else if (is_joy && subclass < (PRESET_CUSTOM - PRESET_GENERICKEYBOARD)) mode = MODE_PRESET_GENERICKEYBOARD + subclass;
+		else if (is_joy) mode = MODE_MAPPER;
+		else if (is_key) mode = (subclass == 1 ? MODE_KEYBOARD_MOUSE1 : subclass == 2 ? MODE_KEYBOARD_MOUSE2 : MODE_KEYBOARD);
+		if (port >= DBP_MAX_PORTS || dbp_port_mode[port] == mode) return;
+		dbp_port_mode[port] = mode;
+		if (dbp_state <= DBPSTATE_SHUTDOWN) return;
+		if (mode != MODE_DISABLED) RefreshInputBinds(true); else ClearBinds((Bit8u)port);
+	}
+
+	static void RefreshInputBinds(bool regenerate_bindings)
+	{
+		dbp_input_binds_modified = false;
+		if (regenerate_bindings) GenerateBindings();
+
+		static std::vector<std::string> input_names;
+		input_names.reserve(dbp_input_binds.size() + DBP_MAX_PORTS); // otherwise strings move their data in memory when the vector reallocates
+		input_names.clear();
+		std::vector<retro_input_descriptor> input_descriptor;
+		for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(), *prev = NULL; b != bEnd; prev = b++)
+			if (b->device != RETRO_DEVICE_MOUSE && (!prev || PORT_DEVICE_INDEX_ID(*prev) != PORT_DEVICE_INDEX_ID(*b)))
+				if (const char* desc = GenerateDesc(input_names, PORT_DEVICE_INDEX_ID(*b), b->device == RETRO_DEVICE_ANALOG))
+					input_descriptor.push_back( { b->port, b->device, b->index, b->id, desc } );
+		input_descriptor.push_back( { 0 } );
+		environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, &input_descriptor[0]);
+
+		enum { TYPES_COUNT = 2 + (PRESET_CUSTOM - PRESET_AUTOMAPPED) + 3 };
+		static retro_controller_info ports[DBP_MAX_PORTS+1];
+		static retro_controller_description descs[DBP_MAX_PORTS*TYPES_COUNT];
+		for (Bit8u port = 0; port != DBP_MAX_PORTS; port++)
+		{
+			if (dbp_port_mode[port] == MODE_MAPPER) { input_names.push_back("[Pad Mapper] "); input_names.back().append(GetPortPresetName(port)); }
+
+			retro_controller_description *types = descs + port * TYPES_COUNT, *type = types;
+			*(type++) = { "Disabled", (unsigned)RETRO_DEVICE_NONE };
+			*(type++) = { (dbp_port_mode[port] == MODE_MAPPER ? input_names.back().c_str() : "Use Gamepad Mapper"), (unsigned)RETRO_DEVICE_JOYPAD };
+			if (dbp_auto_mapping) *(type++) = { dbp_auto_mapping_title, (unsigned)RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, 99) };
+			for (int i = PRESET_GENERICKEYBOARD; i != PRESET_CUSTOM; i++)
+				*(type++) = { GetPresetName((EPreset)i), (unsigned)RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_JOYPAD, i - PRESET_GENERICKEYBOARD) };
+			*(type++) = { "Custom Keyboard Bindings", (unsigned)RETRO_DEVICE_KEYBOARD };
+			*(type++) = { "Custom Keyboard + Mouse on Left Stick and B/A/X",  (unsigned)RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 1) };
+			*(type++) = { "Custom Keyboard + Mouse on Right Stick and L/R/X", (unsigned)RETRO_DEVICE_SUBCLASS(RETRO_DEVICE_KEYBOARD, 2) };
+
+			ports[port].num_types = (unsigned)(type - types);
+			ports[port].types = types;
+		}
+		ports[DBP_MAX_PORTS] = {0};
+		environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
+	}
+
+	static void RefreshDosJoysticks()
+	{
+		// Enable DOS joysticks only when mapped
+		// This helps for games which by default react to the joystick without calibration
+		// This can cause problems in other games that expect the joystick to respond (but hopefully these games have a setup program that can disable that)
+		bool useJoy1 = false, useJoy2 = false;
+		for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(); b != bEnd; b++)
+		{
+			useJoy1 |= (b->evt == DBPET_JOY1X || b->evt == DBPET_JOY1Y || b->evt == DBPET_JOY1DOWN);
+			useJoy2 |= (b->evt == DBPET_JOY2X || b->evt == DBPET_JOY2Y || b->evt == DBPET_JOY2DOWN || b->evt == DBPET_JOYHATSETBIT);
+		}
+		JOYSTICK_Enable(0, useJoy1);
+		JOYSTICK_Enable(1, useJoy2);
+	}
+
+	static int InsertBind(const DBP_InputBind& b)
+	{
+		const DBP_InputBind *pEnd = (dbp_input_binds.size() ? &dbp_input_binds[0]-1 : NULL), *pBegin = pEnd + dbp_input_binds.size(), *p = pBegin;
+		const Bit32u b_sort_key = (Bit32u)((b.port<<24)|(b.device<<16)|(b.index<<8)|(b.id));
+		for (; p != pEnd; p--)
+			if (p->device == RETRO_DEVICE_MOUSE || (Bit32u)((p->port<<24)|(p->device<<16)|(p->index<<8)|(p->id)) <= b_sort_key)
+				break;
+		int insert_idx = (int)(p - pEnd);
+		dbp_input_binds.insert(dbp_input_binds.begin() + insert_idx, b);
+		return insert_idx;
+	}
+
+private:
 	static void GenerateBindings()
 	{
 		dbp_input_binds.clear();
@@ -1175,10 +1259,32 @@ struct DBP_PadMapping
 		const Bit8u* mapping = (!dbp_custom_mapping.empty() ? &dbp_custom_mapping[0] : NULL), *mapping_end = mapping + dbp_custom_mapping.size();
 		for (Bit8u port = 0; port != DBP_MAX_PORTS; port++)
 		{
-			if (mapping && mapping < mapping_end)   mapping = Apply(port, mapping);
-			else if (port == 0 && dbp_auto_mapping) Apply(port, dbp_auto_mapping);
-			else if (dbp_port_active[port])         Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port));
+			if (dbp_port_mode[port] == MODE_MAPPER)
+			{
+				if (mapping && mapping < mapping_end) mapping = Apply(port, mapping, false);
+				else if (port == 0 && dbp_auto_mapping) Apply(port, dbp_auto_mapping, true);
+				else Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true);
+			}
+			else
+			{
+				if (mapping && mapping < mapping_end) mapping = SkipMapping(mapping);
+				bool preset_mode = (dbp_port_mode[port] >= MODE_PRESET_AUTOMAPPED && dbp_port_mode[port] <= MODE_PRESET_LAST), bind_osd = (dbp_port_mode[port] != MODE_DISABLED);
+				EPreset preset = (preset_mode) ? (EPreset)(PRESET_AUTOMAPPED + (dbp_port_mode[port] - MODE_PRESET_AUTOMAPPED))
+				               : (dbp_port_mode[port] == MODE_KEYBOARD_MOUSE1) ? PRESET_MOUSE_LEFT_ANALOG
+				               : (dbp_port_mode[port] == MODE_KEYBOARD_MOUSE2) ? PRESET_MOUSE_RIGHT_ANALOG
+				               : PRESET_NONE;
+				if (bind_osd) Apply(port, PresetBinds(preset, port), true);
+				if (preset_mode) FillGenericKeys(port);
+			}
 		}
+		RefreshDosJoysticks(); // do after bindings change
+	}
+
+	static void ClearBinds(Bit8u port)
+	{
+		DBP_InputBind *binds = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *b = binds, *bEnd = b + dbp_input_binds.size(), *shift = b;
+		for (; b != bEnd; b++, shift++) { if (b->port == port) shift--; else if (shift != b) *shift = *b; }
+		if (shift != b) dbp_input_binds.resize(shift - binds);
 	}
 
 	static const char* GenerateDesc(std::vector<std::string>& input_names, Bit32u port_device_index_id, Bit8u isAnalog)
@@ -1206,37 +1312,24 @@ struct DBP_PadMapping
 		return name.c_str();
 	}
 
-	static int InsertBind(const DBP_InputBind& b)
-	{
-		const DBP_InputBind *pEnd = (dbp_input_binds.size() ? &dbp_input_binds[0]-1 : NULL), *pBegin = pEnd + dbp_input_binds.size(), *p = pBegin;
-		const Bit32u b_sort_key = (Bit32u)((b.port<<24)|(b.device<<16)|(b.index<<8)|(b.id));
-		for (; p != pEnd; p--)
-			if (p->device == RETRO_DEVICE_MOUSE || (Bit32u)((p->port<<24)|(p->device<<16)|(p->index<<8)|(p->id)) <= b_sort_key)
-				break;
-		int insert_idx = (int)(p - pEnd);
-		dbp_input_binds.insert(dbp_input_binds.begin() + insert_idx, b);
-		return insert_idx;
-	}
-
-private:
 	#define DBP_ANALOGBINDID2(INDEX,ID) (16+((INDEX)*2)+(ID))
 	#define DBP_ANALOGBINDID(SIDE,AXIS) DBP_ANALOGBINDID2(RETRO_DEVICE_INDEX_ANALOG_##SIDE, RETRO_DEVICE_ID_ANALOG_##AXIS)
 
 	inline static DBP_InputBind BindForBtn(Bit8u port, Bit8u id) { if (id < 16) return { port, RETRO_DEVICE_JOYPAD, 0, id }; else return { port, RETRO_DEVICE_ANALOG, (Bit8u)(id >= 18), (Bit8u)(id & 1) }; }
 	inline static Bit32u PortDeviceIndexIdForBtn(Bit8u port, Bit8u id) { DBP_InputBind bnd = BindForBtn(port, id); return PORT_DEVICE_INDEX_ID(bnd); }
 
-	static const Bit8u* Apply(Bit8u port, const Bit8u* mapping, bool only_unbound = false)
+	static const Bit8u* Apply(Bit8u port, const Bit8u* mapping, bool is_preset, bool only_unbound = false)
 	{
 		static const Bit8u bindUsedToNext[20] = { RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_START, RETRO_DEVICE_ID_JOYPAD_X, 0xFF, 0xFF, 0xFF, 0xFF, RETRO_DEVICE_ID_JOYPAD_L, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_R, RETRO_DEVICE_ID_JOYPAD_L2, RETRO_DEVICE_ID_JOYPAD_R2, RETRO_DEVICE_ID_JOYPAD_L3, RETRO_DEVICE_ID_JOYPAD_R3, 0xFF, DBP_ANALOGBINDID(LEFT,Y), DBP_ANALOGBINDID(RIGHT,X), DBP_ANALOGBINDID(RIGHT,Y), 0xFF };
 		bool bound_buttons[20] = {false};
 		if (only_unbound) for (const DBP_InputBind& b : dbp_input_binds)
 		{
 			if (b.port != port) continue;
-			if      (b.device == RETRO_DEVICE_JOYPAD && b.id <= RETRO_DEVICE_ID_JOYPAD_R3) bound_buttons[b.id] = true;
+			if (b.device == RETRO_DEVICE_JOYPAD && b.id <= RETRO_DEVICE_ID_JOYPAD_R3) bound_buttons[b.id] = true;
 			else if (b.device == RETRO_DEVICE_ANALOG) bound_buttons[DBP_ANALOGBINDID2(b.index,b.id)] = true;
 		}
 		bool bind_osd = (port == 0 && dbp_on_screen_keyboard && !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]);
-		if (bind_osd) bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3] = true;
+		if (bind_osd && is_preset) bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3] = true;
 
 		const Bit8u count = (mapping ? *mapping : 0), *p = mapping + 1;
 		for (Bit8u num = 0; num != count; num++)
@@ -1254,13 +1347,29 @@ private:
 			{
 				Bit8u k[] = { *(p++), (isAnalog ? *(p++) : (Bit8u)0) };
 				if (!SetBindMetaFromPair(bnd, k[0], k[1])) { DBP_ASSERT(0); goto err; }
+				if (bnd.evt == DBPET_ONSCREENKEYBOARD) bind_osd = false;
 				InsertBind(bnd);
 			}
 		}
-		if (bind_osd) InsertBind({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_ONSCREENKEYBOARD });
+
+		if (bind_osd && (is_preset || !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]))
+			InsertBind({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_ONSCREENKEYBOARD });
 
 		return p;
 		err: retro_notify(0, RETRO_LOG_ERROR, "Gamepad mapping data is invalid"); return mapping+DBP_PADMAP_MAXSIZE_TOTAL;
+	}
+
+	static const Bit8u* SkipMapping(const Bit8u* mapping)
+	{
+		const Bit8u count = (mapping ? *mapping : 0), *p = mapping + 1;
+		for (Bit8u num = 0; num != count; num++)
+		{
+			Bit8u btn_val = *(p++), btn_id = (Bit8u)(btn_val & 31), isAnalog = (btn_id >= 16), hasActionName = !!(btn_val & 32), key_count = 1 + (btn_val>>6);
+			if (btn_id > 19) { DBP_ASSERT(0); return mapping+DBP_PADMAP_MAXSIZE_TOTAL; }
+			if (hasActionName) while (*(p++) & 128); // skip name_offset
+			p += (key_count * (1 + isAnalog));
+		}
+		return p;
 	}
 
 	static Bit16s GetAxisSpecialMappingMeta(Bit16s evt)
@@ -1939,7 +2048,7 @@ void GFX_Events()
 			if (!DBP_IS_RELEASE_EVENT(e.type)) continue;
 		}
 		#if 0
-		if (e.type == DBPET_KEYDOWN && e.val == KBD_b) { DBP_DumpPSPs(); }
+		if (e.type == DBPET_KEYDOWN && e.val == KBD_b) { void DBP_DumpPSPs(); DBP_DumpPSPs(); }
 		#endif
 		switch (e.type)
 		{
@@ -2117,57 +2226,6 @@ void retro_set_environment(retro_environment_t cb) //#2
 	environ_cb = cb;
 	bool allow_no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &allow_no_game);
-}
-
-static void DBP_RefreshDosJoysticks()
-{
-	// Enable DOS joysticks only when mapped
-	// This helps for games which by default react to the joystick without calibration
-	// This can cause problems in other games that expect the joystick to respond (but hopefully these games have a setup program that can disable that)
-	bool useJoy1 = false, useJoy2 = false;
-	for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(); b != bEnd; b++)
-	{
-		useJoy1 |= (b->evt == DBPET_JOY1X || b->evt == DBPET_JOY1Y || b->evt == DBPET_JOY1DOWN);
-		useJoy2 |= (b->evt == DBPET_JOY2X || b->evt == DBPET_JOY2Y || b->evt == DBPET_JOY2DOWN || b->evt == DBPET_JOYHATSETBIT);
-	}
-	JOYSTICK_Enable(0, useJoy1);
-	JOYSTICK_Enable(1, useJoy2);
-}
-
-static void DBP_RefreshInputBinds(bool generate_bindings, bool set_controller_info)
-{
-	size_t oldBindCount = dbp_input_binds.size();
-	if (generate_bindings)
-		DBP_PadMapping::GenerateBindings();
-
-	static std::vector<std::string> input_names;
-	input_names.reserve(dbp_input_binds.size()); // otherwise strings move their data in memory when the vector reallocates
-	input_names.clear();
-	std::vector<retro_input_descriptor> input_descriptor;
-	for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(), *prev = NULL; b != bEnd; prev = b++)
-		if (b->device != RETRO_DEVICE_MOUSE && (!prev || PORT_DEVICE_INDEX_ID(*prev) != PORT_DEVICE_INDEX_ID(*b)))
-			if (const char* desc = DBP_PadMapping::GenerateDesc(input_names, PORT_DEVICE_INDEX_ID(*b), b->device == RETRO_DEVICE_ANALOG))
-				input_descriptor.push_back( { b->port, b->device, b->index, b->id, desc } );
-	input_descriptor.push_back( { 0 } );
-	environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, &input_descriptor[0]);
-
-	if (set_controller_info || oldBindCount != dbp_input_binds.size())
-	{
-		static retro_controller_info ports[DBP_MAX_PORTS+1];
-		static retro_controller_description descs[DBP_MAX_PORTS*2];
-		for (int port = 0; port != DBP_MAX_PORTS; port++)
-		{
-			ports[port].num_types = 2;
-			ports[port].types = descs + port * 2;
-			descs[port * 2 + 0] = { "Disabled", (unsigned)RETRO_DEVICE_NONE };
-			descs[port * 2 + 1] = { DBP_PadMapping::GetPortPresetName(port), (unsigned)RETRO_DEVICE_JOYPAD };
-		}
-		ports[DBP_MAX_PORTS] = {0};
-		environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
-		dbp_input_binds_modified = false;
-	}
-
-	DBP_RefreshDosJoysticks(); // do after control change
 }
 
 static void set_variables(bool force_midi_scan = false)
@@ -2605,7 +2663,7 @@ static bool check_variables(bool is_startup = false)
 		dbp_on_screen_keyboard = on_screen_keyboard;
 		dbp_mouse_input = mouse_input;
 		dbp_bind_mousewheel = bind_mousewheel;
-		if (dbp_state > DBPSTATE_SHUTDOWN) DBP_RefreshInputBinds(true, false);
+		if (dbp_state > DBPSTATE_SHUTDOWN) DBP_PadMapping::RefreshInputBinds(true);
 	}
 	dbp_alphablend_base = (Bit8u)((atoi(retro_get_variable("dosbox_pure_menu_transparency", "50")) + 30) * 0xFF / 130);
 	dbp_mouse_speed = (float)atof(retro_get_variable("dosbox_pure_mouse_speed_factor", "1.0"));
@@ -2939,7 +2997,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 					if (dbp_auto_mapping_mode == 'f')
 						return;
 
-					static_title = "Mapping: ";
+					static_title = "Game: ";
 					static_title += map_title + 1;
 					dbp_auto_mapping_title = static_title.c_str();
 
@@ -3040,7 +3098,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
 
 	// Joysticks are refreshed after control modifications but needs to be done here also to happen on core restart
-	DBP_RefreshDosJoysticks();
+	DBP_PadMapping::RefreshDosJoysticks();
 
 	// If mounted, always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
 	// For DBP we modified init_line to always run Z:\AUTOEXEC.BAT and not just any AUTOEXEC.BAT of the current drive/directory
@@ -3276,8 +3334,8 @@ void retro_init(void) //#3
 	struct retro_perf_callback perf;
 	if (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf) && perf.get_time_usec) time_cb = perf.get_time_usec;
 
-	// Set default ports
-	dbp_port_active[0] = dbp_port_active[1] = dbp_port_active[2] = dbp_port_active[3] = true;
+	// Set default port modes
+	dbp_port_mode[0] = dbp_port_mode[1] = dbp_port_mode[2] = dbp_port_mode[3] = DBP_PadMapping::MODE_MAPPER;
 
 	set_variables();
 }
@@ -3290,7 +3348,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
 		return false;
 	}
-
+	
 	//// RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK crashes RetroArch with the XAudio driver when launching from the command line
 	//// Also it explicitly doesn't support save state rewinding when used so give up on this for now.
 	//struct CallBacks
@@ -3315,7 +3373,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	bool support_achievements = true;
 	environ_cb(RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS, &support_achievements);
 
-	DBP_RefreshInputBinds(true, true);
+	DBP_PadMapping::RefreshInputBinds(true);
 
 	return true;
 }
@@ -3351,10 +3409,7 @@ void retro_unload_game(void)
 
 void retro_set_controller_port_device(unsigned port, unsigned device) //#5
 {
-	if (port >= DBP_MAX_PORTS || dbp_port_active[port] == (device != RETRO_DEVICE_NONE)) return;
-	//log_cb(RETRO_LOG_INFO, "[DOSBOX] Plugging device %u into port %u.\n", device, port);
-	dbp_port_active[port] = (device != RETRO_DEVICE_NONE);
-	if (dbp_state > DBPSTATE_SHUTDOWN) DBP_RefreshInputBinds(true, false);
+	DBP_PadMapping::SetPortMode(port, device);
 }
 
 void retro_reset(void)
@@ -3532,7 +3587,7 @@ void retro_run(void)
 			else DBP_QueueEvent((DBP_Event_Type)(b->evt + 1), b->meta);
 			b->lastval = 0;
 		}
-		if (dbp_input_binds_modified) DBP_RefreshInputBinds(false, true);
+		if (dbp_input_binds_modified) DBP_PadMapping::RefreshInputBinds(false);
 	}
 	DBP_InputBind *binds = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *binds_end = binds + dbp_input_binds.size();
 	input_poll_cb();
@@ -3559,7 +3614,7 @@ void retro_run(void)
 				break;
 			}
 		}
-		if (dbp_input_binds_modified) DBP_RefreshInputBinds(false, true);
+		if (dbp_input_binds_modified) DBP_PadMapping::RefreshInputBinds(false);
 	}
 
 	// query mouse movement before querying mouse buttons
