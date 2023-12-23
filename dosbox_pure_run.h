@@ -344,8 +344,8 @@ struct DBP_Run
 			RunShell(startup.info);
 	}
 
-	inline static void ResetStartup() { startup.mode = RUN_NONE; }
-	inline static void ResetAutoboot() { autoboot.use = autoboot.have = false; }
+	INLINE static void ResetStartup() { startup.mode = RUN_NONE; }
+	INLINE static void ResetAutoboot() { autoboot.use = autoboot.have = false; }
 	static char GetDosBoxMachineChar() { return *((const char*)control->GetSection("dosbox")->GetProp("machine")->GetValue()); }
 
 	static bool HandleStartup(bool is_boot)

@@ -127,7 +127,7 @@ struct DBP_BufferDrawing : DBP_Buffer
 	}
 
 	bool DrawButtonAt(Bit32u blend, int btny, int lh, int padu, int padd, int btnx, int btnr, bool on, const struct DBP_MenuMouse& m, const char* txt);
-	inline bool DrawButton(Bit32u blend, int btny, int lh, int i, int n, bool on, const struct DBP_MenuMouse& m, const char* txt)
+	INLINE bool DrawButton(Bit32u blend, int btny, int lh, int i, int n, bool on, const struct DBP_MenuMouse& m, const char* txt)
 		{ int w = width; return DrawButtonAt(blend, btny, lh, 4, 4, (!i ? 8 : (w*i/n + 2)), (i == (n-1) ? w - 8 : (w*(i+1)/n - 2)), on, m, txt); }
 };
 DBP_STATIC_ASSERT(sizeof(DBP_BufferDrawing) == sizeof(DBP_Buffer)); // drawing is just for function expansions, we're just casting one to the other
@@ -533,8 +533,8 @@ struct DBP_MapperMenuState : DBP_MenuState
 		bind_dev = 0;
 	}
 
-	inline bool is_mapper_disabled_top() { return list[1].info == 11; } // see menu_top
-	inline bool is_presets_menu() { return list[0].info == 22; } // see menu_presets
+	INLINE bool is_mapper_disabled_top() { return list[1].info == 11; } // see menu_top
+	INLINE bool is_presets_menu() { return list[0].info == 22; } // see menu_presets
 
 	void menu_presets(Bit16s info)
 	{

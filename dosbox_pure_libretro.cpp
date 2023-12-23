@@ -998,11 +998,11 @@ struct DBP_PadMapping
 	enum EPreset : Bit8u { PRESET_NONE, PRESET_AUTOMAPPED, PRESET_GENERICKEYBOARD, PRESET_MOUSE_LEFT_ANALOG, PRESET_MOUSE_RIGHT_ANALOG, PRESET_GRAVIS_GAMEPAD, PRESET_BASIC_JOYSTICK_1, PRESET_BASIC_JOYSTICK_2, PRESET_THRUSTMASTER_FLIGHTSTICK, PRESET_BOTH_DOS_JOYSTICKS, PRESET_CUSTOM };
 	enum EPortMode : Bit8u { MODE_DISABLED, MODE_MAPPER, MODE_PRESET_AUTOMAPPED, MODE_PRESET_GENERICKEYBOARD, MODE_PRESET_LAST = MODE_PRESET_AUTOMAPPED + (PRESET_CUSTOM - PRESET_AUTOMAPPED) - 1, MODE_KEYBOARD, MODE_KEYBOARD_MOUSE1, MODE_KEYBOARD_MOUSE2 };
 
-	inline static EPreset DefaultPreset(Bit8u port) { return ((port || !dbp_auto_mapping) ? PRESET_GENERICKEYBOARD : PRESET_AUTOMAPPED); }
-	inline static bool IsCustomized(Bit8u port) { return (dbp_port_mode[port] == MODE_MAPPER && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
-	inline static const char* GetPortPresetName(Bit8u port) { return GetPresetName(GetPreset(port)); }
-	inline static void FillGenericKeys(Bit8u port) { Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true, true); }
-	inline static const char* GetKeyAutoMapButtonLabel(Bit8u key) { return FindAutoMapButtonLabel(1, 0, &key); }
+	INLINE static EPreset DefaultPreset(Bit8u port) { return ((port || !dbp_auto_mapping) ? PRESET_GENERICKEYBOARD : PRESET_AUTOMAPPED); }
+	INLINE static bool IsCustomized(Bit8u port) { return (dbp_port_mode[port] == MODE_MAPPER && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
+	INLINE static const char* GetPortPresetName(Bit8u port) { return GetPresetName(GetPreset(port)); }
+	INLINE static void FillGenericKeys(Bit8u port) { Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true, true); }
+	INLINE static const char* GetKeyAutoMapButtonLabel(Bit8u key) { return FindAutoMapButtonLabel(1, 0, &key); }
 
 	static void Load()
 	{
@@ -1316,8 +1316,8 @@ private:
 	#define DBP_ANALOGBINDID2(INDEX,ID) (16+((INDEX)*2)+(ID))
 	#define DBP_ANALOGBINDID(SIDE,AXIS) DBP_ANALOGBINDID2(RETRO_DEVICE_INDEX_ANALOG_##SIDE, RETRO_DEVICE_ID_ANALOG_##AXIS)
 
-	inline static DBP_InputBind BindForBtn(Bit8u port, Bit8u id) { if (id < 16) return { port, RETRO_DEVICE_JOYPAD, 0, id }; else return { port, RETRO_DEVICE_ANALOG, (Bit8u)(id >= 18), (Bit8u)(id & 1) }; }
-	inline static Bit32u PortDeviceIndexIdForBtn(Bit8u port, Bit8u id) { DBP_InputBind bnd = BindForBtn(port, id); return PORT_DEVICE_INDEX_ID(bnd); }
+	INLINE static DBP_InputBind BindForBtn(Bit8u port, Bit8u id) { if (id < 16) return { port, RETRO_DEVICE_JOYPAD, 0, id }; else return { port, RETRO_DEVICE_ANALOG, (Bit8u)(id >= 18), (Bit8u)(id & 1) }; }
+	INLINE static Bit32u PortDeviceIndexIdForBtn(Bit8u port, Bit8u id) { DBP_InputBind bnd = BindForBtn(port, id); return PORT_DEVICE_INDEX_ID(bnd); }
 
 	static const Bit8u* Apply(Bit8u port, const Bit8u* mapping, bool is_preset, bool only_unbound = false)
 	{
