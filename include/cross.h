@@ -40,6 +40,7 @@
 #if _MSC_VER <= 1310
 #error _vscprintf and _vsnprintf_s not available
 #endif
+#include <stdarg.h>
 #define snprintf c99_snprintf
 #define vsnprintf c99_vsnprintf
 static inline int c99_vsnprintf(char *s, size_t sz, const char *fmt, va_list ap)
