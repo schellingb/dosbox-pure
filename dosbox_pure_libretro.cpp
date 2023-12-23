@@ -112,17 +112,13 @@ static const char* DBP_KBDNAMES[] =
 static std::vector<DBP_InputBind> dbp_input_binds;
 static std::vector<Bit8u> dbp_custom_mapping;
 static Bit8u dbp_port_mode[DBP_MAX_PORTS];
-static bool dbp_input_binds_modified;
-static bool dbp_on_screen_keyboard;
-static char dbp_mouse_input;
-static char dbp_auto_mapping_mode;
+static bool dbp_input_binds_modified, dbp_on_screen_keyboard, dbp_analog_buttons;
+static char dbp_mouse_input, dbp_auto_mapping_mode;
 static Bit16s dbp_bind_mousewheel, dbp_mouse_x, dbp_mouse_y;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
-static float dbp_mouse_speed = 1;
-static float dbp_mouse_speed_x = 1;
+static float dbp_mouse_speed = 1, dbp_mouse_speed_x = 1;
 static const Bit8u* dbp_auto_mapping;
-static const char* dbp_auto_mapping_names;
-static const char* dbp_auto_mapping_title;
+static const char *dbp_auto_mapping_names, *dbp_auto_mapping_title;
 #define DBP_GET_JOY_ANALOG_VALUE(V) ((V >= -dbp_joy_analog_deadzone && V <= dbp_joy_analog_deadzone) ? 0.0f : \
 	((float)((V > dbp_joy_analog_deadzone) ? (V - dbp_joy_analog_deadzone) : (V + dbp_joy_analog_deadzone)) / (float)(DBP_JOY_ANALOG_RANGE - dbp_joy_analog_deadzone)))
 
@@ -1216,14 +1212,19 @@ struct DBP_PadMapping
 		// Enable DOS joysticks only when mapped
 		// This helps for games which by default react to the joystick without calibration
 		// This can cause problems in other games that expect the joystick to respond (but hopefully these games have a setup program that can disable that)
-		bool useJoy1 = false, useJoy2 = false;
+		bool useJoy1 = false, useJoy2 = false, useAnalogButtons = false;
 		for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(); b != bEnd; b++)
-		{
-			useJoy1 |= (b->evt == DBPET_JOY1X || b->evt == DBPET_JOY1Y || b->evt == DBPET_JOY1DOWN);
-			useJoy2 |= (b->evt == DBPET_JOY2X || b->evt == DBPET_JOY2Y || b->evt == DBPET_JOY2DOWN || b->evt == DBPET_JOYHATSETBIT);
-		}
+			for (Bit16s bevt = b->evt, dir = 1;; dir -= 2)
+			{
+				Bit16s map = DBP_MAPPAIR_GET(dir, b->meta), evt = ((map >= DBP_SPECIALMAPPINGS_KEY && bevt == DBPET_AXISMAPPAIR) ? DBP_SPECIALMAPPING(map).evt : bevt);
+				useJoy1 |= (evt == DBPET_JOY1X || evt == DBPET_JOY1Y || evt == DBPET_JOY1DOWN);
+				useJoy2 |= (evt == DBPET_JOY2X || evt == DBPET_JOY2Y || evt == DBPET_JOY2DOWN || evt == DBPET_JOYHATSETBIT);
+				useAnalogButtons |= (evt <= _DBPET_JOY_AXIS_MAX && b->device == RETRO_DEVICE_JOYPAD);
+				if (bevt != DBPET_AXISMAPPAIR || dir < 0) break;
+			}
 		JOYSTICK_Enable(0, useJoy1);
 		JOYSTICK_Enable(1, useJoy2);
+		dbp_analog_buttons = useAnalogButtons;
 	}
 
 	static int InsertBind(const DBP_InputBind& b)
@@ -3635,6 +3636,20 @@ void retro_run(void)
 			DBP_QueueEvent(DBPET_MOUSEMOVE, movx, movy);
 		}
 	}
+	// query buttons mapped to analog functions
+	if (dbp_analog_buttons && !use_input_intercept)
+	{
+		for (DBP_InputBind *b = binds; b != binds_end; b++)
+		{
+			if (b->evt > _DBPET_JOY_AXIS_MAX || b->device != RETRO_DEVICE_JOYPAD) continue; // handled below
+			DBP_ASSERT(b->meta == 1 || b->meta == -1); // buttons mapped to analog functions should always have 1 or -1 in meta
+			Bit16s val = input_state_cb(b->port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b->id);
+			if (!val) val = (input_state_cb(b->port, RETRO_DEVICE_JOYPAD, 0, b->id) ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
+			if (val == b->lastval) continue;
+			b->lastval = val; // set before calling DBP_QueueEvent
+			DBP_QueueEvent((DBP_Event_Type)b->evt, val * b->meta, 0, binds, binds_end);
+		}
+	}
 	// query input states and generate input events
 	for (DBP_InputBind *b = binds; b != binds_end; b++)
 	{
@@ -3643,7 +3658,9 @@ void retro_run(void)
 		b->lastval = val; // set before calling DBP_QueueEvent
 		if (b->evt <= _DBPET_JOY_AXIS_MAX)
 		{
-			// if meta is 1 or -1, this is a digital input for an axis
+			// handle analog axis mapped to analog functions
+			if (b->device == RETRO_DEVICE_JOYPAD) { b->lastval = lastval; continue; } // handled above
+			DBP_ASSERT(b->meta == 0); // analog axis mapped to analog functions should always have 0 in meta
 			DBP_QueueEvent((DBP_Event_Type)b->evt, (b->meta ? (val ? 32767 : 0) * b->meta : val), 0, binds, binds_end);
 		}
 		else if (b->device != RETRO_DEVICE_ANALOG)
