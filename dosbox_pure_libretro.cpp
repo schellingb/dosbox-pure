@@ -1157,7 +1157,7 @@ struct DBP_PadMapping
 	{
 		Bit8u devtype = (Bit8u)(device & RETRO_DEVICE_MASK), subclass = (Bit8u)((device >> RETRO_DEVICE_TYPE_SHIFT) - 1), mode = MODE_DISABLED;
 		bool is_joy = (devtype == RETRO_DEVICE_JOYPAD || devtype == RETRO_DEVICE_ANALOG), is_key = (devtype == RETRO_DEVICE_KEYBOARD);
-		if      (is_joy && subclass == 99 && dbp_auto_mapping) mode = PRESET_AUTOMAPPED;
+		if      (is_joy && subclass == 99 && dbp_auto_mapping) mode = MODE_PRESET_AUTOMAPPED;
 		else if (is_joy && subclass < (PRESET_CUSTOM - PRESET_GENERICKEYBOARD)) mode = MODE_PRESET_GENERICKEYBOARD + subclass;
 		else if (is_joy) mode = MODE_MAPPER;
 		else if (is_key) mode = (subclass == 1 ? MODE_KEYBOARD_MOUSE1 : subclass == 2 ? MODE_KEYBOARD_MOUSE2 : MODE_KEYBOARD);
