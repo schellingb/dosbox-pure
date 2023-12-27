@@ -470,7 +470,7 @@ struct patchDriveImpl
 	zipDrive* patchzip;
 	bool autodelete_under;
 
-	patchDriveImpl(DOS_Drive& _under, bool _autodelete_under, DOS_File* _patchzip) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0, 0), under(_under), patchzip(_patchzip ? new zipDrive(_patchzip, false) : NULL), autodelete_under(_autodelete_under)
+	patchDriveImpl(DOS_Drive& _under, bool _autodelete_under, DOS_File* _patchzip, bool enable_crc_check) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0, 0), under(_under), patchzip(_patchzip ? new zipDrive(_patchzip, enable_crc_check) : NULL), autodelete_under(_autodelete_under)
 	{
 		DriveFileIterator(patchzip, LoadFiles, (Bitu)this);
 	}
@@ -549,7 +549,7 @@ struct patchDriveImpl
 	}
 };
 
-patchDrive::patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip) : impl(new patchDriveImpl(*under, autodelete_under, patchzip)) { }
+patchDrive::patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip, bool enable_crc_check) : impl(new patchDriveImpl(*under, autodelete_under, patchzip, enable_crc_check)) { }
 
 patchDrive::~patchDrive()
 {

@@ -759,7 +759,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 			error_type = "ZIP";
 			goto TRY_DIRECTORY;
 		}
-		drive = new zipDrive(new rawFile(zip_file_h, false), dbp_legacy_save);
+		drive = new zipDrive(new rawFile(zip_file_h, false), dbp_strict_mode, dbp_legacy_save);
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
 		if (ext[3] == 'Z' || ext[3] == 'z')
 		{
@@ -768,7 +768,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 			path_no_fragment.back() = (ext[3] == 'Z' ? 'C' : 'c');
 			FILE* c_file_h = fopen_wrap(path_no_fragment.c_str(), "rb");
 			if (c_file_h)
-				drive = new patchDrive(drive, true, new rawFile(c_file_h, false));
+				drive = new patchDrive(drive, true, new rawFile(c_file_h, false), dbp_strict_mode);
 		}
 		if (boot && letter == 'C') return drive;
 	}

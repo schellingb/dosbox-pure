@@ -652,7 +652,7 @@ private:
 
 class zipDrive : public DOS_Drive {
 public:
-	zipDrive(DOS_File* zip, bool enter_solo_root_dir);
+	zipDrive(DOS_File* zip, bool enable_crc_check = false, bool enter_solo_root_dir = false);
 	virtual ~zipDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
@@ -708,7 +708,7 @@ private:
 
 class patchDrive : public DOS_Drive {
 public:
-	patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip = NULL);
+	patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip = NULL, bool enable_crc_check = false);
 	virtual ~patchDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);

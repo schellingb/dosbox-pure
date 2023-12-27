@@ -289,7 +289,7 @@ struct unionDriveImpl
 		FILE* zip_file_h = fopen_wrap(save_file.c_str(), "rb");
 		if (!zip_file_h) return;
 
-		Loader l(new zipDrive(new rawFile(zip_file_h, false), false), this, strict_mode);
+		Loader l(new zipDrive(new rawFile(zip_file_h, false)), this, strict_mode);
 		const Bit16u save_errorcode = dos.errorcode;
 		DriveFileIterator(l.zip, Loader::LoadFiles, (Bitu)&l);
 		dos.errorcode = save_errorcode;
