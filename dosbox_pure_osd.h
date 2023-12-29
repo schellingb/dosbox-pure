@@ -199,9 +199,10 @@ struct DBP_MenuMouse
 		}
 		else if (jx || kx || jy || ky)
 		{
-			if (!joykbd) { realmouse = false; return false; }
-			x += (jx + kx) * mspeed;
-			y += (jy + ky) * mspeed;
+			realmouse = false;
+			if (!joykbd) return false;
+			x += (jx + kx) * mspeed * buf.width / 320;
+			y += (jy + ky) * mspeed * buf.height / 240;
 		}
 		else return false;
 		if (x <            1) x = (float)1;
