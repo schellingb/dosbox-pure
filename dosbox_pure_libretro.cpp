@@ -959,8 +959,9 @@ static void DBP_Remount(char drive1, char drive2)
 	else
 	{
 		// Swap registration with BIOS/CMOS
-		if (imageDisk*& dsk = imageDiskList[drive1-'A'])
+		if (drive1 < 'A'+MAX_DISK_IMAGES && imageDiskList[drive1-'A'])
 		{
+			imageDisk*& dsk = imageDiskList[drive1-'A'];
 			if (drive2 < 'A'+MAX_DISK_IMAGES) imageDiskList[drive2-'A'] = dsk;
 			else if (!dynamic_cast<fatDrive*>(Drives[drive1-'A'])) delete dsk;
 			dsk = NULL;
