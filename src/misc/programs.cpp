@@ -268,6 +268,8 @@ bool Program::SetEnv(const char * entry,const char * new_string) {
 #ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 bool MSG_Write(const char *);
 void restart_program(std::vector<std::string> & parameters);
+#else
+#include "../dos/drives.h"
 #endif
 
 class CONFIG : public Program {
@@ -313,7 +315,7 @@ void CONFIG::Run(void) {
 #ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		"-writelang", "-wl", "-securemode", "" };
 #else
-		"" };
+		"-dump", "" };
 #endif
 	enum prs {
 		P_NOMATCH, P_NOPARAMS, // fixed return values for GetParameterFromList
@@ -330,6 +332,8 @@ void CONFIG::Run(void) {
 #ifdef C_DBP_ENABLE_CONFIG_PROGRAM
 		P_WRITELANG, P_WRITELANG2,
 		P_SECURE
+#else
+		P_DUMP,
 #endif
 	} presult = P_NOMATCH;
 	
@@ -799,6 +803,29 @@ void CONFIG::Run(void) {
 			control->SwitchToSecureMode();
 			WriteOut(MSG_Get("PROGRAM_CONFIG_SECURE_ON"));
 			return;
+#else
+		case P_DUMP: {
+			std::string dump;
+			for (Config::const_it it = control->sectionlist.begin(); it != control->sectionlist.end(); ++it)
+			{
+				if (dump.length()) dump.append("\r\n");
+				dump.append("[").append((*it)->GetName()).append("]\r\n");
+				if (Section_prop *sec = dynamic_cast<Section_prop *>(*it))
+				{
+					Property *p;;
+					for (size_t i = 0; (p = sec->Get_prop(i)) != NULL; i++)
+						dump.append(p->propname).append("=").append(p->GetValue().ToString()).append("\r\n");
+				}
+				//// Skip potentially auto generated autoexec for now
+				//else if (Section_line *sec = dynamic_cast<Section_line *>(*it))
+				//	dump.append(sec->data).append("\r\n");
+			}
+			if (DriveCreateFile(Drives['C'-'A'], "DBOXCONF.TXT", (Bit8u*)&dump[0], (Bit32u)dump.length()))
+				WriteOut("Written config to %s\n", "DBOXCONF.TXT");
+			else
+				WriteOut("Failed to write file %s\n", "DBOXCONF.TXT");
+			return;
+		}
 #endif
 
 		default:
@@ -873,7 +900,8 @@ void PROGRAMS_Init(Section* sec) {
 #else
 	MSG_Add("PROGRAM_CONFIG_USAGE","Config tool:\n"\
 		"-get \"section property\" returns the value of the property.\n"\
-		"-set \"section property=value\" sets the value." );
+		"-set \"section property=value\" sets the value.\n"\
+		"-dump write the current config to C:\\DBOXCONF.TXT" );
 #endif
 	MSG_Add("PROGRAM_CONFIG_SECTION_ERROR","Section %s doesn't exist.\n");
 	MSG_Add("PROGRAM_CONFIG_VALUE_ERROR","\"%s\" is not a valid value for property %s.\n");

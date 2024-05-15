@@ -74,6 +74,7 @@ public:
 		initialised=false;
 	}
 #else
+	friend class CONFIG;
 	Config():secure_mode(false),initialised(false) {}
 #endif
 	~Config();
