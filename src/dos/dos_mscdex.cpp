@@ -914,7 +914,7 @@ static PhysPt curReqheaderPtr = 0;
 
 static Bit16u MSCDEX_IOCTL_Input(PhysPt buffer,Bit8u drive_unit) {
 	Bit8u ioctl_fct = mem_readb(buffer);
-	MSCDEX_LOG("MSCDEX: IOCTL INPUT Subfunction %02X",ioctl_fct);
+	//MSCDEX_LOG("MSCDEX: IOCTL INPUT Subfunction %02X",ioctl_fct);
 	switch (ioctl_fct) {
 		case 0x00 : /* Get Device Header address */
 					mem_writed(buffer+1,RealMake(mscdex->rootDriverHeaderSeg,0));
@@ -1076,7 +1076,7 @@ static Bitu MSCDEX_Interrupt_Handler(void) {
 	Bit16u	errcode		= 0;
 	PhysPt	buffer		= 0;
 
-	MSCDEX_LOG("MSCDEX: Driver Function %02X",funcNr);
+	//MSCDEX_LOG("MSCDEX: Driver Function %02X",funcNr);
 
 	if ((funcNr==0x03) || (funcNr==0x0c) || (funcNr==0x80) || (funcNr==0x82)) {
 		buffer = PhysMake(mem_readw(curReqheaderPtr+0x10),mem_readw(curReqheaderPtr+0x0E));
@@ -1131,7 +1131,7 @@ static Bitu MSCDEX_Interrupt_Handler(void) {
 	
 	// Set Statusword
 	mem_writew(curReqheaderPtr+3,mscdex->GetStatusWord(subUnit,errcode));
-	MSCDEX_LOG("MSCDEX: Status : %04X",mem_readw(curReqheaderPtr+3));						
+	//MSCDEX_LOG("MSCDEX: Status : %04X",mem_readw(curReqheaderPtr+3));						
 	return CBRET_NONE;
 }
 
@@ -1157,7 +1157,7 @@ static bool MSCDEX_Handler(void) {
 	if (mscdex->rootDriverHeaderSeg==0) return false;	// not handled if MSCDEX not installed
 
 	PhysPt data = PhysMake(SegValue(es),reg_bx);
-	MSCDEX_LOG("MSCDEX: INT 2F %04X BX= %04X CX=%04X",reg_ax,reg_bx,reg_cx);
+	//MSCDEX_LOG("MSCDEX: INT 2F %04X BX= %04X CX=%04X",reg_ax,reg_bx,reg_cx);
 	CALLBACK_SCF(false); // carry flag cleared for all functions (undocumented); only set on error
 	switch (reg_ax) {
 		case 0x1500:	/* Install check */

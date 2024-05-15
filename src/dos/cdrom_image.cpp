@@ -1199,7 +1199,7 @@ bool CDROM_Interface_Image::LoadChdFile(char* filename)
 		metaentry_next = ChdFile::get_bigendian_uint64(&raw_meta_header[8]);
 		if (metaentry_metatag != CDROM_TRACK_METADATA_TAG && metaentry_metatag != CDROM_TRACK_METADATA2_TAG) continue;
 		if (!chd->BinaryFile::read((Bit8u*)meta, (int)(metaentry_offset + METADATA_HEADER_SIZE), (int)(metaentry_length > sizeof(meta) ? sizeof(meta) : metaentry_length))) goto err;
-		printf("%.*s\n", metaentry_length, meta);
+		//printf("%.*s\n", metaentry_length, meta);
 
 		int mt_track_no = 0, mt_frames = 0, mt_pregap = 0;
 		if (sscanf(meta,
