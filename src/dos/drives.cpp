@@ -548,7 +548,7 @@ Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc)
 }
 
 //DBP: utility function to evaluate an entire drives filesystem
-void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data)
+void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data, const char* root)
 {
 	if (!drv) return;
 	struct Iter
@@ -585,7 +585,7 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 		}
 	};
 	std::vector<std::string> dirs;
-	dirs.emplace_back("");
+	dirs.emplace_back(root ? root : "");
 	std::string dir;
 	while (dirs.size())
 	{

@@ -2201,6 +2201,69 @@ static void DBP_PureRemountProgram(Program** make)
 	*make = new RemountProgram;
 }
 
+static void DBP_PureXCopyProgram(Program** make)
+{
+	// Bare bones xcopy implementation needed by installers of some games (i.e. GTA)
+	struct XCopyProgram : Program
+	{
+		struct Data
+		{
+			Program& program;
+			bool recurse, emptydirs;
+			struct { bool ok; char full[DOS_PATHLENGTH]; DOS_Drive* drive; } srcdst[2];
+			int srclen;
+			std::string str;
+		};
+		void Run(void)
+		{
+			Data d = {*this};
+			int n = 0;
+			for (unsigned int i = 0, iEnd = cmd->GetCount(); i != iEnd; i++)
+			{
+				cmd->FindCommand(i + 1, d.str); const char* p = d.str.c_str();
+				if (*p == '/') { char c = (p[1]|0x20); d.recurse |= (c == 's' || c == 'e'); d.emptydirs |= (c == 'e'); }
+				else { if (n == 2) { goto err; } Bit8u j; if ((d.srcdst[n].ok = DOS_MakeName(p, d.srcdst[n].full, &j))) { d.srcdst[n].drive = Drives[j]; } n++; }
+			}
+			if (n == 1) { Bit8u j; if ((d.srcdst[n].ok = DOS_MakeName(".", d.srcdst[n].full, &j))) d.srcdst[n].drive = Drives[j]; n++; }
+			if (!d.srcdst[0].ok || !d.srcdst[1].ok) { err: WriteOut("Usage error\n"); return; }
+			d.srclen = (int)strlen(d.srcdst[0].full);
+			FileIter(d.srcdst[0].full, true, 0, 0, 0, 0, (Bitu)&d);
+			if (d.srclen) d.srclen++; // now also skip backslash
+			DriveFileIterator(d.srcdst[0].drive, FileIter, (Bitu)&d, d.srcdst[0].full);
+		}
+		static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u , Bit16u, Bit8u attr, Bitu ptr)
+		{
+			Data& d = *(Data*)ptr;
+			if (is_dir && !d.emptydirs) return;
+			const char *subpath = path + d.srclen, *lastslash = strrchr(subpath, '\\');
+			if (lastslash && !d.recurse) return;
+
+			d.str.assign(d.srcdst[1].full).append(lastslash ? "\\" : "").append(subpath, (lastslash ? lastslash - subpath : 0));
+			if (is_dir || !d.emptydirs) { d.srcdst[1].drive->MakeDir((char*)d.str.c_str()); if (is_dir) return; }
+			(d.str += '\\').append(lastslash ? lastslash + 1 : subpath);
+
+			DOS_File *dfSrc, *dfDst;
+			if (!d.srcdst[0].drive->FileOpen(&dfSrc, (char*)path, 0)) { d.program.WriteOut("Failed to read %s\n", path); return; }
+			d.program.WriteOut("Copying %s\n", path);
+			dfSrc->AddRef();
+			if (d.srcdst[1].drive->FileCreate(&dfDst, (char*)d.str.c_str(), DOS_ATTR_ARCHIVE))
+			{
+				dfDst->AddRef();
+				dfDst->time = dfSrc->time;
+				dfDst->date = dfSrc->date;
+				dfDst->newtime = true;
+				Bit8u buf[4096];
+				for (Bit16u read, write; dfSrc->Read(buf, &(read = sizeof(buf))) && read;)
+					if (!dfDst->Write(buf, &(write = read)) || write != read)
+						{ dfDst->Close();delete dfDst; goto writeerr; } // disk full?
+				dfDst->Close();delete dfDst;
+			}
+			else { writeerr: d.program.WriteOut("Failed to write %s\n", d.str.c_str()); }
+			dfSrc->Close();delete dfSrc;
+		}
+	};
+	*make = new XCopyProgram;
+}
 // -------------------------------------------------------------------------------------------------------
 
 unsigned retro_get_region(void)  { return RETRO_REGION_NTSC; }
@@ -2912,6 +2975,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	PROGRAMS_MakeFile("PUREMENU.COM", DBP_PureMenuProgram);
 	PROGRAMS_MakeFile("LABEL.COM", DBP_PureLabelProgram);
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
+	PROGRAMS_MakeFile("XCOPY.COM", DBP_PureXCopyProgram);
 
 	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str());
 	const char *path_file, *path_ext; size_t path_namelen;
@@ -2941,80 +3005,77 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	{
 		DBP_PadMapping::Load(); // if loaded don't show auto map notification
 
-		struct Local
+		struct Local { static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
 		{
-			static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
+			if (is_dir) return;
+			const char* lastslash = strrchr(path, '\\'), *fname = (lastslash ? lastslash + 1 : path);
+
+			// Check mountable disk images on drive C
+			const char* fext = (data == ('C'-'A') ? strrchr(fname, '.') : NULL);
+			if (fext++)
 			{
-				if (is_dir) return;
-				const char* lastslash = strrchr(path, '\\'), *fname = (lastslash ? lastslash + 1 : path);
-
-				// Check mountable disk images on drive C
-				const char* fext = (data == ('C'-'A') ? strrchr(fname, '.') : NULL);
-				if (fext++)
+				bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
+				if (isFS && !strncmp(fext, "IM", 2) && (size < 163840 || (size <= 2949120 && (size % 20480) && (size % 20480) != 1024))) isFS = false; //validate floppy images
+				if (isFS && !strcmp(fext, "INS"))
 				{
-					bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
-					if (isFS && !strncmp(fext, "IM", 2) && (size < 163840 || (size <= 2949120 && (size % 20480) && (size % 20480) != 1024))) isFS = false; //validate floppy images
-					if (isFS && !strcmp(fext, "INS"))
-					{
-						// Make sure this is an actual CUE file with an INS extension
-						Bit8u cmd[6];
-						if (size >= 16384 || DriveReadFileBytes(Drives[data], path, cmd, (Bit16u)sizeof(cmd)) != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) isFS = false;
-					}
-					if (isFS)
-					{
-						std::string entry;
-						entry.reserve(4 + (fext - path) + 4);
-						(entry += "$C:\\") += path; // the '$' is for FindAndOpenDosFile
-						DBP_AppendImage(entry.c_str(), true);
-					}
+					// Make sure this is an actual CUE file with an INS extension
+					Bit8u cmd[6];
+					if (size >= 16384 || DriveReadFileBytes(Drives[data], path, cmd, (Bit16u)sizeof(cmd)) != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) isFS = false;
 				}
-
-				if (dbp_auto_mapping) return;
-				Bit32u hash = 0x811c9dc5;
-				for (const char* p = fname; *p; p++)
-					hash = ((hash * 0x01000193) ^ (Bit8u)*p);
-				hash ^= (size<<3);
-
-				for (Bit32u idx = hash;; idx++)
+				if (isFS)
 				{
-					if (!map_keys[idx %= MAP_TABLE_SIZE]) break;
-					if (map_keys[idx] != hash) continue;
-
-					static std::vector<Bit8u> static_buf;
-					static std::string static_title;
-
-					const MAPBucket& idents_bk = map_buckets[idx % MAP_BUCKETS];
-
-					static_buf.resize(idents_bk.idents_size_uncompressed);
-					Bit8u* buf = &static_buf[0];
-					zipDrive::Uncompress(idents_bk.idents_compressed, idents_bk.idents_size_compressed, buf, idents_bk.idents_size_uncompressed);
-
-					const Bit8u* ident = buf + (idx / MAP_BUCKETS) * 5;
-					const MAPBucket& mappings_bk = map_buckets[ident[0] % MAP_BUCKETS];
-					const Bit16u map_offset = (ident[1]<<8) + ident[2];
-					const char* map_title = (char*)buf + (MAP_TABLE_SIZE/MAP_BUCKETS) * 5 + (ident[3]<<8) + ident[4];
-
-					dbp_content_year = (Bit16s)(1970 + (Bit8u)map_title[0]);
-					if (dbp_auto_mapping_mode == 'f')
-						return;
-
-					static_title = "Game: ";
-					static_title += map_title + 1;
-					dbp_auto_mapping_title = static_title.c_str();
-
-					static_buf.resize(mappings_bk.mappings_size_uncompressed);
-					buf = &static_buf[0];
-					zipDrive::Uncompress(mappings_bk.mappings_compressed, mappings_bk.mappings_size_compressed, buf, mappings_bk.mappings_size_uncompressed);
-
-					dbp_auto_mapping = buf + map_offset;
-					dbp_auto_mapping_names = (char*)buf + mappings_bk.mappings_action_offset;
-
-					if (dbp_auto_mapping_mode == 'n' && !dbp_custom_mapping.size()) //notify
-						retro_notify(0, RETRO_LOG_INFO, "Detected Automatic Key %s", static_title.c_str());
-					return;
+					std::string entry;
+					entry.reserve(4 + (fext - path) + 4);
+					(entry += "$C:\\") += path; // the '$' is for FindAndOpenDosFile
+					DBP_AppendImage(entry.c_str(), true);
 				}
 			}
-		};
+
+			if (dbp_auto_mapping) return;
+			Bit32u hash = 0x811c9dc5;
+			for (const char* p = fname; *p; p++)
+				hash = ((hash * 0x01000193) ^ (Bit8u)*p);
+			hash ^= (size<<3);
+
+			for (Bit32u idx = hash;; idx++)
+			{
+				if (!map_keys[idx %= MAP_TABLE_SIZE]) break;
+				if (map_keys[idx] != hash) continue;
+
+				static std::vector<Bit8u> static_buf;
+				static std::string static_title;
+
+				const MAPBucket& idents_bk = map_buckets[idx % MAP_BUCKETS];
+
+				static_buf.resize(idents_bk.idents_size_uncompressed);
+				Bit8u* buf = &static_buf[0];
+				zipDrive::Uncompress(idents_bk.idents_compressed, idents_bk.idents_size_compressed, buf, idents_bk.idents_size_uncompressed);
+
+				const Bit8u* ident = buf + (idx / MAP_BUCKETS) * 5;
+				const MAPBucket& mappings_bk = map_buckets[ident[0] % MAP_BUCKETS];
+				const Bit16u map_offset = (ident[1]<<8) + ident[2];
+				const char* map_title = (char*)buf + (MAP_TABLE_SIZE/MAP_BUCKETS) * 5 + (ident[3]<<8) + ident[4];
+
+				dbp_content_year = (Bit16s)(1970 + (Bit8u)map_title[0]);
+				if (dbp_auto_mapping_mode == 'f')
+					return;
+
+				static_title = "Game: ";
+				static_title += map_title + 1;
+				dbp_auto_mapping_title = static_title.c_str();
+
+				static_buf.resize(mappings_bk.mappings_size_uncompressed);
+				buf = &static_buf[0];
+				zipDrive::Uncompress(mappings_bk.mappings_compressed, mappings_bk.mappings_size_compressed, buf, mappings_bk.mappings_size_uncompressed);
+
+				dbp_auto_mapping = buf + map_offset;
+				dbp_auto_mapping_names = (char*)buf + mappings_bk.mappings_action_offset;
+
+				if (dbp_auto_mapping_mode == 'n' && !dbp_custom_mapping.size()) //notify
+					retro_notify(0, RETRO_LOG_INFO, "Detected Automatic Key %s", static_title.c_str());
+				return;
+			}
+		}};
 
 		for (int i = 0; i != ('Z'-'A'); i++)
 			if (Drives[i])
@@ -3140,15 +3201,12 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	dbp_biosreboot = false;
 	DBP_ReportCoreMemoryMaps();
 
-	struct Local
+	struct Local { static Thread::RET_t THREAD_CC ThreadDOSBox(void*)
 	{
-		static Thread::RET_t THREAD_CC ThreadDOSBox(void*)
-		{
-			control->StartUp();
-			DBP_ThreadControl(TCM_ON_SHUTDOWN);
-			return 0;
-		}
-	};
+		control->StartUp();
+		DBP_ThreadControl(TCM_ON_SHUTDOWN);
+		return 0;
+	}};
 
 	// Start DOSBox thread
 	dbp_frame_pending = true;

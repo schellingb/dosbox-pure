@@ -498,7 +498,7 @@ bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize = 1024*1024);
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
 bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes);
 Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc = 0);
-void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data = 0);
+void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data = 0, const char* root = nullptr);
 
 template <typename TVal> struct StringToPointerHashMap
 {
