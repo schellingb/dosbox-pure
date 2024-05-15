@@ -410,8 +410,15 @@ void DOS_SetupMemory(void) {
 	// Lock the previous empty MCB
 	DOS_MCB tempmcb2((Bit16u)DOS_MEM_START+mcb_sizes);
 	tempmcb2.SetPSPSeg(0x40);	// can be removed by loadfix
+#ifdef C_DBP_RELIABLE_MEMORY_ADDRESSES
+	// The game "Queen: The Eye" crashes if its PSP is at seg 0x0198 which is exactly what happens with tempmcb2 and a 256 byte
+	// sized program environment block (see MakeEnv in dos_execute.cpp) so to avoid that we reduce this by one here.
+	tempmcb2.SetSize(16-1);
+	mcb_sizes+=17-1;
+#else
 	tempmcb2.SetSize(16);
 	mcb_sizes+=17;
+#endif
 	tempmcb2.SetType(0x4d);
 
 	DOS_MCB mcb((Bit16u)DOS_MEM_START+mcb_sizes);
