@@ -1345,6 +1345,23 @@ bool DOS_GetFileDate(Bit16u entry, Bit16u* otime, Bit16u* odate) {
 	return true;
 }
 
+//DBP: Added for date and time modification support
+bool DOS_SetFileDate(Bit16u entry, Bit16u _time, Bit16u _date) {
+	Bit32u handle=RealHandle(entry);
+	if (handle>=DOS_FILES) {
+		DOS_SetError(DOSERR_INVALID_HANDLE);
+		return false;
+	};
+	if (!Files[handle]) {
+		DOS_SetError(DOSERR_INVALID_HANDLE);
+		return false;
+	};
+	Files[handle]->time = _time;
+	Files[handle]->date = _date;
+	Files[handle]->newtime = true;
+	return true;
+}
+
 void DOS_SetupFiles (void) {
 	/* Setup the File Handles */
 	Bit32u i;

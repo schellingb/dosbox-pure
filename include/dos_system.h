@@ -62,7 +62,7 @@ class DOS_DTA;
 
 class DOS_File {
 public:
-	DOS_File():flags(0),time(0),date(0),attr(0),refCtr(0),open(false),name(0),hdrive(0xff) { };
+	DOS_File():flags(0),time(0),date(0),attr(0),refCtr(0),open(false),newtime(false),name(0),hdrive(0xff) { };
 	DOS_File(const DOS_File& orig);
 	DOS_File & operator= (const DOS_File & orig);
 	virtual	~DOS_File(){if(name) delete [] name;};
@@ -86,6 +86,8 @@ public:
 	Bit16u attr;
 	Bits refCtr;
 	bool open;
+	//DBP: Added for date and time modification support
+	bool newtime;
 	char* name;
 	//DBP: Added for large ZIP file support
 	inline virtual bool Seek64(Bit64u * pos,Bit32u type) { Bit32u i = (Bit32u)*pos; bool j = Seek(&i, type); *pos = i; return j; }

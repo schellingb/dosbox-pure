@@ -136,6 +136,12 @@ struct Memory_Handle : public DOS_File
 	{
 		if (refCtr == 1)
 		{
+			if (newtime)
+			{
+				src->time = time;
+				src->date = date;
+				newtime = false;
+			}
 			src->refs--;
 			open = false;
 			src = NULL;

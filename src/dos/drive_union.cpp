@@ -481,15 +481,20 @@ struct Union_WriteHandle : public DOS_File
 
 	virtual bool Close()
 	{
+		if (refCtr == 1)
+		{
+			if (newtime)
+			{
+				if (real_file) { real_file->time = time; real_file->date = date; real_file->newtime = true; }
+				newtime = false;
+			}
+			open = false;
+			if (real_file) { real_file->Close(); delete real_file; real_file = NULL; }
+		}
 		if (dirty)
 		{
 			impl->ScheduleSave();
 			dirty = false;
-		}
-		if (refCtr == 1)
-		{
-			open = false;
-			if (real_file) { real_file->Close(); delete real_file; real_file = NULL; }
 		}
 		return true;
 	}
