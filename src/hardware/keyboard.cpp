@@ -239,6 +239,9 @@ static Bitu read_p64(Bitu /*port*/,Bitu /*iolen*/) {
 
 void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
 	if (pressed == !!(keyb.down[keytype>>3] & (1<<(keytype&7)))) return;
+	if (pressed) keyb.down[keytype>>3] |= (Bit8u)(1<<(keytype&7));
+	else keyb.down[keytype>>3] &= (Bit8u)~(1<<(keytype&7));
+
 	Bit8u ret=0;bool extend=false;
 	switch (keytype) {
 	case KBD_esc:ret=1;break;
@@ -374,7 +377,6 @@ void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
 		if (keyb.repeat.key == keytype) keyb.repeat.wait = keyb.repeat.rate;
 		else keyb.repeat.wait = keyb.repeat.pause;
 		keyb.repeat.key = keytype;
-		keyb.down[keytype>>3] |= (Bit8u)(1<<(keytype&7));
 	} else {
 		if (keyb.repeat.key == keytype) {
 			/* repeated key being released */
@@ -382,7 +384,6 @@ void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed) {
 			keyb.repeat.wait = 0;
 		}
 		ret += 128;
-		keyb.down[keytype>>3] &= (Bit8u)~(1<<(keytype&7));
 	}
 	if (extend) KEYBOARD_AddBuffer(0xe0);
 	KEYBOARD_AddBuffer(ret);
