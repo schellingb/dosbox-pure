@@ -338,7 +338,9 @@ static Bitu IRQ1_Handler(void) {
 				/* normal pause key, enter loop */
 				mem_writeb(BIOS_KEYBOARD_FLAGS2,flags2|8);
 				IO_Write(0x20,0x20);
-				while (mem_readb(BIOS_KEYBOARD_FLAGS2)&8) CALLBACK_Idle();	// pause loop
+				//DBP: Added check for restart support
+				extern bool DBP_IsShuttingDown();
+				while ((mem_readb(BIOS_KEYBOARD_FLAGS2)&8) && !DBP_IsShuttingDown()) CALLBACK_Idle();	// pause loop
 				reg_ip+=5;	// skip out 20,20
 				return CBRET_NONE;
 			}
