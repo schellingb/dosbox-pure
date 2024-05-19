@@ -1613,6 +1613,7 @@ static void DBP_Shutdown()
 	if (control)
 	{
 		DBP_ASSERT(!first_shell); //should have been properly cleaned up
+		CPU_Cycles = 0; // avoid crash due to PIC_TickIndex returning negative number when CPU_Cycles > CPU_CycleMax
 		delete control;
 		control = NULL;
 	}
@@ -3653,8 +3654,8 @@ void retro_run(void)
 	input_poll_cb();
 	if (use_input_intercept)
 	{
-		//input_state_cb(0, RETRO_DEVICE_NONE, 0, 0); // poll keys? 
-		//input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_SPACE); // get latest keyboard callbacks?
+	//input_state_cb(0, RETRO_DEVICE_NONE, 0, 0); // poll keys? 
+	//input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_SPACE); // get latest keyboard callbacks?
 		if (toggled_intercept)
 			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
 				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
@@ -3695,11 +3696,11 @@ void retro_run(void)
 			DBP_QueueEvent(DBPET_MOUSEMOVE, movx, movy);
 		}
 	}
-	// query buttons mapped to analog functions
+		// query buttons mapped to analog functions
 	if (dbp_analog_buttons && !use_input_intercept)
-	{
-		for (DBP_InputBind *b = binds; b != binds_end; b++)
 		{
+		for (DBP_InputBind *b = binds; b != binds_end; b++)
+			{
 			if (b->evt > _DBPET_JOY_AXIS_MAX || b->device != RETRO_DEVICE_JOYPAD) continue; // handled below
 			DBP_ASSERT(b->meta == 1 || b->meta == -1); // buttons mapped to analog functions should always have 1 or -1 in meta
 			Bit16s val = input_state_cb(b->port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b->id);
@@ -3707,9 +3708,9 @@ void retro_run(void)
 			if (val == b->lastval) continue;
 			b->lastval = val; // set before calling DBP_QueueEvent
 			DBP_QueueEvent((DBP_Event_Type)b->evt, val * b->meta, 0, binds, binds_end);
+			}
 		}
-	}
-	// query input states and generate input events
+		// query input states and generate input events
 	for (DBP_InputBind *b = binds; b != binds_end; b++)
 	{
 		Bit16s val = input_state_cb(b->port, b->device, b->index, b->id), lastval = b->lastval;
@@ -3726,7 +3727,7 @@ void retro_run(void)
 		{
 			// if button is pressed, send the _DOWN, otherwise send _UP
 			DBP_QueueEvent((DBP_Event_Type)(val ? b->evt : b->evt + 1), b->meta);
-		}
+	}
 		else for (Bit16s dir = 1; dir >= -1; dir -= 2)
 		{
 			DBP_ASSERT(b->evt == DBPET_AXISMAPPAIR);
@@ -3748,8 +3749,8 @@ void retro_run(void)
 	}
 	if (dbp_keys_down_count)
 	{
-		// This catches sticky keys due to various frontend/driver issues
-		// For example ALT key can easily get stuck when using ALT-TAB, menu opening or fast forwarding also can get stuck
+	// This catches sticky keys due to various frontend/driver issues
+	// For example ALT key can easily get stuck when using ALT-TAB, menu opening or fast forwarding also can get stuck
 		// We also release all keys when switching between key event intercepting
 		for (Bit8u i = KBD_NONE + 1; i != KBD_LAST; i++)
 		{
