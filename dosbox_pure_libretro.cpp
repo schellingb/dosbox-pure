@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2023 Bernhard Schelling
+ *  Copyright (C) 2020-2024 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -82,9 +82,6 @@ static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], wid
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static double dbp_audio_remain;
-static void* dbp_intercept_data;
-typedef void(*dbp_intercept_gfx_func)(DBP_Buffer& buf, void* data);
-static dbp_intercept_gfx_func dbp_intercept_gfx;
 
 // DOSBOX DISC MANAGEMENT
 struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false; char drive; int dirlen; };
@@ -98,6 +95,7 @@ struct DBP_InputBind
 {
 	Bit8u port, device, index, id;
 	Bit16s evt, meta; union { Bit16s lastval; Bit32u _32bitalign; };
+	void Update(Bit16s val, bool is_analog_button = false);
 	#define PORT_DEVICE_INDEX_ID(b) (*(Bit32u*)&static_cast<const DBP_InputBind&>(b))
 };
 enum { DBP_MAX_PORTS = 8, DBP_JOY_ANALOG_RANGE = 0x8000 }; // analog stick range is -0x8000 to 0x8000
@@ -109,7 +107,9 @@ static const char* DBP_KBDNAMES[] =
 	"Print-Screen","Pause","Insert","Home","Page-Up","Delete","End","Page-Down","Left","Up","Down","Right","NP-1","NP-2","NP-3","NP-4","NP-5","NP-6","NP-7","NP-8","NP-9","NP-0",
 	"NP-Divide /","NP-Multiply *","NP-Minus -","NP-Plus +","NP-Enter","NP-Period .",""
 };
+struct DBP_WheelItem { Bit8u port, key_count, k[4]; };
 static std::vector<DBP_InputBind> dbp_input_binds;
+static std::vector<DBP_WheelItem> dbp_wheelitems;
 static std::vector<Bit8u> dbp_custom_mapping;
 static Bit8u dbp_port_mode[DBP_MAX_PORTS];
 static bool dbp_input_binds_modified, dbp_on_screen_keyboard, dbp_analog_buttons;
@@ -135,6 +135,7 @@ enum DBP_Event_Type : Bit8u
 	DBPET_JOY2DOWN, DBPET_JOY2UP,
 	DBPET_KEYDOWN, DBPET_KEYUP,
 	DBPET_ONSCREENKEYBOARD, DBPET_ONSCREENKEYBOARDUP,
+	DBPET_ACTIONWHEEL, DBPET_ACTIONWHEELUP,
 
 	DBPET_AXISMAPPAIR,
 	DBPET_CHANGEMOUNTS,
@@ -147,7 +148,7 @@ enum DBP_Event_Type : Bit8u
 
 	_DBPET_MAX
 };
-//static const char* DBP_Event_Type_Names[] = { "JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "MOUSEMOVE", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "ONSCREENKEYBOARDUP", "AXIS_TO_KEY", "CHANGEMOUNTS", "MAX" };
+//static const char* DBP_Event_Type_Names[] = { "JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "MOUSEMOVE", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "ONSCREENKEYBOARDUP", "ACTIONWHEEL", "ACTIONWHEELUP", "AXIS_TO_KEY", "CHANGEMOUNTS", "MAX" };
 static const char *DBPDEV_Keyboard = "Keyboard", *DBPDEV_Mouse = "Mouse", *DBPDEV_Joystick = "Joystick";
 static const struct DBP_SpecialMapping { int16_t evt, meta; const char *dev, *name; } DBP_SpecialMappings[] =
 {
@@ -177,19 +178,30 @@ static const struct DBP_SpecialMapping { int16_t evt, meta; const char *dev, *na
 	{ DBPET_JOY2X,         -1, DBPDEV_Joystick, "Joy 2 Left"   }, // 223
 	{ DBPET_JOY2X,          1, DBPDEV_Joystick, "Joy 2 Right"  }, // 224
 	{ DBPET_ONSCREENKEYBOARD, 0, NULL, "On Screen Keyboard"    }, // 225
+	{ DBPET_ACTIONWHEEL,      0, NULL, "Action Wheel"          }, // 226
 };
 #define DBP_SPECIALMAPPING(key) DBP_SpecialMappings[(key)-DBP_SPECIALMAPPINGS_KEY]
 enum { DBP_SPECIALMAPPINGS_KEY = 200, DBP_SPECIALMAPPINGS_MAX = 200+(sizeof(DBP_SpecialMappings)/sizeof(DBP_SpecialMappings[0])) };
-enum { DBP_EVENT_QUEUE_SIZE = 256, DBP_DOWN_BY_KEYBOARD = 128 };
+enum { DBP_SPECIALMAPPINGS_OSK = 225, DBP_SPECIALMAPPINGS_ACTIONWHEEL = 226 };
+enum { DBP_EVENT_QUEUE_SIZE = 256, DBP_DOWN_COUNT_MASK = 127, DBP_DOWN_BY_KEYBOARD = 128 };
 static struct DBP_Event { DBP_Event_Type type; int val, val2; } dbp_event_queue[DBP_EVENT_QUEUE_SIZE];
 static int dbp_event_queue_write_cursor;
 static int dbp_event_queue_read_cursor;
 static int dbp_keys_down_count;
-static unsigned char dbp_keys_down[KBD_LAST+16];
+static unsigned char dbp_keys_down[KBD_LAST+17];
 static unsigned short dbp_keymap_dos2retro[KBD_LAST];
 static unsigned char dbp_keymap_retro2dos[RETROK_LAST];
-typedef void(*dbp_intercept_input_func)(DBP_Event_Type type, int val, int val2, void* data);
-static dbp_intercept_input_func dbp_intercept_input;
+
+// DOSBOX PURE OSD INTERCEPT FUNCTIONS
+struct DBP_Interceptor
+{
+	virtual void gfx(DBP_Buffer& buf) = 0;
+	virtual void input() = 0;
+	virtual void close() = 0;
+	virtual bool evnt(DBP_Event_Type type, int val, int val2) { return false; }
+};
+static DBP_Interceptor *dbp_intercept, *dbp_intercept_next;
+static void DBP_SetIntercept(DBP_Interceptor* intercept) { if (!dbp_intercept) dbp_intercept = intercept; dbp_intercept_next = intercept; }
 
 // LIBRETRO CALLBACKS
 static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
@@ -282,49 +294,50 @@ void NET_SetupEthernet();
 bool MIDI_TSF_SwitchSF(const char*);
 bool MIDI_Retro_HasOutputIssue();
 
-static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0, DBP_InputBind *binds = NULL, DBP_InputBind *binds_end = NULL)
+static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
 {
 	unsigned char* downs = dbp_keys_down;
 	switch (type)
 	{
-		case DBPET_KEYDOWN: goto check_down;
-		case DBPET_KEYUP:   goto check_up;
-		case DBPET_MOUSEDOWN:          downs = dbp_keys_down + KBD_LAST +  0; goto check_down;
-		case DBPET_MOUSEUP:            downs = dbp_keys_down + KBD_LAST +  0; goto check_up;
-		case DBPET_JOY1DOWN:           downs = dbp_keys_down + KBD_LAST +  3; goto check_down;
-		case DBPET_JOY1UP:             downs = dbp_keys_down + KBD_LAST +  3; goto check_up;
-		case DBPET_JOY2DOWN:           downs = dbp_keys_down + KBD_LAST +  5; goto check_down;
-		case DBPET_JOY2UP:             downs = dbp_keys_down + KBD_LAST +  5; goto check_up;
-		case DBPET_JOYHATSETBIT:       downs = dbp_keys_down + KBD_LAST +  7; goto check_down;
-		case DBPET_JOYHATUNSETBIT:     downs = dbp_keys_down + KBD_LAST +  7; goto check_up;
-		case DBPET_ONSCREENKEYBOARD:   downs = dbp_keys_down + KBD_LAST + 15; goto check_down;
-		case DBPET_ONSCREENKEYBOARDUP: downs = dbp_keys_down + KBD_LAST + 15; goto check_up;
+		case DBPET_KEYDOWN: DBP_ASSERT(val > KBD_NONE && val < KBD_LAST); goto check_down;
+		case DBPET_KEYUP:   DBP_ASSERT(val > KBD_NONE && val < KBD_LAST); goto check_up;
+		case DBPET_MOUSEDOWN:          downs += KBD_LAST +  0; goto check_down;
+		case DBPET_MOUSEUP:            downs += KBD_LAST +  0; goto check_up;
+		case DBPET_JOY1DOWN:           downs += KBD_LAST +  3; goto check_down;
+		case DBPET_JOY1UP:             downs += KBD_LAST +  3; goto check_up;
+		case DBPET_JOY2DOWN:           downs += KBD_LAST +  5; goto check_down;
+		case DBPET_JOY2UP:             downs += KBD_LAST +  5; goto check_up;
+		case DBPET_JOYHATSETBIT:       downs += KBD_LAST +  7; goto check_down;
+		case DBPET_JOYHATUNSETBIT:     downs += KBD_LAST +  7; goto check_up;
+		case DBPET_ONSCREENKEYBOARD:   downs += KBD_LAST + 15; goto check_down;
+		case DBPET_ONSCREENKEYBOARDUP: downs += KBD_LAST + 15; goto check_up;
+		case DBPET_ACTIONWHEEL:        downs += KBD_LAST + 16; goto check_down;
+		case DBPET_ACTIONWHEELUP:      downs += KBD_LAST + 16; goto check_up;
 
 		check_down:
-			if (((++downs[val]) & 127) > 1) return;
+			if (((++downs[val]) & DBP_DOWN_COUNT_MASK) > 1) return;
 			if (downs == dbp_keys_down) dbp_keys_down_count++;
 			break;
 		check_up:
-			if (((downs[val]) & 127) == 0 || ((--downs[val]) & 127) > 0) return;
+			if (((downs[val]) & DBP_DOWN_COUNT_MASK) == 0 || ((--downs[val]) & DBP_DOWN_COUNT_MASK) > 0) return;
 			if (downs == dbp_keys_down) dbp_keys_down_count--;
 			break;
 
 		case DBPET_JOY1X: case DBPET_JOY1Y: case DBPET_JOY2X: case DBPET_JOY2Y: case DBPET_JOYMX: case DBPET_JOYMY:
-			if (val) break;
-			for (DBP_InputBind *b = binds; b != binds_end; b++) // check if another bind is currently influencing the same axis
+			if (val || dbp_intercept) break;
+			for (const DBP_InputBind& b : dbp_input_binds) // check if another bind is currently influencing the same axis
 			{
-				if (!b->lastval) continue;
-				Bit16s bval = b->lastval;
-				if (b->evt <= _DBPET_JOY_AXIS_MAX)
+				if (!b.lastval) continue;
+				if (b.evt <= _DBPET_JOY_AXIS_MAX)
 				{
-					if ((DBP_Event_Type)b->evt != type) continue;
-					val = (b->meta ? (bval ? 32767 : 0) * b->meta : bval);
+					if ((DBP_Event_Type)b.evt != type) continue;
+					val = (b.meta ? (b.lastval ? 32767 : 0) * b.meta : b.lastval);
 					goto found_axis_value;
 				}
-				else if (b->device != RETRO_DEVICE_ANALOG) continue;
+				else if (b.device != RETRO_DEVICE_ANALOG) continue;
 				else for (Bit16s dir = 1; dir >= -1; dir -= 2)
 				{
-					Bit16s map = DBP_MAPPAIR_GET(dir, b->meta), dirbval = bval * dir;
+					Bit16s map = DBP_MAPPAIR_GET(dir, b.meta), dirbval = b.lastval * dir;
 					if (map < DBP_SPECIALMAPPINGS_KEY || dirbval < 0 || (DBP_Event_Type)DBP_SPECIALMAPPING(map).evt != type) continue;
 					val = (dirbval < 0 ? 0 : dirbval) * DBP_SPECIALMAPPING(map).meta;
 					goto found_axis_value;
@@ -372,6 +385,61 @@ static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0, DBP_I
 	dbp_event_queue_write_cursor = next;
 }
 
+static void DBP_ReleaseKeyEvents(bool onlyPhysicalKeys)
+{
+	for (Bit8u i = KBD_NONE + 1, iEnd = (onlyPhysicalKeys ? KBD_LAST : KBD_LAST + 17); i != iEnd; i++)
+	{
+		if (!dbp_keys_down[i] || (onlyPhysicalKeys && (!(dbp_keys_down[i] & DBP_DOWN_BY_KEYBOARD) || input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, dbp_keymap_dos2retro[i])))) continue;
+		dbp_keys_down[i] = 1;
+		DBP_Event_Type type; int val = i;
+		if      (i < KBD_LAST +  0) type = DBPET_KEYUP;
+		else if (i < KBD_LAST +  3) { val -=  KBD_LAST +  0; type = DBPET_MOUSEUP; }
+		else if (i < KBD_LAST +  5) { val -=  KBD_LAST +  3; type = DBPET_JOY1UP; }
+		else if (i < KBD_LAST +  7) { val -=  KBD_LAST +  5; type = DBPET_JOY2UP; }
+		else if (i < KBD_LAST + 15) { val -=  KBD_LAST +  7; type = DBPET_JOYHATUNSETBIT; }
+		else if (i < KBD_LAST + 16) { val -=  KBD_LAST + 15; type = DBPET_ONSCREENKEYBOARDUP; }
+		else                        { val -=  KBD_LAST + 16; type = DBPET_ACTIONWHEELUP; }
+		DBP_QueueEvent(type, val);
+	}
+}
+
+void DBP_InputBind::Update(Bit16s val, bool is_analog_button)
+{
+	Bit16s prevval = lastval;
+	lastval = val; // set before calling DBP_QueueEvent
+	if (evt <= _DBPET_JOY_AXIS_MAX)
+	{
+		// handle analog axis mapped to analog functions
+		if (device == RETRO_DEVICE_JOYPAD && !is_analog_button) { lastval = prevval; return; } // handled by dbp_analog_buttons
+		DBP_ASSERT(device == RETRO_DEVICE_JOYPAD || meta == 0); // analog axis mapped to analog functions should always have 0 in meta
+		DBP_ASSERT(device != RETRO_DEVICE_JOYPAD || meta == 1 || meta == -1); // buttons mapped to analog functions should always have 1 or -1 in meta
+		DBP_QueueEvent((DBP_Event_Type)evt, (meta ? val * meta : val), 0);
+	}
+	else if (device != RETRO_DEVICE_ANALOG)
+	{
+		// if button is pressed, send the _DOWN, otherwise send _UP
+		DBP_QueueEvent((DBP_Event_Type)(val ? evt : evt + 1), meta, port);
+	}
+	else for (Bit16s dir = 1; dir >= -1; dir -= 2)
+	{
+		DBP_ASSERT(evt == DBPET_AXISMAPPAIR);
+		Bit16s map = DBP_MAPPAIR_GET(dir, meta), dirval = val * dir, dirprevval = prevval * dir;
+		if (map == KBD_NONE) continue;
+		if (map < KBD_LAST)
+		{
+			if (dirval >= 12000 && dirprevval <  12000) DBP_QueueEvent(DBPET_KEYDOWN, map, port);
+			if (dirval <  12000 && dirprevval >= 12000) DBP_QueueEvent(DBPET_KEYUP,   map, port);
+			continue;
+		}
+		if (map < DBP_SPECIALMAPPINGS_KEY) { DBP_ASSERT(false); continue; }
+		if (dirval <= 0 && dirprevval <= 0) continue;
+		const DBP_SpecialMapping& sm = DBP_SPECIALMAPPING(map);
+		if (sm.evt <= _DBPET_JOY_AXIS_MAX) DBP_QueueEvent((DBP_Event_Type)sm.evt, (dirval < 0 ? 0 : dirval) * sm.meta, 0);
+		else if (dirval >= 12000 && dirprevval <  12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt    ), sm.meta, port);
+		else if (dirval <  12000 && dirprevval >= 12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt + 1), sm.meta, port);
+	}
+}
+
 static void DBP_ReportCoreMemoryMaps()
 {
 	extern const char* RunningProgram;
@@ -379,8 +447,8 @@ static void DBP_ReportCoreMemoryMaps()
 	const size_t conventional_end = 640 * 1024, memtotal = (MEM_TotalPages() * 4096);
 
 	// Give access to entire memory to frontend (cheat and achievements support)
-	// Instead of raw [ENVIRONMENT] [GAME] [EXPANDED MEMORY] we switch the order to be
-	// [GAME] [ENVIRONMENT] [EXPANDED MEMORY] so regardless of the size of the OS environment
+	// Instead of raw [OS] [GAME] [EXPANDED MEMORY] we switch the order to be
+	// [GAME] [OS] [EXPANDED MEMORY] so regardless of the size of the OS environment
 	// the game memory (below 640k) is always at the same (virtual) address.
 
 	struct retro_memory_descriptor mdescs[3] = { 0 }, *mdesc_expandedmem;
@@ -995,7 +1063,7 @@ static void DBP_Remount(char drive1, char drive2)
 
 struct DBP_PadMapping
 {
-	enum { DBP_PADMAP_MAXSIZE_PORT = (1 + (16 * (1 + 4)) + (4 * (1 + 8))), DBP_PADMAP_MAXSIZE_TOTAL = DBP_MAX_PORTS * DBP_PADMAP_MAXSIZE_PORT };
+	enum { DBP_PADMAP_MAXSIZE_PORT = (1 + (16 * (1 + 4)) + (4 * (1 + 8))), WHEEL_ID = 20 };
 	enum EPreset : Bit8u { PRESET_NONE, PRESET_AUTOMAPPED, PRESET_GENERICKEYBOARD, PRESET_MOUSE_LEFT_ANALOG, PRESET_MOUSE_RIGHT_ANALOG, PRESET_GRAVIS_GAMEPAD, PRESET_BASIC_JOYSTICK_1, PRESET_BASIC_JOYSTICK_2, PRESET_THRUSTMASTER_FLIGHTSTICK, PRESET_BOTH_DOS_JOYSTICKS, PRESET_CUSTOM };
 	enum EPortMode : Bit8u { MODE_DISABLED, MODE_MAPPER, MODE_PRESET_AUTOMAPPED, MODE_PRESET_GENERICKEYBOARD, MODE_PRESET_LAST = MODE_PRESET_AUTOMAPPED + (PRESET_CUSTOM - PRESET_AUTOMAPPED) - 1, MODE_KEYBOARD, MODE_KEYBOARD_MOUSE1, MODE_KEYBOARD_MOUSE2 };
 
@@ -1003,7 +1071,7 @@ struct DBP_PadMapping
 	INLINE static bool IsCustomized(Bit8u port) { return (dbp_port_mode[port] == MODE_MAPPER && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
 	INLINE static const char* GetPortPresetName(Bit8u port) { return GetPresetName(GetPreset(port)); }
 	INLINE static void FillGenericKeys(Bit8u port) { Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true, true); }
-	INLINE static const char* GetKeyAutoMapButtonLabel(Bit8u key) { return FindAutoMapButtonLabel(1, 0, &key); }
+	INLINE static const char* GetKeyAutoMapButtonLabel(Bit8u key) { return FindAutoMapButtonLabel(1, &key); }
 
 	static void Load()
 	{
@@ -1011,12 +1079,14 @@ struct DBP_PadMapping
 		if (!Drives['C'-'A'] || !Drives['C'-'A']->FileOpen(&padmap, (char*)"PADMAP.DBP", OPEN_READ))
 			return;
 
-		dbp_custom_mapping.resize(DBP_PADMAP_MAXSIZE_TOTAL);
-		Bit8u version;
-		Bit16u version_length = sizeof(version), padmap_length = DBP_PADMAP_MAXSIZE_TOTAL;
+		Bit8u version; Bit16u version_length = sizeof(version), padmap_length; Bit32u file_length, seek_zero;
 		padmap->AddRef();
+		padmap->Seek(&(file_length = 0), DOS_SEEK_END);
+		padmap->Seek(&(seek_zero = 0), DOS_SEEK_SET);
+		DBP_ASSERT(file_length <= 0xFFFF);
+		dbp_custom_mapping.resize((Bit16u)file_length);
 		padmap->Read(&version, &version_length);
-		padmap->Read(&dbp_custom_mapping[0], &padmap_length);
+		padmap->Read(&dbp_custom_mapping[0], &(padmap_length = (Bit16u)file_length));
 		if (!version_length || version != 0 || !padmap_length)
 		{
 			retro_notify(0, RETRO_LOG_ERROR, "Corrupt gamepad mapping data in %c:\\%s", 'C', "PADMAP.DBP");
@@ -1032,30 +1102,38 @@ struct DBP_PadMapping
 	{
 		Bit8u last_port = DBP_MAX_PORTS - 1;
 		for (; last_port != 0xFF && !IsCustomized(last_port); last_port--) {}
+		dbp_custom_mapping.clear();
 		if (last_port == 0xFF)
 		{
 			if (Drives['C'-'A']) Drives['C'-'A']->FileUnlink((char*)"PADMAP.DBP");
-			dbp_custom_mapping.clear();
 			GenerateBindings();
 		}
 		else
 		{
 			RefreshDosJoysticks(); // do after bindings change
-			dbp_custom_mapping.resize(DBP_PADMAP_MAXSIZE_PORT * (last_port + 1));
-			Bit8u *data = &dbp_custom_mapping[0], *pBind = data, *pEnd = data, *pCount;
+			dbp_custom_mapping.resize((DBP_PADMAP_MAXSIZE_PORT * (last_port + 1)) + (dbp_wheelitems.size() * 5));
+			Bit8u *data = &dbp_custom_mapping[0], *p = data, *pCount;
 			for (Bit8u port = 0; port <= last_port; port++)
 			{
-				*(pCount = pBind++) = 0;
-				for (Bit8u btn_id = 0; btn_id != 20; btn_id++)
+				*(pCount = p++) = 0;
+				for (Bit8u btn_id = 0; btn_id != WHEEL_ID; btn_id++)
 				{
-					Bit8u isAnalog = (btn_id >= 16), key_count;
-					if ((key_count = FillBinds(pBind+1, PortDeviceIndexIdForBtn(port, btn_id), isAnalog)) == 0) continue;
-					*pBind = btn_id | (Bit8u)((key_count - 1)<<6);
-					pEnd = (pBind += 1 + key_count * (isAnalog ? 2 : 1));
+					bool isAnalog = (btn_id >= 16); Bit8u key_count;
+					if ((key_count = FillBinds(p+1, PortDeviceIndexIdForBtn(port, btn_id), isAnalog)) == 0) continue;
+					*p = btn_id | (Bit8u)((key_count - 1)<<6);
+					p += 1 + key_count * (isAnalog ? 2 : 1);
+					(*pCount)++;
+				}
+				for (const DBP_WheelItem& wi : dbp_wheelitems)
+				{
+					if (wi.port != port || !wi.key_count) continue;
+					*p = (Bit8u)WHEEL_ID | (Bit8u)((wi.key_count - 1)<<6);
+					memcpy(p+1, wi.k, wi.key_count);
+					p += 1 + wi.key_count;
 					(*pCount)++;
 				}
 			}
-			dbp_custom_mapping.resize(pEnd - data);
+			dbp_custom_mapping.resize(p - data);
 
 			DOS_File *padmap = nullptr;
 			if (!Drives['C'-'A'] || !Drives['C'-'A']->FileCreate(&padmap, (char*)"PADMAP.DBP", DOS_ATTR_ARCHIVE))
@@ -1065,7 +1143,7 @@ struct DBP_PadMapping
 				return;
 			}
 			Bit8u version = 0;
-			Bit16u version_length = sizeof(version), padmap_length = (Bit16u)(pEnd - data);
+			Bit16u version_length = sizeof(version), padmap_length = (Bit16u)dbp_custom_mapping.size();
 			padmap->AddRef();
 			padmap->Write(&version, &version_length);
 			padmap->Write(data, &padmap_length);
@@ -1077,26 +1155,15 @@ struct DBP_PadMapping
 
 	static void AssignBindEvent(DBP_InputBind& b, Bit8u bind_part, Bit8u bind_key)
 	{
-		if (bind_key == 0) // deleting entry
-		{
-			dbp_input_binds.erase(dbp_input_binds.begin() + (&b - &dbp_input_binds[0]));
-		}
-		else if (b.device == RETRO_DEVICE_ANALOG) // Binding to an axis
+		Bit8u k0 = bind_key, k1 = 0;
+		if (b.device == RETRO_DEVICE_ANALOG) // Binding to an axis
 		{
 			Bit16s oldmeta = ((b.evt != DBPET_AXISMAPPAIR && b.evt != _DBPET_MAX) ? GetAxisSpecialMappingMeta(b.evt) : b.meta);
 			Bit8u other_key = DBP_MAPPAIR_GET((bind_part ? -1 : 1), oldmeta);
-			SetBindMetaFromPair(b, (bind_part ? other_key : bind_key), (bind_part ? bind_key : other_key));
+			k0 = (bind_part ? other_key : bind_key);
+			k1 = (bind_part ? bind_key : other_key);
 		}
-		else if (bind_key < DBP_SPECIALMAPPINGS_KEY) // Binding a key to a joypad button
-		{
-			b.evt = DBPET_KEYDOWN;
-			b.meta = (Bit16s)bind_key;
-		}
-		else // Binding a special mapping to a joypad button
-		{
-			b.evt = DBP_SPECIALMAPPING(bind_key).evt;
-			b.meta = DBP_SPECIALMAPPING(bind_key).meta;
-		}
+		if (!SetBindMetaFromPair(b, k0, k1)) { DBP_ASSERT(0); }
 	}
 
 	static const char* GetPresetName(EPreset preset)
@@ -1117,41 +1184,56 @@ struct DBP_PadMapping
 		int nBegin = (check_one ? check_one : PRESET_AUTOMAPPED + (dbp_auto_mapping ? 0 : 1)), nEnd = (check_one ? check_one + 1 : PRESET_CUSTOM);
 		for (int n = nBegin; n != nEnd; n++) checkPresets[n] = PresetBinds((EPreset)n, port);
 
-		for (Bit8u btn_id = 0; btn_id != 20; btn_id++)
+		for (Bit8u btn_id = 0; btn_id != WHEEL_ID; btn_id++)
 		{
-			Bit8u bind_buf[4*2], bind_analog = (btn_id >= 16), bind_count;
-			bind_count = FillBinds(bind_buf, PortDeviceIndexIdForBtn(port, btn_id), bind_analog);
+			Bit8u bind_buf[4*2], bind_count = FillBinds(bind_buf, PortDeviceIndexIdForBtn(port, btn_id), (btn_id >= 16));
 
-			if (btn_id == RETRO_DEVICE_ID_JOYPAD_L3 && port == 0 && dbp_on_screen_keyboard && bind_buf[0] == 225 && bind_count == 1) continue; // skip OSK bind
+			if (btn_id == RETRO_DEVICE_ID_JOYPAD_L3 && port == 0 && dbp_on_screen_keyboard && bind_buf[0] == DBP_SPECIALMAPPINGS_OSK && bind_count == 1) continue; // skip OSK bind
 			bool oskshift = (btn_id == RETRO_DEVICE_ID_JOYPAD_R3 && port == 0 && dbp_on_screen_keyboard); // handle shifting due to OSK with generic keyboard
 
 			for (int n = nBegin; n != nEnd; n++)
 			{
 				if (!checkPresets[n]) { if (n == nBegin) nBegin++; continue; }
-				Bit8u match_id = (!oskshift || n != PRESET_GENERICKEYBOARD ? btn_id : RETRO_DEVICE_ID_JOYPAD_L3);
-				Bit8u num = 0, p_val, p_id, p_analog, hasActionName, p_count, match = (bind_count == 0);
-				for (const Bit8u count = *checkPresets[n], *p = checkPresets[n] + 1; num != count; p += p_count * (p_analog ? 2 : 1), num++)
+				Bit8u match_id = (!oskshift || n != PRESET_GENERICKEYBOARD ? btn_id : RETRO_DEVICE_ID_JOYPAD_L3), match = (bind_count == 0);;
+				for (const BindDecoder& it : BindDecoder(checkPresets[n]))
 				{
-					p_val = *(p++), p_id = (Bit8u)(p_val & 31), p_analog = (p_id >= 16), hasActionName = !!(p_val & 32), p_count = 1 + (p_val>>6);
-					if (hasActionName) while (*(p++) & 128);
-					if (p_id != match_id) continue;
-					match = (p_count == bind_count && !memcmp(p, bind_buf, p_count * (p_analog ? 2 : 1)));
+					if (it.BtnID != match_id) continue;
+					match = (it.KeyCount == bind_count && !memcmp(it.P, bind_buf, it.KeyCount * (it.IsAnalog ? 2 : 1)));
 					if (!match) checkPresets[n] = NULL;
 					break;
 				}
 				if (check_one && !match) return PRESET_CUSTOM;
 			}
 		}
-
+		if (nBegin <= PRESET_AUTOMAPPED && nEnd > PRESET_AUTOMAPPED && checkPresets[PRESET_AUTOMAPPED])
+		{
+			int haveItems = 0, presetItems = 0;
+			for (const DBP_WheelItem& wi : dbp_wheelitems)
+			{
+				if (wi.port != port || !wi.key_count) continue;
+				bool match = false;
+				for (const BindDecoder& it : BindDecoder(checkPresets[PRESET_AUTOMAPPED]))
+					if (it.BtnID == WHEEL_ID && it.KeyCount == wi.key_count && !memcmp(it.P, wi.k, wi.key_count)) { match = true; break; }
+				if (!match) goto invalidAutomap;
+				haveItems++;
+			}
+			for (const BindDecoder& it : BindDecoder(checkPresets[PRESET_AUTOMAPPED])) if (it.BtnID == WHEEL_ID) presetItems++;
+			if (haveItems != presetItems) { invalidAutomap: checkPresets[PRESET_AUTOMAPPED] = NULL; }
+		}
 		for (int n = nBegin; n != nEnd; n++) if (checkPresets[n]) return (EPreset)n;
 		return PRESET_CUSTOM;
 	}
 
-	static const char* GetBoundAutoMapButtonLabel(Bit32u port_device_index_id, Bit8u isAnalog)
+	static const char* GetBoundAutoMapButtonLabel(Bit32u port_device_index_id, bool isAnalog)
 	{
 		if (!dbp_auto_mapping || !dbp_auto_mapping_names) return NULL;
 		Bit8u bind_buf[4*2], bind_count = FillBinds(bind_buf, port_device_index_id, isAnalog);
-		return FindAutoMapButtonLabel(bind_count, isAnalog, bind_buf);
+		return FindAutoMapButtonLabel(bind_count, bind_buf, isAnalog);
+	}
+
+	INLINE static const char* GetWheelAutoMapButtonLabel(const DBP_WheelItem& wheel_item)
+	{
+		return FindAutoMapButtonLabel(wheel_item.key_count, wheel_item.k);
 	}
 
 	static void SetPortMode(unsigned port, unsigned device)
@@ -1240,6 +1322,13 @@ struct DBP_PadMapping
 		return insert_idx;
 	}
 
+	static DBP_InputBind BindForWheel(Bit8u port, Bit8u k)
+	{
+		DBP_InputBind bnd = { port, RETRO_DEVICE_JOYPAD, 0, WHEEL_ID };
+		if (!SetBindMetaFromPair(bnd, k)) { DBP_ASSERT(0); bnd.device = RETRO_DEVICE_NONE; }
+		return bnd;
+	}
+
 private:
 	static void GenerateBindings()
 	{
@@ -1289,13 +1378,13 @@ private:
 		if (shift != b) dbp_input_binds.resize(shift - binds);
 	}
 
-	static const char* GenerateDesc(std::vector<std::string>& input_names, Bit32u port_device_index_id, Bit8u isAnalog)
+	static const char* GenerateDesc(std::vector<std::string>& input_names, Bit32u port_device_index_id, bool isAnalog)
 	{
 		input_names.emplace_back();
 		std::string& name = input_names.back();
 
 		Bit8u bind_buf[4*2], bind_count = FillBinds(bind_buf, port_device_index_id, isAnalog), *p = bind_buf;
-		const char* amn = FindAutoMapButtonLabel(bind_count, isAnalog, bind_buf);
+		const char* amn = FindAutoMapButtonLabel(bind_count, bind_buf, isAnalog);
 		if (amn) ((name = amn) += ' ') += '(';
 
 		for (const char *desc_lastdev = NULL; bind_count--;)
@@ -1317,7 +1406,7 @@ private:
 	#define DBP_ANALOGBINDID2(INDEX,ID) (16+((INDEX)*2)+(ID))
 	#define DBP_ANALOGBINDID(SIDE,AXIS) DBP_ANALOGBINDID2(RETRO_DEVICE_INDEX_ANALOG_##SIDE, RETRO_DEVICE_ID_ANALOG_##AXIS)
 
-	INLINE static DBP_InputBind BindForBtn(Bit8u port, Bit8u id) { if (id < 16) return { port, RETRO_DEVICE_JOYPAD, 0, id }; else return { port, RETRO_DEVICE_ANALOG, (Bit8u)(id >= 18), (Bit8u)(id & 1) }; }
+	INLINE static DBP_InputBind BindForBtn(Bit8u port, Bit8u id) { if (id>>2==4) return { port, RETRO_DEVICE_ANALOG, (Bit8u)(id >= 18), (Bit8u)(id & 1) }; else return { port, RETRO_DEVICE_JOYPAD, 0, id }; }
 	INLINE static Bit32u PortDeviceIndexIdForBtn(Bit8u port, Bit8u id) { DBP_InputBind bnd = BindForBtn(port, id); return PORT_DEVICE_INDEX_ID(bnd); }
 
 	static const Bit8u* Apply(Bit8u port, const Bit8u* mapping, bool is_preset, bool only_unbound = false)
@@ -1333,22 +1422,32 @@ private:
 		bool bind_osd = (port == 0 && dbp_on_screen_keyboard && !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]);
 		if (bind_osd && is_preset) bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3] = true;
 
-		const Bit8u count = (mapping ? *mapping : 0), *p = mapping + 1;
-		for (Bit8u num = 0; num != count; num++)
+		for (size_t i = dbp_wheelitems.size(); i--;)
+			if (dbp_wheelitems[i].port == port)
+				dbp_wheelitems.erase(dbp_wheelitems.begin() + i);
+
+		for (const BindDecoder& it : BindDecoder(&mapping))
 		{
-			Bit8u btn_val = *(p++), btn_id = (Bit8u)(btn_val & 31), isAnalog = (btn_id >= 16), hasActionName = !!(btn_val & 32), key_count = 1 + (btn_val>>6);
-			if (btn_id > 19) { DBP_ASSERT(0); goto err; }
-			if (hasActionName) while (*(p++) & 128); // skip name_offset
-
-			while (btn_id != 0xFF && bound_buttons[btn_id]) btn_id = bindUsedToNext[btn_id];
-			if (btn_id == 0xFF) { p += (key_count * (1 + isAnalog)); continue; }
-			bound_buttons[btn_id] = true;
-
-			DBP_InputBind bnd = BindForBtn(port, btn_id);
-			while (key_count--)
+			Bit8u btnId = it.BtnID;
+			if (btnId == WHEEL_ID)
 			{
-				Bit8u k[] = { *(p++), (isAnalog ? *(p++) : (Bit8u)0) };
-				if (!SetBindMetaFromPair(bnd, k[0], k[1])) { DBP_ASSERT(0); goto err; }
+				dbp_wheelitems.emplace_back();
+				DBP_WheelItem& wi = dbp_wheelitems.back();
+				wi.port = port;
+				wi.key_count = it.KeyCount;
+				memcpy(wi.k, it.P, it.KeyCount);
+				continue;
+			}
+
+			if (btnId > WHEEL_ID) { DBP_ASSERT(0); goto err; }
+			while (btnId != 0xFF && bound_buttons[btnId]) btnId = bindUsedToNext[btnId];
+			if (btnId == 0xFF) continue;
+			bound_buttons[btnId] = true;
+
+			DBP_InputBind bnd = BindForBtn(port, btnId);
+			for (int i = 0, istep = (it.IsAnalog ? 2 : 1), iend = it.KeyCount * istep; i != iend; i += istep)
+			{
+				if (!SetBindMetaFromPair(bnd, it.P[i], (it.IsAnalog ? it.P[i+1] : (Bit8u)0))) { DBP_ASSERT(0); goto err; }
 				if (bnd.evt == DBPET_ONSCREENKEYBOARD) bind_osd = false;
 				InsertBind(bnd);
 			}
@@ -1357,21 +1456,14 @@ private:
 		if (bind_osd && (is_preset || !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]))
 			InsertBind({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_ONSCREENKEYBOARD });
 
-		return p;
-		err: retro_notify(0, RETRO_LOG_ERROR, "Gamepad mapping data is invalid"); return mapping+DBP_PADMAP_MAXSIZE_TOTAL;
+		return mapping;
+		err: retro_notify(0, RETRO_LOG_ERROR, "Gamepad mapping data is invalid"); return mapping+(DBP_PADMAP_MAXSIZE_PORT*DBP_MAX_PORTS);
 	}
 
 	static const Bit8u* SkipMapping(const Bit8u* mapping)
 	{
-		const Bit8u count = (mapping ? *mapping : 0), *p = mapping + 1;
-		for (Bit8u num = 0; num != count; num++)
-		{
-			Bit8u btn_val = *(p++), btn_id = (Bit8u)(btn_val & 31), isAnalog = (btn_id >= 16), hasActionName = !!(btn_val & 32), key_count = 1 + (btn_val>>6);
-			if (btn_id > 19) { DBP_ASSERT(0); return mapping+DBP_PADMAP_MAXSIZE_TOTAL; }
-			if (hasActionName) while (*(p++) & 128); // skip name_offset
-			p += (key_count * (1 + isAnalog));
-		}
-		return p;
+		for (const BindDecoder& it : BindDecoder(&mapping)) if (it.BtnID > WHEEL_ID) { DBP_ASSERT(0); return mapping+(DBP_PADMAP_MAXSIZE_PORT*DBP_MAX_PORTS); }
+		return mapping;
 	}
 
 	static Bit16s GetAxisSpecialMappingMeta(Bit16s evt)
@@ -1386,23 +1478,23 @@ private:
 		DBP_ASSERT(false); return 0;
 	}
 
-	static bool SetBindMetaFromPair(DBP_InputBind& b, Bit8u k0, Bit8u k1)
+	static bool SetBindMetaFromPair(DBP_InputBind& b, Bit8u k0, Bit8u k1 = 0)
 	{
 		if (b.device != RETRO_DEVICE_ANALOG)
 		{
-			if (k0 < KBD_LAST && k0 != KBD_NONE)
+			if (k0 < KBD_LAST && k0 != KBD_NONE) // Binding a key to a joypad button
 			{
 				b.evt = DBPET_KEYDOWN;
 				b.meta = k0;
 			}
-			else if (k0 >= DBP_SPECIALMAPPINGS_KEY && k0 < DBP_SPECIALMAPPINGS_MAX)
+			else if (k0 >= DBP_SPECIALMAPPINGS_KEY && k0 < DBP_SPECIALMAPPINGS_MAX) // Binding a special mapping to a joypad button
 			{
 				b.evt = DBP_SPECIALMAPPING(k0).evt;
 				b.meta = DBP_SPECIALMAPPING(k0).meta;
 			}
 			else return false;
 		}
-		else
+		else // Binding to an axis
 		{
 			if (k1 == k0 + 1 && k0 >= DBP_SPECIALMAPPINGS_KEY && k1 < DBP_SPECIALMAPPINGS_MAX && DBP_SPECIALMAPPING(k0).evt <= _DBPET_JOY_AXIS_MAX && DBP_SPECIALMAPPING(k0).evt == DBP_SPECIALMAPPING(k1).evt)
 			{
@@ -1420,7 +1512,7 @@ private:
 		return true;
 	}
 
-	static Bit8u FillBinds(Bit8u* p, Bit32u port_device_index_id, Bit8u isAnalog)
+	static Bit8u FillBinds(Bit8u* p, Bit32u port_device_index_id, bool isAnalog)
 	{
 		Bit8u key_count = 0;
 		for (const DBP_InputBind& b : dbp_input_binds)
@@ -1581,22 +1673,37 @@ private:
 		return NULL;
 	}
 
-	static const char* FindAutoMapButtonLabel(Bit8u bind_count, Bit8u bind_analog, const Bit8u* bind_buf)
+	static const char* FindAutoMapButtonLabel(Bit8u bind_count, const Bit8u* bind_buf, bool bind_analog = false)
 	{
 		if (!bind_count || !dbp_auto_mapping || !dbp_auto_mapping_names) return NULL;
-		const Bit8u count = *dbp_auto_mapping, *p = dbp_auto_mapping + 1;
-		for (Bit8u num = 0, btn_id, bnd_id, isAnalog, hasActionName, key_count; num != count; p += key_count * (isAnalog ? 2 : 1), num++)
-		{
-			btn_id = *(p++), bnd_id = (Bit8u)(btn_id & 31), isAnalog = (bnd_id >= 16), hasActionName = !!(btn_id & 32), key_count = 1 + (btn_id>>6);
-			if (bnd_id > 19) { DBP_ASSERT(0); return NULL; }
-			if (!hasActionName) continue;
-			Bit32u name_offset = 0;
-			do { name_offset = (name_offset<<7)|(*p&127); } while (*(p++) & 128);
-			if (key_count == bind_count && bind_analog == isAnalog && !memcmp(p, bind_buf, key_count * (isAnalog ? 2 : 1)))
-				return dbp_auto_mapping_names + name_offset;
-		}
+		for (const BindDecoder& it : BindDecoder(dbp_auto_mapping))
+			if (it.HasActionName && it.KeyCount == bind_count && bind_analog == it.IsAnalog && !memcmp(it.P, bind_buf, it.KeyCount * (it.IsAnalog ? 2 : 1)))
+				return dbp_auto_mapping_names + it.NameOffset;
 		return NULL;
 	}
+
+	struct BindDecoder
+	{
+		INLINE BindDecoder(const Bit8u *ptr) : P(ptr), OutPtr(NULL), Remain(*(P++)+1), KeyCount(0) { ++*this; }
+		INLINE BindDecoder(const Bit8u **ptr) : P(*ptr), OutPtr(ptr), Remain(*(P++)+1), KeyCount(0) { ++*this; }
+		INLINE const BindDecoder& begin() const { return *this; }
+		INLINE const BindDecoder& end() const { return *this; }
+		INLINE const BindDecoder& operator*() const { return *this; }
+		INLINE bool operator!=(const BindDecoder& other) const { if (Remain) return true; if (OutPtr) *OutPtr = P; return false; }
+		void operator++()
+		{
+			P += KeyCount * (1 + (int)IsAnalog);
+			if (!--Remain) return;
+			Bit8u v = *(P++);
+			KeyCount = 1 + (v >> 6);
+			BtnID = (Bit8u)(v & 31);
+			IsAnalog = ((BtnID >> 2) == 4); // 16 - 19
+			HasActionName = !!(v & 32);
+			DBP_ASSERT(BtnID <= WHEEL_ID && Remain >= 0);
+			if (HasActionName) { NameOffset = 0; do { NameOffset = (NameOffset<<7)|(*P&127); } while (*(P++) & 128); }
+		}
+		const Bit8u *P, **OutPtr; Bit8u Remain, KeyCount, BtnID; bool IsAnalog, HasActionName; Bit32u NameOffset;
+	};
 };
 
 static void DBP_Shutdown()
@@ -1792,7 +1899,8 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	//DBP_ASSERT((Bit8u*)buf.video == render.scale.outWrite - render.scale.outPitch * render.src.height); // this assert can fail after loading a save game
 	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)buf.video + sizeof(buf.video));
 
-	if (dbp_intercept_gfx) dbp_intercept_gfx(buf, dbp_intercept_data);
+	if (dbp_intercept_next)
+		dbp_intercept_next->gfx(buf);
 
 	if (
 		#ifndef DBP_ENABLE_FPS_COUNTERS
@@ -2041,15 +2149,13 @@ void GFX_Events()
 
 	static bool mouse_speed_up, mouse_speed_down;
 	static int mouse_joy_x, mouse_joy_y, hatbits;
-	for (;dbp_event_queue_read_cursor != dbp_event_queue_write_cursor; dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE))
+	while (dbp_event_queue_read_cursor != dbp_event_queue_write_cursor)
 	{
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
-		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [%4d@%6d] %s %08x%s\n", dbp_framecount, DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_intercept_input ? " [INTERCEPTED]" : ""));
-		if (dbp_intercept_input)
-		{
-			dbp_intercept_input(e.type, e.val, e.val2, dbp_intercept_data);
-			if (!DBP_IS_RELEASE_EVENT(e.type)) continue;
-		}
+		dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE);
+		bool intercepted = (dbp_intercept_next && dbp_intercept_next->evnt(e.type, e.val, e.val2));
+		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [%4d@%6d] %s %08x%s\n", dbp_framecount, DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (intercepted ? " [INTERCEPTED]" : ""));
+		if (intercepted && !DBP_IS_RELEASE_EVENT(e.type)) continue;
 		#if 0
 		if (e.type == DBPET_KEYDOWN && e.val == KBD_b) { void DBP_DumpPSPs(); DBP_DumpPSPs(); }
 		#endif
@@ -2060,6 +2166,9 @@ void GFX_Events()
 
 			case DBPET_ONSCREENKEYBOARD: DBP_StartOSD(DBPOSD_OSK); break;
 			case DBPET_ONSCREENKEYBOARDUP: break;
+
+			case DBPET_ACTIONWHEEL: DBP_WheelOSD((Bit8u)e.val2); break;
+			case DBPET_ACTIONWHEELUP: break;
 
 			case DBPET_MOUSEMOVE:
 			{
@@ -2962,8 +3071,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		dbp_game_running = dbp_had_game_running = false;
 		dbp_last_fastforward = false;
 		dbp_serializesize = 0;
-		dbp_intercept_gfx = NULL;
-		dbp_intercept_input = NULL;
+		DBP_SetIntercept(NULL);
 		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
 	}
 	if (!dbp_biosreboot) DBP_Run::ResetStartup();
@@ -3606,77 +3714,10 @@ void retro_run(void)
 	if (!dbp_optionsupdatecallback && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &variable_update) && variable_update)
 		check_variables();
 
-	// Use fixed mappings using only port 0 to use in the menu and the on-screen keyboard
-	static DBP_InputBind intercept_binds[] =
-	{
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   DBPET_MOUSEDOWN, 0 },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  DBPET_MOUSEDOWN, 1 },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, DBPET_MOUSEDOWN, 2 },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   DBPET_KEYDOWN, KBD_kpminus },
-		{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, DBPET_KEYDOWN, KBD_kpplus  },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_ONSCREENKEYBOARD },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    DBPET_KEYDOWN, KBD_up },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  DBPET_KEYDOWN, KBD_down },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  DBPET_KEYDOWN, KBD_left },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, DBPET_KEYDOWN, KBD_right },
-		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, DBPET_JOY1X },
-		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, DBPET_JOY1Y },
-		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, DBPET_JOY2X },
-		{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, DBPET_JOY2Y },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, DBPET_JOY1DOWN, 0 },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, DBPET_JOY1DOWN, 1 },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, DBPET_JOY2DOWN, 0 },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, DBPET_JOY2DOWN, 1 },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, DBPET_KEYDOWN, KBD_grave },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, DBPET_KEYDOWN, KBD_tab },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, DBPET_KEYDOWN, KBD_esc },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  DBPET_KEYDOWN, KBD_enter },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, DBPET_MOUSESETSPEED,  1 },
-		{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, DBPET_MOUSESETSPEED, -1 },
-	};
-	static bool use_input_intercept;
-	bool toggled_intercept = (use_input_intercept != !!dbp_intercept_input);
-	if (toggled_intercept)
-	{
-		use_input_intercept ^= 1;
-		if (!use_input_intercept) for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
-		{
-			// Release all pressed events when leaving intercepted screen
-			DBP_ASSERT(b->evt != DBPET_AXISMAPPAIR);
-			if (!b->lastval) continue;
-			if (b->evt <= _DBPET_JOY_AXIS_MAX) DBP_QueueEvent((DBP_Event_Type)b->evt, 0);
-			else DBP_QueueEvent((DBP_Event_Type)(b->evt + 1), b->meta);
-			b->lastval = 0;
-		}
-		if (dbp_input_binds_modified) DBP_PadMapping::RefreshInputBinds(false);
-	}
-	DBP_InputBind *binds = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *binds_end = binds + dbp_input_binds.size();
+	// start input update
 	input_poll_cb();
-	if (use_input_intercept)
-	{
 	//input_state_cb(0, RETRO_DEVICE_NONE, 0, 0); // poll keys? 
 	//input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_SPACE); // get latest keyboard callbacks?
-		if (toggled_intercept)
-			for (DBP_InputBind* b = intercept_binds; b != &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)]; b++)
-				b->lastval = input_state_cb(b->port, b->device, b->index, b->id);
-		binds = intercept_binds + ((dbp_mouse_input != 'f') ? ((dbp_mouse_input != 'p') ? 0 : 3) : 5);
-		binds_end = &intercept_binds[sizeof(intercept_binds)/sizeof(*intercept_binds)];
-
-		static bool warned_game_focus;
-		if (!dbp_intercept_gfx && !warned_game_focus && input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK))
-		{
-			for (Bit8u i = KBD_NONE + 1; i != KBD_LAST; i++)
-			{
-				if (!input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, dbp_keymap_dos2retro[i])) continue;
-				warned_game_focus = true;
-				retro_notify(10000, RETRO_LOG_WARN,
-					"Detected keyboard and joypad being pressed at the same time.\n"
-					"To freely use the keyboard without hotkeys enable 'Game Focus' (Scroll Lock key by default) if available.");
-				break;
-			}
-		}
-		if (dbp_input_binds_modified) DBP_PadMapping::RefreshInputBinds(false);
-	}
 
 	// query mouse movement before querying mouse buttons
 	if (dbp_mouse_input != 'f')
@@ -3686,80 +3727,50 @@ void retro_run(void)
 		int16_t absx = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_X);
 		int16_t absy = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_Y);
 		int16_t prss = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
+		//int16_t lgx = input_state_cb(0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X);
+		//int16_t lgy = input_state_cb(0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y);
 		bool absvalid = (absx || absy || prss);
 		if (dbp_mouse_input == 'p')
 			retro_run_touchpad(!!prss, absx, absy);
 		else if (movx || movy || (absvalid && (absx != dbp_mouse_x || absy != dbp_mouse_y)))
 		{
-			//log_cb(RETRO_LOG_INFO, "[DOSBOX MOUSE] [%4d@%6d] Rel: %d,%d - Abs: %d,%d - Press: %d - Count: %d\n", dbp_framecount, DBP_GetTicks(), movx, movy, absx, absy, prss, input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT));
+			//log_cb(RETRO_LOG_INFO, "[DOSBOX MOUSE] [%4d@%6d] Rel: %d,%d - Abs: %d,%d - LG: %d,%d - Press: %d - Count: %d\n", dbp_framecount, DBP_GetTicks(), movx, movy, absx, absy, lgx, lgy, prss, input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT));
 			if (absvalid) dbp_mouse_x = absx, dbp_mouse_y = absy;
 			DBP_QueueEvent(DBPET_MOUSEMOVE, movx, movy);
 		}
 	}
+
+	recheck_intercept:
+	if (!dbp_intercept)
+	{
 		// query buttons mapped to analog functions
-	if (dbp_analog_buttons && !use_input_intercept)
+		if (dbp_analog_buttons)
 		{
-		for (DBP_InputBind *b = binds; b != binds_end; b++)
+			for (DBP_InputBind& b : dbp_input_binds)
 			{
-			if (b->evt > _DBPET_JOY_AXIS_MAX || b->device != RETRO_DEVICE_JOYPAD) continue; // handled below
-			DBP_ASSERT(b->meta == 1 || b->meta == -1); // buttons mapped to analog functions should always have 1 or -1 in meta
-			Bit16s val = input_state_cb(b->port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b->id);
-			if (!val) val = (input_state_cb(b->port, RETRO_DEVICE_JOYPAD, 0, b->id) ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
-			if (val == b->lastval) continue;
-			b->lastval = val; // set before calling DBP_QueueEvent
-			DBP_QueueEvent((DBP_Event_Type)b->evt, val * b->meta, 0, binds, binds_end);
+				if (b.evt > _DBPET_JOY_AXIS_MAX || b.device != RETRO_DEVICE_JOYPAD) continue; // handled below
+				Bit16s val = input_state_cb(b.port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b.id);
+				if (!val) val = (input_state_cb(b.port, RETRO_DEVICE_JOYPAD, 0, b.id) ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
+				if (val != b.lastval) b.Update(val, true);
 			}
 		}
+
 		// query input states and generate input events
-	for (DBP_InputBind *b = binds; b != binds_end; b++)
-	{
-		Bit16s val = input_state_cb(b->port, b->device, b->index, b->id), lastval = b->lastval;
-		if (val == lastval) continue;
-		b->lastval = val; // set before calling DBP_QueueEvent
-		if (b->evt <= _DBPET_JOY_AXIS_MAX)
+		for (DBP_InputBind& b : dbp_input_binds)
 		{
-			// handle analog axis mapped to analog functions
-			if (b->device == RETRO_DEVICE_JOYPAD) { b->lastval = lastval; continue; } // handled above
-			DBP_ASSERT(b->meta == 0); // analog axis mapped to analog functions should always have 0 in meta
-			DBP_QueueEvent((DBP_Event_Type)b->evt, (b->meta ? (val ? 32767 : 0) * b->meta : val), 0, binds, binds_end);
-		}
-		else if (b->device != RETRO_DEVICE_ANALOG)
-		{
-			// if button is pressed, send the _DOWN, otherwise send _UP
-			DBP_QueueEvent((DBP_Event_Type)(val ? b->evt : b->evt + 1), b->meta);
-	}
-		else for (Bit16s dir = 1; dir >= -1; dir -= 2)
-		{
-			DBP_ASSERT(b->evt == DBPET_AXISMAPPAIR);
-			Bit16s map = DBP_MAPPAIR_GET(dir, b->meta), dirval = val * dir, dirlastval = lastval * dir;
-			if (map == KBD_NONE) continue;
-			if (map < KBD_LAST)
-			{
-				if (dirval >= 12000 && dirlastval <  12000) DBP_QueueEvent(DBPET_KEYDOWN, map);
-				if (dirval <  12000 && dirlastval >= 12000) DBP_QueueEvent(DBPET_KEYUP,   map);
-				continue;
-			}
-			if (map < DBP_SPECIALMAPPINGS_KEY) { DBP_ASSERT(false); continue; }
-			if (dirval <= 0 && dirlastval <= 0) continue;
-			const DBP_SpecialMapping& sm = DBP_SPECIALMAPPING(map);
-			if (sm.evt <= _DBPET_JOY_AXIS_MAX)               DBP_QueueEvent((DBP_Event_Type)sm.evt, (dirval < 0 ? 0 : dirval) * sm.meta, 0, binds, binds_end);
-			else if (dirval >= 12000 && dirlastval <  12000) DBP_QueueEvent((DBP_Event_Type)sm.evt, sm.meta);
-			else if (dirval <  12000 && dirlastval >= 12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt + 1), sm.meta);
+			Bit16s val = input_state_cb(b.port, b.device, b.index, b.id);
+			if (val != b.lastval) b.Update(val);
 		}
 	}
-	if (dbp_keys_down_count)
-	{
+	else if (dbp_intercept == dbp_intercept_next)
+		dbp_intercept->input();
+	else
+		{ dbp_intercept->close(); dbp_intercept = dbp_intercept_next; goto recheck_intercept; }
+
 	// This catches sticky keys due to various frontend/driver issues
 	// For example ALT key can easily get stuck when using ALT-TAB, menu opening or fast forwarding also can get stuck
-		// We also release all keys when switching between key event intercepting
-		for (Bit8u i = KBD_NONE + 1; i != KBD_LAST; i++)
-		{
-			if (!dbp_keys_down[i] || (!(dbp_keys_down[i] & DBP_DOWN_BY_KEYBOARD) && !toggled_intercept)) continue;
-			if (input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, dbp_keymap_dos2retro[i])) continue;
-			dbp_keys_down[i] = 1;
-			DBP_QueueEvent(DBPET_KEYUP, i);
-		}
-	}
+	if (dbp_keys_down_count)
+		DBP_ReleaseKeyEvents(true);
 
 	bool skip_emulate = DBP_NeedFrameSkip(false);
 	switch (dbp_latency)

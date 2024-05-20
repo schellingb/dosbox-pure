@@ -16,7 +16,7 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-enum DBP_OSDMode { DBPOSD_CLOSED, DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, _DBPOSD_COUNT };
+enum DBP_OSDMode { DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, _DBPOSD_COUNT, DBPOSD_CLOSED };
 static void DBP_StartOSD(DBP_OSDMode mode, struct DBP_PureMenuState* in_main = NULL);
 static void DBP_CloseOSD();
 static bool DBP_FullscreenOSD;
@@ -37,16 +37,21 @@ struct DBP_BufferDrawing : DBP_Buffer
 
 	Bit32u GetThickness() { return (width < (MWIDTH + 10) ? 1 : ((int)width - 10) / MWIDTH); }
 
-	void PrintCenteredOutlined(int lh, int x, int w, int y, const char* msg, Bit32u col = 0xFFFFFFFF)
+	void PrintOutlined(int lh, int x, int y, const char* msg, Bit32u col = 0xFFFFFFFF, Bit32u colol = 0xFF000000)
 	{
-		x += (int)((w-strlen(msg)*CW)/2);
-		for (int i = 0; i < 9; i++) if (i != 4) Print(lh, x+((i%3)-1), y+((i/3)-1), msg, 0xFF000000);
+		if ((colol & 0xFF000000) != 0xFF000000) colol = (((colol >> 24) / 2) << 24) | (colol & 0xFFFFFF);
+		for (int i = 0; i < 9; i++) if (i != 4) Print(lh, x+((i%3)-1), y+((i/3)-1), msg, colol);
 		Print(lh, x, y, msg, col);
+	}
+
+	void PrintCenteredOutlined(int lh, int x, int w, int y, const char* msg, Bit32u col = 0xFFFFFFFF, Bit32u colol = 0xFF000000)
+	{
+		PrintOutlined(lh, x + (int)((w-strlen(msg)*CW)/2), y, msg, col, colol);
 	}
 
 	void Print(int lh, int x, int y, const char* msg, Bit32u col = 0xFFFFFFFF, int maxw = 0xFFFFFF)
 	{
-		DBP_ASSERT((col & 0xFF000000) && y >= 0 && y < (int)height);
+		DBP_ASSERT(y >= 0 && y < (int)height);
 		const Bit8u* fnt = (lh == 8 ? int10_font_08 : int10_font_14);
 		const int ch = (lh == 8 ? 8 : 14);
 		for (const char* p = msg, *pEnd = p + (maxw / CW); *p && p != pEnd; p++)
@@ -57,10 +62,11 @@ struct DBP_BufferDrawing : DBP_Buffer
 	{
 		if (x < 0 || x + CW >= (int)width) return;
 		const Bit8u* ltr = &fnt[(Bit8u)c * ch], *ltrend = ltr + ch;
-		for (Bit32u w = width, *py = video + (w * y) + (x); ltr != ltrend; py += w, ltr++)
-			for (Bit32u *px = py, bit = 256; bit; px++)
-				if (*ltr & (bit>>=1))
-					*px = col;
+		Bit32u w = width, *py = video + (w * y) + (x);
+		if ((col & 0xFF000000) == 0xFF000000)
+			{ for (; ltr != ltrend; py += w, ltr++) for (Bit32u *px = py, bit = 256; bit; px++) if (*ltr & (bit>>=1)) *px = col; }
+		else
+			{ for (; ltr != ltrend; py += w, ltr++) for (Bit32u *px = py, bit = 256; bit; px++) if (*ltr & (bit>>=1)) AlphaBlend(px, col); }
 	}
 
 	void DrawBox(int x, int y, int w, int h, Bit32u colfill, Bit32u colline)
@@ -101,9 +107,7 @@ struct DBP_BufferDrawing : DBP_Buffer
 
 	void AlphaBlendFillRect(int x, int y, int w, int h, Bit32u col)
 	{
-		//DBP_ASSERT((col >> 24) == 0xFF || (col >> 24) == 0);
-		Bit32u alpha = ((col >> 24) ? (col >> 24) : dbp_alphablend_base);
-		col = (alpha << 24) | (col & 0xFFFFFF);
+		col = (((col & 0xFF000000) ? (col >> 24) : dbp_alphablend_base) << 24) | (col & 0xFFFFFF);
 		for (Bit32u *py = video + width * y + x; h--; py += width)
 			for (Bit32u *p = py, *pEnd = p + w; p != pEnd; p++)
 				AlphaBlend(p, col);
@@ -116,6 +120,28 @@ struct DBP_BufferDrawing : DBP_Buffer
 		col = (alpha << 24) | (col & 0xFFFFFF);
 		for (Bit32u *p = video + width * y + x, *pEnd = p + w, *p2 = p + width * (h-1); p != pEnd; p++, p2++) AlphaBlend(p, col), AlphaBlend(p2, col);
 		for (Bit32u *p = video + width * y + x, *pEnd = p + width * h; p != pEnd; p+=width) AlphaBlend(p, col), AlphaBlend(p+w-1, col);
+	}
+
+	void AlphaBlendFillCircle(int cx, int cy, int rad, Bit32u col)
+	{
+		for (int radsq = rad*rad, w = width, y = (cy - rad < 0 ? 0 : cy - rad), ymax = (cy + rad >= (int)height ? (int)height : cy + rad); y < ymax; y++)
+			for (int x = (cx - rad < 0 ? 0 : cx - rad), xmax = (cx + rad >= (int)width ? (int)width : cx + rad); x < xmax; x++)
+			{
+				int dx = abs(x - cx), dy = abs(y - cy), dsq = (dx*dx)+(dy*dy);
+				if (dsq >= radsq) continue;
+				AlphaBlend(video + y*w + x, col);
+			}
+	}
+
+	void AlphaBlendDrawCircle(int cx, int cy, int rad1, int rad2, Bit32u col)
+	{
+		for (int rad1sq = rad1*rad1, rad2sq = rad2*rad2, w = width, y = (cy - rad2 < 0 ? 0 : cy - rad2), ymax = (cy + rad2 >= (int)height ? (int)height : cy + rad2); y < ymax; y++)
+			for (int x = (cx - rad2 < 0 ? 0 : cx - rad2), xmax = (cx + rad2 >= (int)width ? (int)width : cx + rad2); x < xmax; x++)
+			{
+				int dx = abs(x - cx), dy = abs(y - cy), dsq = (dx*dx)+(dy*dy);
+				if (dsq < rad1sq || dsq >= rad2sq) continue;
+				AlphaBlend(video + y*w + x, col);
+			}
 	}
 
 	static void AlphaBlend(Bit32u* p1, Bit32u p2)
@@ -443,9 +469,11 @@ static const char* DBP_MapperJoypadNames[] = { "Up", "Down", "Left", "Right", "B
 struct DBP_MapperMenuState : DBP_MenuState
 {
 	enum ItemType : Bit8u { IT_CANCEL = _IT_CUSTOM, IT_PRESET, IT_SELECT, IT_EDIT, IT_ADD, IT_DEL, IT_DEVICE, IT_DIVIDER };
+	enum EditMode : Bit8u { NOT_EDITING, EDIT_EXISTING, EDIT_NEW, EDIT_ADDITIONAL };
 	int main_sel = 0;
-	Bit8u bind_port = 0, bind_dev, bind_part, changed = 0;
-	DBP_InputBind* edit;
+	Bit16s edit_info;
+	EditMode edit_mode;
+	Bit8u bind_port = 0, bind_dev, changed = 0;
 
 	DBP_MapperMenuState() { menu_top(); }
 
@@ -457,6 +485,25 @@ struct DBP_MapperMenuState : DBP_MenuState
 	{
 		if (i < JOYPAD_MAX) return { bind_port, RETRO_DEVICE_JOYPAD, 0, DBP_MapperJoypadNums[i], _DBPET_MAX };
 		else { Bit8u n = i-JOYPAD_MAX; return { bind_port, RETRO_DEVICE_ANALOG, (Bit8u)(n/4), (Bit8u)(1-(n/2)%2), _DBPET_MAX }; }
+	}
+
+	void Add(const DBP_InputBind& b, Bit16s item_info, Bit8u apart = 0, bool* boundActionWheel = NULL)
+	{
+		int key = -1;
+		if (b.evt == DBPET_KEYDOWN)
+			key = b.meta;
+		else if (b.evt == DBPET_AXISMAPPAIR)
+			key = DBP_MAPPAIR_GET(apart?1:-1, b.meta);
+		else for (const DBP_SpecialMapping& sm : DBP_SpecialMappings)
+			if (sm.evt == b.evt && (!sm.dev || sm.meta == (b.device == RETRO_DEVICE_ANALOG ? (apart ? 1 : -1) : b.meta)))
+				{ key = DBP_SPECIALMAPPINGS_KEY + (int)(&sm - DBP_SpecialMappings); break; }
+		if (key < 0) { DBP_ASSERT(false); return; }
+
+		const char *desc_dev = DBP_GETKEYDEVNAME(key);
+		list.emplace_back(IT_EDIT, item_info, "  [Edit]");
+		(((list.back().str += (desc_dev ? " " : "")) += (desc_dev ? desc_dev : "")) += ' ') += DBP_GETKEYNAME(key);
+
+		if (boundActionWheel && key == DBP_SPECIALMAPPINGS_ACTIONWHEEL) *boundActionWheel = true;
 	}
 
 	void menu_top(int x_change = 0)
@@ -485,9 +532,10 @@ struct DBP_MapperMenuState : DBP_MenuState
 			list.emplace_back(IT_PRESET, 0, "  "); list.back().str += DBP_PadMapping::GetPortPresetName(bind_port);
 			list.emplace_back(IT_NONE, 2);
 
+			bool boundActionWheel = false, haveWheelOptions = false;
 			for (Bit8u i = 0; i != JOYPAD_MAX + 8; i++)
 			{
-				Bit8u a = (i>=JOYPAD_MAX), apart = (a ? (i-JOYPAD_MAX)%2 : 0);
+				bool a = (i>=JOYPAD_MAX); Bit8u apart = (a ? (i-JOYPAD_MAX)%2 : 0);
 				const DBP_InputBind pad = BindFromPadNum(i);
 				const Bit32u padpdii = PORT_DEVICE_INDEX_ID(pad);
 				list.emplace_back(IT_NONE);
@@ -496,23 +544,8 @@ struct DBP_MapperMenuState : DBP_MenuState
 
 				size_t numBefore = list.size();
 				for (const DBP_InputBind& b : dbp_input_binds)
-				{
-					if (PORT_DEVICE_INDEX_ID(b) != padpdii) continue;
-				
-					int key = -1;
-					if (b.evt == DBPET_KEYDOWN)
-						key = b.meta;
-					else if (b.evt == DBPET_AXISMAPPAIR)
-						key = DBP_MAPPAIR_GET(apart?1:-1, b.meta);
-					else for (const DBP_SpecialMapping& sm : DBP_SpecialMappings)
-						if (sm.evt == b.evt && sm.meta == (a ? (apart ? 1 : -1) : b.meta))
-							{ key = DBP_SPECIALMAPPINGS_KEY + (int)(&sm - DBP_SpecialMappings); break; }
-					if (key < 0) { DBP_ASSERT(false); continue; }
-
-					const char *desc_dev = DBP_GETKEYDEVNAME(key);
-					list.emplace_back(IT_EDIT, (Bit16s)(((&b - &dbp_input_binds[0])<<1)|apart), "  [Edit]");
-					(((list.back().str += (desc_dev ? " " : "")) += (desc_dev ? desc_dev : "")) += ' ') += DBP_GETKEYNAME(key);
-				}
+					if (PORT_DEVICE_INDEX_ID(b) == padpdii)
+						Add(b, (Bit16s)(((&b - &dbp_input_binds[0])<<1)|apart), apart, &boundActionWheel);
 				if (list.size() - numBefore == 0) list.emplace_back(IT_ADD, i, "  [Create Binding]");
 
 				if (const char* action = DBP_PadMapping::GetBoundAutoMapButtonLabel(padpdii, a))
@@ -521,6 +554,34 @@ struct DBP_MapperMenuState : DBP_MenuState
 					list.back().str.append(action);
 				}
 			}
+
+			list.emplace_back(IT_NONE, 2);
+			list.emplace_back(IT_NONE, 0, "Wheel Options: ");
+			for (const DBP_WheelItem& it : dbp_wheelitems)
+			{
+				if (it.port != bind_port) continue;
+				for (int i = 0; i != it.key_count; i++)
+				{
+					DBP_InputBind bnd = DBP_PadMapping::BindForWheel(bind_port, it.k[i]);
+					if (bnd.device == RETRO_DEVICE_NONE) continue;
+					Add(bnd, (Bit16s)(&it - &dbp_wheelitems[0] + 1) * -4 - ((4 - i) & 3)); // encode so (info & 3) gives i
+				}
+				if (const char* action = DBP_PadMapping::GetWheelAutoMapButtonLabel(it))
+				{
+					list.emplace_back(IT_NONE, 1, "    Function: ");
+					list.back().str.append(action);
+				}
+				list.emplace_back(IT_NONE, 0);
+				haveWheelOptions = true;
+			}
+			list.emplace_back(IT_ADD, -1, "  Add Option");
+			if (haveWheelOptions != boundActionWheel)
+			{
+				list.emplace_back(IT_NONE, 0, "Warning:");
+				list.emplace_back(IT_NONE, -1, "  Wheel is inaccessible because no");
+				list.emplace_back(IT_NONE, -1, (haveWheelOptions ? "  button was bound to Action Wheel" : "  options have been defined here"));
+			}
+			list.emplace_back(IT_NONE, 0);
 		}
 		if (!DBP_FullscreenOSD)
 		{
@@ -530,7 +591,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 		if (main_sel >= (int)list.size()) main_sel = (int)list.size()-1;
 		while (main_sel && list[main_sel].type == IT_NONE) main_sel--;
 		ResetSel((main_sel < 1 ? 1 : main_sel), (main_sel < 1)); // skip top IT_NONE entry
-		edit = NULL;
+		edit_mode = NOT_EDITING;
 		bind_dev = 0;
 	}
 
@@ -572,21 +633,11 @@ struct DBP_MapperMenuState : DBP_MenuState
 
 	void menu_devices(Bit8u ok_type)
 	{
-		int main_info = list[sel].info;
-		if (ok_type == IT_ADD)
-		{
-			const DBP_InputBind b = (edit ? *edit : BindFromPadNum((Bit8u)main_info)), *pBegin = (dbp_input_binds.size() ? &dbp_input_binds[0] : NULL), *p = pBegin, *pEnd = p + dbp_input_binds.size();
-			int insert_idx = DBP_PadMapping::InsertBind(b);
-			if (edit) edit = &dbp_input_binds[insert_idx];
-			else main_info = (Bit16u)(insert_idx<<1);
-		}
-
-		if (!edit)
+		if (edit_mode == NOT_EDITING)
 		{
 			main_sel = sel;
-			edit = &dbp_input_binds[main_info>>1];
-			bind_part = (Bit8u)(main_info&1);
-
+			edit_mode = (ok_type == IT_ADD ? EDIT_NEW : EDIT_EXISTING);
+			edit_info = list[sel].info;
 			int sel_header = sel - 1; while (list[sel_header].type != IT_NONE) sel_header--;
 			(list[0].str = list[sel_header].str);
 			list[1].str = std::string(" >") += list[sel].str;
@@ -594,7 +645,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 		}
 		else if (ok_type == IT_ADD)
 		{
-			edit->evt = _DBPET_MAX; edit->meta = edit->lastval = 0;
+			edit_mode = EDIT_ADDITIONAL;
 			(list[1].str = " >") += "  [Additional Binding]";
 		}
 		list.resize(2);
@@ -602,15 +653,25 @@ struct DBP_MapperMenuState : DBP_MenuState
 		list.emplace_back(IT_DEVICE,   1, "  "); list.back().str += DBPDEV_Keyboard;
 		list.emplace_back(IT_DEVICE,   2, "  "); list.back().str += DBPDEV_Mouse;
 		list.emplace_back(IT_DEVICE,   3, "  "); list.back().str += DBPDEV_Joystick;
-		list.emplace_back(IT_SELECT, 225, "  "); list.back().str += DBP_SpecialMappings[225-DBP_SPECIALMAPPINGS_KEY].name;
-		if (edit->evt != _DBPET_MAX)
+		list.emplace_back(IT_SELECT, DBP_SPECIALMAPPINGS_OSK, "  "); list.back().str += DBP_SPECIALMAPPING(DBP_SPECIALMAPPINGS_OSK).name;
+		if (edit_info >= 0) // editing bind
+			{ list.emplace_back(IT_SELECT, DBP_SPECIALMAPPINGS_ACTIONWHEEL, "  "); list.back().str += DBP_SPECIALMAPPING(DBP_SPECIALMAPPINGS_ACTIONWHEEL).name; }
+		if (edit_mode == EDIT_EXISTING)
 		{
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_DEL, 0, "  [Remove Binding]");
 			int count = 0;
-			for (const DBP_InputBind& b : dbp_input_binds)
-				if (b.port == edit->port && b.device == edit->device && b.index == edit->index && b.id == edit->id)
-					count++;
+			if (edit_info >= 0) // editing bind
+			{
+				const DBP_InputBind& edit = dbp_input_binds[edit_info>>1];
+				for (const DBP_InputBind& b : dbp_input_binds)
+					if (PORT_DEVICE_INDEX_ID(b) == PORT_DEVICE_INDEX_ID(edit))
+						count++;
+			}
+			else // editing wheel
+			{
+				count = dbp_wheelitems[edit_info / -4 - 1].key_count;
+			}
 			if (count < 4)
 			{
 				list.emplace_back(IT_NONE);
@@ -673,13 +734,50 @@ struct DBP_MapperMenuState : DBP_MenuState
 	{
 		if (res == RES_CANCEL) ok_type = IT_CANCEL;
 
-		if (x_change && !edit)
+		if (x_change && edit_mode == NOT_EDITING)
 		{
 			menu_top(x_change);
 		}
-		if ((ok_type == IT_SELECT || ok_type == IT_DEL) && edit)
+		if ((ok_type == IT_SELECT || ok_type == IT_DEL) && edit_mode != NOT_EDITING)
 		{
-			DBP_PadMapping::AssignBindEvent(*edit, bind_part, (Bit8u)list[sel].info);
+			if (edit_info >= 0) // editing bind
+			{
+				if (ok_type == IT_SELECT && (edit_mode == EDIT_NEW || edit_mode == EDIT_ADDITIONAL)) // add new entry
+				{
+					DBP_InputBind edit = (edit_mode == EDIT_NEW ? BindFromPadNum((Bit8u)edit_info) : dbp_input_binds[edit_info>>1]);
+					DBP_PadMapping::AssignBindEvent(edit, (Bit8u)(edit_info&1), (Bit8u)list[sel].info);
+					DBP_PadMapping::InsertBind(edit);
+				}
+				else if (ok_type == IT_SELECT && edit_mode == EDIT_EXISTING) // edit entry
+				{
+					DBP_PadMapping::AssignBindEvent(dbp_input_binds[edit_info>>1], (Bit8u)(edit_info&1), (Bit8u)list[sel].info);
+				}
+				else if (ok_type == IT_DEL) // deleting entry
+				{
+					dbp_input_binds.erase(dbp_input_binds.begin() + (edit_info>>1));
+				}
+			}
+			else // editing wheel
+			{
+				DBP_WheelItem* edit = (edit_mode == EDIT_NEW ? NULL : &dbp_wheelitems[edit_info / -4 - 1]);
+				if (ok_type == IT_SELECT && edit_mode == EDIT_NEW) // add new entry
+				{
+					dbp_wheelitems.push_back({ bind_port, 1, { (Bit8u)list[sel].info } });
+				}
+				else if (ok_type == IT_SELECT && edit_mode == EDIT_ADDITIONAL)
+				{
+					edit->k[edit->key_count++] = (Bit8u)list[sel].info;
+				}
+				else if (ok_type == IT_SELECT && edit_mode == EDIT_EXISTING) // edit entry
+				{
+					edit->k[edit_info & 3] = (Bit8u)list[sel].info;
+				}
+				else if (ok_type == IT_DEL) // deleting entry
+				{
+					if (!--edit->key_count) dbp_wheelitems.erase(dbp_wheelitems.begin() + (edit_info / -4 - 1));
+					else memmove(edit->k + (edit_info & 3), edit->k + (edit_info & 3) + 1, 3 - (edit_info & 3));
+				}
+			}
 			changed = true;
 			menu_top();
 		}
@@ -695,9 +793,13 @@ struct DBP_MapperMenuState : DBP_MenuState
 		{
 			menu_devices(ok_type);
 		}
-		else if (ok_type == IT_CANCEL && (edit || is_presets_menu()))
+		else if (ok_type == IT_CANCEL && edit_mode == EDIT_ADDITIONAL)
 		{
-			if (edit && edit->evt == _DBPET_MAX) dbp_input_binds.erase(dbp_input_binds.begin() + (edit - &dbp_input_binds[0]));
+			menu_top();
+			menu_devices(IT_EDIT);
+		}
+		else if (ok_type == IT_CANCEL && (edit_mode != NOT_EDITING || is_presets_menu()))
+		{
 			menu_top();
 		}
 		else if (ok_type == IT_DEL)
@@ -720,7 +822,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 		if ((dbp_port_mode[bind_port] == DBP_PadMapping::MODE_MAPPER) == is_mapper_disabled_top())
 			menu_top();
 
-		int hdr = lh*3, rows = (h - hdr - ftr) / lh-1, count = (int)list.size(), l = w/2 - 150, r = w/2 + 150, xtra = (lh == 8 ? 0 : 1), wide = !edit && !is_presets_menu() && w > 500;
+		int hdr = lh*3, rows = (h - hdr - ftr) / lh-1, count = (int)list.size(), l = w/2 - 150, r = w/2 + 150, xtra = (lh == 8 ? 0 : 1), wide = edit_mode == NOT_EDITING && !is_presets_menu() && w > 500;
 		if (l < 0) { l = 0, r = w; }
 		buf.DrawBox(l, hdr-7-lh*2, r-l, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 		buf.PrintCenteredOutlined(lh, 0, w, hdr-lh*2-5, "Gamepad Mapper", buf.COL_MENUTITLE);
@@ -771,7 +873,7 @@ struct DBP_MapperMenuState : DBP_MenuState
 			}
 		}
 
-		if (!edit && !is_presets_menu())
+		if (edit_mode == NOT_EDITING && !is_presets_menu())
 		{
 			int x_change = 0, x1 = l-(wide?50:0), x2 = r-25+(wide?50:0);
 			if (buf.DrawButtonAt(0x80000000, hdr-lh-6, lh, 3, 2, x1, x1+25, false, m, "\x1B") && m.left_up) x_change = -1;
@@ -891,7 +993,10 @@ struct DBP_OnScreenKeyboardState
 	{
 		switch (type)
 		{
-			case DBPET_MOUSEDOWN: case DBPET_JOY1DOWN: case DBPET_JOY2DOWN: case_ADDKEYDOWN:
+			case DBPET_MOUSEDOWN:
+				if (val != 0) break; // only left mouse button
+				/* fall through */
+			case DBPET_JOY1DOWN: case DBPET_JOY2DOWN: case_ADDKEYDOWN:
 				if (pressed_key == KBD_NONE && hovered_key != KBD_NONE)
 				{
 					if (held[hovered_key])
@@ -912,7 +1017,10 @@ struct DBP_OnScreenKeyboardState
 					}
 				}
 				break;
-			case DBPET_MOUSEUP: case DBPET_JOY1UP: case DBPET_JOY2UP: case_ADDKEYUP:
+			case DBPET_MOUSEUP:
+				if (val != 0) break; // only left mouse button
+				/* fall through */
+			case DBPET_JOY1UP: case DBPET_JOY2UP: case_ADDKEYUP:
 				if (pressed_key != KBD_NONE && pressed_key != KBD_LAST)
 				{
 					KEYBOARD_AddKey(pressed_key, false);
@@ -1319,7 +1427,94 @@ struct DBP_PureMenuState : DBP_MenuState
 	}
 };
 
-struct DBP_OnScreenDisplay
+static bool DBP_MenuInterceptorFirstTime;
+struct DBP_MenuInterceptor : DBP_Interceptor
+{
+	void StartIntercept() { if (dbp_intercept_next != this) { DBP_MenuInterceptorFirstTime = true; DBP_SetIntercept(this); } }
+	void EndIntercept() { if (dbp_intercept_next == this) { DBP_SetIntercept(NULL); } }
+
+	virtual void input() override
+	{
+		// Use fixed mappings using only port 0 to use in the menu and the on-screen keyboard
+		static DBP_InputBind intercept_binds[] =
+		{
+			{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT,   DBPET_MOUSEDOWN, 0 },
+			{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_RIGHT,  DBPET_MOUSEDOWN, 1 },
+			{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_MIDDLE, DBPET_MOUSEDOWN, 2 },
+			{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELUP,   DBPET_KEYDOWN, KBD_kpminus },
+			{ 0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_WHEELDOWN, DBPET_KEYDOWN, KBD_kpplus  },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_ONSCREENKEYBOARD },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    DBPET_KEYDOWN, KBD_up },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  DBPET_KEYDOWN, KBD_down },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  DBPET_KEYDOWN, KBD_left },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, DBPET_KEYDOWN, KBD_right },
+			{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_X, DBPET_JOY1X },
+			{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,  RETRO_DEVICE_ID_ANALOG_Y, DBPET_JOY1Y },
+			{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, DBPET_JOY2X },
+			{ 0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, DBPET_JOY2Y },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, DBPET_JOY1DOWN, 0 },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, DBPET_JOY1DOWN, 1 },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, DBPET_JOY2DOWN, 0 },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, DBPET_JOY2DOWN, 1 },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, DBPET_KEYDOWN, KBD_grave },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, DBPET_KEYDOWN, KBD_tab },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, DBPET_KEYDOWN, KBD_esc },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  DBPET_KEYDOWN, KBD_enter },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, DBPET_MOUSESETSPEED,  1 },
+			{ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, DBPET_MOUSESETSPEED, -1 },
+		};
+
+		if (DBP_MenuInterceptorFirstTime)
+		{
+			DBP_MenuInterceptorFirstTime = false;
+
+			// Just query values (without emitting events) when entering intercepted screen
+			for (DBP_InputBind& b : intercept_binds)
+				b.lastval = input_state_cb(b.port, b.device, b.index, b.id);
+
+			// Release all keys when switching between key event intercepting
+			DBP_ReleaseKeyEvents(false);
+			return;
+		}
+
+		static bool warned_game_focus;
+		if (!warned_game_focus && input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_MASK))
+		{
+			for (Bit8u i = KBD_NONE + 1; i != KBD_LAST; i++)
+			{
+				if (!input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, dbp_keymap_dos2retro[i])) continue;
+				warned_game_focus = true;
+				retro_notify(10000, RETRO_LOG_WARN,
+					"Detected keyboard and joypad being pressed at the same time.\n"
+					"To freely use the keyboard without hotkeys enable 'Game Focus' (Scroll Lock key by default) if available.");
+				break;
+			}
+		}
+
+		// query input states and generate input events
+		for (DBP_InputBind &b : intercept_binds)
+		{
+			Bit16s val = input_state_cb(b.port, b.device, b.index, b.id);
+			if (val != b.lastval) b.Update(val);
+		}
+	}
+
+	virtual void close() override
+	{
+		// Get latest values (without emitting events) when leaving intercepted screen
+		for (DBP_InputBind& b : dbp_input_binds)
+			b.lastval = input_state_cb(b.port, b.device, b.index, b.id);
+
+		// Refresh input binds if modified after leaving event intercept
+		if (dbp_input_binds_modified)
+			DBP_PadMapping::RefreshInputBinds(false);
+
+		// Release all keys when switching between key event intercepting
+		DBP_ReleaseKeyEvents(false);
+	}
+};
+
+struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 {
 	DBP_OSDMode mode;
 	union { DBP_PureMenuState* main; DBP_OnScreenKeyboardState* osk; DBP_MapperMenuState* mapper; void* _all; } ptr;
@@ -1329,38 +1524,31 @@ struct DBP_OnScreenDisplay
 	{
 		switch (mode)
 		{
-			case DBPOSD_MAIN:   delete ptr.main; break;
-			case DBPOSD_OSK:    delete ptr.osk; break;
-			case DBPOSD_MAPPER: delete ptr.mapper; break;
+			case DBPOSD_MAIN:     delete ptr.main; break;
+			case DBPOSD_OSK:      delete ptr.osk; break;
+			case DBPOSD_MAPPER:   delete ptr.mapper; break;
 		}
 		ptr._all = NULL;
 		mode = in_mode;
-		dbp_intercept_data = this;
-		dbp_intercept_gfx = DBP_OnScreenDisplay::gfx;
-		dbp_intercept_input = DBP_OnScreenDisplay::input;
+		StartIntercept();
 		switch (mode)
 		{
 			case DBPOSD_MAIN:
 				ptr.main = (in_main ? in_main : new DBP_PureMenuState());
 				if (!ptr.main->refresh_mousesel) mouse.ignoremove = true;
 				break;
-			case DBPOSD_OSK:
-				ptr.osk = new DBP_OnScreenKeyboardState();
-				break;
-			case DBPOSD_MAPPER:
-				ptr.mapper = new DBP_MapperMenuState();
-				break;
+			case DBPOSD_OSK:      ptr.osk = new DBP_OnScreenKeyboardState(); break;
+			case DBPOSD_MAPPER:   ptr.mapper = new DBP_MapperMenuState(); break;
 			case DBPOSD_CLOSED:
-				dbp_intercept_data = NULL;
-				dbp_intercept_gfx = NULL;
-				dbp_intercept_input = NULL;
+				EndIntercept();
 				break;
 		}
 		DBP_KEYBOARD_ReleaseKeys();
 	}
 
-	void GFX(DBP_BufferDrawing& buf)
+	virtual void gfx(DBP_Buffer& _buf) override
 	{
+		DBP_BufferDrawing& buf = static_cast<DBP_BufferDrawing&>(_buf);
 		int w = buf.width, h = buf.height, lh = (h >= 400 ? 14 : 8), ftr = lh+20;
 		bool isOSK = (mode == DBPOSD_OSK);
 		bool mouseMoved = mouse.Update(buf, isOSK);
@@ -1369,53 +1557,40 @@ struct DBP_OnScreenDisplay
 		if (DBP_FullscreenOSD || !isOSK)
 		{
 			int btny = buf.height - 13 - lh;
-			int n = (DBP_FullscreenOSD ? 2 : 3);
-			if (n == 2) buf.FillRect(0, 0, w, h, buf.BGCOL_STARTMENU);
-			if (          buf.DrawButton(blend, btny, lh, 0,   n, mode == DBPOSD_MAIN,   mouse, (w < 500 ? "STARTMENU" : "START MENU"))        && mouse.left_up) SetMode(DBPOSD_MAIN);
-			if (n == 3 && buf.DrawButton(blend, btny, lh, 1,   n, mode == DBPOSD_OSK,    mouse, (w < 500 ? "KEYBOARD" : "ON-SCREEN KEYBOARD")) && mouse.left_up) SetMode(DBPOSD_OSK);
-			if (          buf.DrawButton(blend, btny, lh, n-1, n, mode == DBPOSD_MAPPER, mouse, (w < 500 ? "CONTROLS" : "CONTROLLER MAPPER"))  && mouse.left_up) SetMode(DBPOSD_MAPPER);
+			int osk = (int)!DBP_FullscreenOSD, n = (int)_DBPOSD_COUNT - (osk ? 0 : 1), m = 0;
+			if (DBP_FullscreenOSD) buf.FillRect(0, 0, w, h, buf.BGCOL_STARTMENU);
+			if (       buf.DrawButton(blend, btny, lh, m++, n, mode == DBPOSD_MAIN,     mouse, (w < 500 ? "START"    : "START MENU"))         && mouse.left_up) SetMode(DBPOSD_MAIN);
+			if (osk && buf.DrawButton(blend, btny, lh, m++, n, mode == DBPOSD_OSK,      mouse, (w < 500 ? "KEYBOARD" : "ON-SCREEN KEYBOARD")) && mouse.left_up) SetMode(DBPOSD_OSK);
+			if (       buf.DrawButton(blend, btny, lh, m++, n, mode == DBPOSD_MAPPER,   mouse, (w < 500 ? "CONTROLS" : "CONTROLLER MAPPER"))  && mouse.left_up) SetMode(DBPOSD_MAPPER);
 		}
 
 		switch (mode)
 		{
-			case DBPOSD_MAIN:
-				ptr.main->DrawMenu(buf, blend, lh, w, h, ftr, mouseMoved, mouse);
-				break;
-			case DBPOSD_OSK:
-				ptr.osk->GFX(buf, mouse);
-				break;
-			case DBPOSD_MAPPER:
-				ptr.mapper->DrawMenu(buf, blend, lh, w, h, ftr, mouseMoved, mouse);
-				break;
+			case DBPOSD_MAIN:     ptr.main->DrawMenu(buf, blend, lh, w, h, ftr, mouseMoved, mouse); break;
+			case DBPOSD_OSK:      ptr.osk->GFX(buf, mouse); break;
+			case DBPOSD_MAPPER:   ptr.mapper->DrawMenu(buf, blend, lh, w, h, ftr, mouseMoved, mouse); break;
 		}
 
 		mouse.Draw(buf, isOSK);
 	}
 
-	void Input(DBP_Event_Type type, int val, int val2)
+	virtual bool evnt(DBP_Event_Type type, int val, int val2) override
 	{
 		mouse.Input(type, val, val2);
 		switch (mode)
 		{
-			case DBPOSD_MAIN:
-				ptr.main->Input(type, val, val2);
-				break;
-			case DBPOSD_OSK:
-				ptr.osk->Input(type, val, val2);
-				break;
-			case DBPOSD_MAPPER:
-				ptr.mapper->Input(type, val, val2);
-				break;
+			case DBPOSD_MAIN:     ptr.main->Input(type, val, val2); break;
+			case DBPOSD_OSK:      ptr.osk->Input(type, val, val2); break;
+			case DBPOSD_MAPPER:   ptr.mapper->Input(type, val, val2); break;
 		}
 		if (type == DBPET_KEYUP && ((KBD_KEYS)val == KBD_tab || (KBD_KEYS)val == KBD_grave))
 		{
-			int add = (((KBD_KEYS)val == KBD_tab && !DBP_IsKeyDown(KBD_leftshift) && !DBP_IsKeyDown(KBD_rightshift)) ? 1 : 2);
-			SetMode(DBP_FullscreenOSD ? (mode == DBPOSD_MAIN ? DBPOSD_MAPPER : DBPOSD_MAIN) : (DBP_OSDMode)(1 + ((mode - 1 + add) % (_DBPOSD_COUNT-1))));
+			int add = (((KBD_KEYS)val == KBD_tab && !DBP_IsKeyDown(KBD_leftshift) && !DBP_IsKeyDown(KBD_rightshift)) ? 1 : -1), next = (int)mode;
+			do { next = (next + (int)_DBPOSD_COUNT + add) % _DBPOSD_COUNT; } while (DBP_FullscreenOSD && next == DBPOSD_OSK);
+			SetMode((DBP_OSDMode)next);
 		}
+		return true;
 	}
-
-	static void gfx(DBP_Buffer& buf, void* data) { ((DBP_OnScreenDisplay*)data)->GFX(static_cast<DBP_BufferDrawing&>(buf)); }
-	static void input(DBP_Event_Type type, int val, int val2, void* data) { ((DBP_OnScreenDisplay*)data)->Input(type, val, val2); }
 };
 
 static DBP_OnScreenDisplay DBP_OSD;
@@ -1433,49 +1608,55 @@ static void DBP_CloseOSD()
 
 static void DBP_PureMenuProgram(Program** make)
 {
-	struct Menu : Program
+	static struct AnyKeyWaiter : DBP_MenuInterceptor
 	{
 		Bit32u opentime, pressedKey;
-		char msgbuf[100];
+		Bit8u msgType;
 		bool pressedAnyKey;
 
-		static void InterceptDrawMsg(DBP_Buffer& _buf, void* self)
+		virtual void gfx(DBP_Buffer& _buf) override
 		{
+			char msgbuf[100];
+			if      (msgType == 1) sprintf(msgbuf, "* GAME ENDED - EXITTING IN %u SECONDS - PRESS ANY KEY TO CONTINUE *", ((Bit32u)dbp_menu_time - ((DBP_GetTicks() - opentime) / 1000)));
+			else if (msgType == 2) sprintf(msgbuf, "* PRESS ANY KEY TO RETURN TO START MENU *");
 			DBP_BufferDrawing& buf = static_cast<DBP_BufferDrawing&>(_buf);
 			int lh = (buf.height >= 400 ? 14 : 8), w = buf.width, h = buf.height, y = h - lh*5/2;
 			buf.DrawBox(8, y-3, w-16, lh+6, buf.BGCOL_MENU, buf.COL_LINEBOX);
-			buf.PrintCenteredOutlined(lh, 0, w, y, ((Menu*)self)->msgbuf);
+			buf.PrintCenteredOutlined(lh, 0, w, y, msgbuf);
 		}
 
-		static void InterceptInputAnyPress(DBP_Event_Type type, int val, int val2, void* self)
+		virtual bool evnt(DBP_Event_Type type, int val, int) override
 		{
 			bool down = (type == DBPET_KEYDOWN || type == DBPET_MOUSEDOWN || type == DBPET_JOY1DOWN || type == DBPET_JOY2DOWN);
 			bool up = (type == DBPET_KEYUP || type == DBPET_MOUSEUP || type == DBPET_JOY1UP || type == DBPET_JOY2UP);
-			if ((!down && !up) || (DBP_GetTicks() - ((Menu*)self)->opentime) < 300) return;
+			if ((!down && !up) || (DBP_GetTicks() - opentime) < 300) return true;
 			const Bit32u key = ((Bit32u)type + (down ? 1 : 0) + (((Bit32u)val + 1) << 8));
-			if (down) ((Menu*)self)->pressedKey = key;
-			else if (((Menu*)self)->pressedKey == key) ((Menu*)self)->pressedAnyKey = true;
+			if (down) pressedKey = key;
+			else if (pressedKey == key) pressedAnyKey = true;
+			return true;
 		}
 
-		bool WaitAnyKeyPress(Bit32u tick_limit = 0)
+		bool WaitAnyKeyPress(Bit8u msg_type)
 		{
+			opentime = DBP_GetTicks();
 			pressedKey = 0;
+			msgType = msg_type;
 			pressedAnyKey = false;
 			DBP_KEYBOARD_ReleaseKeys(); // any unintercepted CALLBACK_* can set a key down
-			dbp_intercept_data = this;
-			dbp_intercept_gfx = InterceptDrawMsg;
-			dbp_intercept_input = InterceptInputAnyPress;
+			StartIntercept();
 			while (!pressedAnyKey && !first_shell->exit)
 			{
 				CALLBACK_Idle();
-				if (tick_limit && DBP_GetTicks() >= tick_limit) first_shell->exit = true;
+				if (msgType == 1 && (DBP_GetTicks() - opentime) > ((Bit32u)dbp_menu_time * 1000)) first_shell->exit = true;
 			}
-			dbp_intercept_gfx = NULL;
-			dbp_intercept_input = NULL;
+			EndIntercept();
 			INT10_ReloadFont();
 			return !first_shell->exit;
 		}
+	} interceptor;
 
+	struct Menu : Program
+	{
 		virtual void Run() override
 		{
 			enum { M_NORMAL, M_BOOT, M_FINISH } m = (cmd->FindExist("-BOOT") ? M_BOOT : cmd->FindExist("-FINISH") ? M_FINISH : M_NORMAL);
@@ -1483,17 +1664,15 @@ static void DBP_PureMenuProgram(Program** make)
 			if (DBP_Run::HandleStartup(m == M_BOOT && dbp_menu_time >= 0))
 				return;
 
-			opentime = DBP_GetTicks();
 			DBP_FullscreenOSD = true;
 			DBP_PureMenuState* ms = new DBP_PureMenuState();
 			bool runsoloexe = (ms->exe_count == 1 && ms->fs_count <= 1);
 
 			#ifndef STATIC_LINKING
-			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (opentime - dbp_lastmenuticks) >= 500)
+			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (DBP_GetTicks() - dbp_lastmenuticks) >= 500)
 			{
 				if (dbp_menu_time == 0) { first_shell->exit = true; return; }
-				sprintf(msgbuf, "* GAME ENDED - EXITTING IN %d SECONDS - PRESS ANY KEY TO CONTINUE *", dbp_menu_time);
-				if (!WaitAnyKeyPress(DBP_GetTicks() + (dbp_menu_time * 1000))) return;
+				if (!interceptor.WaitAnyKeyPress(1)) return;
 				m = M_NORMAL;
 			}
 			#endif
@@ -1501,8 +1680,7 @@ static void DBP_PureMenuProgram(Program** make)
 			if (m == M_FINISH)
 			{
 				// ran without auto start or only for a very short time (maybe crash), wait for user confirmation
-				sprintf(msgbuf, "* PRESS ANY KEY TO RETURN TO START MENU *");
-				if (!WaitAnyKeyPress()) return;
+				if (!interceptor.WaitAnyKeyPress(2)) return;
 				m = M_NORMAL;
 			}
 
@@ -1513,4 +1691,240 @@ static void DBP_PureMenuProgram(Program** make)
 		}
 	};
 	*make = new Menu;
+}
+
+static void DBP_WheelOSD(Bit8u _port)
+{
+	struct Wheel
+	{
+		bool SetOpen, UseMouse, ButtonDown;
+		enum EState : Bit8u { STATE_CLOSED, STATE_OPEN, STATE_OPEN_PRESSED, STATE_CLOSING_PRESSED, STATE_CLOSING_RELEASED } State;
+		Bit16s PosX, PosY;
+		int Result;
+		Bit32u Tick;
+
+		static bool InAngleRange(float a, float b, float halfstep)
+		{
+			float off = a - b;
+			if (off < -3.14159265358979323846f) off += 6.28318530717958647692f;
+			if (off >  3.14159265358979323846f) off -= 6.28318530717958647692f;
+			return (off > -halfstep && off < halfstep);
+		}
+
+		void Draw(int port, DBP_BufferDrawing& drw)
+		{
+			int alpha = 0;
+			Bit32u tickd = (DBP_GetTicks() - Tick);
+			if (State == STATE_OPEN) alpha = tickd*2;
+			if (State == STATE_OPEN_PRESSED) alpha = 0xFF;
+			if (State == STATE_CLOSING_PRESSED || State == STATE_CLOSING_RELEASED) alpha = 0xFF - (Result == -1 ? tickd*2 : tickd/2);
+			if (alpha <= 0) return;
+			if (alpha >= 0xFF) alpha = 0xFF;
+
+			int n = 0;
+			for (const DBP_WheelItem& wi : dbp_wheelitems)
+				if (wi.port == port)
+					n++;
+			if (!n) return;
+
+			int cx = drw.width * (port ? 2 : 5) / 8, cy = drw.height * 2 / 3, rad = (drw.height > 900 ? 150 : (drw.height / 6)), rad4 = rad + 4, radtxt = rad + 7;
+			int srad = rad / 9, maxdist = (rad-srad+3), maxdistsq = maxdist * maxdist, seldist = rad / 2, seldistsq = seldist * seldist;
+
+			int wx = PosX/(32400/rad), wy = PosY/(32400/rad);
+			int wdistsq = ((wx*wx) + (wy*wy));
+			float wa = (wdistsq ? (float)atan2(wy, wx) : 0.0f);
+			if (wdistsq > maxdistsq) { wx = (int)(cos(wa) * maxdist); wy = (int)(sin(wa) * maxdist); }
+
+			float astart = ((n < 8 || (n & 1)) ? -3.14159265358979323846f : -3.0f), a = astart, astep = 6.28318530717958647692f / n, astephalf = astep/2+0.01f;
+			float sela = (wdistsq ? -999.f : -777.f); // large number like 999 works because InAngleRange only fixes -4*PI to +4*PI
+			if (State == STATE_OPEN) Result = -1;
+			for (const DBP_WheelItem& wi : dbp_wheelitems)
+			{
+				if (wi.port != port) continue;
+				if (sela == -999.f && (State == STATE_OPEN ? InAngleRange(a, wa, astephalf) : Result == (int)(&wi - &dbp_wheelitems[0]))) sela = a;
+				if (sela == a && wdistsq > seldistsq && State == STATE_OPEN) Result = (int)(&wi - &dbp_wheelitems[0]);
+				a += astep;
+			}
+
+			const Bit32u white20 = ((alpha*30/100)<<24) | 0xFFFFFF;
+			const Bit32u white30 = ((alpha*40/100)<<24) | 0xFFFFFF;
+			const Bit32u white50 = ((alpha*50/100)<<24) | 0xFFFFFF;
+			const Bit32u white80 = ((alpha*80/100)<<24) | 0xFFFFFF;
+			const Bit32u black = ((alpha/1)<<24);
+			const Bit32u white = black | 0xFFFFFF;
+			const Bit32u selcolor = black | (((State == STATE_OPEN) || (tickd & 64)) ? 0xFFFF00 : 0xFF8000);
+			const Bit32u whiteHighlight = ((alpha*(State == STATE_OPEN ? (40+10*wdistsq/maxdistsq) : 50)/100)<<24) | 0xFFFFFF;
+
+			Bit32u* video = drw.video;
+			const int sqrOut = rad*rad, sqrIn = sqrOut/4, sqrOut1 = (rad+1)*(rad+1), sqrOut3 = (rad+3)*(rad+3), sqrOut4 = (rad4)*(rad4);
+			for (int w = drw.width, y = (cy - rad4 < 0 ? 0 : cy - rad4), ymax = (cy + rad4 >= (int)drw.height ? (int)drw.height : cy + rad4); y < ymax; y++)
+				for (int col, x = (cx - rad4 < 0 ? 0 : cx - rad4), xmax = (cx + rad4 >= (int)w ? (int)w : cx + rad4); x < xmax; x++)
+				{
+					int dx = (x - cx), dy = (y - cy), dsq = (dx*dx)+(dy*dy);
+					if      (dsq < (2*2))   col = white80;
+					else if (dsq < sqrIn)   col = white20;
+					else if (dsq < sqrOut)  col = (InAngleRange((float)atan2(dy, dx), sela, astephalf) ? whiteHighlight : white30);
+					else if (dsq < sqrOut1) col = white50;
+					else if (dsq < sqrOut3) col = white80;
+					else if (dsq < sqrOut4) col = white50;
+					else continue;
+					drw.AlphaBlend(video + y*w + x, col);
+				}
+
+			drw.AlphaBlendDrawCircle(cx+wx, cy+wy, srad+2, srad+3, black);
+			drw.AlphaBlendFillCircle(cx+wx, cy+wy, srad, white50);
+			drw.AlphaBlendDrawCircle(cx+wx, cy+wy, srad, srad+2, white80);
+
+			a = astart;
+			int selnx = 0, selny = 0; const char* sellbl = NULL;
+			for (const DBP_WheelItem& wi : dbp_wheelitems)
+			{
+				if (wi.port != port) continue;
+
+				const char* lbl = DBP_PadMapping::GetWheelAutoMapButtonLabel(wi);
+				if (!lbl) lbl = DBP_GETKEYNAME(wi.k[wi.key_count - 1]);
+				int lbllen = (int)strlen(lbl);
+
+				int nx = (int)(cos(a) * radtxt) + 1, ny = (int)(sin(a) * (radtxt+5));
+				if (fabs(fabs(a)-1.5708f) < 0.2f) nx -= (lbllen * DBP_BufferDrawing::CW) / 2;
+				else if (nx < -5) nx -= (lbllen * DBP_BufferDrawing::CW);
+
+				const bool sel = (sela == a && wdistsq > seldistsq);
+				if (sel) { sellbl = lbl; selnx = nx; selny = ny; }
+				else drw.PrintOutlined(8, cx + nx, cy + ny - 3, lbl, white, black);
+				a += astep;
+			}
+			if (sellbl) drw.PrintOutlined(8, cx + selnx, cy + selny - 3, sellbl, selcolor, black);
+		}
+
+		void Update(int port)
+		{
+			if (SetOpen) { SetState(port, STATE_OPEN); SetOpen = false; }
+			if (State == STATE_CLOSING_PRESSED && (DBP_GetTicks() - Tick) > 70) SetState(port, STATE_CLOSING_RELEASED);
+			if (State == STATE_CLOSING_RELEASED && (DBP_GetTicks() - Tick) > 250) SetState(port, STATE_CLOSED);
+			if (State != STATE_OPEN && State != STATE_OPEN_PRESSED) return;
+
+			Bit16s x0 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+			Bit16s y0 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+			Bit16s x1 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
+			Bit16s y1 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
+			Bit16s x2 = (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT) ? -0x7FFF : 0) + (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT) ? 0x7FFF : 0);
+			Bit16s y2 = (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP) ? -0x7FFF : 0) + (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN) ? 0x7FFF : 0);
+			int d0 = (x0*x0+y0*y0), d1 = (x1*x1+y1*y1);
+			if (d0 < 45000000) { d0 = x0 = y0 = 0; }
+			if (d1 < 45000000) { d1 = x1 = y1 = 0; }
+			Bit16s use0 = (d0 > d1), x3 = (use0 ? x0 : x1), y3 = (use0 ? y0 : y1);
+			Bit16s use3 = ((x3*x3+y3*y3) > (x2*x2+y2*y2)), x = (use3 ? x3 : x2), y = (use3 ? y3 : y2);
+
+			if (abs(x) > abs(PosX) || abs(y) > abs(PosY))
+			{
+				PosX = x;
+				PosY = y;
+				UseMouse = false;
+			}
+			else if (!UseMouse)
+			{
+				PosX = ((PosX * 5) + x) / 6;
+				PosY = ((PosY * 5) + y) / 6;
+			}
+
+			bool down = (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B) || (UseMouse && input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_LEFT)));
+			if (down && !ButtonDown) SetState(port, STATE_OPEN_PRESSED);
+			if (!down && ButtonDown) SetState(port, STATE_OPEN);
+			ButtonDown = down;
+
+			if (port != 0) return;
+			Bit16s mx = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X), my = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+			if (mx || my)
+			{
+				UseMouse = true;
+				int nx = PosX + mx*(int)(dbp_mouse_speed*350);
+				int ny = PosY + my*(int)(dbp_mouse_speed*350);
+				PosX = (Bit16s)(nx > 0x7FFF ? 0x7FFF : (nx < -0x7FFF ? -0x7FFF : nx));
+				PosY = (Bit16s)(ny > 0x7FFF ? 0x7FFF : (ny < -0x7FFF ? -0x7FFF : ny));
+			}
+		}
+
+		void SetState(int port, EState newstate)
+		{
+			//static const char *statename[] = { "CLOSED", "OPEN", "CLOSING_PRESSED", "CLOSING_RELEASED" };
+			//log_cb(RETRO_LOG_INFO, "[WHEEL%d] Setting state from %s to %s (current result: %d)\n", port, statename[(int)State], statename[(int)newstate], Result);
+			if (newstate == State) return;
+
+			if (newstate == STATE_OPEN && State == STATE_CLOSED)
+			{
+				PosX = PosY = 0;
+				Result = -1;
+				if (port == 0) dbp_mouse_input = 'f';
+			}
+			if (newstate == STATE_CLOSED && port == 0)
+				dbp_mouse_input = retro_get_variable("dosbox_pure_mouse_input", "true")[0];
+
+			if (newstate != STATE_CLOSING_PRESSED || State != STATE_OPEN_PRESSED)
+			{
+				const DBP_WheelItem* wi = (Result >= 0 ? &dbp_wheelitems[Result] : NULL);
+				if ((newstate == STATE_OPEN_PRESSED || newstate == STATE_CLOSING_PRESSED) && wi)
+					for (Bit8u i = 0; i != wi->key_count; i++)
+						DBP_PadMapping::BindForWheel(wi->port, wi->k[i]).Update(1);
+				else if ((State == STATE_OPEN_PRESSED || State == STATE_CLOSING_PRESSED) && wi)
+					for (Bit8u i = 0; i != wi->key_count; i++)
+						DBP_PadMapping::BindForWheel(wi->port, wi->k[i]).Update(0);
+			}
+
+			if (State == STATE_OPEN_PRESSED)
+				Tick -= 1000;
+			else if (newstate != STATE_CLOSING_RELEASED)
+				Tick = DBP_GetTicks();
+
+			State = newstate;
+		}
+	};
+
+	static Wheel Wheels[DBP_MAX_PORTS];
+	static struct WheelInterceptor : DBP_Interceptor
+	{
+		virtual void gfx(DBP_Buffer& buf) override
+		{
+			int openwheels = 0;
+			for (int port = 0; port != DBP_MAX_PORTS; port++)
+				if (Wheels[port].SetOpen || Wheels[port].State)
+					{ Wheels[port].Draw(port, static_cast<DBP_BufferDrawing&>(buf)); openwheels++; }
+			if (!openwheels)
+				DBP_SetIntercept(NULL);
+		}
+
+		virtual void input() override
+		{
+			for (int port = 0; port != DBP_MAX_PORTS; port++)
+				if (Wheels[port].SetOpen || Wheels[port].State)
+					Wheels[port].Update(port);
+
+			for (DBP_InputBind &b : dbp_input_binds)
+			{
+				Bit16s val = input_state_cb(b.port, b.device, b.index, b.id);
+				bool is_analog_button = (dbp_analog_buttons && b.device == RETRO_DEVICE_JOYPAD && b.evt <= _DBPET_JOY_AXIS_MAX);
+				if (is_analog_button)
+				{
+					Bit16s aval = input_state_cb(b.port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b.id);
+					if (aval) val = aval; else val = (val ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
+				}
+
+				if (Wheels[b.port].State && (b.device == RETRO_DEVICE_ANALOG || (b.device == RETRO_DEVICE_JOYPAD && (b.id == RETRO_DEVICE_ID_JOYPAD_UP || b.id == RETRO_DEVICE_ID_JOYPAD_DOWN || b.id == RETRO_DEVICE_ID_JOYPAD_LEFT || b.id == RETRO_DEVICE_ID_JOYPAD_RIGHT || b.id == RETRO_DEVICE_ID_JOYPAD_B)) || b.device == RETRO_DEVICE_MOUSE) && b.evt != DBPET_ACTIONWHEEL)
+					val = 0;
+
+				if (val == b.lastval) continue;
+				b.Update(val, is_analog_button);
+				if (b.evt == DBPET_ACTIONWHEEL) Wheels[b.port].SetState(b.port, (val ? Wheel::STATE_OPEN : Wheel::STATE_CLOSING_PRESSED));
+			}
+		}
+
+		virtual void close() override
+		{
+			for (int port = 0; port != DBP_MAX_PORTS; port++)
+				if (Wheels[port].State)
+					Wheels[port].SetState(port, Wheel::STATE_CLOSED);
+		}
+	} interceptor;
+	Wheels[_port].SetOpen = true;
+	DBP_SetIntercept(&interceptor);
 }
