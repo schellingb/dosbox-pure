@@ -1792,7 +1792,7 @@ static void DBP_WheelOSD(Bit8u _port)
 			drw.AlphaBlendDrawCircle(cx+wx, cy+wy, srad, srad+2, white80);
 
 			a = astart;
-			int selnx = 0, selny = 0, lh = (drw.height >= 4000 ? 14 : 8); const char* sellbl = NULL;
+			int selnx = 0, selny = 0, lh = (drw.height >= 400 ? 14 : 8); const char* sellbl = NULL;
 			for (const DBP_WheelItem& wi : dbp_wheelitems)
 			{
 				if (wi.port != port) continue;
