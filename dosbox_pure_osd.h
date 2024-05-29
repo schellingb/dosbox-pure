@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2023 Bernhard Schelling
+ *  Copyright (C) 2020-2024 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ enum DBP_OSDMode { DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, _DBPOSD_COUNT, DBPOSD
 static void DBP_StartOSD(DBP_OSDMode mode, struct DBP_PureMenuState* in_main = NULL);
 static void DBP_CloseOSD();
 static bool DBP_FullscreenOSD;
+static bool DBP_MenuInterceptorRefreshSystem;
 
 struct DBP_BufferDrawing : DBP_Buffer
 {
@@ -273,7 +274,7 @@ bool DBP_BufferDrawing::DrawButtonAt(Bit32u blend, int btny, int lh, int padu, i
 struct DBP_MenuState
 {
 	enum ItemType : Bit8u { IT_NONE, _IT_CUSTOM, };
-	enum Result : Bit8u { RES_NONE, RES_OK, RES_CANCEL, RES_CLOSESCREENKEYBOARD, RES_CHANGEMOUNTS };
+	enum Result : Bit8u { RES_NONE, RES_OK, RES_CANCEL, RES_CLOSESCREENKEYBOARD, RES_CHANGEMOUNTS, RES_REFRESHSYSTEM };
 	bool refresh_mousesel, scroll_unlocked, hide_sel, show_popup;
 	int sel, scroll, joyx, joyy, scroll_jump, click_sel;
 	Bit32u open_ticks;
@@ -312,6 +313,7 @@ struct DBP_MenuState
 				break;
 			case DBPET_ONSCREENKEYBOARDUP: res = RES_CLOSESCREENKEYBOARD; break;
 			case DBPET_CHANGEMOUNTS: res = RES_CHANGEMOUNTS; break;
+			case DBPET_REFRESHSYSTEM: res = RES_REFRESHSYSTEM; break;
 			case DBPET_MOUSEMOVE:
 				scroll_unlocked = true;
 				break;
@@ -367,7 +369,7 @@ struct DBP_MenuState
 			sel_change = (sel_change == -1 ? -1 : 1);
 		}
 
-		if (hide_sel && res != RES_CANCEL && res != RES_CLOSESCREENKEYBOARD && res != RES_CHANGEMOUNTS) return;
+		if (hide_sel && res != RES_CANCEL && res != RES_CLOSESCREENKEYBOARD && res != RES_CHANGEMOUNTS && res != RES_REFRESHSYSTEM) return;
 		if (sel_change || x_change || res) DoInput(res, (res == RES_OK ? list[sel].type : IT_NONE), x_change);
 	}
 
@@ -1056,7 +1058,7 @@ struct DBP_OnScreenKeyboardState
 
 struct DBP_PureMenuState : DBP_MenuState
 {
-	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD };
+	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD, IT_SYSTEMREFRESH };
 	enum { INFO_HEADER = 0x0B, INFO_WARN = 0x0A };
 
 	int exe_count, fs_count;
@@ -1340,6 +1342,14 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_INSTALLOS, 0, "[ Boot Only Without Creating Hard Disk Image ]");
 			ResetSel(filename > &osimg[0] ? 11 : 10);
 		}
+		else if (ok_type == IT_SYSTEMREFRESH)
+		{
+			DBP_MenuInterceptorRefreshSystem = true;
+		}
+		else if (res == RES_REFRESHSYSTEM)
+		{
+			DoInput(RES_NONE, ((list.size() > 1 && list[2].type == IT_BOOTOS) ? IT_BOOTOSLIST : IT_SHELLLIST), 0);
+		}
 		else if (ok_type == IT_BOOTOSLIST)
 		{
 			list.clear();
@@ -1347,7 +1357,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_NONE);
 			for (const std::string& im : dbp_osimages)
 				{ list.emplace_back(IT_BOOTOS, (Bit16s)(&im - &dbp_osimages[0])); list.back().str.assign(im.c_str(), im.size()-4); }
-			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_NONE, INFO_WARN, "To Refresh: Audio Options > MIDI Output > Scan System Directory"); }
+			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_SYSTEMREFRESH, 0, "[ Refresh List ]"); }
 			char ramdisk = retro_get_variable("dosbox_pure_bootos_ramdisk", "false")[0];
 			if (ramdisk == 't')
 			{
@@ -1376,7 +1386,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_NONE);
 			for (const std::string& im : dbp_shellzips)
 				{ list.emplace_back(IT_RUNSHELL, (Bit16s)(&im - &dbp_shellzips[0])); list.back().str.assign(im.c_str(), im.size()-5); }
-			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_NONE, INFO_WARN, "To Refresh: Audio Options > MIDI Output > Scan System Directory"); }
+			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_SYSTEMREFRESH, 0, "[ Refresh List ]"); }
 			ResetSel(2, true);
 		}
 		else if (((res == RES_CANCEL && list.back().type == IT_CLOSEOSD) || res == RES_CLOSESCREENKEYBOARD) && !DBP_FullscreenOSD)
@@ -1496,6 +1506,12 @@ struct DBP_MenuInterceptor : DBP_Interceptor
 		{
 			Bit16s val = input_state_cb(b.port, b.device, b.index, b.id);
 			if (val != b.lastval) b.Update(val);
+		}
+
+		if (DBP_MenuInterceptorRefreshSystem)
+		{
+			DBP_ScanSystem(true);
+			DBP_MenuInterceptorRefreshSystem = false;
 		}
 	}
 

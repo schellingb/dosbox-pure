@@ -139,6 +139,7 @@ enum DBP_Event_Type : Bit8u
 
 	DBPET_AXISMAPPAIR,
 	DBPET_CHANGEMOUNTS,
+	DBPET_REFRESHSYSTEM,
 
 	#define DBP_IS_RELEASE_EVENT(EVT) ((EVT) >= DBPET_MOUSEUP && !(EVT & 1))
 	#define DBP_MAPPAIR_MAKE(KEY1,KEY2) (Bit16s)(((KEY1)<<8)|(KEY2))
@@ -148,7 +149,7 @@ enum DBP_Event_Type : Bit8u
 
 	_DBPET_MAX
 };
-//static const char* DBP_Event_Type_Names[] = { "JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "MOUSEMOVE", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "ONSCREENKEYBOARDUP", "ACTIONWHEEL", "ACTIONWHEELUP", "AXIS_TO_KEY", "CHANGEMOUNTS", "MAX" };
+//static const char* DBP_Event_Type_Names[] = { "JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "MOUSEMOVE", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "ONSCREENKEYBOARDUP", "ACTIONWHEEL", "ACTIONWHEELUP", "AXIS_TO_KEY", "CHANGEMOUNTS", "REFRESHSYSTEM", "MAX" };
 static const char *DBPDEV_Keyboard = "Keyboard", *DBPDEV_Mouse = "Mouse", *DBPDEV_Joystick = "Joystick";
 static const struct DBP_SpecialMapping { int16_t evt, meta; const char *dev, *name; } DBP_SpecialMappings[] =
 {
@@ -1813,6 +1814,99 @@ void DBP_EnableNetwork()
 	if (pauseThread) DBP_ThreadControl(TCM_RESUME_FRAME);
 }
 
+static std::vector<std::string>& DBP_ScanSystem(bool force_midi_scan)
+{
+	static std::vector<std::string> dynstr;
+	const char *system_dir = NULL;
+	struct retro_vfs_interface_info vfs = { 3, NULL };
+	if (!environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) || !system_dir || !environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) || vfs.required_interface_version < 3 || !vfs.iface)
+		return dynstr;
+
+	dynstr.clear();
+	dbp_osimages.clear();
+	dbp_shellzips.clear();
+	std::string path, subdir;
+	std::vector<std::string> subdirs;
+	subdirs.emplace_back();
+	retro_time_t scan_start = time_cb();
+	while (subdirs.size())
+	{
+		std::swap(subdir, subdirs.back());
+		subdirs.pop_back();
+		struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
+		if (!dir) continue;
+		while (vfs.iface->readdir(dir))
+		{
+			const char* entry_name = vfs.iface->dirent_get_name(dir);
+			size_t ln = strlen(entry_name);
+			if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
+				subdirs.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+			else if ((ln > 4 && !strncasecmp(entry_name + ln - 4, ".SF", 3)) || (ln > 12 && !strcasecmp(entry_name + ln - 12, "_CONTROL.ROM")))
+			{
+				dynstr.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+				dynstr.emplace_back((entry_name[ln-2]|0x20) == 'f' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
+				dynstr.back().append(": ").append(path, 0, path.size() - ((entry_name[ln-2]|0x20) == 'f' ? 4 : 12));
+			}
+			else if (ln > 4 && (!strcasecmp(entry_name + ln - 4, ".IMG") || !strcasecmp(entry_name + ln - 4, ".IMA") || !strcasecmp(entry_name + ln - 4, ".VHD")))
+			{
+				int32_t entry_size = 0;
+				std::string subpath(subdir); subpath.append(subdir.length() ? "/" : "").append(entry_name);
+				FILE* f = fopen_wrap(path.assign(system_dir).append("/").append(subpath).c_str(), "rb");
+				Bit64u fsize = 0; if (f) { fseek_wrap(f, 0, SEEK_END); fsize = (Bit64u)ftell_wrap(f); fclose(f); }
+				if (fsize < 1024*1024*7 || (fsize % 512)) continue; // min 7MB hard disk image made up of 512 byte sectors
+				dbp_osimages.push_back(std::move(subpath));
+			}
+			else if (ln > 5 && !strcasecmp(entry_name + ln - 5, ".DOSZ"))
+			{
+				dbp_shellzips.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
+			}
+			else if (ln == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
+			{
+				std::string content;
+				ReadAndClose(FindAndOpenDosFile(path.assign(system_dir).append("/").append(entry_name).c_str()), content);
+				dynstr.clear();
+				dbp_osimages.clear();
+				dbp_shellzips.clear();
+				for (const char *pLine = content.c_str(), *pEnd = pLine + content.size() + 1, *p = pLine; p != pEnd; p++)
+				{
+					if (*p >= ' ') continue;
+					if (p == pLine) { pLine++; continue; }
+					if ((p[-3]|0x21) == 's' || dynstr.size() & 1) // check ROM/rom/SF*/sf* extension, always add description from odd rows
+						dynstr.emplace_back(pLine, p - pLine);
+					else
+						((p[-1]|0x20) == 'z' ? dbp_shellzips : dbp_osimages).emplace_back(pLine, p - pLine);
+					pLine = p + 1;
+				}
+				if (dynstr.size() & 1) dynstr.pop_back();
+				dbp_system_cached = true;
+				subdirs.clear();
+				break;
+			}
+		}
+		vfs.iface->closedir(dir);
+	}
+
+	retro_time_t system_scan_time = (time_cb() - scan_start);
+	if (force_midi_scan || (system_scan_time > 2000000 && !dbp_system_cached))
+	{
+		dbp_system_cached = (system_scan_time > 2000000);
+		path.assign(system_dir).append("/").append("DOSBoxPureMidiCache.txt");
+		if (!dbp_system_cached)
+		{
+			vfs.iface->remove(path.c_str());
+		}
+		else if (FILE* f = fopen_wrap(path.c_str(), "w"))
+		{
+			for (const std::string& s : dynstr) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
+			for (const std::string& s : dbp_osimages) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
+			for (const std::string& s : dbp_shellzips) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
+			fclose(f);
+		}
+		if (force_midi_scan) DBP_QueueEvent(DBPET_REFRESHSYSTEM);
+	}
+	return dynstr;
+}
+
 #include "dosbox_pure_run.h"
 #include "dosbox_pure_osd.h"
 
@@ -2205,6 +2299,7 @@ void GFX_Events()
 					1.0f))))))))); //centered
 				break;
 			case DBPET_CHANGEMOUNTS: break;
+			case DBPET_REFRESHSYSTEM: break;
 			default: DBP_ASSERT(false); break;
 		}
 	}
@@ -2405,85 +2500,7 @@ void retro_set_environment(retro_environment_t cb) //#2
 
 static void set_variables(bool force_midi_scan = false)
 {
-	static std::vector<std::string> dynstr;
-	dynstr.clear();
-	dbp_osimages.clear();
-	dbp_shellzips.clear();
-	std::string path, subdir;
-	const char *system_dir = NULL;
-	struct retro_vfs_interface_info vfs = { 3, NULL };
-	retro_time_t scan_start = time_cb();
-	if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system_dir) && system_dir && environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
-	{
-		std::vector<std::string> subdirs;
-		subdirs.emplace_back();
-		while (subdirs.size())
-		{
-			std::swap(subdir, subdirs.back());
-			subdirs.pop_back();
-			struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
-			if (!dir) continue;
-			while (vfs.iface->readdir(dir))
-			{
-				const char* entry_name = vfs.iface->dirent_get_name(dir);
-				size_t ln = strlen(entry_name);
-				if (vfs.iface->dirent_is_dir(dir) && strcmp(entry_name, ".") && strcmp(entry_name, ".."))
-					subdirs.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-				else if ((ln > 4 && !strncasecmp(entry_name + ln - 4, ".SF", 3)) || (ln > 12 && !strcasecmp(entry_name + ln - 12, "_CONTROL.ROM")))
-				{
-					dynstr.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-					dynstr.emplace_back((entry_name[ln-2]|0x20) == 'f' ? "General MIDI SoundFont" : "Roland MT-32/CM-32L");
-					dynstr.back().append(": ").append(path, 0, path.size() - ((entry_name[ln-2]|0x20) == 'f' ? 4 : 12));
-				}
-				else if (ln > 4 && (!strcasecmp(entry_name + ln - 4, ".IMG") || !strcasecmp(entry_name + ln - 4, ".IMA") || !strcasecmp(entry_name + ln - 4, ".VHD")))
-				{
-					int32_t entry_size = 0;
-					std::string subpath(subdir); subpath.append(subdir.length() ? "/" : "").append(entry_name);
-					FILE* f = fopen_wrap(path.assign(system_dir).append("/").append(subpath).c_str(), "rb");
-					Bit64u fsize = 0; if (f) { fseek_wrap(f, 0, SEEK_END); fsize = (Bit64u)ftell_wrap(f); fclose(f); }
-					if (fsize < 1024*1024*7 || (fsize % 512)) continue; // min 7MB hard disk image made up of 512 byte sectors
-					dbp_osimages.push_back(std::move(subpath));
-				}
-				else if (ln > 5 && !strcasecmp(entry_name + ln - 5, ".DOSZ"))
-				{
-					dbp_shellzips.emplace_back(path.assign(subdir).append(subdir.length() ? "/" : "").append(entry_name));
-				}
-				else if (ln == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
-				{
-					std::string content;
-					ReadAndClose(FindAndOpenDosFile(path.assign(system_dir).append("/").append(entry_name).c_str()), content);
-					dynstr.clear();
-					dbp_osimages.clear();
-					dbp_shellzips.clear();
-					for (const char *pLine = content.c_str(), *pEnd = pLine + content.size() + 1, *p = pLine; p != pEnd; p++)
-					{
-						if (*p >= ' ') continue;
-						if (p == pLine) { pLine++; continue; }
-						if ((p[-3]|0x21) == 's' || dynstr.size() & 1) // check ROM/rom/SF*/sf* extension, always add description from odd rows
-							dynstr.emplace_back(pLine, p - pLine);
-						else
-							((p[-1]|0x20) == 'z' ? dbp_shellzips : dbp_osimages).emplace_back(pLine, p - pLine);
-						pLine = p + 1;
-					}
-					if (dynstr.size() & 1) dynstr.pop_back();
-					dbp_system_cached = true;
-					subdirs.clear();
-					break;
-				}
-			}
-			vfs.iface->closedir(dir);
-		}
-	}
-	if (force_midi_scan || (!dbp_system_cached && time_cb() - scan_start > 2000000 && system_dir))
-	{
-		if (FILE* f = fopen_wrap(path.assign(system_dir).append("/").append("DOSBoxPureMidiCache.txt").c_str(), "w"))
-		{
-			for (const std::string& s : dynstr) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
-			for (const std::string& s : dbp_osimages) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
-			for (const std::string& s : dbp_shellzips) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
-			fclose(f);
-		}
-	}
+	std::vector<std::string>& dynstr = DBP_ScanSystem(force_midi_scan);
 
 	#include "core_options.h"
 	for (retro_core_option_v2_definition& def : option_defs)
