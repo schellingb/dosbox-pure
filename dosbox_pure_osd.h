@@ -1925,7 +1925,7 @@ static void DBP_WheelOSD(Bit8u _port)
 					if (aval) val = aval; else val = (val ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
 				}
 
-				if (Wheels[b.port].State && (b.device == RETRO_DEVICE_ANALOG || (b.device == RETRO_DEVICE_JOYPAD && (b.id == RETRO_DEVICE_ID_JOYPAD_UP || b.id == RETRO_DEVICE_ID_JOYPAD_DOWN || b.id == RETRO_DEVICE_ID_JOYPAD_LEFT || b.id == RETRO_DEVICE_ID_JOYPAD_RIGHT || b.id == RETRO_DEVICE_ID_JOYPAD_B)) || b.device == RETRO_DEVICE_MOUSE) && b.evt != DBPET_ACTIONWHEEL)
+				if ((Wheels[b.port].State == Wheel::STATE_OPEN || Wheels[b.port].State == Wheel::STATE_OPEN_PRESSED || Wheels[b.port].State == Wheel::STATE_CLOSING_PRESSED) && (b.device == RETRO_DEVICE_ANALOG || (b.device == RETRO_DEVICE_JOYPAD && (b.id == RETRO_DEVICE_ID_JOYPAD_UP || b.id == RETRO_DEVICE_ID_JOYPAD_DOWN || b.id == RETRO_DEVICE_ID_JOYPAD_LEFT || b.id == RETRO_DEVICE_ID_JOYPAD_RIGHT || b.id == RETRO_DEVICE_ID_JOYPAD_B)) || b.device == RETRO_DEVICE_MOUSE) && b.evt != DBPET_ACTIONWHEEL)
 					val = 0;
 
 				if (val == b.lastval) continue;
