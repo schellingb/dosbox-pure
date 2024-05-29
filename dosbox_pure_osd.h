@@ -1792,7 +1792,7 @@ static void DBP_WheelOSD(Bit8u _port)
 			drw.AlphaBlendDrawCircle(cx+wx, cy+wy, srad, srad+2, white80);
 
 			a = astart;
-			int selnx = 0, selny = 0; const char* sellbl = NULL;
+			int selnx = 0, selny = 0, lh = (drw.height >= 4000 ? 14 : 8); const char* sellbl = NULL;
 			for (const DBP_WheelItem& wi : dbp_wheelitems)
 			{
 				if (wi.port != port) continue;
@@ -1807,10 +1807,10 @@ static void DBP_WheelOSD(Bit8u _port)
 
 				const bool sel = (sela == a && wdistsq > seldistsq);
 				if (sel) { sellbl = lbl; selnx = nx; selny = ny; }
-				else drw.PrintOutlined(8, cx + nx, cy + ny - 3, lbl, white, black);
+				else drw.PrintOutlined(lh, cx + nx, cy + ny - 3, lbl, white, black);
 				a += astep;
 			}
-			if (sellbl) drw.PrintOutlined(8, cx + selnx, cy + selny - 3, sellbl, selcolor, black);
+			if (sellbl) drw.PrintOutlined(lh, cx + selnx, cy + selny - 3, sellbl, selcolor, black);
 		}
 
 		void Update(int port)
