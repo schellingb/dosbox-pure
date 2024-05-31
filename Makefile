@@ -154,8 +154,10 @@ else
   COMMONFLAGS += -pthread
   ifeq ($(CPUFLAGS),)
     # ARM optimizations
-    PROCCPU := $(shell cat /proc/cpuinfo))
-    ifneq ($(and $(filter ARMv7,$(PROCCPU)),$(filter neon,$(PROCCPU))),)
+    UNAMEM := $(shell uname -m))
+    ifeq ($(UNAMEM),aarch64)
+      CPUFLAGS := -DPAGESIZE=$(or $(shell getconf PAGESIZE),4096)
+    else ifeq ($(UNAMEM),armv7l)
       CPUFLAGS := -marm -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
     else ifeq ($(ARM_RPI4), 1)
       CPUFLAGS := -marm -mcpu=cortex-a72 -mfpu=neon-fp-armv8 -mfloat-abi=hard -ffast-math
