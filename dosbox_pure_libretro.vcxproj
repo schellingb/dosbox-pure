@@ -239,6 +239,7 @@
     <ClCompile Include="src\dos\drive_memory.cpp" />
     <ClCompile Include="src\dos\drive_overlay.cpp" />
     <ClCompile Include="src\dos\drive_patch.cpp" />
+    <ClCompile Include="src\dos\drive_mirror.cpp" />
     <ClCompile Include="src\dos\drive_union.cpp" />
     <ClCompile Include="src\dos\drive_virtual.cpp" />
     <ClCompile Include="src\dos\drive_zip.cpp">

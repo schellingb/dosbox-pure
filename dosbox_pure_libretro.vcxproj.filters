@@ -330,6 +330,9 @@
     <ClCompile Include="src\hardware\voodoo.cpp">
       <Filter>src\hardware</Filter>
     </ClCompile>
+    <ClCompile Include="src\dos\drive_mirror.cpp">
+      <Filter>src\dos</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\bios.h">

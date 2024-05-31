@@ -1160,6 +1160,36 @@ void DOS_Shell::CMD_TIME(char * args) {
 };
 
 void DOS_Shell::CMD_SUBST (char * args) {
+#ifdef C_DBP_LIBRETRO //DBP: Added a fully featured implementation of SUBST that supports any source drive
+	HELP("SUBST");
+	bool isdel = ScanCMDBool(args,"D");
+	char *rem = ScanCMDRemain(args), *drv = StripWord(args), *dir = StripWord(args);
+	if (rem || (isdel && *dir && (rem = dir) != NULL)) { WriteOut(MSG_Get("SHELL_ILLEGAL_SWITCH"), rem); return; }
+	if (!*drv) { //list existing substs
+		for (Bit8u i = 0; i != DOS_DRIVES; i++) {
+			mirrorDrive* mirror = dynamic_cast<mirrorDrive*>(Drives[i]);
+			if (mirror && *mirror->GetInfo()) WriteOut("%c: => %s\n", i+'A', mirror->GetInfo()+6);
+		}
+	}
+	else {
+		Bit8u drive = (*drv >= 'A' && *drv <= 'Z' ? (*drv-'A') : (*drv >= 'a' && *drv <= 'z' ? (*drv-'a') : DOS_DRIVES));
+		if (drive == DOS_DRIVES || drv[1] != ':' || drv[2]) { WriteOut(MSG_Get("SHELL_ILLEGAL_SWITCH"), (drv ? drv : "DRIVE")); return; }
+		if (isdel) {
+			mirrorDrive* mirror = dynamic_cast<mirrorDrive*>(Drives[drive]);
+			if (!mirror || mirror->UnMount() != 0) { DBP_ASSERT(!mirror); WriteOut(MSG_Get("SHELL_CMD_SUBST_NO_REMOVE")); return; } //targetdrive not made by subst
+			Drives[drive] = NULL;
+			mem_writeb(Real2Phys(dos.tables.mediaid)+drive*9,0);
+			WriteOut(MSG_Get("PROGRAM_MOUNT_UMOUNT_SUCCESS"), drive+'A', Drives[drive]->GetInfo());
+		} else {
+			if (Drives[drive]) { WriteOut(MSG_Get("PROGRAM_MOUNT_ALREADY_MOUNTED"), drive+'A', Drives[drive]->GetInfo()); return; }
+			Bit8u trgdrive;char trgdir[DOS_PATHLENGTH];
+			if (!DOS_MakeName(dir, trgdir, &trgdrive) || !Drives[trgdrive]->TestDir(trgdir)) { WriteOut(MSG_Get("SHELL_ILLEGAL_PATH")); return; }
+			Drives[drive] = new mirrorDrive(*Drives[trgdrive], false, trgdir, true);
+			sprintf(Drives[drive]->info, "SUBST %c:\\%s", trgdrive+'A', trgdir);
+			WriteOut(MSG_Get("PROGRAM_MOUNT_STATUS_2"), drive+'A', Drives[drive]->GetInfo()+6);
+		}
+	}
+#else
 /* If more that one type can be substed think of something else 
  * E.g. make basedir member dos_drive instead of localdrive
  */
@@ -1213,6 +1243,7 @@ void DOS_Shell::CMD_SUBST (char * args) {
 ERROR_FAILURE:
 	WriteOut(MSG_Get("SHELL_CMD_SUBST_FAILURE"));
 	return;
+#endif
 }
 
 void DOS_Shell::CMD_LOADHIGH(char *args){

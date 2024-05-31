@@ -717,6 +717,11 @@ void SHELL_Init() {
 	MSG_Add("SHELL_CMD_COPY_HELP","Copy files.\n");
 	MSG_Add("SHELL_CMD_CALL_HELP","Start a batch file from within another batch file.\n");
 	MSG_Add("SHELL_CMD_SUBST_HELP","Assign an internal directory to a drive.\n");
+#ifdef C_DBP_LIBRETRO //DBP: Added a fully featured implementation of SUBST that supports any source drive
+	MSG_Add("SHELL_CMD_SUBST_HELP_LONG", 
+	        "  X: [Y:]PATH  -  Assign PATH from Y: to drive X:.\n"
+	        "  X: /D  -  Delete substituted drive X:.\n");
+#endif
 	MSG_Add("SHELL_CMD_LOADHIGH_HELP","Loads a program into upper memory (requires xms=true,umb=true).\n");
 	MSG_Add("SHELL_CMD_CHOICE_HELP","Waits for a keypress and sets ERRORLEVEL.\n");
 	MSG_Add("SHELL_CMD_CHOICE_HELP_LONG","CHOICE [/C:choices] [/N] [/S] text\n"
