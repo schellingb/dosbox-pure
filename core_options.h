@@ -227,6 +227,19 @@ static retro_core_option_v2_definition option_defs[] =
 		"1.0"
 	},
 	{
+		"dosbox_pure_actionwheel_inputs",
+		"Advanced > Action Wheel Inputs", NULL,
+		"Sets which inputs control the action wheel.", NULL,
+		"Input",
+		{
+			{ "14", "Right Stick, D-Pad, Mouse (Default)" }, { "6",  "Right Stick, D-Pad" }, { "10", "Right Stick, Mouse" }, { "2",  "Right Stick" },
+			{ "15", "Both Sticks, D-Pad, Mouse" }, { "7",  "Both Sticks, D-Pad" }, { "11", "Both Sticks, Mouse" }, { "3",  "Both Sticks" },
+			{ "13", "Left Stick, D-Pad, Mouse" }, { "5",  "Left Stick, D-Pad" }, { "9",  "Left Stick, Mouse" }, { "1",  "Left Stick" },
+			{ "12", "D-Pad, Mouse" }, { "4",  "D-Pad" }, { "8",  "Mouse" },
+		},
+		"14"
+	},
+	{
 		"dosbox_pure_auto_mapping",
 		"Advanced > Automatic Game Pad Mappings", NULL,
 		"DOSBox Pure can automatically apply a gamepad control mapping scheme when it detects a game." "\n"

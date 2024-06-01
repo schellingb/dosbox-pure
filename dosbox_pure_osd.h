@@ -1811,12 +1811,13 @@ static void DBP_WheelOSD(Bit8u _port)
 			if (State == STATE_CLOSING_RELEASED && (DBP_GetTicks() - Tick) > 250) SetState(port, STATE_CLOSED);
 			if (State != STATE_OPEN && State != STATE_OPEN_PRESSED) return;
 
-			Bit16s x0 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
-			Bit16s y0 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
-			Bit16s x1 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
-			Bit16s y1 = input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
-			Bit16s x2 = (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT) ? -0x7FFF : 0) + (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT) ? 0x7FFF : 0);
-			Bit16s y2 = (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP) ? -0x7FFF : 0) + (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN) ? 0x7FFF : 0);
+			const Bit8u aw = dbp_actionwheel_inputs;
+			Bit16s x0 = ((aw&1) ? input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X) : 0);
+			Bit16s y0 = ((aw&1) ? input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y) : 0);
+			Bit16s x1 = ((aw&2) ? input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X) : 0);
+			Bit16s y1 = ((aw&2) ? input_state_cb(port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y) : 0);
+			Bit16s x2 = ((aw&4) ? (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT) ? -0x7FFF : 0) + (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT) ? 0x7FFF : 0) : 0);
+			Bit16s y2 = ((aw&4) ? (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP) ? -0x7FFF : 0) + (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN) ? 0x7FFF : 0) : 0);
 			int d0 = (x0*x0+y0*y0), d1 = (x1*x1+y1*y1);
 			if (d0 < 45000000) { d0 = x0 = y0 = 0; }
 			if (d1 < 45000000) { d1 = x1 = y1 = 0; }
@@ -1840,7 +1841,7 @@ static void DBP_WheelOSD(Bit8u _port)
 			if (!down && ButtonDown) SetState(port, STATE_OPEN);
 			ButtonDown = down;
 
-			if (port != 0) return;
+			if (port != 0 || !(aw&8)) return;
 			Bit16s mx = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X), my = input_state_cb(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
 			if (mx || my)
 			{
@@ -1862,9 +1863,9 @@ static void DBP_WheelOSD(Bit8u _port)
 			{
 				PosX = PosY = 0;
 				Result = -1;
-				if (port == 0) dbp_mouse_input = 'f';
+				if (port == 0 && (dbp_actionwheel_inputs & 8)) dbp_mouse_input = 'f';
 			}
-			if (newstate == STATE_CLOSED && port == 0)
+			if (newstate == STATE_CLOSED && port == 0 && (dbp_actionwheel_inputs & 8))
 				dbp_mouse_input = retro_get_variable("dosbox_pure_mouse_input", "true")[0];
 
 			if (newstate != STATE_CLOSING_PRESSED || State != STATE_OPEN_PRESSED)
@@ -1906,6 +1907,7 @@ static void DBP_WheelOSD(Bit8u _port)
 				if (Wheels[port].SetOpen || Wheels[port].State)
 					Wheels[port].Update(port);
 
+			const Bit8u aw = dbp_actionwheel_inputs;
 			for (DBP_InputBind &b : dbp_input_binds)
 			{
 				Bit16s val = input_state_cb(b.port, b.device, b.index, b.id);
@@ -1916,7 +1918,10 @@ static void DBP_WheelOSD(Bit8u _port)
 					if (aval) val = aval; else val = (val ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
 				}
 
-				if ((Wheels[b.port].State == Wheel::STATE_OPEN || Wheels[b.port].State == Wheel::STATE_OPEN_PRESSED || Wheels[b.port].State == Wheel::STATE_CLOSING_PRESSED) && (b.device == RETRO_DEVICE_ANALOG || (b.device == RETRO_DEVICE_JOYPAD && (b.id == RETRO_DEVICE_ID_JOYPAD_UP || b.id == RETRO_DEVICE_ID_JOYPAD_DOWN || b.id == RETRO_DEVICE_ID_JOYPAD_LEFT || b.id == RETRO_DEVICE_ID_JOYPAD_RIGHT || b.id == RETRO_DEVICE_ID_JOYPAD_B)) || b.device == RETRO_DEVICE_MOUSE) && b.evt != DBPET_ACTIONWHEEL)
+				if ((Wheels[b.port].State == Wheel::STATE_OPEN || Wheels[b.port].State == Wheel::STATE_OPEN_PRESSED || Wheels[b.port].State == Wheel::STATE_CLOSING_PRESSED) && b.evt != DBPET_ACTIONWHEEL && (
+					(b.device == RETRO_DEVICE_ANALOG && ((b.index == RETRO_DEVICE_INDEX_ANALOG_LEFT && (aw&1)) || (b.index == RETRO_DEVICE_INDEX_ANALOG_RIGHT && (aw&2))))  || 
+					(b.device == RETRO_DEVICE_JOYPAD && (b.id == RETRO_DEVICE_ID_JOYPAD_B || ((b.id == RETRO_DEVICE_ID_JOYPAD_UP || b.id == RETRO_DEVICE_ID_JOYPAD_DOWN || b.id == RETRO_DEVICE_ID_JOYPAD_LEFT || b.id == RETRO_DEVICE_ID_JOYPAD_RIGHT) && (aw&4)))) || 
+					(b.device == RETRO_DEVICE_MOUSE && (aw&8))))
 					val = 0;
 
 				if (val == b.lastval) continue;

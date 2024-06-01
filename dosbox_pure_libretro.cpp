@@ -111,7 +111,7 @@ struct DBP_WheelItem { Bit8u port, key_count, k[4]; };
 static std::vector<DBP_InputBind> dbp_input_binds;
 static std::vector<DBP_WheelItem> dbp_wheelitems;
 static std::vector<Bit8u> dbp_custom_mapping;
-static Bit8u dbp_port_mode[DBP_MAX_PORTS], dbp_binds_changed;
+static Bit8u dbp_port_mode[DBP_MAX_PORTS], dbp_binds_changed, dbp_actionwheel_inputs;
 static bool dbp_on_screen_keyboard, dbp_analog_buttons;
 static char dbp_mouse_input, dbp_auto_mapping_mode;
 static Bit16s dbp_bind_mousewheel, dbp_mouse_x, dbp_mouse_y;
@@ -2651,6 +2651,7 @@ static bool check_variables(bool is_startup = false)
 		static const char* advanced_options[] =
 		{
 			"dosbox_pure_mouse_speed_factor_x",
+			"dosbox_pure_actionwheel_inputs"
 			"dosbox_pure_auto_mapping",
 			"dosbox_pure_joystick_timed",
 			"dosbox_pure_keyboard_layout",
@@ -2668,6 +2669,7 @@ static bool check_variables(bool is_startup = false)
 		visibility_changed = true;
 	}
 
+	dbp_actionwheel_inputs = (Bit8u)atoi(retro_get_variable("dosbox_pure_actionwheel_inputs", "14"));
 	dbp_auto_mapping_mode = retro_get_variable("dosbox_pure_auto_mapping", "true")[0];
 
 	bool old_strict_mode = dbp_strict_mode;
