@@ -1248,7 +1248,8 @@ struct DBP_PadMapping
 		if (port >= DBP_MAX_PORTS || dbp_port_mode[port] == mode) return;
 		dbp_port_mode[port] = mode;
 		if (dbp_state <= DBPSTATE_SHUTDOWN) return;
-		if (mode != MODE_DISABLED) RefreshInputBinds(true); else ClearBinds((Bit8u)port);
+		if (mode == MODE_DISABLED) ClearBinds((Bit8u)port);
+		RefreshInputBinds(true);
 	}
 
 	static void RefreshInputBinds(bool regenerate_bindings)
