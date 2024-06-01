@@ -744,20 +744,11 @@ struct DBP_MapperMenuState : DBP_MenuState
 		{
 			if (edit_info >= 0) // editing bind
 			{
-				if (ok_type == IT_SELECT && (edit_mode == EDIT_NEW || edit_mode == EDIT_ADDITIONAL)) // add new entry
-				{
-					DBP_InputBind edit = (edit_mode == EDIT_NEW ? BindFromPadNum((Bit8u)edit_info) : dbp_input_binds[edit_info>>1]);
-					DBP_PadMapping::AssignBindEvent(edit, (Bit8u)(edit_info&1), (Bit8u)list[sel].info);
-					DBP_PadMapping::InsertBind(edit);
-				}
-				else if (ok_type == IT_SELECT && edit_mode == EDIT_EXISTING) // edit entry
-				{
-					DBP_PadMapping::AssignBindEvent(dbp_input_binds[edit_info>>1], (Bit8u)(edit_info&1), (Bit8u)list[sel].info);
-				}
-				else if (ok_type == IT_DEL) // deleting entry
-				{
-					dbp_input_binds.erase(dbp_input_binds.begin() + (edit_info>>1));
-				}
+				bool isNew = (ok_type == IT_SELECT && (edit_mode == EDIT_NEW || edit_mode == EDIT_ADDITIONAL)); // add new entry
+				bool isEdit = (ok_type == IT_SELECT && edit_mode == EDIT_EXISTING); // add new entry
+				bool isDelete = (ok_type == IT_DEL); // deleting entry
+				DBP_InputBind copy = (edit_mode == EDIT_NEW ? BindFromPadNum((Bit8u)edit_info) : dbp_input_binds[edit_info>>1]);
+				DBP_PadMapping::EditBind((isNew ? copy : dbp_input_binds[edit_info>>1]), isNew, isEdit, isDelete, (Bit8u)(edit_info&1), (Bit8u)list[sel].info);
 			}
 			else // editing wheel
 			{
@@ -1513,6 +1504,10 @@ struct DBP_MenuInterceptor : DBP_Interceptor
 			DBP_ScanSystem(true);
 			DBP_MenuInterceptorRefreshSystem = false;
 		}
+
+		// Instantly refresh input binds when modified
+		if (dbp_binds_changed)
+			DBP_PadMapping::SetInputDescriptors();
 	}
 
 	virtual void close() override
@@ -1520,10 +1515,6 @@ struct DBP_MenuInterceptor : DBP_Interceptor
 		// Get latest values (without emitting events) when leaving intercepted screen
 		for (DBP_InputBind& b : dbp_input_binds)
 			b.lastval = input_state_cb(b.port, b.device, b.index, b.id);
-
-		// Refresh input binds if modified after leaving event intercept
-		if (dbp_input_binds_modified)
-			DBP_PadMapping::RefreshInputBinds(false);
 
 		// Release all keys when switching between key event intercepting
 		DBP_ReleaseKeyEvents(false);
