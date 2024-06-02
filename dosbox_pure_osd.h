@@ -1363,11 +1363,16 @@ struct DBP_PureMenuState : DBP_MenuState
 				if (save_c_name > &save_c[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&save_c[0], save_c_name - &save_c[0]); }
 				list.emplace_back(IT_NONE, INFO_WARN, save_c_name);
 			}
-			const char *save_d_name; std::string save_d = DBP_GetSaveFile(SFT_VIRTUALDISK, &save_d_name);
 			list.emplace_back(IT_NONE);
-			list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be stored in the following location:");
-			if (save_d_name > &save_d[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&save_d[0], save_d_name - &save_d[0]); }
-			list.emplace_back(IT_NONE, INFO_WARN, save_d_name);
+			if (atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")))
+			{
+				const char *save_d_name; std::string save_d = DBP_GetSaveFile(SFT_VIRTUALDISK, &save_d_name);
+				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be stored in the following location:");
+				if (save_d_name > &save_d[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&save_d[0], save_d_name - &save_d[0]); }
+				list.emplace_back(IT_NONE, INFO_WARN, save_d_name);
+			}
+			else
+				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be discarded");
 			ResetSel(2, true);
 		}
 		else if (ok_type == IT_SHELLLIST)

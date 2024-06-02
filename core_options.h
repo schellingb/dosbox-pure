@@ -586,7 +586,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"If the total size of the D: drive (data + free space) exceeds 2 GB, it can't be used in earlier versions of Windows 95." "\n"
 		"WARNING: Created save files are tied to this setting, so changing this will hide all existing D: drive changes.", NULL,
 		"System",
-		{ { "1024", "1GB (default)" }, { "2048", "2GB" }, { "4096", "4GB" }, { "8192", "8GB" } },
+		{ { "1024", "1GB (default)" }, { "2048", "2GB" }, { "4096", "4GB" }, { "8192", "8GB" }, { "discard", "Discard Changes to D:" } },
 		"1024"
 	},
 	{

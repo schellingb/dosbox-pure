@@ -225,8 +225,9 @@ struct DBP_Run
 			{
 				Bit32u save_hash = 0;
 				DBP_SetDriveLabelFromContentPath(Drives['C'-'A'], dbp_content_path.c_str(), 'C', NULL, NULL, true);
-				std::string save_path = DBP_GetSaveFile(SFT_VIRTUALDISK, NULL, &save_hash);
-				imageDiskList[newC-'A'] = new imageDisk(Drives['C'-'A'], atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")), save_path.c_str(), save_hash, &dbp_vdisk_filter);
+				std::string save_path = DBP_GetSaveFile(SFT_VIRTUALDISK, NULL, &save_hash); // always call to fill out save_hash and dbp_vdisk_filter
+				Bit32u freeSpace = (Bit32u)atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")); // can be "discard"
+				imageDiskList[newC-'A'] = new imageDisk(Drives['C'-'A'], (freeSpace ? freeSpace : 1024), (freeSpace ? save_path.c_str() : NULL) , save_hash, &dbp_vdisk_filter);
 			}
 
 			// Ramdisk setting must be false while installing os
