@@ -4010,6 +4010,7 @@ FILE *fopen_wrap(const char *path, const char *mode)
 #include "libretro-common/compat/fopen_utf8.c"
 #include "libretro-common/compat/compat_strl.c"
 #include "libretro-common/encodings/encoding_utf.c"
+#include "libretro-common/features/features_cpu.c"
 #endif
 
 bool fpath_nocase(char* path)

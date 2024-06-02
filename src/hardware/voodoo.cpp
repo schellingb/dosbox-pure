@@ -225,7 +225,7 @@ INLINE rgb_t rgba_bilinear_filter(rgb_t rgb00, rgb_t rgb01, rgb_t rgb10, rgb_t r
 #if defined(__SSE2__) && __SSE2__
 	__m128i  scale_u = *(__m128i *)sse2_scale_table[u], scale_v = *(__m128i *)sse2_scale_table[v];
 	return _mm_cvtsi128_si32(_mm_packus_epi16(_mm_packs_epi32(_mm_srli_epi32(_mm_madd_epi16(_mm_max_epi16(
-		_mm_slli_epi32(_mm_madd_epi16(_mm_unpacklo_epi8(_mm_unpacklo_epi8(_mm_cvtsi32_si128(rgb01), _mm_cvtsi32_si128(rgb00)), _mm_setzero_si128()), scale_u), 15), 
+		_mm_slli_epi32(_mm_madd_epi16(_mm_unpacklo_epi8(_mm_unpacklo_epi8(_mm_cvtsi32_si128(rgb01), _mm_cvtsi32_si128(rgb00)), _mm_setzero_si128()), scale_u), 15),
 		_mm_srli_epi32(_mm_madd_epi16(_mm_unpacklo_epi8(_mm_unpacklo_epi8(_mm_cvtsi32_si128(rgb11), _mm_cvtsi32_si128(rgb10)), _mm_setzero_si128()), scale_u), 1)),
 		scale_v), 15), _mm_setzero_si128()), _mm_setzero_si128()));
 #else
@@ -270,7 +270,7 @@ enum
 	VOODOO_2,
 };
 
-enum { TRIANGLE_THREADS = 3, TRIANGLE_WORKERS = TRIANGLE_THREADS + 1 };
+enum { MAX_TRIANGLE_THREADS = 15, MAX_TRIANGLE_WORKERS = MAX_TRIANGLE_THREADS + 1 };
 
 /* maximum number of TMUs */
 #define MAX_TMU					2
@@ -925,12 +925,13 @@ struct draw_state
 
 struct triangle_worker
 {
-	bool threads_active, use_threads, disable_bilinear_filter;
+	bool threads_active, disable_bilinear_filter;
+	UINT8 triangle_threads;
 	UINT16 *drawbuf;
 	poly_vertex v1, v2, v3;
 	INT32 v1y, v3y, totalpix;
 	Semaphore* sembegin;
-	volatile bool done[TRIANGLE_THREADS];
+	volatile bool done[MAX_TRIANGLE_THREADS];
 };
 
 struct voodoo_state
@@ -956,7 +957,7 @@ struct voodoo_state
 	raster_info *		raster_hash[RASTER_HASH_SIZE];	/* hash table of rasterizers */
 #endif
 
-	stats_block			thread_stats[TRIANGLE_WORKERS];	/* per-thread statistics */
+	stats_block			thread_stats[MAX_TRIANGLE_WORKERS];	/* per-thread statistics */
 
 	bool				send_config;
 	bool				clock_enabled;
@@ -4170,7 +4171,7 @@ static void accumulate_statistics(voodoo_state *v, const stats_block *stats)
 static void update_statistics(voodoo_state *v, bool accumulate)
 {
 	/* accumulate/reset statistics from all units */
-	for (size_t i = 0; i != TRIANGLE_WORKERS; i++)
+	for (size_t i = 0; i != v->tworker.triangle_threads; i++)
 	{
 		if (accumulate)
 			accumulate_statistics(v, &v->thread_stats[i]);
@@ -4215,8 +4216,8 @@ static void triangle_worker_work(triangle_worker& tworker, INT32 worktstart, INT
 	float dxdy_v2v3 = (v3.y == v2.y) ? 0.0f : (v3.x - v2.x) / (v3.y - v2.y);
 
 	stats_block my_stats = {0};
-	INT32 from = tworker.totalpix * worktstart / TRIANGLE_WORKERS;
-	INT32 to   = tworker.totalpix * worktend   / TRIANGLE_WORKERS;
+	INT32 from = tworker.totalpix * worktstart / (tworker.triangle_threads + 1);
+	INT32 to   = tworker.totalpix * worktend   / (tworker.triangle_threads + 1);
 	for (INT32 curscan = tworker.v1y, scanend = tworker.v3y, sumpix = 0, lastsum = 0; curscan != scanend && lastsum < to; lastsum = sumpix, curscan++)
 	{
 		float fully = (float)(curscan) + 0.5f;
@@ -4268,20 +4269,20 @@ static void triangle_worker_shutdown(triangle_worker& tworker)
 {
 	if (!tworker.threads_active) return;
 	tworker.threads_active = false;
-	for (size_t i = 0; i != TRIANGLE_THREADS; i++) tworker.done[i] = false;
-	for (size_t i = 0; i != TRIANGLE_THREADS; i++) tworker.sembegin[i].Post();
+	for (size_t i = 0; i != tworker.triangle_threads; i++) tworker.done[i] = false;
+	for (size_t i = 0; i != tworker.triangle_threads; i++) tworker.sembegin[i].Post();
 	recheckdone:
-	for (size_t i = 0; i != TRIANGLE_THREADS; i++) if (!tworker.done[i]) goto recheckdone;
+	for (size_t i = 0; i != tworker.triangle_threads; i++) if (!tworker.done[i]) goto recheckdone;
 	delete [] tworker.sembegin;
 }
 
 static void triangle_worker_run(triangle_worker& tworker)
 {
-	if (!tworker.use_threads)
+	if (!tworker.triangle_threads)
 	{
 		// do not use threaded calculation
 		tworker.totalpix = 0xFFFFFFF;
-		triangle_worker_work(tworker, 0, TRIANGLE_WORKERS);
+		triangle_worker_work(tworker, 0, 1);
 		return;
 	}
 
@@ -4311,22 +4312,22 @@ static void triangle_worker_run(triangle_worker& tworker)
 	// Don't wake up threads for just a few pixels
 	if (tworker.totalpix <= 200)
 	{
-		triangle_worker_work(tworker, 0, TRIANGLE_WORKERS);
+		triangle_worker_work(tworker, 0, tworker.triangle_threads + 1);
 		return;
 	}
 
 	if (!tworker.threads_active)
 	{
 		tworker.threads_active = true;
-		tworker.sembegin = new Semaphore[TRIANGLE_THREADS];
-		for (size_t i = 0; i != TRIANGLE_THREADS; i++) Thread::StartDetached(triangle_worker_thread_func, (void*)i);
+		tworker.sembegin = new Semaphore[tworker.triangle_threads];
+		for (size_t i = 0; i != tworker.triangle_threads; i++) Thread::StartDetached(triangle_worker_thread_func, (void*)i);
 	}
 
-	for (size_t i = 0; i != TRIANGLE_THREADS; i++) tworker.done[i] = false;
-	for (size_t i = 0; i != TRIANGLE_THREADS; i++) tworker.sembegin[i].Post();
-	triangle_worker_work(tworker, TRIANGLE_THREADS, TRIANGLE_WORKERS);
+	for (size_t i = 0; i != tworker.triangle_threads; i++) tworker.done[i] = false;
+	for (size_t i = 0; i != tworker.triangle_threads; i++) tworker.sembegin[i].Post();
+	triangle_worker_work(tworker, tworker.triangle_threads, tworker.triangle_threads + 1);
 	recheckdone:
-	for (size_t i = 0; i != TRIANGLE_THREADS; i++) if (!tworker.done[i]) goto recheckdone;
+	for (size_t i = 0; i != tworker.triangle_threads; i++) if (!tworker.done[i]) goto recheckdone;
 }
 
 /*-------------------------------------------------
@@ -5148,7 +5149,7 @@ static void register_w(UINT32 offset, UINT32 data) {
 				if (v->ogl && v->active && (FBZMODE_Y_ORIGIN(v->reg[fbzMode].u)!=FBZMODE_Y_ORIGIN(data))) {
 					v->reg[fbzMode].u = data;
 					voodoo_ogl_set_window(v);
-				} else 
+				} else
 #endif
 				{
 					v->reg[fbzMode].u = data;
@@ -5258,7 +5259,7 @@ static void register_w(UINT32 offset, UINT32 data) {
 					if (meddiff < 0) meddiff = -meddiff;
 					vgadiff = vgaperiod - refresh;
 					if (vgadiff < 0) vgadiff = -vgadiff;
-					
+
 					LOG(LOG_VOODOO,LOG_WARN)("hSync=%08X  vSync=%08X  backPorch=%08X  videoDimensions=%08X\n",
 						v->reg[hSync].u, v->reg[vSync].u, v->reg[backPorch].u, v->reg[videoDimensions].u);
 
@@ -5774,7 +5775,7 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 					if (has_depth) {
 						voodoo_ogl_draw_z(x, scry+1, sw[pix]);
 					}
-				} else 
+				} else
 #endif
 				{
 					/* write to the RGB buffer */
@@ -6092,7 +6093,7 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 						//	depth[XX] = a;
 					}
 					*/
-				} else 
+				} else
 #endif
 				{
 					/* pixel pipeline part 2 handles color combine, fog, alpha, and final output */
@@ -6826,7 +6827,7 @@ static void Voodoo_UpdateScreen(void) {
 	if ((v->clock_enabled && v->output_on) && !v->draw.override_on) {
 		// switching on
 		PIC_RemoveEvents(Voodoo_VerticalTimer); // shouldn't be needed
-		
+
 		// TODO proper implementation of refresh rates and timings
 		v->draw.vfreq = 1000.0f/60.0f;
 		VGA_SetOverride(true);
@@ -7105,7 +7106,8 @@ static void Voodoo_Startup() {
 	v->draw.vfreq = 1000.0f/60.0f;
 
 	memset(&v->tworker, 0, sizeof(v->tworker));
-	v->tworker.use_threads = !!(voodoo_pci_sstdevice.perf & 1);
+	unsigned cores = cpu_features_get_core_amount();
+	v->tworker.triangle_threads = ((voodoo_pci_sstdevice.perf & 1) ? (cores <= (MAX_TRIANGLE_THREADS+1) ? (UINT8)(cores - 1) : MAX_TRIANGLE_THREADS) : 0);
 	v->tworker.disable_bilinear_filter = !!(voodoo_pci_sstdevice.perf & 2);
 
 	// Switch the pagehandler now that v has been allocated and is in use
@@ -7186,7 +7188,7 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 		// Serialize simple data types in voodoo_state
 		ar.Serialize(v->type).Serialize(v->chipmask).SerializeArray(v->reg).Serialize(v->alt_regmap).Serialize(v->pci).Serialize(v->dac)
 			.Serialize(v->send_config).Serialize(v->clock_enabled).Serialize(v->output_on).Serialize(v->active).Serialize(v->draw);
-		
+
 		// Serialize the frame buffer RAM and everything else in fbi_state
 		ar.SerializeSparse(v->fbi.ram, v->fbi.mask + 1);
 		ar.SerializeBytes(v->fbi.rgboffs, (Bit8u*)((&v->fbi)+1)-(Bit8u*)v->fbi.rgboffs);
@@ -7218,7 +7220,7 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 			Bit8u texel19Ncc = (tmu.texel[1] == tmu.ncc[1].texel ? 1 : 0);
 			ar.Serialize(texel19Ncc);
 
-			// Lookup 
+			// Lookup
 			Bit8u lookup = 0;
 			if (tmu.lookup == tmu.ncc[0].texel) lookup = 100;
 			else if (tmu.lookup == tmu.ncc[1].texel) lookup = 101;
