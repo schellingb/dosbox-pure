@@ -902,6 +902,14 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		if (error)
 		{
 			delete iso;
+			DOS_Drive **srcdrv = (path[0] == '$' && path[1] >= 'A' && path[1] <= 'Z' ? &Drives[path[1]-'A'] : NULL), *mirror = (srcdrv ? dynamic_cast<mirrorDrive*>(*srcdrv) : NULL), *shadows[2];
+			if (mirror && mirror->GetShadows(shadows[0], shadows[1]) && !boot)
+			{
+				*srcdrv = shadows[0];
+				drive = DBP_Mount(image_index, unmount_existing, remount_letter);
+				*srcdrv = mirror;
+				return drive;
+			}
 			error_type = "CD-ROM image";
 			goto TRY_DIRECTORY;
 		}

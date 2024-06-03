@@ -198,9 +198,9 @@ struct unionDriveImpl
 		Union_Modification* m = modifications.Get(path);
 		if (m && m->IsDelete()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
 		if (m && m->IsRedirect() && m->RedirectType() != type) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
+		ForceCloseFileAndScheduleSave(drv, path, (type == Union_Modification::TFILE));
 		if (m && m->IsRedirect())
 		{
-			ForceCloseFileAndScheduleSave(drv, path);
 			delete m;
 			bool in_under = (under->FileExists(path) || under->TestDir(path));
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //re-mark deletion
@@ -209,14 +209,12 @@ struct unionDriveImpl
 		}
 		if (type == Union_Modification::TFILE ? over->FileUnlink(path) : over->RemoveDir(path))
 		{
-			ForceCloseFileAndScheduleSave(drv, path);
 			bool in_under = (under->FileExists(path) || under->TestDir(path));
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //mark deletion
 			return TRUE_RESET_DOSERR;
 		}
 		if (type == Union_Modification::TFILE ? under->FileExists(path) : under->TestDir(path))
 		{
-			ForceCloseFileAndScheduleSave(drv, path);
 			modifications.Put(path, new Union_Modification(path)); //mark deletion
 			return TRUE_RESET_DOSERR;
 		}
@@ -448,9 +446,9 @@ struct unionDriveImpl
 		dirty = true;
 	}
 
-	void ForceCloseFileAndScheduleSave(DOS_Drive* drv, const char* path)
+	void ForceCloseFileAndScheduleSave(DOS_Drive* drv, const char* path, bool isFile)
 	{
-		DriveForceCloseFile(drv, path);
+		if (isFile) DriveForceCloseFile(drv, path);
 		ScheduleSave();
 	}
 };
@@ -727,7 +725,7 @@ bool unionDrive::Rename(char * oldpath, char * newpath)
 		const char *oldlastslash = strrchr(oldpath, '\\'), *newlastslash = strrchr(newpath, '\\');
 		if ((oldlastslash || newlastslash) && (oldlastslash - oldpath) != (newlastslash - newpath) && memcmp(oldpath, newpath, (newlastslash - newpath))) return FALSE_SET_DOSERR(ACCESS_DENIED);
 	}
-	impl->ForceCloseFileAndScheduleSave(this, oldpath);
+	impl->ForceCloseFileAndScheduleSave(this, oldpath, true);
 	if (new_m) //means (new_m->IsDelete())
 	{
 		delete new_m;

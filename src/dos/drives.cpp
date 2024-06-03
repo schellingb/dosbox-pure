@@ -332,8 +332,8 @@ Bit8u DriveGetIndex(DOS_Drive* drv)
 
 bool DriveForceCloseFile(DOS_Drive* drv, const char* name)
 {
-	Bit8u drive = DriveGetIndex(drv);
-	if (drive == DOS_DRIVES) return false;
+	Bit8u drive = 0; // We explicitly don't look up index of shadowed drives, the shadowing drive should be responsible to call DriveForceCloseFile before unlink/rename
+	for (;; drive++) { if (drive == DOS_DRIVES) return false; if (Drives[drive] == drv) break; }
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	bool found_file = false;
 	for (Bit8u i = 0; i < DOS_FILES; i++) {

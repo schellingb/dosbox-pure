@@ -70,19 +70,24 @@ struct Mirror_Handle : public DOS_File
 struct mirrorDriveImpl
 {
 	DOS_Drive& under;
-	bool autodeleteUnder, mirrorFromSubdir;
-	int subDirLen;
-	char subDir[DOS_PATHLENGTH];
+	bool autodeleteUnder, writable;
+	Bit8u lenFrom, lenTo;
+	char dirFrom[DOS_PATHLENGTH], dirTo[DOS_PATHLENGTH];
 
-	mirrorDriveImpl(DOS_Drive& _under, bool _autodeleteUnder, const char* subdir, bool _mirrorFromSubdir) : under(_under), autodeleteUnder(_autodeleteUnder), mirrorFromSubdir(_mirrorFromSubdir)
+	mirrorDriveImpl(DOS_Drive& _under, bool _autodeleteUnder, const char* _mirrorFrom, const char* _mirrorTo) : under(_under), autodeleteUnder(_autodeleteUnder)
 	{
-		size_t len = strlen(subdir);
-		if (len && subdir[len-1] == '\\') len--;
-		if (len > DOS_PATHLENGTH - 2) { DBP_ASSERT(0); len = DOS_PATHLENGTH - 2; }
-		DBP_ASSERT(mirrorFromSubdir || len <= DOS_NAMELENGTH);
-		memcpy(subDir, subdir, len);
-		subDir[len] = '\\';
-		subDirLen = (int)(len + (len ? 1 : 0));
+		Bit16u bytes_sector; Bit8u sectors_cluster; Bit16u total_clusters; Bit16u free_clusters;
+		_under.AllocationInfo(&bytes_sector, &sectors_cluster, &total_clusters, &free_clusters);
+		writable = (free_clusters > 0);
+		size_t szFrom = (_mirrorFrom ? strlen(_mirrorFrom) : 0), szTo = (_mirrorTo ? strlen(_mirrorTo) : 0);
+		if (szFrom && _mirrorFrom[szFrom-1] == '\\') szFrom--;
+		if (szTo && _mirrorTo[szTo-1] == '\\') szTo--;
+		if (szFrom > DOS_PATHLENGTH - 2) { DBP_ASSERT(0); szFrom = DOS_PATHLENGTH - 2; }
+		if (szTo > DOS_PATHLENGTH - 2) { DBP_ASSERT(0); szTo = DOS_PATHLENGTH - 2; }
+		lenFrom = (Bit8u)szFrom;
+		lenTo = (Bit8u)szTo;
+		if (lenFrom) { memcpy(dirFrom, _mirrorFrom, lenFrom); dirFrom[lenFrom++] = '\\'; }
+		if (lenTo) { memcpy(dirTo, _mirrorTo, lenTo); dirTo[lenTo++] = '\\'; }
 	}
 
 	~mirrorDriveImpl()
@@ -92,25 +97,30 @@ struct mirrorDriveImpl
 
 	bool FixSubdir(const char*& name, char name_buf[DOS_PATHLENGTH], bool is_path = false, bool canBeRoot = false)
 	{
-		if (!mirrorFromSubdir)
+		if ((name[0] == 'A' && name[1] == 'U' && !strcmp(name, "AUTOBOOT.DBP")) || (name[0] == 'P' && name[1] == 'A' && !strcmp(name, "PADMAP.DBP")))
+			return true; // use these system file names as is in the root
+		if (lenTo)
 		{
-			if (strncmp(name, subDir, subDirLen - (canBeRoot ? 1 : 0))) return (is_path ? FALSE_SET_DOSERR(PATH_NOT_FOUND) : FALSE_SET_DOSERR(FILE_NOT_FOUND));
-			name += ((!canBeRoot || name[subDirLen - 1]) ? subDirLen : (subDirLen - 1));
+			if (strncmp(name, dirTo, lenTo - (canBeRoot ? 1 : 0))) return (is_path ? FALSE_SET_DOSERR(PATH_NOT_FOUND) : FALSE_SET_DOSERR(FILE_NOT_FOUND));
+			name += ((!canBeRoot || name[lenTo - 1]) ? lenTo : (lenTo - 1));
 		}
-		else if (subDirLen)
+		if (lenFrom)
 		{
 			size_t len = strlen(name);
-			if ((!canBeRoot && !len) || ((subDirLen + len) >= DOS_PATHLENGTH)) return FALSE_SET_DOSERR(ACCESS_DENIED);
-			memcpy(name_buf, subDir, subDirLen);
-			memmove(name_buf + subDirLen, name, len + 1); // copy null terminator
+			if ((!canBeRoot && !len) || ((lenFrom + len) >= DOS_PATHLENGTH)) return FALSE_SET_DOSERR(ACCESS_DENIED);
+			memcpy(name_buf, dirFrom, lenFrom);
+			memmove(name_buf + lenFrom, name, len + 1); // copy null terminator
 			name = name_buf;
-			if (canBeRoot && !len) name_buf[subDirLen - 1] = '\0';
+			if (canBeRoot && !len) name_buf[lenFrom - 1] = '\0';
 		}
 		return true;
 	}
 };
 
-mirrorDrive::mirrorDrive(DOS_Drive& under, bool autodelete_under, const char* subdir, bool mirrorFromSubdir) : impl(new mirrorDriveImpl(under, autodelete_under, subdir, mirrorFromSubdir)) { }
+mirrorDrive::mirrorDrive(DOS_Drive& under, bool autodelete_under, const char* mirrorFrom, const char* mirrorTo) : impl(new mirrorDriveImpl(under, autodelete_under, mirrorFrom, mirrorTo))
+{
+	label.SetLabel(under.GetLabel(), false, true);
+}
 
 mirrorDrive::~mirrorDrive()
 {
@@ -140,12 +150,17 @@ bool mirrorDrive::Rename(char * oldpath, char * newpath)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(oldpath);
 	DOSPATH_REMOVE_ENDINGDOTS(newpath);
+	if (!impl->writable || !*oldpath || !*newpath) return FALSE_SET_DOSERR(ACCESS_DENIED);
+	if (!strcmp(oldpath, newpath)) return true; //rename with same name is always ok
+	DriveForceCloseFile(this, oldpath);
 	return (impl->FixSubdir((const char*&)oldpath, oldpath_buf) && impl->FixSubdir((const char*&)newpath, newpath_buf) && impl->under.Rename(oldpath, newpath));
 }
 
 bool mirrorDrive::FileUnlink(char * path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(path);
+	if (!impl->writable || !*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
+	DriveForceCloseFile(this, path);
 	return (impl->FixSubdir((const char*&)path, path_buf) && impl->under.FileUnlink(path));
 }
 
@@ -158,6 +173,7 @@ bool mirrorDrive::FileExists(const char* name)
 bool mirrorDrive::RemoveDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
+	if (!impl->writable || !*dir_path) return FALSE_SET_DOSERR(ACCESS_DENIED);
 	return (impl->FixSubdir((const char*&)dir_path, dir_path_buf, true) && impl->under.RemoveDir(dir_path));
 }
 
@@ -170,17 +186,20 @@ bool mirrorDrive::MakeDir(char* dir_path)
 bool mirrorDrive::TestDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
-	if (!impl->mirrorFromSubdir && !*dir_path) return true;
+	Bit8u len = (Bit8u)strlen(dir_path);
+	if (len < impl->lenTo - 1 && !memcmp(impl->dirTo, dir_path, len) && (!len || impl->dirTo[len] == '\\'))
+		return true;
 	return (impl->FixSubdir((const char*&)dir_path, dir_path_buf, true, true) && impl->under.TestDir(dir_path));
 }
 
 bool mirrorDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 {
 	DOSPATH_REMOVE_ENDINGDOTS_KEEP(dir_path);
-	if (!impl->mirrorFromSubdir && !*dir_path)
+	Bit8u len = (Bit8u)strlen(dir_path);
+	if (len < impl->lenTo - 1 && !memcmp(impl->dirTo, dir_path, len) && (!len || impl->dirTo[len] == '\\'))
 	{
-		dta.SetDirID(0xEEEE);
-		if (DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
+		dta.SetDirID(0xEEEE + len);
+		if (!len && DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
 		return FindNext(dta);
 	}
 	return (impl->FixSubdir((const char*&)dir_path, dir_path_buf, true, true) && impl->under.FindFirst(dir_path, dta, fcb_findfirst));
@@ -189,19 +208,23 @@ bool mirrorDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 bool mirrorDrive::FindNext(DOS_DTA & dta)
 {
 	const Bit16u dir_id = dta.GetDirID();
-	if (dir_id == 0xEEEE)
+	char *pStart = impl->dirTo, *pEnd = pStart + impl->lenTo, *p = pStart + (dir_id - 0xEEEE);
+	if (p >= pStart && p < pEnd)
 	{
-		Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];
-		dta.GetSearchParams(attr,pattern);
-		impl->subDir[impl->subDirLen - 1] = '\0';
-		bool match = WildFileCmp(impl->subDir, pattern);
-		if (match && (attr & DOS_ATTR_DIRECTORY))
-			dta.SetResult(impl->subDir, 0, 8600, 48128, (Bit8u)DOS_ATTR_DIRECTORY);
-		dta.SetDirID(0xEEEF);
-		impl->subDir[impl->subDirLen - 1] = '\\';
-		return match || FALSE_SET_DOSERR(NO_MORE_FILES);
+		if (p == pStart || *p == '\\')
+		{
+			Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII], *slash = strchr((p == pStart ? p : ++p), '\\');
+			dta.GetSearchParams(attr,pattern);
+			*slash = '\0';
+			bool match = WildFileCmp(p, pattern);
+			if (match && (attr & DOS_ATTR_DIRECTORY))
+				dta.SetResult(p, 0, 8600, 48128, (Bit8u)DOS_ATTR_DIRECTORY);
+			dta.SetDirID(dir_id + 1);
+			*slash = '\\';
+			return match || FALSE_SET_DOSERR(NO_MORE_FILES);
+		}
+		if (p == pStart + 1 || p[-1] == '\\') return FALSE_SET_DOSERR(NO_MORE_FILES);
 	}
-	else if (dir_id == 0xEEEF) return FALSE_SET_DOSERR(NO_MORE_FILES);
 	return impl->under.FindNext(dta);
 }
 

@@ -1184,7 +1184,7 @@ void DOS_Shell::CMD_SUBST (char * args) {
 			if (Drives[drive]) { WriteOut(MSG_Get("PROGRAM_MOUNT_ALREADY_MOUNTED"), drive+'A', Drives[drive]->GetInfo()); return; }
 			Bit8u trgdrive;char trgdir[DOS_PATHLENGTH];
 			if (!DOS_MakeName(dir, trgdir, &trgdrive) || !Drives[trgdrive]->TestDir(trgdir)) { WriteOut(MSG_Get("SHELL_ILLEGAL_PATH")); return; }
-			Drives[drive] = new mirrorDrive(*Drives[trgdrive], false, trgdir, true);
+			Drives[drive] = new mirrorDrive(*Drives[trgdrive], false, trgdir);
 			sprintf(Drives[drive]->info, "SUBST %c:\\%s", trgdrive+'A', trgdir);
 			WriteOut(MSG_Get("PROGRAM_MOUNT_STATUS_2"), drive+'A', Drives[drive]->GetInfo()+6);
 		}
