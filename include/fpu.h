@@ -89,7 +89,6 @@ typedef struct FPU_rec {
 	FPU_Reg		regs[9];
 	FPU_P_Reg	p_regs[9];
 	FPU_Tag		tags[9];
-	Bit64s		r64s[9];
 	Bit16u		cw,cw_mask_all;
 	Bit16u		sw;
 	Bit32u		top;
@@ -106,6 +105,7 @@ typedef struct FPU_rec {
 
 
 extern FPU_rec fpu;
+extern Bit64s fpu_r64s[9];
 
 #define TOP fpu.top
 #define STV(i)  ( (fpu.top+ (i) ) & 7 )

@@ -28,6 +28,7 @@
 #include "cpu.h"
 
 FPU_rec fpu;
+Bit64s fpu_r64s[9];
 
 void FPU_FLDCW(PhysPt addr){
 	Bit16u temp = mem_readw(addr);
@@ -638,5 +639,7 @@ void DBPSerialize_FPU(DBPArchive& ar)
 {
 	#if C_FPU
 	ar.Serialize(fpu);
+	if (ar.version >= 7)
+		ar.SerializeArray(fpu_r64s);
 	#endif
 }

@@ -209,7 +209,7 @@ static void FPU_FLD_I64(PhysPt addr,Bitu store_to) {
 	blah.l.upper = mem_readd(addr+4);
 	fpu.regs[store_to].d = static_cast<Real64>(blah.ll);
 	//DBP: Some games need the full 64 bit stored and returned in FPU_FST_I64 (the cast to double loses 11 bits)
-	fpu.r64s[store_to] = blah.ll;
+	fpu_r64s[store_to] = blah.ll;
 }
 
 static void FPU_FBLD(PhysPt addr,Bitu store_to) {
@@ -281,7 +281,7 @@ static void FPU_FST_I64(PhysPt addr) {
 	double val = fpu.regs[TOP].d;
 	FPU_Reg blah;
 	//DBP: If a 64 bit value was stored in FPU_FLD_I64, return it as is, otherwise do the conversion from the double
-	blah.ll = fpu.r64s[TOP];
+	blah.ll = fpu_r64s[TOP];
 	if (val != static_cast<Real64>(blah.ll)) {
 		val = FROUND(val);
 		blah.ll = (val < 9223372036854775808.0 && val >= -9223372036854775808.0)?static_cast<Bit64s>(val):LONGTYPE(0x8000000000000000);
@@ -398,19 +398,19 @@ static void FPU_FSUBR(Bitu st, Bitu other){
 static void FPU_FXCH(Bitu st, Bitu other){
 	FPU_Reg reg = fpu.regs[other];
 	FPU_Tag tag = fpu.tags[other];
-	Bit64s r64 = fpu.r64s[other];
+	Bit64s r64 = fpu_r64s[other];
 	fpu.regs[other] = fpu.regs[st];
 	fpu.tags[other] = fpu.tags[st];
-	fpu.r64s[other] = fpu.r64s[st];
+	fpu_r64s[other] = fpu_r64s[st];
 	fpu.regs[st] = reg;
 	fpu.tags[st] = tag;
-	fpu.r64s[st] = r64;
+	fpu_r64s[st] = r64;
 }
 
 static void FPU_FST(Bitu st, Bitu other){
 	fpu.tags[other] = fpu.tags[st];
 	fpu.regs[other] = fpu.regs[st];
-	fpu.r64s[other] = fpu.r64s[st];
+	fpu_r64s[other] = fpu_r64s[st];
 }
 
 
