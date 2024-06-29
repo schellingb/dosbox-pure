@@ -38,6 +38,39 @@ static union {
 	Bit16u b16 [SCALER_MAX_MUL_HEIGHT + 1][SCALER_MAXLINE_WIDTH];
 	Bit8u   b8 [SCALER_MAX_MUL_HEIGHT + 1][SCALER_MAXLINE_WIDTH];
 } scalerWriteCache;
+#else
+// Skip scalers to non 32-bit destinations (only support GFX_CAN_32)
+#define Normal1x_8_8_L   0
+#define Normal1x_8_15_L  0
+#define Normal1x_8_16_L  0
+#define Normal1x_8_8_L   0
+#define Normal1x_8_8_R   0
+#define Normal1x_8_15_R  0
+#define Normal1x_8_16_R  0
+#define Normal1x_8_8_R   0
+#define Normal1x_9_15_L  0
+#define Normal1x_9_16_L  0
+#define Normal1x_9_15_R  0
+#define Normal1x_9_16_R  0
+#define Normal1x_15_15_L 0
+#define Normal1x_15_16_L 0
+#define Normal1x_15_15_R 0
+#define Normal1x_15_16_R 0
+#define Normal1x_16_15_L 0
+#define Normal1x_16_16_L 0
+#define Normal1x_16_15_R 0
+#define Normal1x_16_16_R 0
+#define Normal1x_32_15_L 0
+#define Normal1x_32_16_L 0
+#define Normal1x_32_15_R 0
+#define Normal1x_32_16_R 0
+// force linear scalers only (for use with GFX_HARDWARE)
+#define SCALERLINEAR 1
+#define Normal1x_8_32_R  0
+#define Normal1x_15_32_R 0
+#define Normal1x_16_32_R 0
+#define Normal1x_32_32_R 0
+#define Normal1x_9_32_R  0
 #endif
 #ifdef C_DBP_ENABLE_SCALERCACHE
 //scalerFrameCache_t scalerFrameCache;
@@ -103,6 +136,7 @@ static INLINE void ScalerAddLines( Bitu changed, Bitu count ) {
 
 /* Include the different rendering routines */
 #define SBPP 8
+#ifdef C_DBP_ENABLE_SCALERS
 #define DBPP 8
 #include "render_templates.h"
 #undef DBPP
@@ -112,6 +146,7 @@ static INLINE void ScalerAddLines( Bitu changed, Bitu count ) {
 #define DBPP 16
 #include "render_templates.h"
 #undef DBPP
+#endif
 #define DBPP 32
 #include "render_templates.h"
 #undef SBPP
@@ -119,6 +154,7 @@ static INLINE void ScalerAddLines( Bitu changed, Bitu count ) {
 
 /* SBPP 9 is a special case with palette check support */
 #define SBPP 9
+#ifdef C_DBP_ENABLE_SCALERS
 #define DBPP 8
 #include "render_templates.h"
 #undef DBPP
@@ -128,42 +164,49 @@ static INLINE void ScalerAddLines( Bitu changed, Bitu count ) {
 #define DBPP 16
 #include "render_templates.h"
 #undef DBPP
+#endif
 #define DBPP 32
 #include "render_templates.h"
 #undef SBPP
 #undef DBPP
 
 #define SBPP 15
+#ifdef C_DBP_ENABLE_SCALERS
 #define DBPP 15
 #include "render_templates.h"
 #undef DBPP
 #define DBPP 16
 #include "render_templates.h"
 #undef DBPP
+#endif
 #define DBPP 32
 #include "render_templates.h"
 #undef SBPP
 #undef DBPP
 
 #define SBPP 16
+#ifdef C_DBP_ENABLE_SCALERS
 #define DBPP 15
 #include "render_templates.h"
 #undef DBPP
 #define DBPP 16
 #include "render_templates.h"
 #undef DBPP
+#endif
 #define DBPP 32
 #include "render_templates.h"
 #undef SBPP
 #undef DBPP
 
 #define SBPP 32
+#ifdef C_DBP_ENABLE_SCALERS
 #define DBPP 15
 #include "render_templates.h"
 #undef DBPP
 #define DBPP 16
 #include "render_templates.h"
 #undef DBPP
+#endif
 #define DBPP 32
 #include "render_templates.h"
 #undef SBPP

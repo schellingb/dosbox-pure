@@ -131,10 +131,12 @@ typedef struct {
 
 /* Simple scalers */
 extern ScalerSimpleBlock_t ScaleNormal1x;
+#ifdef C_DBP_ENABLE_SCALERS
 extern ScalerSimpleBlock_t ScaleNormalDw;
 extern ScalerSimpleBlock_t ScaleNormalDh;
 extern ScalerSimpleBlock_t ScaleNormal2x;
 extern ScalerSimpleBlock_t ScaleNormal3x;
+#endif
 #if RENDER_USE_ADVANCED_SCALERS>0
 extern ScalerSimpleBlock_t ScaleTV2x;
 extern ScalerSimpleBlock_t ScaleTV3x;

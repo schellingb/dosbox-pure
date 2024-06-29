@@ -478,13 +478,16 @@ forcenormal:
 	GFX_SetShader(render.shader_src);
 #endif
 	gfx_flags=GFX_SetSize(width,height,gfx_flags,gfx_scalew,gfx_scaleh,&RENDER_CallBack);
+#ifdef C_DBP_ENABLE_SCALERS
 	if (gfx_flags & GFX_CAN_8)
 		render.scale.outMode = scalerMode8;
 	else if (gfx_flags & GFX_CAN_15)
 		render.scale.outMode = scalerMode15;
 	else if (gfx_flags & GFX_CAN_16)
 		render.scale.outMode = scalerMode16;
-	else if (gfx_flags & GFX_CAN_32)
+	else
+#endif
+	if (gfx_flags & GFX_CAN_32)
 		render.scale.outMode = scalerMode32;
 	else 
 		E_Exit("Failed to create a rendering output");
