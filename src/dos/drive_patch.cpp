@@ -256,7 +256,7 @@ struct Patch_File : Patch_Entry
 					}
 				}
 				out_data.resize(out_pos);
-				std::swap(in_data, out_data);
+				in_data.swap(out_data);
 				return true;
 			}
 		};
@@ -332,7 +332,7 @@ struct Patch_File : Patch_Entry
 					}
 				}
 				if (outputOffset != targetLen) return false;
-				std::swap(in_data, out_data);
+				in_data.swap(out_data);
 				return true;
 			}
 		};
@@ -702,6 +702,12 @@ bool patchDrive::GetFileAttr(char * name, Bit16u * attr)
 	if (!p) return impl->under.GetFileAttr(name, attr);
 	*attr = p->attr;
 	return true;
+}
+
+bool patchDrive::GetLongFileName(const char* path, char longname[256])
+{
+	DOSPATH_REMOVE_ENDINGDOTS(path);
+	return (!impl->Get(path) ? &impl->under : impl->patchzip)->GetLongFileName(path, longname);
 }
 
 bool patchDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)

@@ -722,6 +722,7 @@ public:
 	virtual bool FindNext(DOS_DTA & dta);
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
 	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
 	virtual Bit8u GetMediaByte(void);
@@ -748,6 +749,7 @@ public:
 	virtual bool FindNext(DOS_DTA & dta);
 	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
 	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
 	virtual Bit8u GetMediaByte(void);

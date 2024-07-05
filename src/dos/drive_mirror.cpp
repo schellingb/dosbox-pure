@@ -240,6 +240,12 @@ bool mirrorDrive::GetFileAttr(char * name, Bit16u * attr)
 	return (impl->FixSubdir((const char*&)name, name_buf) && impl->under.GetFileAttr(name, attr));
 }
 
+bool mirrorDrive::GetLongFileName(const char* path, char longname[256])
+{
+	DOSPATH_REMOVE_ENDINGDOTS(path);
+	return (impl->FixSubdir((const char*&)path, path_buf) && impl->under.GetLongFileName(path, longname));
+}
+
 bool mirrorDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)
 {
 	return impl->under.AllocationInfo(_bytes_sector, _sectors_cluster, _total_clusters, _free_clusters);
