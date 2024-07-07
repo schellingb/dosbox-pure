@@ -500,73 +500,24 @@ bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u 
 Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc = 0);
 void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data = 0, const char* root = nullptr);
 
-template <typename TVal> struct StringToPointerHashMap
+template <typename TVal> struct BaseHashMap
 {
-	StringToPointerHashMap() : len(0), maxlen(0), keys(NULL), vals(NULL) { }
-	~StringToPointerHashMap() { free(keys); free(vals); }
+	INLINE BaseHashMap() { memset(this, 0, sizeof(*this)); }
+	INLINE ~BaseHashMap() { free(keys); free(vals); }
 
-	static Bit32u Hash(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
-	{
-		for (const char* e = str + str_limit; *str && str != e;)
-			hash_init = ((hash_init * (Bit32u)0x01000193) ^ (Bit32u)*(str++));
-		return hash_init;
-	}
+	INLINE void Free() { this->~BaseHashMap(); memset(this, 0, sizeof(*this)); }
+	INLINE void Clear() { memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
 
-	TVal* Get(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) const
-	{
-		if (len == 0) return NULL;
-		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
-		{
-			if (keys[i &= maxlen] == key) return vals[i];
-			if (!keys[i]) return NULL;
-		}
-	}
-
-	void Put(const char* str, TVal* val, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
-	{
-		if (len * 2 >= maxlen) Grow();
-		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
-		{
-			if (!keys[i &= maxlen]) { len++; keys[i] = key; vals[i] = val; return; }
-			if (keys[i] == key) { vals[i] = val; return; }
-		}
-	}
-
-	bool Remove(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
-	{
-		if (len == 0) return false;
-		for (Bit32u key0 = Hash(str, str_limit, hash_init), key = (key0 ? key0 : 1), i = key;; i++)
-		{
-			if (keys[i &= maxlen] == key)
-			{
-				keys[i] = 0;
-				len--;
-				while ((key = keys[i = (i + 1) & maxlen]) != 0)
-				{
-					for (Bit32u j = key;; j++)
-					{
-						if (keys[j &= maxlen] == key) break;
-						if (!keys[j]) { keys[i] = 0; keys[j] = key; vals[j] = vals[i]; break; }
-					}
-				}
-				return true;
-			}
-			if (!keys[i]) return false;
-		}
-	}
-
-	void Clear() { memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
-
-	Bit32u Len() const { return len; }
-	Bit32u Capacity() const { return (maxlen ? maxlen + 1 : 0); }
-	TVal* GetAtIndex(Bit32u idx) const { return (keys[idx] ? vals[idx] : NULL); }
+	INLINE Bit32u Len() const { return len; }
+	INLINE Bit32u Capacity() const { return (maxlen ? maxlen + 1 : 0); }
+	INLINE TVal GetAtIndex(Bit32u idx) const { return (keys[idx] ? vals[idx] : NULL); }
 
 	struct Iterator
 	{
-		Iterator(StringToPointerHashMap<TVal>& _map, Bit32u _index) : map(_map), index(_index - 1) { this->operator++(); }
-		StringToPointerHashMap<TVal>& map;
+		Iterator(BaseHashMap<TVal>& _map, Bit32u _index) : map(_map), index(_index - 1) { this->operator++(); }
+		BaseHashMap<TVal>& map;
 		Bit32u index;
-		TVal* operator *() const { return map.vals[index]; }
+		TVal operator *() const { return map.vals[index]; }
 		bool operator ==(const Iterator &other) const { return index == other.index; }
 		bool operator !=(const Iterator &other) const { return index != other.index; }
 		Iterator& operator ++()
@@ -578,20 +529,63 @@ template <typename TVal> struct StringToPointerHashMap
 		}
 	};
 
-	Iterator begin() { return Iterator(*this, 0); }
-	Iterator end() { return Iterator(*this, (maxlen ? maxlen + 1 : 0)); }
+	INLINE Iterator begin() { return Iterator(*this, 0); }
+	INLINE Iterator end() { return Iterator(*this, (maxlen ? maxlen + 1 : 0)); }
 
-private:
+protected:
+	TVal* BaseGet(Bit32u key) const
+	{
+		if (len == 0) return NULL;
+		for (Bit32u key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (keys[i &= maxlen] == key1) return vals+i;
+			if (!keys[i]) return NULL;
+		}
+	}
+
+	bool BasePut(Bit32u key, TVal val)
+	{
+		if (len * 2 >= maxlen) Grow();
+		for (Bit32u key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (!keys[i &= maxlen]) { len++; keys[i] = key1; vals[i] = val; return true; }
+			if (keys[i] == key1) { vals[i] = val; return false; }
+		}
+	}
+
+	bool BaseRemove(Bit32u key)
+	{
+		if (len == 0) return false;
+		for (Bit32u key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (keys[i &= maxlen] == key1)
+			{
+				keys[i] = 0;
+				len--;
+				while ((key1 = keys[i = (i + 1) & maxlen]) != 0)
+				{
+					for (Bit32u j = key1;; j++)
+					{
+						if (keys[j &= maxlen] == key1) break;
+						if (!keys[j]) { keys[i] = 0; keys[j] = key1; vals[j] = vals[i]; break; }
+					}
+				}
+				return true;
+			}
+			if (!keys[i]) return false;
+		}
+	}
+
 	Bit32u len, maxlen, *keys;
-	TVal** vals;
+	TVal* vals;
 
 	void Grow()
 	{
 		Bit32u oldMax = maxlen, oldCap = (maxlen ? oldMax + 1 : 0), *oldKeys = keys;
-		TVal **oldVals = vals;
+		TVal* oldVals = vals;
 		maxlen  = (maxlen ? maxlen * 2 + 1 : 15);
 		keys = (Bit32u*)calloc(maxlen + 1, sizeof(Bit32u));
-		vals = (TVal**)malloc((maxlen + 1) * sizeof(TVal*));
+		vals = (TVal*)malloc((maxlen + 1) * sizeof(TVal));
 		for (Bit32u i = 0; i != oldCap; i++)
 		{
 			if (!oldKeys[i]) continue;
@@ -605,8 +599,85 @@ private:
 	}
 
 	// not copyable
-	StringToPointerHashMap(const StringToPointerHashMap&);
-	StringToPointerHashMap& operator=(const StringToPointerHashMap&);
+	BaseHashMap(const BaseHashMap&);
+	BaseHashMap& operator=(const BaseHashMap&);
+};
+
+template <typename TVal> struct StringToPointerHashMap : public BaseHashMap<TVal*>
+{
+	static Bit32u Hash(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	{
+		for (const char* e = str + str_limit; *str && str != e;)
+			hash_init = ((hash_init * (Bit32u)0x01000193) ^ (Bit32u)*(str++));
+		return hash_init;
+	}
+	TVal* Get(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) const
+	{
+		if (BHM::len == 0) return NULL;
+		for (Bit32u key = Hash(str, str_limit, hash_init), key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (BHM::keys[i &= BHM::maxlen] == key1) return BHM::vals[i];
+			if (!BHM::keys[i]) return NULL;
+		}
+	}
+	INLINE bool Put(const char* str, TVal* val, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BHM::BasePut(Hash(str, str_limit, hash_init), val); }
+	INLINE bool Remove(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BHM::BaseRemove(Hash(str, str_limit, hash_init)); }
+	private: typedef BaseHashMap<TVal*> BHM;
+};
+
+template <typename TVal> struct ValueHashMap : public BaseHashMap<TVal>
+{
+	INLINE TVal* Get(Bit32u key) const { return BHM::BaseGet(key); }
+	INLINE bool Put(Bit32u key, TVal val) { return BHM::BasePut(key, val); }
+	INLINE bool Remove(Bit32u key) { return BHM::BaseRemove(key); }
+	private: typedef BaseHashMap<TVal> BHM;
+};
+
+template <typename TVal> struct ValueEqualHashMap : public BaseHashMap<TVal>
+{
+	template <typename TEqFunc, typename TData, typename TOther> TVal* Get(Bit32u key, TEqFunc eqfn, TData& data, const TOther& other) const
+	{
+		if (BHM::len == 0) return NULL;
+		for (Bit32u key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (BHM::keys[i &= BHM::maxlen] == key1 && eqfn(data, BHM::vals[i], other)) return BHM::vals+i;
+			if (!BHM::keys[i]) return NULL;
+		}
+	}
+
+	template <typename TEqFunc, typename TData, typename TOther> void Put(Bit32u key, TEqFunc eqfn, TData& data, const TOther& other, TVal val)
+	{
+		if (BHM::len * 2 >= BHM::maxlen) BHM::Grow();
+		for (Bit32u key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (!BHM::keys[i &= BHM::maxlen]) { BHM::len++; BHM::keys[i] = key1; BHM::vals[i] = val; return; }
+			if (BHM::keys[i] == key1 && eqfn(data, BHM::vals[i], other)) { BHM::vals[i] = val; return; }
+		}
+	}
+
+	template <typename TEqFunc, typename TData, typename TOther> bool Remove(Bit32u key, TEqFunc eqfn, TData& data, const TOther& other)
+	{
+		if (BHM::len == 0) return false;
+		for (Bit32u key1 = (key ? key : 1), i = key1;; i++)
+		{
+			if (BHM::keys[i &= BHM::maxlen] == key1)
+			{
+				BHM::keys[i] = 0;
+				BHM::len--;
+				while ((key1 = BHM::keys[i = (i + 1) & BHM::maxlen]) != 0)
+				{
+					for (Bit32u j = key1;; j++)
+					{
+						if (BHM::keys[j &= BHM::maxlen] == key1 && eqfn(data, BHM::vals[i], other)) break;
+						if (!BHM::keys[j]) { BHM::keys[i] = 0; BHM::keys[j] = key1; BHM::vals[j] = BHM::vals[i]; break; }
+					}
+				}
+				return true;
+			}
+			if (!BHM::keys[i]) return false;
+		}
+	}
+	private: typedef BaseHashMap<TVal> BHM;
 };
 
 //Used to load drive images and archives from the native filesystem not a DOS_Drive

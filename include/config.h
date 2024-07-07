@@ -95,7 +95,8 @@
 #ifdef NDEBUG
 #define DBP_ASSERT(cond)
 #else
-#define DBP_ASSERT(cond) (void)((cond) ? ((int)0) : *(volatile int*)0 = 0xbad|fprintf(stderr, "FAILED ASSERT (%s)\n", #cond))
+void GFX_ShowMsg(char const* format,...);
+#define DBP_ASSERT(cond) (void)((cond) ? ((int)0) : *(volatile int*)0 = 0xbad|(GFX_ShowMsg("FAILED ASSERT (%s) on %s:%d\n", #cond, __FILE__, __LINE__),0))
 #endif
 #define _DBP_STATIC_ASSERTM(A,B) static_assertion_##A##_##B
 #define _DBP_STATIC_ASSERTN(A,B) _DBP_STATIC_ASSERTM(A,B)

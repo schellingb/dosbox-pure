@@ -460,16 +460,32 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_voodoo_perf",
-		"3dfx Voodoo Performance Settings", NULL,
-		"Options to tweak the behavior of the 3dfx Voodoo emulation.", NULL,
+		"3dfx Voodoo Performance", NULL,
+		"Options to tweak the behavior of the 3dfx Voodoo emulation." "\n"
+		"Switching to OpenGL requires a restart." "\n"
+		"If OpenGL is available, host-side 3D acceleation is used which can make 3D rendering much faster.", NULL,
 		"Video",
 		{
-			{ "1", "Multi-threading (default)" },
-			{ "3", "Multi-threading, low quality" },
-			{ "2", "Low quality" },
-			{ "0", "None" },
+			{ "1", "Software Multi Threaded (default)" },
+			{ "4", "Hardware OpenGL" },
+			{ "12", "Hardware OpenGL High Resolution" },
+			{ "3", "Software Multi Threaded, low quality" },
+			{ "2", "Software Low quality" },
+			{ "0", "Software Single Threaded" },
 		},
 		"1",
+	},
+	{
+		"dosbox_pure_voodoo_gamma",
+		"3dfx Voodoo Gamma Correction", NULL,
+		"Change brightness of rendered 3dfx output.", NULL,
+		"Video",
+		{
+			{ "-10", "-10" }, { "-9", "-9" }, { "-8", "-8" }, { "-7", "-7" }, { "-6", "-6" }, { "-5", "-5" }, { "-4", "-4" }, { "-3", "-3" }, { "-2", "-2" }, { "-1", "-1" },
+			{ "0", "None" },
+			{ "1", "+1" }, { "2", "+2" }, { "3", "+3" }, { "4", "+4" }, { "5", "+5" }, { "6", "+6" }, { "7", "+7" }, { "8", "+8" }, { "9", "+9" }, { "10", "+10" },
+		},
+		"-2",
 	},
 	{
 		"dosbox_pure_aspect_correction",

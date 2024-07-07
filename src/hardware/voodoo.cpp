@@ -55,6 +55,7 @@
   3dfx Voodoo Graphics SST-1/2 emulator by Aaron Giles
   DOSBox integration by kekko (https://www.vogons.org/viewtopic.php?f=41&t=41853)
   Code cleanups and multi-threaded triangle rendering by Bernhard Schelling
+  Rewrite of OpenGL rendering for more modern OpenGL and OpenGLES by Bernhard Schelling
 */
 
 #include <stdlib.h>
@@ -75,6 +76,14 @@
 #include "pci_bus.h"
 #include "control.h"
 #include "dbp_threads.h"
+
+#define C_DBP_ENABLE_VOODOO_OPENGL
+
+#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+#include <stddef.h> //for offsetof
+#include "dbp_opengl.h"
+#include "../dos/drives.h"
+#endif
 
 #ifndef DOSBOX_VOODOO_TYPES_H
 #define DOSBOX_VOODOO_TYPES_H
@@ -207,7 +216,7 @@ struct rectangle
 /* Highly useful macro for compile-time knowledge of an array size */
 #define ARRAY_LENGTH(x)		(sizeof(x) / sizeof(x[0]))
 
-INLINE INT32 mul_32x32_shift(INT32 a, INT32 b, INT8 shift)
+static INLINE INT32 mul_32x32_shift(INT32 a, INT32 b, INT8 shift)
 {
 	return (INT32)(((INT64)a * (INT64)b) >> shift);
 }
@@ -220,7 +229,7 @@ INLINE INT32 mul_32x32_shift(INT32 a, INT32 b, INT8 shift)
 static INT16 sse2_scale_table[256][8];
 #endif
 
-INLINE rgb_t rgba_bilinear_filter(rgb_t rgb00, rgb_t rgb01, rgb_t rgb10, rgb_t rgb11, UINT8 u, UINT8 v)
+static INLINE rgb_t rgba_bilinear_filter(rgb_t rgb00, rgb_t rgb01, rgb_t rgb10, rgb_t rgb11, UINT8 u, UINT8 v)
 {
 #if defined(__SSE2__) && __SSE2__
 	__m128i  scale_u = *(__m128i *)sse2_scale_table[u], scale_v = *(__m128i *)sse2_scale_table[v];
@@ -275,14 +284,6 @@ enum { MAX_TRIANGLE_THREADS = 7, MAX_TRIANGLE_WORKERS = MAX_TRIANGLE_THREADS + 1
 /* maximum number of TMUs */
 #define MAX_TMU					2
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-/* maximum number of rasterizers */
-#define MAX_RASTERIZERS			1024
-
-/* size of the rasterizer hash table */
-#define RASTER_HASH_SIZE		97
-#endif
-
 /* flags for LFB writes */
 #define LFB_RGB_PRESENT			1
 #define LFB_ALPHA_PRESENT		2
@@ -313,12 +314,6 @@ enum { MAX_TRIANGLE_THREADS = 7, MAX_TRIANGLE_WORKERS = MAX_TRIANGLE_THREADS + 1
 #define REG_WPF					(REGISTER_WRITE | REGISTER_PIPELINED | REGISTER_FIFO)
 #define REG_RWPF				(REGISTER_READ | REGISTER_WRITE | REGISTER_PIPELINED | REGISTER_FIFO)
 
-/* lookup bits is the log2 of the size of the reciprocal/log table */
-#define RECIPLOG_LOOKUP_BITS	9
-
-/* fast reciprocal+log2 lookup */
-static UINT32 voodoo_reciplog[(2 << RECIPLOG_LOOKUP_BITS) + 2];
-
 /* input precision is how many fraction bits the input value has; this is a 64-bit number */
 #define RECIPLOG_INPUT_PREC		32
 
@@ -328,6 +323,12 @@ static UINT32 voodoo_reciplog[(2 << RECIPLOG_LOOKUP_BITS) + 2];
 /* output precision is how many fraction bits the result should have */
 #define RECIP_OUTPUT_PREC		15
 #define LOG_OUTPUT_PREC			8
+
+/* lookup bits is the log2 of the size of the reciprocal/log table */
+#define RECIPLOG_LOOKUP_BITS	9
+
+/* fast reciprocal+log2 lookup */
+static UINT32 voodoo_reciplog[(2 << RECIPLOG_LOOKUP_BITS) + 2];
 
 
 /*************************************
@@ -448,63 +449,104 @@ static const UINT8 dither_matrix_2x2[16] =
 #define INITEN_ENABLE_SLI_ADDRESS_SNOOP(val) (((val) >> 23) & 1)	/* voodoo 2 only */
 #define INITEN_SLI_SNOOP_ADDRESS(val)		(((val) >> 24) & 0xff)	/* voodoo 2 only */
 
+#define FBZCP_CC_RGBSELECT_BITS				(3 << 0)
 #define FBZCP_CC_RGBSELECT(val)				(((val) >> 0) & 3)
+#define FBZCP_CC_ASELECT_BITS				(3 << 2)
 #define FBZCP_CC_ASELECT(val)				(((val) >> 2) & 3)
+#define FBZCP_CC_LOCALSELECT_BIT			(1 << 4)
 #define FBZCP_CC_LOCALSELECT(val)			(((val) >> 4) & 1)
+#define FBZCP_CCA_LOCALSELECT_BITS			(3 << 5)
 #define FBZCP_CCA_LOCALSELECT(val)			(((val) >> 5) & 3)
+#define FBZCP_CC_LOCALSELECT_OVERRIDE_BIT	(1 << 7)
 #define FBZCP_CC_LOCALSELECT_OVERRIDE(val)	(((val) >> 7) & 1)
+#define FBZCP_CC_ZERO_OTHER_BIT				(1 << 8)
 #define FBZCP_CC_ZERO_OTHER(val)			(((val) >> 8) & 1)
+#define FBZCP_CC_SUB_CLOCAL_BIT				(1 << 9)
 #define FBZCP_CC_SUB_CLOCAL(val)			(((val) >> 9) & 1)
+#define FBZCP_CC_MSELECT_BITS				(7 << 10)
 #define FBZCP_CC_MSELECT(val)				(((val) >> 10) & 7)
+#define FBZCP_CC_REVERSE_BLEND_BIT			(1 << 13)
 #define FBZCP_CC_REVERSE_BLEND(val)			(((val) >> 13) & 1)
+#define FBZCP_CC_ADD_ACLOCAL_BITS			(3 << 14)
 #define FBZCP_CC_ADD_ACLOCAL(val)			(((val) >> 14) & 3)
+#define FBZCP_CC_INVERT_OUTPUT_BIT			(1 << 16)
 #define FBZCP_CC_INVERT_OUTPUT(val)			(((val) >> 16) & 1)
+#define FBZCP_CCA_ZERO_OTHER_BIT			(1 << 17)
 #define FBZCP_CCA_ZERO_OTHER(val)			(((val) >> 17) & 1)
+#define FBZCP_CCA_SUB_CLOCAL_BIT			(1 << 18)
 #define FBZCP_CCA_SUB_CLOCAL(val)			(((val) >> 18) & 1)
+#define FBZCP_CCA_MSELECT_BITS				(7 << 19)
 #define FBZCP_CCA_MSELECT(val)				(((val) >> 19) & 7)
+#define FBZCP_CCA_REVERSE_BLEND_BIT			(1 << 22)
 #define FBZCP_CCA_REVERSE_BLEND(val)		(((val) >> 22) & 1)
+#define FBZCP_CCA_ADD_ACLOCAL_BITS			(3 << 23)
 #define FBZCP_CCA_ADD_ACLOCAL(val)			(((val) >> 23) & 3)
+#define FBZCP_CCA_INVERT_OUTPUT_BIT			(1 << 25)
 #define FBZCP_CCA_INVERT_OUTPUT(val)		(((val) >> 25) & 1)
 #define FBZCP_CCA_SUBPIXEL_ADJUST(val)		(((val) >> 26) & 1)
 #define FBZCP_TEXTURE_ENABLE(val)			(((val) >> 27) & 1)
 #define FBZCP_RGBZW_CLAMP(val)				(((val) >> 28) & 1)		/* voodoo 2 only */
 #define FBZCP_ANTI_ALIAS(val)				(((val) >> 29) & 1)		/* voodoo 2 only */
 
+#define ALPHAMODE_ALPHATEST_BIT				(1 << 0)
 #define ALPHAMODE_ALPHATEST(val)			(((val) >> 0) & 1)
+#define ALPHAMODE_ALPHAFUNCTION_BITS		(7 << 1)
 #define ALPHAMODE_ALPHAFUNCTION(val)		(((val) >> 1) & 7)
+#define ALPHAMODE_ALPHABLEND_BIT			(1 << 4)
 #define ALPHAMODE_ALPHABLEND(val)			(((val) >> 4) & 1)
+#define ALPHAMODE_ANTIALIAS_BIT				(1 << 5)
 #define ALPHAMODE_ANTIALIAS(val)			(((val) >> 5) & 1)
+#define ALPHAMODE_SRCRGBBLEND_BITS			(15 << 8)
 #define ALPHAMODE_SRCRGBBLEND(val)			(((val) >> 8) & 15)
+#define ALPHAMODE_DSTRGBBLEND_BITS			(15 << 12)
 #define ALPHAMODE_DSTRGBBLEND(val)			(((val) >> 12) & 15)
+#define ALPHAMODE_SRCALPHABLEND_BITS		(15 << 16)
 #define ALPHAMODE_SRCALPHABLEND(val)		(((val) >> 16) & 15)
+#define ALPHAMODE_DSTALPHABLEND_BITS		(15 << 20)
 #define ALPHAMODE_DSTALPHABLEND(val)		(((val) >> 20) & 15)
+#define ALPHAMODE_ALPHAREF_BITS				((UINT32)((UINT32)0xff << 24))
 #define ALPHAMODE_ALPHAREF(val)				(((val) >> 24) & 0xff)
 
+#define FOGMODE_ENABLE_FOG_BIT				(1 << 0)
 #define FOGMODE_ENABLE_FOG(val)				(((val) >> 0) & 1)
+#define FOGMODE_FOG_ADD_BIT					(1 << 1)
 #define FOGMODE_FOG_ADD(val)				(((val) >> 1) & 1)
+#define FOGMODE_FOG_MULT_BIT				(1 << 2)
 #define FOGMODE_FOG_MULT(val)				(((val) >> 2) & 1)
+#define FOGMODE_FOG_ZALPHA_BIT				(3 << 3)
 #define FOGMODE_FOG_ZALPHA(val)				(((val) >> 3) & 3)
+#define FOGMODE_FOG_CONSTANT_BIT			(1 << 5)
 #define FOGMODE_FOG_CONSTANT(val)			(((val) >> 5) & 1)
 #define FOGMODE_FOG_DITHER(val)				(((val) >> 6) & 1)		/* voodoo 2 only */
 #define FOGMODE_FOG_ZONES(val)				(((val) >> 7) & 1)		/* voodoo 2 only */
 
 #define FBZMODE_ENABLE_CLIPPING(val)		(((val) >> 0) & 1)
+#define FBZMODE_ENABLE_CHROMAKEY_BIT		(1 << 1)
 #define FBZMODE_ENABLE_CHROMAKEY(val)		(((val) >> 1) & 1)
 #define FBZMODE_ENABLE_STIPPLE(val)			(((val) >> 2) & 1)
 #define FBZMODE_WBUFFER_SELECT(val)			(((val) >> 3) & 1)
+#define FBZMODE_ENABLE_DEPTHBUF_BIT			(1 << 4)
 #define FBZMODE_ENABLE_DEPTHBUF(val)		(((val) >> 4) & 1)
+#define FBZMODE_DEPTH_FUNCTION_BITS			(7 << 5)
 #define FBZMODE_DEPTH_FUNCTION(val)			(((val) >> 5) & 7)
 #define FBZMODE_ENABLE_DITHERING(val)		(((val) >> 8) & 1)
+#define FBZMODE_RGB_BUFFER_MASK_BIT			(1 << 9)
 #define FBZMODE_RGB_BUFFER_MASK(val)		(((val) >> 9) & 1)
+#define FBZMODE_AUX_BUFFER_MASK_BIT			(1 << 10)
 #define FBZMODE_AUX_BUFFER_MASK(val)		(((val) >> 10) & 1)
 #define FBZMODE_DITHER_TYPE(val)			(((val) >> 11) & 1)
 #define FBZMODE_STIPPLE_PATTERN(val)		(((val) >> 12) & 1)
+#define FBZMODE_ENABLE_ALPHA_MASK_BIT		(1 << 13)
 #define FBZMODE_ENABLE_ALPHA_MASK(val)		(((val) >> 13) & 1)
+#define FBZMODE_DRAW_BUFFER_BITS			(1 << 14)
 #define FBZMODE_DRAW_BUFFER(val)			(((val) >> 14) & 3)
 #define FBZMODE_ENABLE_DEPTH_BIAS(val)		(((val) >> 16) & 1)
+#define FBZMODE_Y_ORIGIN_BIT				(1 << 17)
 #define FBZMODE_Y_ORIGIN(val)				(((val) >> 17) & 1)
+#define FBZMODE_ENABLE_ALPHA_PLANES_BIT		(1 << 18)
 #define FBZMODE_ENABLE_ALPHA_PLANES(val)	(((val) >> 18) & 1)
 #define FBZMODE_ALPHA_DITHER_SUBTRACT(val)	(((val) >> 19) & 1)
+#define FBZMODE_DEPTH_SOURCE_COMPARE_BIT	(1 << 20)
 #define FBZMODE_DEPTH_SOURCE_COMPARE(val)	(((val) >> 20) & 1)
 #define FBZMODE_DEPTH_FLOAT_SELECT(val)		(((val) >> 21) & 1)		/* voodoo 2 only */
 
@@ -647,26 +689,43 @@ static const UINT8 dither_matrix_2x2[16] =
 #define FBIINIT7_ENABLE_TEXTURE_BURST(val)	(((val) >> 27) & 1)		/* voodoo 2 only */
 
 #define TEXMODE_ENABLE_PERSPECTIVE(val)		(((val) >> 0) & 1)
+#define TEXMODE_MINIFICATION_FILTER_BIT		(1 << 1)
 #define TEXMODE_MINIFICATION_FILTER(val)	(((val) >> 1) & 1)
+#define TEXMODE_MAGNIFICATION_FILTER_BIT	(1 << 2)
 #define TEXMODE_MAGNIFICATION_FILTER(val)	(((val) >> 2) & 1)
 #define TEXMODE_CLAMP_NEG_W(val)			(((val) >> 3) & 1)
 #define TEXMODE_ENABLE_LOD_DITHER(val)		(((val) >> 4) & 1)
 #define TEXMODE_NCC_TABLE_SELECT(val)		(((val) >> 5) & 1)
+#define TEXMODE_CLAMP_S_BIT					(1 << 6)
 #define TEXMODE_CLAMP_S(val)				(((val) >> 6) & 1)
+#define TEXMODE_CLAMP_T_BIT					(1 << 7)
 #define TEXMODE_CLAMP_T(val)				(((val) >> 7) & 1)
 #define TEXMODE_FORMAT(val)					(((val) >> 8) & 0xf)
+#define TEXMODE_TC_ZERO_OTHER_BIT			(1 << 12)
 #define TEXMODE_TC_ZERO_OTHER(val)			(((val) >> 12) & 1)
+#define TEXMODE_TC_SUB_CLOCAL_BIT			(1 << 13)
 #define TEXMODE_TC_SUB_CLOCAL(val)			(((val) >> 13) & 1)
+#define TEXMODE_TC_MSELECT_BITS				(7 << 14)
 #define TEXMODE_TC_MSELECT(val)				(((val) >> 14) & 7)
+#define TEXMODE_TC_REVERSE_BLEND_BIT		(1 << 17)
 #define TEXMODE_TC_REVERSE_BLEND(val)		(((val) >> 17) & 1)
+#define TEXMODE_TC_ADD_ACLOCAL_BITS			(3 << 18)
 #define TEXMODE_TC_ADD_ACLOCAL(val)			(((val) >> 18) & 3)
+#define TEXMODE_TC_INVERT_OUTPUT_BIT		(1 << 20)
 #define TEXMODE_TC_INVERT_OUTPUT(val)		(((val) >> 20) & 1)
+#define TEXMODE_TCA_ZERO_OTHER_BIT			(1 << 21)
 #define TEXMODE_TCA_ZERO_OTHER(val)			(((val) >> 21) & 1)
+#define TEXMODE_TCA_SUB_CLOCAL_BIT			(1 << 22)
 #define TEXMODE_TCA_SUB_CLOCAL(val)			(((val) >> 22) & 1)
+#define TEXMODE_TCA_MSELECT_BITS			(7 << 23)
 #define TEXMODE_TCA_MSELECT(val)			(((val) >> 23) & 7)
+#define TEXMODE_TCA_REVERSE_BLEND_BIT		(1 << 26)
 #define TEXMODE_TCA_REVERSE_BLEND(val)		(((val) >> 26) & 1)
+#define TEXMODE_TCA_ADD_ACLOCAL_BITS		(3 << 27)
 #define TEXMODE_TCA_ADD_ACLOCAL(val)		(((val) >> 27) & 3)
+#define TEXMODE_TCA_INVERT_OUTPUT_BIT		(1 << 29)
 #define TEXMODE_TCA_INVERT_OUTPUT(val)		(((val) >> 29) & 1)
+#define TEXMODE_TRILINEAR_BIT				(1 << 30)
 #define TEXMODE_TRILINEAR(val)				(((val) >> 30) & 1)
 #define TEXMODE_SEQ_8_DOWNLD(val)			(((val) >> 31) & 1)
 
@@ -821,6 +880,7 @@ struct setup_vertex
 	float				w1, s1, t1;				/* W, S, T for TMU 1 */
 };
 
+/* serialized in bulk, don't modify without updating DBPSerialize_Voodoo */
 struct fbi_state
 {
 	UINT8 *				ram;					/* pointer to frame buffer RAM */
@@ -845,7 +905,7 @@ struct fbi_state
 
 	UINT8				vblank;					/* VBLANK state */
 	bool				vblank_dont_swap;		/* don't actually swap when we hit this point */
-	bool				vblank_flush_pending;
+	bool				vblank_flush_pending;	/* unused now, was always false */
 
 	/* triangle setup info */
 	INT16				ax, ay;					/* vertex A x,y (12.4) */
@@ -871,8 +931,6 @@ struct fbi_state
 	UINT8				fogblend[64];			/* 64-entry fog table */
 	UINT8				fogdelta[64];			/* 64-entry fog table */
 	UINT8				fogdelta_mask;			/* mask for for delta (0xff for V1, 0xfc for V2) */
-
-	//rgb_t				clut[512];				/* clut gamma data */
 };
 
 struct dac_state
@@ -880,39 +938,6 @@ struct dac_state
 	UINT8				reg[8];					/* 8 registers */
 	UINT8				read_result;			/* pending read result */
 };
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-#ifndef GLhandleARB
-#ifdef __APPLE__
-typedef void* GLhandleARB;
-#else
-typedef unsigned int GLhandleARB;
-#endif /* __APPLE__ */
-#endif /* GLhandleARB */
-
-struct raster_info
-{
-	raster_info			*next;					/* pointer to next entry with the same hash */
-#ifdef C_DBP_ENABLE_VOODOO_DEBUG
-	bool				is_generic;				/* true if this is one of the generic rasterizers */
-	UINT8				display;				/* display index */
-	UINT32				hits;					/* how many hits (pixels) we've used this for */
-	UINT32				polys;					/* how many polys we've used this for */
-#endif
-	UINT32				eff_color_path;			/* effective fbzColorPath value */
-	UINT32				eff_alpha_mode;			/* effective alphaMode value */
-	UINT32				eff_fog_mode;			/* effective fogMode value */
-	UINT32				eff_fbz_mode;			/* effective fbzMode value */
-	UINT32				eff_tex_mode_0;			/* effective textureMode value for TMU #0 */
-	UINT32				eff_tex_mode_1;			/* effective textureMode value for TMU #1 */
-
-	bool				shader_ready;
-	GLhandleARB			so_shader_program;
-	GLhandleARB			so_vertex_shader;
-	GLhandleARB			so_fragment_shader;
-	INT32*				shader_ulocations;
-};
-#endif
 
 struct draw_state
 {
@@ -925,7 +950,7 @@ struct draw_state
 
 struct triangle_worker
 {
-	bool threads_active, disable_bilinear_filter;
+	bool threads_active;
 	UINT8 triangle_threads;
 	UINT16 *drawbuf;
 	poly_vertex v1, v2, v3;
@@ -951,92 +976,28 @@ struct voodoo_state
 	tmu_shared_state	tmushare;				/* TMU shared state */
 	UINT32				tmu_config;
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	UINT16				next_rasterizer;		/* next rasterizer index */
-	raster_info			rasterizer[MAX_RASTERIZERS];	/* array of rasterizers */
-	raster_info *		raster_hash[RASTER_HASH_SIZE];	/* hash table of rasterizers */
-#endif
-
 	stats_block			thread_stats[MAX_TRIANGLE_WORKERS];	/* per-thread statistics */
 
 	bool				send_config;
 	bool				clock_enabled;
 	bool				output_on;
 	bool				active;
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	bool				ogl;
-	bool				ogl_dimchange;
-	bool				ogl_palette_changed;
-#endif
+	float				render_scale;
 #ifdef C_DBP_ENABLE_VOODOO_DEBUG
 	const char *const *	regnames;				/* register names array */
 #endif
 
 	draw_state			draw;
 	triangle_worker		tworker;
+
+	/* clut gamma data */
+	struct { UINT8 r[33], g[33], b[33]; } clutRaw;
+	UINT32 clut[65536];
+	bool clutDirty, ogl_clutDirty;
+	float gammafix;
 };
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-struct poly_extra_data
-{
-	voodoo_state *		state;					/* pointer back to the voodoo state */
-	raster_info *		info;					/* pointer to rasterizer information */
-
-	INT16				ax, ay;					/* vertex A x,y (12.4) */
-	INT32				startr, startg, startb, starta; /* starting R,G,B,A (12.12) */
-	INT32				startz;					/* starting Z (20.12) */
-	INT64				startw;					/* starting W (16.32) */
-	INT32				drdx, dgdx, dbdx, dadx;	/* delta R,G,B,A per X */
-	INT32				dzdx;					/* delta Z per X */
-	INT64				dwdx;					/* delta W per X */
-	INT32				drdy, dgdy, dbdy, dady;	/* delta R,G,B,A per Y */
-	INT32				dzdy;					/* delta Z per Y */
-	INT64				dwdy;					/* delta W per Y */
-
-	INT64				starts0, startt0;		/* starting S,T (14.18) */
-	INT64				startw0;				/* starting W (2.30) */
-	INT64				ds0dx, dt0dx;			/* delta S,T per X */
-	INT64				dw0dx;					/* delta W per X */
-	INT64				ds0dy, dt0dy;			/* delta S,T per Y */
-	INT64				dw0dy;					/* delta W per Y */
-	INT32				lodbase0;				/* used during rasterization */
-
-	INT64				starts1, startt1;		/* starting S,T (14.18) */
-	INT64				startw1;				/* starting W (2.30) */
-	INT64				ds1dx, dt1dx;			/* delta S,T per X */
-	INT64				dw1dx;					/* delta W per X */
-	INT64				ds1dy, dt1dy;			/* delta S,T per Y */
-	INT64				dw1dy;					/* delta W per Y */
-	INT32				lodbase1;				/* used during rasterization */
-
-	UINT16				dither[16];				/* dither matrix, for fastfill */
-
-	Bitu				texcount;
-	Bitu				r_fbzColorPath;
-	Bitu				r_fbzMode;
-	Bitu				r_alphaMode;
-	Bitu				r_fogMode;
-	INT32				r_textureMode0;
-	INT32				r_textureMode1;
-};
-#endif
-
-/*************************************
- *
- *  Inline FIFO management
- *
- *************************************/
-
-INLINE INT32 fifo_space(fifo_state *f)
-{
-	INT32 items = 0;
-	if (items < 0)
-		items += f->size;
-	return f->size - 1 - items;
-}
-
-
-INLINE UINT8 count_leading_zeros(UINT32 value)
+static INLINE UINT8 count_leading_zeros(UINT32 value)
 {
 #ifdef _MSC_VER
 	DWORD idx = 0;
@@ -1066,6 +1027,41 @@ INLINE UINT8 count_leading_zeros(UINT32 value)
 	//return (UINT8)result;
 }
 
+static UINT32 fast4checksum(const void* data, size_t len, UINT32 checksum = 0)
+{
+	UINT32 *p = (UINT32*)data, *pMax = p + (len >> 2);
+	while (p != pMax) checksum = checksum*65599 + *(p++);
+	return checksum;
+}
+
+static void FitGammaCurve(const UINT8* crv, float& pow_exponent, float& multiply_factor, float range, float gamma_fix)
+{
+	int mini, maxi;
+	for (mini = 1; mini != 30; mini++) { if (crv[mini]) break; }
+	for (maxi = mini+2; maxi != 32; maxi++) { if (crv[maxi+1] == 0xFF) break; }
+	float crv_maxi = (float)crv[maxi], fmaxi = maxi*0.03125f, bestp_e = 1.0f, bestfac = 256.0f, bestmiss = 1e+38F, fixfac = (maxi == 31 ? 256.0f : 0.0f);
+	for (float p_e = 0.01f, step = 0.32f; ; p_e += step)
+	{
+		float fac = (fixfac ? fixfac : (crv_maxi / pow(fmaxi, p_e))), miss = 0.0f;
+		for (int i = mini; i != maxi; i++) miss += fabs(pow(i*0.03125f, p_e) * fac - crv[i]);
+		if (miss < bestmiss)
+		{
+			bestp_e = p_e;
+			bestfac = fac;
+			bestmiss = miss;
+		}
+		else if ((step > 0.001f || step < -0.001f) && bestmiss > 1)
+		{
+			p_e -= step;
+			step *= -0.5f;
+		}
+		else break;
+	}
+	const float fix = 1.0f / bestp_e + gamma_fix;
+	pow_exponent = 1.0f/(fix < 0.01f ? 0.01f : fix);
+	multiply_factor = bestfac / 256.0f * range;
+}
+
 /*************************************
  *
  *  Computes a fast 16.16 reciprocal
@@ -1085,7 +1081,7 @@ INLINE UINT8 count_leading_zeros(UINT32 value)
  *
  *************************************/
 
-INLINE INT64 fast_reciplog(INT64 value, INT32 *log2)
+static INLINE INT64 fast_reciplog(INT64 value, INT32 *log2)
 {
 	UINT32 temp, rlog;
 	UINT32 interp;
@@ -1155,15 +1151,13 @@ INLINE INT64 fast_reciplog(INT64 value, INT32 *log2)
 	return neg ? -(INT64)recip : (INT64)recip;
 }
 
-
-
 /*************************************
  *
  *  Float-to-int conversions
  *
  *************************************/
 
-INLINE INT32 float_to_int32(UINT32 data, int fixedbits)
+static INLINE INT32 float_to_int32(UINT32 data, int fixedbits)
 {
 	int exponent = ((data >> 23) & 0xff) - 127 - 23 + fixedbits;
 	INT32 result = (data & 0x7fffff) | 0x800000;
@@ -1186,8 +1180,7 @@ INLINE INT32 float_to_int32(UINT32 data, int fixedbits)
 	return result;
 }
 
-
-INLINE INT64 float_to_int64(UINT32 data, int fixedbits)
+static INLINE INT64 float_to_int64(UINT32 data, int fixedbits)
 {
 	int exponent = ((data >> 23) & 0xff) - 127 - 23 + fixedbits;
 	INT64 result = (data & 0x7fffff) | 0x800000;
@@ -1209,94 +1202,6 @@ INLINE INT64 float_to_int64(UINT32 data, int fixedbits)
 		result = -result;
 	return result;
 }
-
-
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-/*************************************
- *
- *  Rasterizer inlines
- *
- *************************************/
-
-INLINE UINT32 normalize_color_path(UINT32 eff_color_path)
-{
-	/* ignore the subpixel adjust and texture enable flags */
-	eff_color_path &= ~((1 << 26) | (1 << 27));
-
-	return eff_color_path;
-}
-
-INLINE UINT32 normalize_alpha_mode(UINT32 eff_alpha_mode)
-{
-	/* always ignore alpha ref value */
-	eff_alpha_mode &= ~(0xff << 24);
-
-	/* if not doing alpha testing, ignore the alpha function and ref value */
-	if (!ALPHAMODE_ALPHATEST(eff_alpha_mode))
-		eff_alpha_mode &= ~(7 << 1);
-
-	/* if not doing alpha blending, ignore the source and dest blending factors */
-	if (!ALPHAMODE_ALPHABLEND(eff_alpha_mode))
-		eff_alpha_mode &= ~((15 << 8) | (15 << 12) | (15 << 16) | (15 << 20));
-
-	return eff_alpha_mode;
-}
-
-INLINE UINT32 normalize_fog_mode(UINT32 eff_fog_mode)
-{
-	/* if not doing fogging, ignore all the other fog bits */
-	if (!FOGMODE_ENABLE_FOG(eff_fog_mode))
-		eff_fog_mode = 0;
-
-	return eff_fog_mode;
-}
-
-INLINE UINT32 normalize_fbz_mode(UINT32 eff_fbz_mode)
-{
-	/* ignore the draw buffer */
-	eff_fbz_mode &= ~(3 << 14);
-
-	return eff_fbz_mode;
-}
-
-INLINE UINT32 normalize_tex_mode(UINT32 eff_tex_mode)
-{
-	/* ignore the NCC table and seq_8_downld flags */
-	eff_tex_mode &= ~((1 << 5) | (1 << 31));
-
-	/* classify texture formats into 3 format categories */
-	if (TEXMODE_FORMAT(eff_tex_mode) < 8)
-		eff_tex_mode = (eff_tex_mode & ~(0xf << 8)) | (0 << 8);
-	else if (TEXMODE_FORMAT(eff_tex_mode) >= 10 && TEXMODE_FORMAT(eff_tex_mode) <= 12)
-		eff_tex_mode = (eff_tex_mode & ~(0xf << 8)) | (10 << 8);
-	else
-		eff_tex_mode = (eff_tex_mode & ~(0xf << 8)) | (8 << 8);
-
-	return eff_tex_mode;
-}
-
-INLINE UINT32 compute_raster_hash(const raster_info *info)
-{
-	UINT32 hash;
-
-	/* make a hash */
-	hash = info->eff_color_path;
-	hash = (hash << 1) | (hash >> 31);
-	hash ^= info->eff_fbz_mode;
-	hash = (hash << 1) | (hash >> 31);
-	hash ^= info->eff_alpha_mode;
-	hash = (hash << 1) | (hash >> 31);
-	hash ^= info->eff_fog_mode;
-	hash = (hash << 1) | (hash >> 31);
-	hash ^= info->eff_tex_mode_0;
-	hash = (hash << 1) | (hash >> 31);
-	hash ^= info->eff_tex_mode_1;
-
-	return hash % RASTER_HASH_SIZE;
-}
-#endif
-
 
 /*************************************
  *
@@ -1803,6 +1708,52 @@ while (0)
  *
  *************************************/
 
+#define GET_FOGBLEND(FBI, FOGMODE, FBZCP, WFLOAT, XX, DITHER4, ITERZ, ITERW, ITERAXXX_RGB_A)	\
+do																		\
+{																		\
+	switch (FOGMODE_FOG_ZALPHA(FOGMODE))								\
+	{																	\
+		case 0:		/* fog table */										\
+		{																\
+			INT32 delta = FBI.fogdelta[WFLOAT >> 10];					\
+			INT32 deltaval;												\
+																		\
+			/* perform the multiply against lower 8 bits of wfloat */	\
+			deltaval = (delta & FBI.fogdelta_mask) *					\
+						((WFLOAT >> 2) & 0xff);							\
+																		\
+			/* fog zones allow for negating this value */				\
+			if (FOGMODE_FOG_ZONES(FOGMODE) && (delta & 2))				\
+				deltaval = -deltaval;									\
+			deltaval >>= 6;												\
+																		\
+			/* apply dither */											\
+			if (FOGMODE_FOG_DITHER(FOGMODE))							\
+				if (DITHER4)											\
+					deltaval += DITHER4[(XX) & 3];						\
+			deltaval >>= 4;												\
+																		\
+			/* add to the blending factor */							\
+			fogblend = FBI.fogblend[WFLOAT >> 10] + deltaval;			\
+			break;														\
+		}																\
+																		\
+		case 1:		/* iterated A */									\
+			fogblend = ITERAXXX_RGB_A;									\
+			break;														\
+																		\
+		case 2:		/* iterated Z */									\
+			CLAMPED_Z((ITERZ), FBZCP, fogblend);						\
+			fogblend >>= 8;												\
+			break;														\
+																		\
+		case 3:		/* iterated W - Voodoo 2 only */					\
+			CLAMPED_W((ITERW), FBZCP, fogblend);						\
+			break;														\
+	}																	\
+}																				\
+while (0)
+
 #define APPLY_FOGGING(VV, FOGMODE, FBZCP, XX, DITHER4, RR, GG, BB, ITERZ, ITERW, ITERAXXX)	\
 do																				\
 {																				\
@@ -1843,46 +1794,8 @@ do																				\
 			}																	\
 																				\
 			/* fog blending mode */												\
-			switch (FOGMODE_FOG_ZALPHA(FOGMODE))								\
-			{																	\
-				case 0:		/* fog table */										\
-				{																\
-					INT32 delta = (VV)->fbi.fogdelta[wfloat >> 10];				\
-					INT32 deltaval;												\
-																				\
-					/* perform the multiply against lower 8 bits of wfloat */	\
-					deltaval = (delta & (VV)->fbi.fogdelta_mask) *				\
-								((wfloat >> 2) & 0xff);							\
-																				\
-					/* fog zones allow for negating this value */				\
-					if (FOGMODE_FOG_ZONES(FOGMODE) && (delta & 2))				\
-						deltaval = -deltaval;									\
-					deltaval >>= 6;												\
-																				\
-					/* apply dither */											\
-					if (FOGMODE_FOG_DITHER(FOGMODE))							\
-						if (DITHER4)											\
-							deltaval += DITHER4[(XX) & 3];						\
-					deltaval >>= 4;												\
-																				\
-					/* add to the blending factor */							\
-					fogblend = (VV)->fbi.fogblend[wfloat >> 10] + deltaval;		\
-					break;														\
-				}																\
-																				\
-				case 1:		/* iterated A */									\
-					fogblend = ITERAXXX.rgb.a;									\
-					break;														\
-																				\
-				case 2:		/* iterated Z */									\
-					CLAMPED_Z((ITERZ), FBZCP, fogblend);						\
-					fogblend >>= 8;												\
-					break;														\
-																				\
-				case 3:		/* iterated W - Voodoo 2 only */					\
-					CLAMPED_W((ITERW), FBZCP, fogblend);						\
-					break;														\
-			}																	\
+			GET_FOGBLEND((VV)->fbi, FOGMODE, FBZCP, wfloat,						\
+				XX, DITHER4, ITERZ, ITERW, ITERAXXX.rgb.a);						\
 																				\
 			/* perform the blend */												\
 			fogblend++;															\
@@ -2979,6 +2892,1950 @@ static const char *const voodoo_reg_name[] =
 #endif //C_DBP_ENABLE_VOODOO_DEBUG
 #endif //DOSBOX_VOODOO_DEF_H
 
+static voodoo_state *v;
+
+enum : UINT8
+{
+	V_PERFFLAG_MULTITHREAD = 0x1,
+	V_PERFFLAG_LOWQUALITY = 0x2,
+	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	V_PERFFLAG_OPENGL = 0x4,
+	V_PERFFLAG_OPENGL_HIGHRES = 0x8,
+	#endif
+};
+static UINT8 v_perf;
+
+#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+static struct voodoo_ogl_state* vogl;
+static bool vogl_palette_changed;
+static bool vogl_ncctexel_changed;
+static bool vogl_active;
+
+#define GLERRORCLEAR {myglGetError();}
+#ifndef NDEBUG
+#define GLERRORASSERT {int errres = myglGetError();if (errres) { GFX_ShowMsg("[VOGL] GL ERROR: %x", errres); DBP_ASSERT(0);}}
+#else
+#define GLERRORASSERT
+#endif
+
+static const char* ogl_display_bind_attrs[] = { "a_position", "a_texcoord" };
+
+static const char* ogl_display_vertex_shader_src =
+	DBP_OPENGL_HIGH_PRECISION
+	"attribute vec3 a_position;"
+	"attribute vec2 a_texcoord;"
+	"varying vec2 v_texcoord;"
+	"void main()"
+	"{"
+		"v_texcoord = a_texcoord;"
+		"gl_Position = vec4(a_position, 1.0f);"
+	"}";
+
+static const char* ogl_display_fragment_shader_src =
+	DBP_OPENGL_HIGH_PRECISION
+	"uniform vec3 clut_exp, clut_fac;"
+	"uniform sampler2D u_texture;"
+	"varying vec2 v_texcoord;"
+	"void main()"
+	"{"
+		//"gl_FragColor = texture2D(u_texture, v_texcoord);"
+		"gl_FragColor = vec4(pow(texture2D(u_texture, v_texcoord).rgb, clut_exp) * clut_fac, 1.0);"
+	"}";
+
+static const char* ogl_drawdepth_fragment_shader_src = // encode 0.0 to 1.0 with 16 bits of accuracy
+	DBP_OPENGL_HIGH_PRECISION
+	"uniform sampler2D u_texture;"
+	"varying vec2 v_texcoord;"
+	"void main()"
+	"{"
+		"float d = texture2D(u_texture, v_texcoord).r * 65535.0, m = mod(d, 256.0);"
+		"gl_FragColor = vec4((d - m) * 0.000015318627450980392156862745098039, m * 0.003921568627450980392156862745098, 0.0, 0.0);"
+	"}";
+
+enum ogl_readback_mode : UINT8 { OGL_READBACK_MODE_COLOR0, OGL_READBACK_MODE_COLOR1, OGL_READBACK_MODE_COLOR2, OGL_READBACK_MODE_DEPTH, _OGL_READBACK_MODE_COUNT };
+
+template <typename TVal> struct GrowArray
+{
+	Bit32u num, cap;
+	TVal* data;
+	inline GrowArray() { memset(this, 0, sizeof(*this)); }
+	inline ~GrowArray() { free(data); }
+	inline TVal& AddOne() { if ((++num) > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data[num - 1]; }
+	inline TVal* Add(UINT32 n) { num += n; while (num > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data + num - n; }
+	inline void Reset() { num = 0; }
+	inline void Free() { free(data); memset(this, 0, sizeof(*this)); }
+	INLINE TVal* begin() { return data; }
+	INLINE TVal* end() { return data + num; }
+};
+
+struct ogl_texbase
+{
+	bool valid_data;
+	UINT8 valid_format;
+	UINT32 data_hash, pal_hash, textureidx;
+};
+
+struct ogl_texture
+{
+	enum : UINT32 { FREED_LASTFRAME = (UINT32)-1 };
+	unsigned id;
+	UINT32 lastframe, key;
+};
+
+struct ogl_texupload
+{
+	INT32 smax, tmax;
+	UINT32 textureidx;
+	rgb_t buf[256*256];
+};
+
+struct ogl_vertex
+{
+	float x,y,d;
+	//float w,z; // unused currently
+	float r,g,b,a;
+	float fogblend, mlodblend[2];
+	struct { float sw,tw,w; } m[2];
+};
+
+struct ogl_effective
+{
+	UINT32 fbz_mode, color_path, alpha_mode, fog_mode, tex_mode[2];
+};
+
+struct ogl_cmdbase { UINT8 drawbuffer; };
+
+struct ogl_geometrycmd : ogl_cmdbase
+{
+	ogl_effective eff;
+	struct
+	{
+		voodoo_reg col0, col1; // rgba
+		voodoo_reg chromakey, fogcolor; // a unused
+		//rgba chromarange; // unused currently
+		//UINT16 zacolor; // unused currently
+	} uni;
+	UINT32 textureidx[2];
+};
+
+struct ogl_clipping
+{
+	UINT16 active, sx, sy, ex, ey;
+};
+
+struct ogl_clippingcmd : ogl_cmdbase
+{
+	ogl_clipping clip;
+};
+
+struct ogl_fastfillcmd : ogl_cmdbase
+{
+	ogl_clipping clip;
+	rgba col1;
+	UINT32 fbz_mode, zacolor, auxoffs;
+};
+
+struct ogl_command
+{
+	enum EType : UINT8 { TRIANGLE, POINT, _LAST_GEOMETRY, FASTFILL, CLIPPING } type;
+	UINT32 vertex_index; // keep here so we can use memcmp on geometry
+	union
+	{
+		ogl_cmdbase base;
+		ogl_geometrycmd geometry;
+		ogl_fastfillcmd fastfill;
+		ogl_clippingcmd clipping;
+	};
+};
+
+struct ogl_cmdbuffer
+{
+	GrowArray<ogl_vertex> vertices;
+	GrowArray<ogl_command> commands;
+	UINT32 flushed_vertices = 0, flushed_commands = 0;
+	ogl_geometrycmd last_geometry;
+	ogl_clipping last_clipping, live_clipping;
+	inline ogl_cmdbuffer() { last_geometry.drawbuffer = 255; last_clipping.active = live_clipping.active = 0; }
+
+	inline void AddCommand(ogl_command& cmd, ogl_command::EType type)
+	{
+		cmd.type = type;
+		cmd.vertex_index = vertices.num;
+		commands.AddOne() = cmd;
+		if (type < ogl_command::_LAST_GEOMETRY) last_geometry = cmd.geometry;
+		else last_geometry.drawbuffer = 255;
+	}
+
+	void Free()
+	{
+		vertices.Free();
+		commands.Free();
+		last_geometry.drawbuffer = 255;
+		flushed_vertices = flushed_commands = 0;
+	}
+};
+
+struct ogl_program
+{
+	ogl_effective eff;
+	unsigned id;
+	UINT32 lastframe;
+	int u_view, u_color0, u_color1, u_chromaKey, u_fogcolor_alpharef;
+};
+
+struct ogl_pixels
+{
+	UINT32 width = 0, height = 0;
+	UINT8* data = NULL;
+	void SetSize(UINT32 w, UINT32 h) { data = (UINT8*)realloc(data, w * h * 4); width = w; height = h; }
+	void Free() { free(data); *this = ogl_pixels(); }
+};
+
+static void* ogl_convertframe(ogl_readback_mode mode, bool for_fbi, UINT32 ogl_w, UINT32 ogl_h, const ogl_pixels* ogl_src = NULL)
+{
+	const UINT32 bufnum = (mode - OGL_READBACK_MODE_COLOR0), fbi_offs = (mode != OGL_READBACK_MODE_DEPTH ? v->fbi.rgboffs[bufnum] : v->fbi.auxoffs), fbi_w = v->fbi.width, fbi_h = v->fbi.height, fbi_pitch = v->fbi.rowpixels;
+	if (fbi_offs == (UINT32)(~0) || (ogl_src && !ogl_src->width)) return NULL;
+	if (!for_fbi)
+	{
+		//GFX_ShowMsg("[VOGL] Reading software %s buf %u of size %u x %u into gpu color buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), fbi_w, fbi_h, ogl_w, ogl_h);
+		const UINT16 *fbi_lastrow = (const UINT16*)(v->fbi.ram + fbi_offs) + ((fbi_h - 1) * fbi_pitch);
+		UINT8* ogl_buf = (UINT8*)malloc(ogl_w * ogl_h * 4), *p = ogl_buf;
+		for (UINT32 y = 0; y != ogl_h; y++)
+		{
+			const UINT16 *fbi_line = fbi_lastrow - fbi_pitch * (y * fbi_h / ogl_h);
+			if (mode != OGL_READBACK_MODE_DEPTH)
+			{
+				for (UINT32 x = 0; x != ogl_w; x++)
+				{
+					const UINT16 *fbi_565 = fbi_line + (x * fbi_w / ogl_w);
+					UINT8 r, g, b;
+					EXTRACT_565_TO_888(*fbi_565, r, g, b);
+					*(p++) = r; *(p++) = g; *(p++) = b; *(p++) = 0xFF;
+				}
+			}
+			if (mode == OGL_READBACK_MODE_DEPTH)
+			{
+				for (UINT32 x = 0; x != ogl_w; x++, p += 4)
+					*(UINT32*)p = *(fbi_line + (x * fbi_w / ogl_w));
+			}
+		}
+		return ogl_buf;
+	}
+	else
+	{
+		//GFX_ShowMsg("[VOGL] Writing back gpu %s buf %u of size %u x %u into software color buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), ogl_w, ogl_h, fbi_w, fbi_h);
+		const UINT32* ogl_lastrow = (const UINT32*)ogl_src->data + ((ogl_h - 1) * ogl_w);
+		UINT16 *fbi_out = (UINT16*)(v->fbi.ram + fbi_offs), *p = fbi_out;
+		for (UINT32 y = 0; y != fbi_h; y++)
+		{
+			const UINT32 *ogl_line = ogl_lastrow - ogl_w * (y * ogl_h / fbi_h);
+			if (mode != OGL_READBACK_MODE_DEPTH)
+			{
+				for (UINT32 x = 0; x != fbi_w; x++)
+				{
+					const UINT8 *ogl_rgba = (const UINT8*)(ogl_line + (x * ogl_w / fbi_w));
+					*(p++) = (UINT16)(((ogl_rgba[0] & 0xF8) << 8) | ((ogl_rgba[1] & 0xFC) << 3) | ((ogl_rgba[2] & 0xF8) >> 3));
+				}
+			}
+			if (mode == OGL_READBACK_MODE_DEPTH)
+			{
+				for (UINT32 x = 0; x != fbi_w; x++)
+				{
+					const UINT8 *ogl_rgba = (const UINT8*)(ogl_line + (x * ogl_w / fbi_w));
+					*(p++) = (UINT16)((ogl_rgba[0] << 8) | ogl_rgba[1]);
+				}
+			}
+		}
+		return NULL;
+	}
+}
+
+struct ogl_drawbuffer
+{
+	unsigned fbo = 0, colortex = 0;
+	ogl_pixels color;
+
+	void SetSize(UINT8 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
+	{
+		if (!fbo)
+		{
+			// Setup color texture
+			myglGenTextures(1, &colortex);
+			myglBindTexture(MYGL_TEXTURE_2D, colortex);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MIN_FILTER, MYGL_NEAREST);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MAG_FILTER, MYGL_NEAREST);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_S, MYGL_CLAMP_TO_EDGE);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_T, MYGL_CLAMP_TO_EDGE);
+			GLERRORASSERT
+
+			myglGenFramebuffers(1, &fbo);
+			myglBindFramebuffer(MYGL_FRAMEBUFFER, fbo);
+			myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_COLOR_ATTACHMENT0, MYGL_TEXTURE_2D, colortex, 0);
+			myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_DEPTH_ATTACHMENT, MYGL_TEXTURE_2D, depthstenciltex, 0);
+			myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_STENCIL_ATTACHMENT, MYGL_TEXTURE_2D, depthstenciltex, 0);
+			GLERRORASSERT
+		}
+
+		myglBindTexture(MYGL_TEXTURE_2D, colortex);
+		if (void* pxls = ogl_convertframe((ogl_readback_mode)(OGL_READBACK_MODE_COLOR0 + bufnum), false, w, h))
+		{
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, pxls);
+			free(pxls);
+		}
+		else
+		{
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
+		}
+		color.SetSize(w, h);
+	}
+
+	void Cleanup()
+	{
+		myglDeleteTextures(1, &colortex);
+		myglDeleteFramebuffers(1, &fbo);
+		color.Free();
+		*this = ogl_drawbuffer();
+	}
+};
+
+struct ogl_readbackdata
+{
+	unsigned pbo = 0, pbosize = 0, depth_fbo = 0, depth_color = 0, depth_prog = 0, depth_vao = 0, depth_vbo = 0;
+	ogl_pixels depth;
+	ogl_readback_mode mode = (ogl_readback_mode)0;
+	void DisablePBO() { GFX_ShowMsg("[VOGL] Disabling unsupoorted PBO Readback"); DBP_ASSERT(0); if (pbo) { myglDeleteBuffers(1, &pbo); pbo = 0; } }
+	INLINE void NextMode() { mode = (ogl_readback_mode)(((int)mode + 1) % _OGL_READBACK_MODE_COUNT); }
+	INLINE ogl_pixels& GetCurrentModePixels(ogl_drawbuffer* dbs) { return (mode == OGL_READBACK_MODE_DEPTH ? depth : dbs[(int)mode].color); }
+	INLINE unsigned GetCurrentModeFBO(ogl_drawbuffer* dbs) { return (mode == OGL_READBACK_MODE_DEPTH ? depth_fbo : dbs[(int)mode].fbo); }
+
+	void SetSize(UINT32 w, UINT32 h)
+	{
+		if (!depth_fbo)
+		{
+			myglGenTextures(1, &depth_color);
+			myglBindTexture(MYGL_TEXTURE_2D, depth_color);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MIN_FILTER, MYGL_NEAREST);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MAG_FILTER, MYGL_NEAREST);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_S, MYGL_CLAMP_TO_EDGE);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_T, MYGL_CLAMP_TO_EDGE);
+			GLERRORASSERT
+
+			myglGenFramebuffers(1, &depth_fbo);
+			myglBindFramebuffer(MYGL_FRAMEBUFFER, depth_fbo);
+			myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_COLOR_ATTACHMENT0, MYGL_TEXTURE_2D, depth_color, 0);
+			GLERRORASSERT
+
+			depth_prog = DBP_Build_GL_Program(1, &ogl_display_vertex_shader_src, 1, &ogl_drawdepth_fragment_shader_src, 2, ogl_display_bind_attrs);
+
+			myglGenBuffers(1, &depth_vbo);
+			myglGenVertexArrays(1, &depth_vao);
+			GLERRORASSERT
+
+			float vertices[] = { -1.0f,1.0f,0.0f,1.0f,1.0f,1.0f,1.0f,1.0f,-1.0f,-1.0f,0.0f,0.0f,1.0f,-1.0f,1.0f,0.0f };
+			myglBindVertexArray(depth_vao);
+			myglBindBuffer(MYGL_ARRAY_BUFFER, depth_vbo);
+			myglBufferData(MYGL_ARRAY_BUFFER, sizeof(vertices), vertices, MYGL_STATIC_DRAW);
+			myglEnableVertexAttribArray(0);
+			myglEnableVertexAttribArray(1);
+			myglVertexAttribPointer(0, 2, MYGL_FLOAT, MYGL_FALSE, 4 * sizeof(float), (void*)0);
+			myglVertexAttribPointer(1, 2, MYGL_FLOAT, MYGL_FALSE, 4 * sizeof(float), (void*)(sizeof(float)*2));
+
+			if (myglDrawBuffers && myglMapBufferRange && myglUnmapBuffer && myglReadBuffer) // should have PBO support
+			{
+				myglGenBuffers(1, &pbo);
+				myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, pbo);
+				myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, 0);
+				if (myglGetError()) DisablePBO(); // No PBO support
+			}
+		}
+		myglBindTexture(MYGL_TEXTURE_2D, depth_color);
+		myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
+		depth.SetSize(w, h);
+	}
+
+	void Cleanup()
+	{
+		if (!depth_fbo) return;
+		myglDeleteFramebuffers(1, &depth_fbo);
+		myglDeleteTextures(1, &depth_color);
+		myglDeleteProgram(depth_prog);
+		myglDeleteBuffers(1, &depth_vbo);
+		myglDeleteVertexArrays(1, &depth_vao);
+		myglDeleteBuffers(1, &pbo);
+		depth.Free();
+		*this = ogl_readbackdata();
+	}
+};
+
+struct voodoo_ogl_state
+{
+	GrowArray<ogl_program> programs;
+	ValueEqualHashMap<UINT32> program_hashes;
+	GrowArray<ogl_texbase> texbases;
+	ValueHashMap<UINT32> texbase_hashes;
+	GrowArray<ogl_texture> textures;
+	ValueHashMap<UINT32> texture_hashes;
+	GrowArray<UINT32> free_textures;
+	GrowArray<ogl_texupload> texuploads;
+	ogl_cmdbuffer cmdbuf;
+	ogl_drawbuffer drawbuffers[3];
+	ogl_readbackdata readback;
+	UINT8 flushed_buffer = 0, display_buffer = 0;
+	UINT32 renderframe = 0;
+	UINT64 last_texture_clear_op = 0;
+	unsigned vao = 0, vbo = 0, displayprog = 0, displayprog_clut_exp = 0, displayprog_clut_fac = 0;
+	unsigned depthstenciltex = 0, depthstenciltex_width = 0, depthstenciltex_height = 0;
+	float scale = 1.0f;
+
+	static void Activate()
+	{
+		// We activate the OpenGL rendering delayed only when updating the screen for the first frame. This is necessary for the 3dfx splash screen which
+		// sends a few draw commands followed by immediate pixel read commands which is something that isn't perfectly emulated with OpenGL (color buffer is read only after rendering a flushed frame).
+		//GFX_ShowMsg("[VOGL] Activate while voodoo_ogl_state %s", (vogl ? "already exists" : "does not exist yet"));
+		DBP_ASSERT(!vogl_active);
+		if (!vogl) vogl = new voodoo_ogl_state();
+		vogl->CalcScale();
+		vogl_palette_changed = true;
+		vogl_ncctexel_changed = true;
+		vogl_active = true;
+	}
+
+	static void Deactivate()
+	{
+		//GFX_ShowMsg("[VOGL] Deactivate");
+		DBP_ASSERT(vogl_active);
+		vogl->cmdbuf.Free();
+		vogl->texbases.Free();
+		vogl->texbase_hashes.Free();
+		vogl->texuploads.Free();
+		vogl->texture_hashes.Free();
+		vogl->free_textures.num = 0;
+		for (UINT32 i = 0; i != vogl->textures.num; i++)
+		{
+			vogl->textures.data[i].lastframe = ogl_texture::FREED_LASTFRAME;
+			vogl->free_textures.AddOne() = i;
+		}
+		vogl_active = false;
+	}
+
+	void Init()
+	{
+		DBP_ASSERT(vogl_active);
+		myglGenBuffers(1, &vbo); GLERRORASSERT
+		myglGenVertexArrays(1, &vao); GLERRORASSERT
+		displayprog = DBP_Build_GL_Program(1, &ogl_display_vertex_shader_src, 1, &ogl_display_fragment_shader_src, 2, ogl_display_bind_attrs);
+		displayprog_clut_exp = myglGetUniformLocation(displayprog, "clut_exp");
+		displayprog_clut_fac = myglGetUniformLocation(displayprog, "clut_fac");
+		myglUseProgram(displayprog);
+		float clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB;
+		FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 1.0f, v->gammafix);
+		FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 1.0f, v->gammafix);
+		FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 1.0f, v->gammafix);
+		myglUniform3f(displayprog_clut_exp, clutExpR, clutExpG, clutExpB);
+		myglUniform3f(displayprog_clut_fac, clutFacR, clutFacG, clutFacB);
+		v->ogl_clutDirty = false;
+	}
+
+	void Cleanup()
+	{
+		DBP_ASSERT(vbo);
+		if (v) WriteBackFrame();
+		myglDeleteBuffers(1, &vbo); vbo = 0;
+		myglDeleteVertexArrays(1, &vao); vao = 0;
+		myglDeleteProgram(displayprog); displayprog = 0;
+		readback.Cleanup();
+		for (ogl_program& p : programs) myglDeleteProgram(p.id);
+		programs.Free();
+		program_hashes.Free();
+		for (ogl_texture& t : textures) if (t.id) myglDeleteTextures(1, &t.id);
+		textures.Free();
+		free_textures.Free();
+		for (ogl_drawbuffer& db : drawbuffers) db.Cleanup();
+		myglDeleteTextures(1, &depthstenciltex);
+		depthstenciltex = depthstenciltex_width = depthstenciltex_height = 0;
+		vogl_active = true;
+		Deactivate(); // make sure cmdbuf is still empty
+		vogl_active = false;
+	}
+
+	void VBlankFlush()
+	{
+		//GFX_ShowMsg("[VOGL] vblank_flush [%u] - Commands: %u - Verts: %u", v->fbi.frontbuf, cmdbuf.commands.num, cmdbuf.vertices.num);
+		flushed_buffer = v->fbi.frontbuf;
+		cmdbuf.flushed_vertices = cmdbuf.vertices.num;
+		cmdbuf.flushed_commands = cmdbuf.commands.num;
+		cmdbuf.last_geometry.drawbuffer = 255;
+	}
+
+	void CalcScale()
+	{
+		scale = ((v_perf & V_PERFFLAG_OPENGL_HIGHRES) ? (((v->fbi.width * SCALER_MAXHEIGHT) > (v->fbi.height * SCALER_MAXWIDTH)) ? ((float)SCALER_MAXWIDTH / v->fbi.width) : ((float)SCALER_MAXHEIGHT / v->fbi.height)) : 1.0f);
+	}
+
+	void WriteBackFrame()
+	{
+		for (UINT8 bufnum = 0; bufnum != 3; bufnum++)
+		{
+			const ogl_pixels& src = drawbuffers[bufnum].color;
+			ogl_convertframe((ogl_readback_mode)(OGL_READBACK_MODE_COLOR0 + bufnum), true, src.width, src.height, &src);
+		}
+		const ogl_pixels& dep = readback.depth;
+		ogl_convertframe(OGL_READBACK_MODE_DEPTH, true, dep.width, dep.height, &dep);
+	}
+
+	void DepthStencilTexSetSize(UINT32 w, UINT32 h)
+	{
+		if (!depthstenciltex)
+		{
+			// Setup depth_stencil texture
+			myglGenTextures(1, &depthstenciltex);
+			myglBindTexture(MYGL_TEXTURE_2D, depthstenciltex);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MIN_FILTER, MYGL_NEAREST);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MAG_FILTER, MYGL_NEAREST);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_S, MYGL_CLAMP_TO_EDGE);
+			myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_T, MYGL_CLAMP_TO_EDGE);
+			//myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, tw, th, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
+			GLERRORASSERT
+		}
+
+		myglBindTexture(MYGL_TEXTURE_2D, depthstenciltex);
+		if (void* pxls = ogl_convertframe(OGL_READBACK_MODE_DEPTH, false, w, h))
+		{
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH_STENCIL, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, pxls);
+			free(pxls);
+		}
+		else
+		{
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH_STENCIL, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, NULL);
+		}
+		depthstenciltex_width = w;
+		depthstenciltex_height = h;
+	}
+};
+
+//#define VOODOO_RENDERDOC_H "...RenderDoc/renderdoc_app.h"
+//#define VOODOO_RENDERDOC_DLL "...RenderDoc/renderdoc.dll"
+#if defined(VOODOO_RENDERDOC_H) && defined(VOODOO_RENDERDOC_DLL)
+#include VOODOO_RENDERDOC_H
+static void TriggerRenderDocCapture()
+{
+	static RENDERDOC_API_1_6_0 *rdoc_api = NULL;
+	if (!rdoc_api)
+	{
+		HMODULE mod = GetModuleHandleA(VOODOO_RENDERDOC_DLL);
+		pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)(mod ? GetProcAddress(mod, "RENDERDOC_GetAPI") : NULL);
+		if (!RENDERDOC_GetAPI || !RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_6_0, (void **)&rdoc_api)) rdoc_api = NULL;
+	}
+	if (rdoc_api) { rdoc_api->TriggerCapture(); GFX_ShowMsg("[VOGL] Triggering RenderDoc capture"); }
+	else { GFX_ShowMsg("[VOGL] Unable to trigger RenderDoc capture. Is RenderDoc active?"); }
+}
+static bool dbg_ogl_accumulatecommands, dbg_ogl_end_accumulatecommands;
+#endif
+
+#if 0
+enum KBD_KEYS { KBD_NONE, KBD_1,KBD_2,KBD_3,KBD_4,KBD_5,KBD_6,KBD_7,KBD_8,KBD_9,KBD_0, KBD_q,KBD_w,KBD_e,KBD_r,KBD_t,KBD_y,KBD_u,KBD_i,KBD_o,KBD_p, KBD_a,KBD_s,KBD_d,KBD_f,KBD_g,KBD_h,KBD_j,KBD_k,KBD_l,KBD_z,KBD_x,KBD_c,KBD_v,KBD_b,KBD_n,KBD_m,KBD_f1,KBD_f2,KBD_f3,KBD_f4,KBD_f5,KBD_f6,KBD_f7,KBD_f8,KBD_f9,KBD_f10,KBD_f11,KBD_f12,KBD_esc,KBD_tab,KBD_backspace,KBD_enter,KBD_space,KBD_leftalt,KBD_rightalt,KBD_leftctrl,KBD_rightctrl,KBD_leftshift,KBD_rightshift,KBD_capslock,KBD_scrolllock,KBD_numlock,KBD_grave,KBD_minus,KBD_equals,KBD_backslash,KBD_leftbracket,KBD_rightbracket,KBD_semicolon,KBD_quote,KBD_period,KBD_comma,KBD_slash,KBD_extra_lt_gt,KBD_printscreen,KBD_pause,KBD_insert,KBD_home,KBD_pageup,KBD_delete,KBD_end,KBD_pagedown,KBD_left,KBD_up,KBD_down,KBD_right,KBD_kp1,KBD_kp2,KBD_kp3,KBD_kp4,KBD_kp5,KBD_kp6,KBD_kp7,KBD_kp8,KBD_kp9,KBD_kp0,KBD_kpdivide,KBD_kpmultiply,KBD_kpminus,KBD_kpplus,KBD_kpenter,KBD_kpperiod,KBD_LAST };
+void voodoo_ogl_debugkey(KBD_KEYS k, bool down)
+{
+	//// TO USE VOODOO DEBUG KEYS NEED TO ADD THIS TO GFX_Events:
+	//   if (e.type == DBPET_KEYDOWN || e.type == DBPET_KEYUP) { void voodoo_ogl_debugkey(KBD_KEYS, bool); voodoo_ogl_debugkey((KBD_KEYS)e.val, (e.type == DBPET_KEYDOWN)); }
+	if (!v || !vogl) return;
+	if (down && k == KBD_pageup) { v->gammafix += 0.01f; GFX_ShowMsg("[OGL DBG] voodoo_gammafix: %f\n", v->gammafix); v->ogl_clutDirty = v->clutDirty = true; }
+	if (down && k == KBD_pagedown) { v->gammafix -= 0.01f; GFX_ShowMsg("[OGL DBG] voodoo_gammafix: %f\n", v->gammafix); v->ogl_clutDirty = v->clutDirty = true; }
+	//if ((k == KBD_end) || (down && k == KBD_home)) { voodoo_ogl_fallbacksoftware ^= true; }
+
+	#if defined(VOODOO_RENDERDOC_H) && defined(VOODOO_RENDERDOC_DLL)
+	if (k == KBD_delete && down) { dbg_ogl_accumulatecommands = true; GFX_ShowMsg("[OGL DBG] accumulate commands start"); }
+	if (k == KBD_delete && !down) { dbg_ogl_end_accumulatecommands = true; GFX_ShowMsg("[OGL DBG] accumulate commands end"); }
+	if (k == KBD_insert && down) { TriggerRenderDocCapture(); }
+	#endif
+}
+#endif
+
+bool voodoo_ogl_is_active()
+{
+	return ((v_perf & V_PERFFLAG_OPENGL) && v && vogl && v->active);
+}
+
+bool voodoo_ogl_have_new_image()
+{
+	return (vogl->cmdbuf.flushed_commands > 0);
+	//for (UINT32 c = 0, cEnd = vogl->cmdbuf.flushed_commands; c != cEnd; c++)
+	//	if (vogl->cmdbuf.commands.data[c].base.drawbuffer == vogl->flushed_buffer)
+	//		return true;
+	//return false;
+}
+
+bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation thread is running again
+{
+	if (!(v_perf & V_PERFFLAG_OPENGL) || !v || !vogl || !v->active || !vogl->drawbuffers[vogl->display_buffer].fbo) return false;
+
+	myglUseProgram(vogl->displayprog);
+	if (v->ogl_clutDirty)
+	{
+		float clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB;
+		FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 1.0f, v->gammafix);
+		FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 1.0f, v->gammafix);
+		FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 1.0f, v->gammafix);
+		GFX_ShowMsg("[VOGL] CLUT - EXP RGB: %f / %f / %f - FAC RGB: %f / %f / %f", clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB);
+		myglUniform3f(vogl->displayprog_clut_exp, clutExpR, clutExpG, clutExpB);
+		myglUniform3f(vogl->displayprog_clut_fac, clutFacR, clutFacG, clutFacB);
+		v->ogl_clutDirty = false;
+	}
+	myglActiveTexture(MYGL_TEXTURE0);
+	myglBindTexture(MYGL_TEXTURE_2D, vogl->drawbuffers[vogl->display_buffer].colortex);
+	//myglBindTexture(MYGL_TEXTURE_2D, vogl->depthstenciltex); // debug
+	//myglBindTexture(MYGL_TEXTURE_2D, vogl->readback.depth_color); // debug
+	return true;
+}
+
+enum : UINT32
+{
+	VOODOO_OGL_FBZMODE_USEDBITS = 0
+		|FBZMODE_RGB_BUFFER_MASK_BIT
+		|FBZMODE_AUX_BUFFER_MASK_BIT
+		|FBZMODE_ENABLE_CHROMAKEY_BIT
+		|FBZMODE_ENABLE_ALPHA_MASK_BIT
+		|FBZMODE_Y_ORIGIN_BIT
+		|FBZMODE_DEPTH_SOURCE_COMPARE_BIT
+		|FBZMODE_ENABLE_DEPTHBUF_BIT
+		|FBZMODE_ENABLE_ALPHA_PLANES_BIT
+		|FBZMODE_DEPTH_FUNCTION_BITS,
+
+	VOODOO_OGL_FBZCOLORPATH_USEDBITS = 0
+		|FBZCP_CC_RGBSELECT_BITS
+		|FBZCP_CC_ASELECT_BITS
+		|FBZCP_CC_LOCALSELECT_OVERRIDE_BIT
+		|FBZCP_CC_LOCALSELECT_BIT
+		|FBZCP_CCA_LOCALSELECT_BITS
+		|FBZCP_CC_ZERO_OTHER_BIT
+		|FBZCP_CCA_ZERO_OTHER_BIT
+		|FBZCP_CC_SUB_CLOCAL_BIT
+		|FBZCP_CCA_SUB_CLOCAL_BIT
+		|FBZCP_CC_MSELECT_BITS
+		|FBZCP_CCA_MSELECT_BITS
+		|FBZCP_CC_REVERSE_BLEND_BIT
+		|FBZCP_CCA_REVERSE_BLEND_BIT
+		|FBZCP_CC_ADD_ACLOCAL_BITS
+		|FBZCP_CCA_ADD_ACLOCAL_BITS
+		|FBZCP_CC_INVERT_OUTPUT_BIT
+		|FBZCP_CCA_INVERT_OUTPUT_BIT,
+
+	VOODOO_OGL_ALPHAMODE_USEDBITS = 0
+		|ALPHAMODE_ALPHATEST_BIT
+		|ALPHAMODE_ALPHAFUNCTION_BITS
+		|ALPHAMODE_ALPHABLEND_BIT
+		|ALPHAMODE_SRCRGBBLEND_BITS
+		|ALPHAMODE_DSTRGBBLEND_BITS
+		|ALPHAMODE_SRCALPHABLEND_BITS
+		|ALPHAMODE_DSTALPHABLEND_BITS
+		|ALPHAMODE_ALPHAREF_BITS,
+
+	VOODOO_OGL_FOGMODE_USEDBITS = 0
+		|FOGMODE_ENABLE_FOG_BIT
+		|FOGMODE_FOG_CONSTANT_BIT
+		|FOGMODE_FOG_ADD_BIT
+		|FOGMODE_FOG_MULT_BIT
+		|FOGMODE_FOG_ZALPHA_BIT,
+
+	VOODOO_OGL_TEXMODE_USEDBITS = 0
+		|TEXMODE_TC_ZERO_OTHER_BIT
+		|TEXMODE_TCA_ZERO_OTHER_BIT
+		|TEXMODE_TC_SUB_CLOCAL_BIT
+		|TEXMODE_TCA_SUB_CLOCAL_BIT
+		|TEXMODE_TC_MSELECT_BITS
+		|TEXMODE_TCA_MSELECT_BITS
+		|TEXMODE_TC_REVERSE_BLEND_BIT
+		|TEXMODE_TCA_REVERSE_BLEND_BIT
+		|TEXMODE_TC_ADD_ACLOCAL_BITS
+		|TEXMODE_TCA_ADD_ACLOCAL_BITS
+		|TEXMODE_TC_INVERT_OUTPUT_BIT
+		|TEXMODE_TCA_INVERT_OUTPUT_BIT
+		|TEXMODE_MINIFICATION_FILTER_BIT
+		|TEXMODE_MAGNIFICATION_FILTER_BIT
+		//|TEXMODE_TRILINEAR_BIT
+		|TEXMODE_CLAMP_S_BIT
+		|TEXMODE_CLAMP_T_BIT,
+
+	VOODOO_OGL_TEXMODE_DISABLED = (UINT32)-1,
+};
+
+void voodoo_ogl_mainthread() // called while emulation thread is sleeping
+{
+	if (!vogl_active)
+	{
+		if (vogl && vogl->vbo)
+			vogl->Cleanup();
+		return;
+	}
+	DBP_ASSERT(v && v->active && (v_perf & V_PERFFLAG_OPENGL));
+	GLERRORCLEAR
+
+	if (!vogl->vbo)
+		vogl->Init();
+
+	struct Local
+	{
+		INLINE static bool ProgEqual(ogl_program* programs_data, UINT32 test_idx, const ogl_effective& test_eff)
+		{
+			return !memcmp(&programs_data[test_idx].eff, &test_eff, sizeof(test_eff));
+		}
+
+		enum : UINT32
+		{
+			SHADER_FBZMODE_USEDBITS = 0
+				|FBZMODE_ENABLE_CHROMAKEY_BIT
+				|FBZMODE_ENABLE_ALPHA_MASK_BIT,
+
+			SHADER_ALPHAMODE_USEDBITS = 0
+				|ALPHAMODE_ALPHATEST_BIT
+				|ALPHAMODE_ALPHAFUNCTION_BITS,
+
+			SHADER_OGL_TEXMODE_USEDBITS = 0
+				|TEXMODE_TC_ZERO_OTHER_BIT
+				|TEXMODE_TCA_ZERO_OTHER_BIT
+				|TEXMODE_TC_SUB_CLOCAL_BIT
+				|TEXMODE_TCA_SUB_CLOCAL_BIT
+				|TEXMODE_TC_MSELECT_BITS
+				|TEXMODE_TCA_MSELECT_BITS
+				|TEXMODE_TC_REVERSE_BLEND_BIT
+				|TEXMODE_TCA_REVERSE_BLEND_BIT
+				|TEXMODE_TC_ADD_ACLOCAL_BITS
+				|TEXMODE_TCA_ADD_ACLOCAL_BITS
+				|TEXMODE_TC_INVERT_OUTPUT_BIT
+				|TEXMODE_TCA_INVERT_OUTPUT_BIT
+		};
+
+		#ifndef NDEBUG
+		#define nl ""
+		#else
+		#define nl "\n"
+		#endif
+		#define addshdr(T, CODE) T##shadersrcs[T##shadernum++] = CODE nl
+		#define condshdr(T, COND, CODE) do { if (COND) T##shadersrcs[T##shadernum++] = CODE nl; } while (0)
+		#define selectshdr(T, COND, CODEA, CODEB) T##shadersrcs[T##shadernum++] = ((COND) ? CODEA nl : CODEB nl)
+
+		static ogl_program* BuildProgram(const ogl_effective& eff, UINT32 prog_hash)
+		{
+			const UINT32 FBZMODE = eff.fbz_mode;
+			const UINT32 FBZCOLORPATH = eff.color_path;
+			const UINT32 ALPHAMODE = eff.alpha_mode;
+			const UINT32 FOGMODE = eff.fog_mode;
+			const bool uset[] = { (eff.tex_mode[0] != VOODOO_OGL_TEXMODE_DISABLED), (eff.tex_mode[1] != VOODOO_OGL_TEXMODE_DISABLED) };
+			const bool usefoglodblend = ((FOGMODE_ENABLE_FOG(FOGMODE) && !FOGMODE_FOG_CONSTANT(FOGMODE)) || (uset[0] && TEXMODE_TC_MSELECT(eff.tex_mode[0]) >= 4) || (uset[1] && TEXMODE_TC_MSELECT(eff.tex_mode[1]) >= 4));
+			const bool usevcolor = (!FBZCP_CC_RGBSELECT(FBZCOLORPATH) || !FBZCP_CC_ASELECT(FBZCOLORPATH) || (!FBZCP_CC_LOCALSELECT_OVERRIDE(FBZCOLORPATH) && !FBZCP_CC_LOCALSELECT(FBZCOLORPATH)) || !(FBZCP_CCA_LOCALSELECT(FBZCOLORPATH) & 1));
+
+			vogl->program_hashes.Put(prog_hash, Local::ProgEqual, vogl->programs.data, eff, vogl->programs.num);
+			ogl_program* prog = &vogl->programs.AddOne();
+			prog->eff = eff;
+
+			int vshadernum = 0, fshadernum = 0;
+			const char *vshadersrcs[16], *fshadersrcs[72]; // more than max possible
+
+			#ifdef DBP_OPENGL_USE_PRECISION_SPECIFIER
+			addshdr(v, DBP_OPENGL_HIGH_PRECISION);
+			addshdr(f, DBP_OPENGL_HIGH_PRECISION);
+			#endif
+
+			addshdr(v,
+				"attribute vec3 a_position;" nl
+				"attribute vec4 a_color;" nl
+				"attribute vec3 a_foglodblend;" nl
+				"attribute vec3 a_texcoord0;" nl
+				"attribute vec3 a_texcoord1;");
+			condshdr(v, usevcolor, "varying vec4 v_color;");
+			condshdr(v, uset[0], "varying vec3 v_texcoord0;");
+			condshdr(v, uset[1], "varying vec3 v_texcoord1;");
+			condshdr(v, usefoglodblend, "varying vec3 v_foglodblend;");
+			addshdr(v,
+				"uniform vec3 view;" nl
+				"void main()" nl
+				"{");
+			condshdr(v, usevcolor, "v_color = a_color;");
+			condshdr(v, uset[0], "v_texcoord0 = a_texcoord0;");
+			condshdr(v, uset[1], "v_texcoord1 = a_texcoord1;");
+			condshdr(v, usefoglodblend, "v_foglodblend = a_foglodblend;");
+			addshdr(v, 
+					//"gl_Position = mvp * vec4(a_position, 1.0f);" nl
+					"gl_Position = vec4("
+						"a_position.x * view.x - 1.0,"
+						"a_position.y * view.y + view.z,"
+						"a_position.z * 2.0 - 1.0,"
+						"1.0);" nl
+				"}");
+
+			//---------------------------------------------------------------------------------------------
+
+			condshdr(f, usevcolor, "varying vec4 v_color;");
+			condshdr(f, uset[0], "varying vec3 v_texcoord0;");
+			condshdr(f, uset[1], "varying vec3 v_texcoord1;");
+			condshdr(f, usefoglodblend, "varying vec3 v_foglodblend;");
+			condshdr(f, uset[0], "uniform sampler2D tex0;");
+			condshdr(f, uset[1], "uniform sampler2D tex1;");
+			addshdr(f,
+				"uniform vec4 color0;" nl
+				"uniform vec4 color1;" nl
+				"uniform vec4 chromaKey;" nl
+				//"uniform vec4 chromaRange;" nl
+				//"uniform float zaColor;" nl
+				"uniform vec4 fogcolor_alpharef;" nl
+				"void main()" nl
+				"{" nl
+					//"gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return;" nl // debug draw red
+					"vec4 texel  = vec4(1.0);" nl
+					"vec4 clocal = vec4(1.0);" nl
+					"vec4 cother = vec4(0.0);" nl
+					"vec4 tt     = vec4(0.0);");
+
+			if (uset[1])
+			{
+				addshdr(f, "clocal = texture2D(tex1, v_texcoord1.xy / v_texcoord1.z).bgra;");
+				//addshdr(f, "clocal = vec4(v_texcoord1.x/v_texcoord1.z, v_texcoord1.y/v_texcoord1.z, 0.0f, 1.0f);");
+				//addshdr(f, "clocal = vec4(0.5f, 0.5f, 0.5f, 0.5f);");
+				Local::MakeTexShader(fshadernum, fshadersrcs, 1, eff.tex_mode[1]);
+				selectshdr(f, uset[0], "cother = tt;", "texel = tt;");
+			}
+
+			if (uset[0])
+			{
+				addshdr(f, "clocal = texture2D(tex0, v_texcoord0.xy/v_texcoord0.z).bgra;");
+				//addshdr(f, "clocal = vec4(v_texcoord0.x/v_texcoord0.z, v_texcoord0.y/v_texcoord0.z, 1.0f, 1.0f);");
+				//addshdr(f, "clocal = vec4(1.0f, 0.0f, 0.0f, 1.0f);");
+				Local::MakeTexShader(fshadernum, fshadersrcs, 0, eff.tex_mode[0]);
+				addshdr(f, "texel = tt;");
+				//addshdr(f, "gl_FragColor = texel; return;");
+			}
+
+			// color path
+			// TODO: Clamped ARGB
+			switch (FBZCP_CC_RGBSELECT(FBZCOLORPATH))
+			{
+				case 0:  addshdr(f, "cother = v_color;"); break;
+				case 1:  addshdr(f, "cother = texel;"); break;
+				case 2:  addshdr(f, "cother = color1;"); break;
+				default: addshdr(f, "cother = vec4(0.0f);"); break;
+			}
+
+			// TODO: fix chroma key
+			if (FBZMODE_ENABLE_CHROMAKEY(FBZMODE))
+			{
+				//if (CHROMARANGE_ENABLE(v->reg[chromaRange].u))
+				//	addshdr(f, "if ((cother.rgb >= (chromaKey.rgb-0.01)) && (cother.rgb <= (chromaRange.rgb+0.01))) discard;";
+				//else
+					addshdr(f, "if (distance(cother.rgb , chromaKey.rgb) < 0.0001) discard;");
+			}
+
+			switch (FBZCP_CC_ASELECT(FBZCOLORPATH))
+			{
+				case 0:  addshdr(f, "cother.a = v_color.a;");break;
+				case 1:  addshdr(f, "cother.a = texel.a;"); break;
+				case 2:  addshdr(f, "cother.a = color1.a;"); break;
+				default: addshdr(f, "cother.a = 0.0;"); break;
+			}
+
+			// alpha mask
+			if (FBZMODE_ENABLE_ALPHA_MASK(FBZMODE))
+				addshdr(f, "if (mod(cother.a+0.0001f, 2.0f/255.0f) > (1.0f/255.0f)) discard;");
+
+			if (ALPHAMODE_ALPHATEST(ALPHAMODE))
+				switch (ALPHAMODE_ALPHAFUNCTION(ALPHAMODE))
+				{
+					case 0: addshdr(f, "discard;"); break;
+					case 1: addshdr(f, "if (cother.a >= fogcolor_alpharef.a) discard;"); break;
+					//case 2: addshdr(f, "if (cother.a != fogcolor_alpharef.a) discard;"); break;
+					case 2: addshdr(f, "if (distance(cother.a , fogcolor_alpharef.a) > 0.0001) discard;"); break;
+					case 3: addshdr(f, "if (cother.a >  fogcolor_alpharef.a) discard;"); break;
+					case 4: addshdr(f, "if (cother.a <= fogcolor_alpharef.a) discard;"); break;
+					//case 5: addshdr(f, "if (cother.a == fogcolor_alpharef.a) discard;"); break;
+					case 5: addshdr(f, "if (distance(cother.a , fogcolor_alpharef.a) < 0.0001) discard;"); break;
+					case 6: addshdr(f, "if (cother.a <  fogcolor_alpharef.a) discard;"); break;
+					case 7: break;
+				}
+
+			if (FBZCP_CC_LOCALSELECT_OVERRIDE(FBZCOLORPATH) == 0)
+				selectshdr(f, FBZCP_CC_LOCALSELECT(FBZCOLORPATH), "clocal = color0;", "clocal = v_color;");
+			else
+				addshdr(f, "if (texel.a < 0.5) clocal = v_color; else clocal = color0;");
+
+			switch (FBZCP_CCA_LOCALSELECT(FBZCOLORPATH))
+			{
+				default:case 0: addshdr(f, "clocal.a = v_color.a;"); break;
+				case 1:         addshdr(f, "clocal.a = color0.a;");  break;
+				case 2:         addshdr(f, "clocal.a = v_color.a;"); break; // TODO: CLAMPED_Z
+				case 3:         break; // voodoo2 only
+			}
+
+			bool blendtozero = (!FBZCP_CC_MSELECT(FBZCOLORPATH) && !FBZCP_CCA_MSELECT(FBZCOLORPATH) && FBZCP_CC_REVERSE_BLEND(FBZCOLORPATH) && FBZCP_CCA_REVERSE_BLEND(FBZCOLORPATH));
+			if (blendtozero)
+				addshdr(f, "tt = vec4(0.0);");
+			else
+			{
+				selectshdr(f, FBZCP_CC_ZERO_OTHER(FBZCOLORPATH), "tt.rgb = vec3(0.0);", "tt.rgb = cother.rgb;");
+				selectshdr(f, FBZCP_CCA_ZERO_OTHER(FBZCOLORPATH), "tt.a = 0.0;", "tt.a = cother.a;");
+				condshdr(f, FBZCP_CC_SUB_CLOCAL(FBZCOLORPATH), "tt.rgb -= clocal.rgb;");
+				condshdr(f, FBZCP_CCA_SUB_CLOCAL(FBZCOLORPATH), "tt.a -= clocal.a;");
+
+				if (FBZCP_CC_MSELECT(FBZCOLORPATH) || FBZCP_CCA_MSELECT(FBZCOLORPATH) || FBZCP_CC_REVERSE_BLEND(FBZCOLORPATH) || FBZCP_CCA_REVERSE_BLEND(FBZCOLORPATH))
+				{
+					addshdr(f, "tt *= vec4(");
+					condshdr(f, !FBZCP_CC_REVERSE_BLEND(FBZCOLORPATH), "vec3(1.0) - ");
+					switch (FBZCP_CC_MSELECT(FBZCOLORPATH))
+					{
+						default:case 0: addshdr(f, "vec3(0.0), "); break;
+						case 1:         addshdr(f, "clocal.rgb, "); break;
+						case 2:         addshdr(f, "vec3(cother.a), "); break;
+						case 3:         addshdr(f, "vec3(clocal.a), "); break;
+						case 4:         addshdr(f, "vec3(texel.a), "); break;
+						case 5:         addshdr(f, "texel.rgb, "); break; // voodoo2 only
+					}
+					condshdr(f, !FBZCP_CCA_REVERSE_BLEND(FBZCOLORPATH), "1.0 - ");
+					switch (FBZCP_CCA_MSELECT(FBZCOLORPATH))
+					{
+						default:case 0: addshdr(f, "0.0);"); break;
+						case 1:         addshdr(f, "clocal.a);"); break;
+						case 2:         addshdr(f, "cother.a);"); break;
+						case 3:         addshdr(f, "clocal.a);"); break;
+						case 4:         addshdr(f, "texel.a);"); break;
+					}
+				}
+			}
+
+			switch (FBZCP_CC_ADD_ACLOCAL(FBZCOLORPATH))
+			{
+				case 0:case 3: break;
+				case 1: addshdr(f, "tt.rgb += clocal.rgb;"); break;
+				case 2: addshdr(f, "tt.rgb += vec3(clocal.a);"); break;
+			}
+
+			condshdr(f, FBZCP_CCA_ADD_ACLOCAL(FBZCOLORPATH), "tt.a += clocal.a;");
+
+			// clamp ??
+			condshdr(f, FBZCP_CC_INVERT_OUTPUT(FBZCOLORPATH), "tt.rgb = vec3(1.0) - tt.rgb;");
+			condshdr(f, FBZCP_CCA_INVERT_OUTPUT(FBZCOLORPATH), "tt.a = 1.0 - tt.a;");
+
+			// fogging
+			if (FOGMODE_ENABLE_FOG(FOGMODE))
+			{
+				addshdr(f, "vec3 ff;");
+
+				// constant fog bypasses everything else
+				if (FOGMODE_FOG_CONSTANT(FOGMODE))
+				{
+					addshdr(f, "ff = fogcolor_alpharef.rgb;");
+				}
+				else // non-constant fog comes from several sources
+				{
+					// if fog_add is zero, we start with the fog color
+					selectshdr(f, FOGMODE_FOG_ADD(FOGMODE), "ff = vec3(0.0);", "ff = fogcolor_alpharef.rgb;");
+
+					// if fog_mult is zero, we subtract the incoming color
+					condshdr(f, !FOGMODE_FOG_MULT(FOGMODE), "ff -= tt.rgb;");
+
+					// perform fog blending mode
+					addshdr(f, "ff *=");
+					switch (FOGMODE_FOG_ZALPHA(FOGMODE))
+					{
+						// blend factor calculated in ogl_get_fog_blend
+						case 0: addshdr(f, "v_foglodblend.x;"); break; // fog table
+						case 1: addshdr(f, "v_color.a;"); break; // iterated A
+						case 2: addshdr(f, "v_foglodblend.x;"); break; // iterated Z
+						case 3: addshdr(f, "v_foglodblend.x;"); break; // iterated W - Voodoo 2 only
+					}
+				}
+				// if fog_mult is 0, we add this to the original color otherwise this just becomes the new color
+				selectshdr(f, FOGMODE_FOG_MULT(FOGMODE), "tt.rgb = ff;", "tt.rgb += ff;");
+			}
+
+			//addshdr(f, "gl_FragColor = pow(tt, vec4(1.0/2.2));" nl //	"}");
+			//addshdr(f, "gl_FragColor = tt * 2.0;" nl "}");
+			addshdr(f, "gl_FragColor = tt;" nl
+				"}");
+
+			DBP_ASSERT(vshadernum <= ARRAY_LENGTH(vshadersrcs));
+			DBP_ASSERT(fshadernum <= ARRAY_LENGTH(fshadersrcs));
+
+			const char* bind_attribs[] = { "a_position", "a_color", "a_foglodblend", "a_texcoord0", "a_texcoord1" };
+			prog->id = DBP_Build_GL_Program(vshadernum, vshadersrcs, fshadernum, fshadersrcs, (int)ARRAY_LENGTH(bind_attribs), bind_attribs);
+			prog->u_view = myglGetUniformLocation(prog->id, "view");
+			int u_tex0 = myglGetUniformLocation(prog->id, "tex0");
+			int u_tex1 = myglGetUniformLocation(prog->id, "tex1");
+			prog->u_color0 = myglGetUniformLocation(prog->id, "color0");
+			prog->u_color1 = myglGetUniformLocation(prog->id, "color1");
+			prog->u_chromaKey = myglGetUniformLocation(prog->id, "chromaKey");
+			//prog->u_chromaRange = myglGetUniformLocation(prog->prog, "chromaRange");
+			//prog->u_zaColor = myglGetUniformLocation(prog->prog, "zaColor");
+			prog->u_fogcolor_alpharef = myglGetUniformLocation(prog->id, "fogcolor_alpharef");
+
+			myglUseProgram(prog->id);
+			myglUniform1i(u_tex0, 0);
+			myglUniform1i(u_tex1, 1);
+
+			//#ifndef NDEBUG
+			//std::string dbg_source;
+			//dbg_source += "VERTEX:\n----------------------------------------------\n";
+			//for (int i = 0; i != vshadernum; i++) dbg_source += vshadersrcs[i];
+			//dbg_source += "----------------------------------------------\nFRAGMENT:\n----------------------------------------------\n";
+			//for (int i = 0; i != fshadernum; i++) dbg_source += fshadersrcs[i];
+			//#endif
+
+			return prog;
+		}
+
+		static void MakeTexShader(int& fshadernum, const char** fshadersrcs, int tmu, UINT32 TEXMODE)
+		{
+			bool blendtozero = ((TEXMODE & (TEXMODE_TC_MSELECT_BITS|TEXMODE_TCA_MSELECT_BITS|TEXMODE_TC_REVERSE_BLEND_BIT|TEXMODE_TCA_REVERSE_BLEND_BIT)) == (TEXMODE_TC_REVERSE_BLEND_BIT|TEXMODE_TCA_REVERSE_BLEND_BIT));
+			if (blendtozero)
+			{
+				bool use_as_is = (TEXMODE_TC_ADD_ACLOCAL(TEXMODE) && TEXMODE_TCA_ADD_ACLOCAL(TEXMODE) && !TEXMODE_TC_INVERT_OUTPUT(TEXMODE) && !TEXMODE_TCA_INVERT_OUTPUT(TEXMODE));
+				if (use_as_is)
+				{
+					addshdr(f, "tt = clocal;");
+					return;
+				}
+				addshdr(f, "tt = vec4(0.0);");
+			}
+			else
+			{
+				selectshdr(f, TEXMODE_TC_ZERO_OTHER(TEXMODE),  "tt.rgb = vec3(0.0);", "tt.rgb = cother.rgb;");
+				condshdr(f, TEXMODE_TC_SUB_CLOCAL(TEXMODE),  "tt.rgb -= clocal.rgb;");
+				selectshdr(f, TEXMODE_TCA_ZERO_OTHER(TEXMODE), "tt.a = 0.0;",         "tt.a = cother.a;");
+				condshdr(f, TEXMODE_TCA_SUB_CLOCAL(TEXMODE), "tt.a -= clocal.a;");
+
+				if (TEXMODE_TC_MSELECT(TEXMODE) || TEXMODE_TCA_MSELECT(TEXMODE) || TEXMODE_TC_REVERSE_BLEND(TEXMODE) || TEXMODE_TCA_REVERSE_BLEND(TEXMODE))
+				{
+					addshdr(f, "tt *= vec4(");
+					condshdr(f, !TEXMODE_TC_REVERSE_BLEND(TEXMODE), "vec3(1.0) - ");
+					switch (TEXMODE_TC_MSELECT(TEXMODE))
+					{
+						default:case 0: addshdr(f, "vec3(0.0), "); break;
+						case 1:         addshdr(f, "clocal.rgb, "); break;
+						case 2:         addshdr(f, "vec3(cother.a), "); break;
+						case 3:         addshdr(f, "vec3(clocal.a), "); break;
+						case 4:case 5:  selectshdr(f, tmu, "vec3(v_foglodblend.z), ", "vec3(v_foglodblend.y), "); break; // 4:detail, 5:LOD
+					}
+					condshdr(f, !TEXMODE_TCA_REVERSE_BLEND(TEXMODE), "1.0 - ");
+					switch (TEXMODE_TCA_MSELECT(TEXMODE))
+					{
+						default:case 0: addshdr(f, "0.0);"); break;
+						case 1:         addshdr(f, "clocal.a);"); break;
+						case 2:         addshdr(f, "cother.a);"); break;
+						case 3:         addshdr(f, "clocal.a);"); break;
+						case 4:case 5:  selectshdr(f, tmu, "v_foglodblend.z);", "v_foglodblend.y);"); break; // 4:detail, 5:LOD
+					}
+				}
+			}
+
+			switch (TEXMODE_TC_ADD_ACLOCAL(TEXMODE))
+			{
+				case 1: addshdr(f, "tt.rgb += clocal.rgb;"); break;
+				case 2: addshdr(f, "tt.rgb += vec3(clocal.a);"); break;
+			}
+			condshdr(f, TEXMODE_TCA_ADD_ACLOCAL(TEXMODE), "tt.a += clocal.a;");
+			condshdr(f, TEXMODE_TC_INVERT_OUTPUT(TEXMODE), "tt.rgb = vec3(1.0f) - tt.rgb;");
+			condshdr(f, TEXMODE_TCA_INVERT_OUTPUT(TEXMODE), "tt.a = 1.0f - tt.a;");
+		}
+
+		#undef nl
+		#undef addshdr
+		#undef condshdr
+		#undef selectshdr
+
+		static void ApplyClipping(const ogl_clipping& clip)
+		{
+			if (!clip.active) { myglDisable(MYGL_SCISSOR_TEST); return; }
+			myglEnable(MYGL_SCISSOR_TEST);
+			myglScissor((int)(clip.sx * vogl->scale), (int)(clip.sy * vogl->scale), (int)((clip.ex - clip.sx) * vogl->scale), (int)((clip.ey - clip.sy) * vogl->scale)); GLERRORASSERT
+		}
+	};
+
+	// Upload any textures prepared by the emulation
+	if (vogl->texuploads.num)
+	{
+		for (ogl_texupload& tu : vogl->texuploads)
+		{
+			ogl_texture& tex = vogl->textures.data[tu.textureidx];
+			if (!tex.id) { myglGenTextures(1, &tex.id); GLERRORASSERT }
+			GFX_ShowMsg("[VOGL] Upload texture #%d with id %d and texkey %08x and size %d,%d", tu.textureidx, tex.id, tex.key, tu.smax, tu.tmax);
+			myglBindTexture(MYGL_TEXTURE_2D, tex.id);
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, tu.smax, tu.tmax, 0, MYGL_RGBA /*MYGL_RGBA*/, MYGL_UNSIGNED_BYTE /*MYGL_UNSIGNED_INT_8_8_8_8_REV*/, tu.buf);
+			if (myglGenerateMipmap) myglGenerateMipmap(MYGL_TEXTURE_2D);
+			GLERRORASSERT
+		}
+		vogl->texuploads.Reset();
+	}
+
+	#ifndef NDEBUG // validate consistency
+	DBP_ASSERT(vogl->texture_hashes.Len() == (vogl->textures.num - vogl->free_textures.num));
+	for (ogl_texbase& tb : vogl->texbases) { if (tb.textureidx != (UINT32)-1) { DBP_ASSERT(vogl->textures.data[tb.textureidx].key == (tb.data_hash ^ tb.pal_hash)); } }
+	#endif
+
+	#if defined(VOODOO_RENDERDOC_H) && defined(VOODOO_RENDERDOC_DLL)
+	if (dbg_ogl_accumulatecommands) { if (dbg_ogl_end_accumulatecommands) { TriggerRenderDocCapture(); dbg_ogl_accumulatecommands = dbg_ogl_end_accumulatecommands = false; } return; }
+	#endif
+
+	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", fbi_width, fbi_height, ready_command_num, ready_vertex_num/3);
+
+	// Peform readback prepared the previous frame
+	ogl_pixels& lastreadpixels = vogl->readback.GetCurrentModePixels(vogl->drawbuffers);
+	if (lastreadpixels.width)
+	{
+		if (vogl->readback.pbo)
+		{
+			myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, vogl->readback.pbo);
+			const UINT8* mappedPtr = (const UINT8*)myglMapBufferRange(MYGL_PIXEL_PACK_BUFFER, 0, lastreadpixels.width * lastreadpixels.height * 4, MYGL_MAP_READ_BIT);
+			if (mappedPtr)
+			{
+				memcpy(lastreadpixels.data, mappedPtr, lastreadpixels.width * lastreadpixels.height * 4);
+				myglUnmapBuffer(MYGL_PIXEL_PACK_BUFFER);
+			}
+			myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, 0);
+			if (!mappedPtr || myglGetError()) vogl->readback.DisablePBO(); // No PBO support
+		}
+		if (!vogl->readback.pbo)
+		{
+			// Read color data from output or draw depth frame buffer
+			ogl_drawbuffer& lastdrawbuffer = vogl->drawbuffers[vogl->display_buffer];
+			myglBindFramebuffer(MYGL_FRAMEBUFFER, (vogl->readback.mode == OGL_READBACK_MODE_DEPTH ? vogl->readback.depth_fbo : lastdrawbuffer.fbo)); GLERRORASSERT
+			myglReadPixels(0, 0, lastreadpixels.width, lastreadpixels.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, lastreadpixels.data); GLERRORASSERT
+			// Read depth from output frame buffer (not supported on GLES)
+			//static float readbackdepth[SCALER_MAXWIDTH * SCALER_MAXHEIGHT];
+			//myglReadPixels(0, 0, view_width, view_height, /*MYGL_DEPTH_STENCIL*/ MYGL_DEPTH_COMPONENT,  /*MYGL_UNSIGNED_INT_24_8*/ MYGL_FLOAT, readbackdepth); GLERRORASSERT
+		}
+	}
+
+	const UINT32 flush_commands = vogl->cmdbuf.flushed_commands, flush_vertices = vogl->cmdbuf.flushed_vertices;
+	if (flush_vertices)
+	{
+		// Upload vertex data to GPU
+		myglBindVertexArray(vogl->vao); GLERRORASSERT
+		myglBindBuffer(MYGL_ARRAY_BUFFER, vogl->vbo); GLERRORASSERT
+		myglBufferData(MYGL_ARRAY_BUFFER, flush_vertices * sizeof(ogl_vertex), vogl->cmdbuf.vertices.data, MYGL_DYNAMIC_DRAW); GLERRORASSERT
+		myglVertexAttribPointer(0, 3, MYGL_FLOAT, MYGL_FALSE, sizeof(ogl_vertex), (void*)(size_t)offsetof(ogl_vertex, x)); // vec3 a_position
+		myglVertexAttribPointer(1, 4, MYGL_FLOAT, MYGL_FALSE, sizeof(ogl_vertex), (void*)(size_t)offsetof(ogl_vertex, r)); // vec4 a_color
+		myglVertexAttribPointer(2, 3, MYGL_FLOAT, MYGL_FALSE, sizeof(ogl_vertex), (void*)(size_t)offsetof(ogl_vertex, fogblend)); // vec3 a_foglodblend
+		myglVertexAttribPointer(3, 3, MYGL_FLOAT, MYGL_FALSE, sizeof(ogl_vertex), (void*)(size_t)offsetof(ogl_vertex, m[0])); // vec3 a_texcoord0
+		myglVertexAttribPointer(4, 3, MYGL_FLOAT, MYGL_FALSE, sizeof(ogl_vertex), (void*)(size_t)offsetof(ogl_vertex, m[1])); // vec3 a_texcoord1
+		GLERRORASSERT
+		myglEnableVertexAttribArray(0);
+		myglEnableVertexAttribArray(1);
+		myglEnableVertexAttribArray(2);
+		myglEnableVertexAttribArray(3);
+		myglEnableVertexAttribArray(4);
+		GLERRORASSERT
+	}
+
+	const UINT32 fbi_width = v->fbi.width, view_width = (UINT32)(fbi_width * vogl->scale), fbi_height = v->fbi.height, view_height = (UINT32)(fbi_height * vogl->scale);
+ 	if (vogl->depthstenciltex_width != view_width || vogl->depthstenciltex_height != view_height)
+ 		vogl->DepthStencilTexSetSize(view_width, view_height);
+
+	myglViewport(0, 0, view_width, view_height); GLERRORASSERT
+	Local::ApplyClipping(vogl->cmdbuf.live_clipping);
+	if (myglDepthRange) { myglDepthRange(0.0f, 1.0f); GLERRORASSERT }
+	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
+	if (vogl->scale != 1.0f) myglPointSize(vogl->scale);
+
+	UINT8 last_drawbuffer = 255, last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
+	UINT32 last_blend_mode = 0xFFFFFFFF;
+	ogl_program* prog = NULL;
+	float view[3];
+
+	//#define VOGL_DRAW_STATS
+	#ifdef VOGL_DRAW_STATS
+	#define VOGL_STAT_ADD(VAR, AMOUNT) VAR += (AMOUNT);
+	UINT32 stat_num_stencil_ops = 0, stat_num_depth_tested = 0, stat_num_blended = 0, stat_num_textured = 0, stat_num_triangles = 0, stat_num_pixels = 0;
+	UINT32 stat_num_fastfill = 0, stat_num_fastfill_color = 0, stat_num_fastfill_depth = 0;
+	UINT32 stat_switches_depth = 0, stat_switches_depthmask = 0, stat_switches_colormask = 0, stat_switches_alphamask = 0, stat_switches_blending = 0;
+	#else
+	#define VOGL_STAT_ADD(VAR, AMOUNT) (void)0
+	#endif
+
+	for (UINT32 c = 0, cLast = flush_commands - 1; c != flush_commands; c++)
+	{
+		ogl_command cmd = vogl->cmdbuf.commands.data[c];
+		if (cmd.base.drawbuffer != last_drawbuffer)
+		{
+			last_drawbuffer = cmd.base.drawbuffer;
+			ogl_drawbuffer& drawbuffer = vogl->drawbuffers[last_drawbuffer];
+			if (drawbuffer.color.width != view_width || drawbuffer.color.height != view_height)
+				drawbuffer.SetSize(last_drawbuffer, view_width, view_height, vogl->depthstenciltex); // also inits fbo
+			myglBindFramebuffer(MYGL_FRAMEBUFFER, drawbuffer.fbo); GLERRORASSERT
+		}
+
+		if (cmd.type == ogl_command::FASTFILL)
+		{
+			VOGL_STAT_ADD(stat_num_fastfill, 1);
+			VOGL_STAT_ADD(stat_num_fastfill_color, FBZMODE_RGB_BUFFER_MASK(cmd.fastfill.fbz_mode));
+			VOGL_STAT_ADD(stat_num_fastfill_depth, (FBZMODE_AUX_BUFFER_MASK(cmd.fastfill.fbz_mode) && cmd.fastfill.auxoffs != (UINT32)(~0)));
+			VOGL_STAT_ADD(stat_switches_depthmask, !last_depth_masked);
+			VOGL_STAT_ADD(stat_switches_colormask, !last_color_masked);
+			VOGL_STAT_ADD(stat_switches_alphamask, !last_alpha_masked);
+			//GFX_ShowMsg("[VOGL] [%u] Fastfill: %s%s - %f,%f,%f,%f", c, (FBZMODE_RGB_BUFFER_MASK(cmd.fastfill.fbz_mode) ? "COLOR" : ""), ((FBZMODE_AUX_BUFFER_MASK(cmd.fastfill.fbz_mode) && cmd.fastfill.auxoffs != (UINT32)(~0)) ? "DEPTH" : ""), (float)cmd.fastfill.col1.r/255.0f, (float)cmd.fastfill.col1.g/255.0f, (float)cmd.fastfill.col1.b/255.0f, (float)cmd.fastfill.col1.a/255.0f);
+
+			if (!last_depth_masked)
+			{
+				myglDepthMask(1); GLERRORASSERT
+				last_depth_masked = 1;
+			}
+
+			const int clipchange = memcmp(&vogl->cmdbuf.live_clipping, &cmd.fastfill.clip, sizeof(vogl->cmdbuf.live_clipping));
+			if (clipchange) Local::ApplyClipping(cmd.fastfill.clip);
+
+			unsigned clear_mask = 0;
+			if (FBZMODE_RGB_BUFFER_MASK(cmd.fastfill.fbz_mode))
+			{
+				if (!last_color_masked || !last_alpha_masked)
+				{
+					myglColorMask(1, 1, 1, 1);
+					last_color_masked = 1;
+					last_alpha_masked = 1;
+				}
+				myglClearColor((float)cmd.fastfill.col1.r/255.0f, (float)cmd.fastfill.col1.g/255.0f, (float)cmd.fastfill.col1.b/255.0f, (float)cmd.fastfill.col1.a/255.0f); GLERRORASSERT
+				clear_mask |= MYGL_COLOR_BUFFER_BIT;
+			}
+			if (FBZMODE_AUX_BUFFER_MASK(cmd.fastfill.fbz_mode) && cmd.fastfill.auxoffs != (UINT32)(~0))
+			{
+				if (myglClearDepth) { myglClearDepth((float)((UINT16)cmd.fastfill.zacolor)/65535.0f); GLERRORASSERT }
+				else if (myglClearDepthf) { myglClearDepthf((float)((UINT16)cmd.fastfill.zacolor)/65535.0f); GLERRORASSERT }
+				else if (cmd.fastfill.zacolor != 65535) GFX_ShowMsg("[VOGL] MISSING CLEAR DEPTH SUPPORT");
+				clear_mask |= MYGL_DEPTH_BUFFER_BIT;
+			}
+
+			if (clear_mask) { myglClear(clear_mask); GLERRORASSERT }
+
+			if (clipchange) Local::ApplyClipping(vogl->cmdbuf.live_clipping);
+		}
+		else if (cmd.type == ogl_command::CLIPPING)
+		{
+			Local::ApplyClipping(cmd.clipping.clip);
+			vogl->cmdbuf.live_clipping = cmd.clipping.clip;
+		}
+		else
+		{
+			UINT32 idx = cmd.vertex_index, idxNext = (c != cLast ? vogl->cmdbuf.commands.data[c+1].vertex_index : flush_vertices);
+			DBP_ASSERT(idx < idxNext);
+			if (cmd.type == ogl_command::POINT) { VOGL_STAT_ADD(stat_num_pixels, idxNext - idx); } else { VOGL_STAT_ADD(stat_num_triangles, (idxNext - idx) / 3); }
+
+			const UINT32 FBZMODE = cmd.geometry.eff.fbz_mode;
+			const UINT32 ALPHAMODE = cmd.geometry.eff.alpha_mode;
+			const bool uset[] = { (cmd.geometry.eff.tex_mode[0] != VOODOO_OGL_TEXMODE_DISABLED), (cmd.geometry.eff.tex_mode[1] != VOODOO_OGL_TEXMODE_DISABLED) };
+
+			// Stencil op
+			const UINT8 use_stencil_op = FBZMODE_DEPTH_SOURCE_COMPARE(FBZMODE);
+			if (use_stencil_op)
+			{
+				DBP_ASSERT(!use_stencil_op);
+				static bool loggedmissing; if (!loggedmissing) { loggedmissing = true; GFX_ShowMsg("[VOGL] MISSING STENCIL OP SUPPORT"); }
+				#if 0
+				// TODO
+				// 1. switch to simplest shader program (maybe FBZ/CP/ETC. all 0?)
+				// 2. Disable depth func, depth mask, color mask, alpha mask and belding
+				// 3. myglEnable(MYGL_STENCIL_TEST);
+				// 4. myglClear(MYGL_STENCIL_BUFFER_BIT);
+				// 5. myglStencilFunc(MYGL_ALWAYS, 1, 1);
+				// 6. myglStencilOp(MYGL_KEEP, MYGL_KEEP, MYGL_REPLACE);
+				// 7. myglDrawArrays((cmd.type == ogl_command::POINT ? MYGL_POINTS : MYGL_TRIANGLES), idx, idxNext - idx);
+				// 8. After rendering normally below, do if (use_stencil_op) myglDisable(MYGL_STENCIL_TEST);
+				#endif
+			}
+
+			ogl_effective prog_eff;
+			prog_eff.fbz_mode    = FBZMODE & Local::SHADER_FBZMODE_USEDBITS;
+			prog_eff.color_path  = cmd.geometry.eff.color_path;
+			prog_eff.alpha_mode  = ALPHAMODE & Local::SHADER_ALPHAMODE_USEDBITS;
+			prog_eff.fog_mode    = cmd.geometry.eff.fog_mode;
+			prog_eff.tex_mode[0] = (uset[0] ? (cmd.geometry.eff.tex_mode[0] & Local::SHADER_OGL_TEXMODE_USEDBITS) : VOODOO_OGL_TEXMODE_DISABLED);
+			prog_eff.tex_mode[1] = (uset[1] ? (cmd.geometry.eff.tex_mode[1] & Local::SHADER_OGL_TEXMODE_USEDBITS) : VOODOO_OGL_TEXMODE_DISABLED);
+
+			if (!prog || memcmp(&prog->eff, &prog_eff, sizeof(prog_eff)))
+			{
+				UINT32 prog_hash =                                   prog_eff.color_path;
+				prog_hash = ((prog_hash << 1) | (prog_hash >> 31)) ^ prog_eff.fbz_mode;
+				prog_hash = ((prog_hash << 1) | (prog_hash >> 31)) ^ prog_eff.alpha_mode;
+				prog_hash = ((prog_hash << 1) | (prog_hash >> 31)) ^ prog_eff.fog_mode;
+				prog_hash = ((prog_hash << 1) | (prog_hash >> 31)) ^ prog_eff.tex_mode[0];
+				prog_hash = ((prog_hash << 1) | (prog_hash >> 31)) ^ prog_eff.tex_mode[1];
+
+				UINT32* pprogidx = vogl->program_hashes.Get(prog_hash, Local::ProgEqual, vogl->programs.data, prog_eff);
+				prog = (pprogidx ? &vogl->programs.data[*pprogidx] : Local::BuildProgram(prog_eff, prog_hash));
+				myglUseProgram(prog->id); GLERRORASSERT
+			}
+
+			UINT8 yorigin = FBZMODE_Y_ORIGIN(FBZMODE);
+			if (yorigin != last_yorigin)
+			{
+				view[0] = 2.0f / (float)fbi_width;
+				view[1] = (yorigin ? 2.0f : -2.0f) / (float)fbi_height;
+				view[2] = (yorigin ? -1.0f : 1.0f);
+				last_yorigin = yorigin;
+			}
+
+			myglUniform3f(prog->u_view, view[0], view[1], view[2]);
+			if (prog->u_color0 != -1) myglUniform4f(prog->u_color0, cmd.geometry.uni.col0.rgb.r/255.0f, cmd.geometry.uni.col0.rgb.g/255.0f, cmd.geometry.uni.col0.rgb.b/255.0f, cmd.geometry.uni.col0.rgb.a/255.0f);
+			if (prog->u_color1 != -1) myglUniform4f(prog->u_color1, cmd.geometry.uni.col1.rgb.r/255.0f, cmd.geometry.uni.col1.rgb.g/255.0f, cmd.geometry.uni.col1.rgb.b/255.0f, cmd.geometry.uni.col1.rgb.a/255.0f);
+			if (prog->u_chromaKey != -1) myglUniform4f(prog->u_chromaKey, cmd.geometry.uni.chromakey.rgb.r/255.0f, cmd.geometry.uni.chromakey.rgb.g/255.0f, cmd.geometry.uni.chromakey.rgb.b/255.0f, cmd.geometry.uni.chromakey.rgb.a/255.0f);
+			//if (prog->u_chromaRange != -1) myglUniform4f(prog->u_chromaRange, cmd.geometry.uni.chromarange.rgb.r/255.0f, cmd.geometry.uni.chromarange.rgb.g/255.0f, cmd.geometry.uni.chromarange.rgb.b/255.0f, cmd.geometry.uni.chromarange.rgb.a/255.0f);
+			//if (prog->u_zaColor != -1) myglUniform1f(prog->u_zaColor, cmd.geometry.uni.zacolor/65535.0f);
+			if (prog->u_fogcolor_alpharef != -1) myglUniform4f(prog->u_fogcolor_alpharef, cmd.geometry.uni.fogcolor.rgb.r/255.0f, cmd.geometry.uni.fogcolor.rgb.g/255.0f, cmd.geometry.uni.fogcolor.rgb.b/255.0f, ALPHAMODE_ALPHAREF(ALPHAMODE)/255.0f);
+			GLERRORASSERT
+
+
+			if (uset[0] || uset[1])
+			{
+				for (int t = 1; t >= 0; t--)
+				{
+					if (!uset[t]) continue;
+
+					ogl_texture& tex = vogl->textures.data[cmd.geometry.textureidx[t]];
+					DBP_ASSERT(tex.lastframe != ogl_texture::FREED_LASTFRAME);
+					tex.lastframe = vogl->renderframe;
+					myglActiveTexture(MYGL_TEXTURE0+t); GLERRORASSERT
+					myglBindTexture(MYGL_TEXTURE_2D, tex.id); GLERRORASSERT
+					UINT32 TEXMODE = cmd.geometry.eff.tex_mode[t];
+					int minFilter = MYGL_NEAREST + TEXMODE_MINIFICATION_FILTER(TEXMODE);
+					//if (v->tmu[t].lodmin != v->tmu[t].lodmax)
+					//	minFilter += 0x0100 + TEXMODE_TRILINEAR(TEXMODE)*2;
+					myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MIN_FILTER, minFilter); GLERRORASSERT
+					myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MAG_FILTER, MYGL_NEAREST + TEXMODE_MAGNIFICATION_FILTER(TEXMODE)); GLERRORASSERT
+					myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_S, (TEXMODE_CLAMP_S(TEXMODE) ? MYGL_CLAMP_TO_EDGE : MYGL_REPEAT)); GLERRORASSERT
+					myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_T, (TEXMODE_CLAMP_T(TEXMODE) ? MYGL_CLAMP_TO_EDGE : MYGL_REPEAT)); GLERRORASSERT
+				}
+			}
+
+			UINT8 use_depth_test, depth_func;
+			if (use_stencil_op)
+			{
+				myglStencilFunc(MYGL_EQUAL, 1, 1); GLERRORASSERT
+				myglStencilOp(MYGL_KEEP, MYGL_KEEP, MYGL_KEEP); GLERRORASSERT
+				if (FBZMODE_ENABLE_DEPTHBUF(FBZMODE)) { use_depth_test = 1; depth_func = MYGL_ALWAYS - MYGL_NEVER; }
+				else { use_depth_test = 0; depth_func = 0; }
+			}
+			else if (FBZMODE_ENABLE_ALPHA_PLANES(FBZMODE) == 0)
+			{
+				if (FBZMODE_ENABLE_DEPTHBUF(FBZMODE)) { use_depth_test = 1; depth_func = FBZMODE_DEPTH_FUNCTION(FBZMODE); }
+				else if (FBZMODE_AUX_BUFFER_MASK(FBZMODE) > 0) { use_depth_test = 1; depth_func = MYGL_ALWAYS - MYGL_NEVER; }
+				else { use_depth_test = 0; depth_func = 0; }
+			}
+			else { use_depth_test = 1; depth_func = MYGL_ALWAYS - MYGL_NEVER; }
+
+			UINT8 color_masked = FBZMODE_RGB_BUFFER_MASK(FBZMODE) == 1;
+			UINT8 alpha_masked = (FBZMODE_AUX_BUFFER_MASK(FBZMODE) == 1 && FBZMODE_ENABLE_ALPHA_PLANES(FBZMODE) == 1);
+			UINT8 depth_masked = (FBZMODE_AUX_BUFFER_MASK(FBZMODE) == 1 && FBZMODE_ENABLE_ALPHA_PLANES(FBZMODE) == 0);
+
+			const UINT8 use_blend = ALPHAMODE_ALPHABLEND(ALPHAMODE);
+			voodoo_reg blend_mode;
+			blend_mode.rgb.r = ALPHAMODE_SRCRGBBLEND(ALPHAMODE);
+			blend_mode.rgb.g = ALPHAMODE_DSTRGBBLEND(ALPHAMODE);
+			blend_mode.rgb.b = (ALPHAMODE_SRCALPHABLEND(ALPHAMODE) == 4);
+			blend_mode.rgb.a = (ALPHAMODE_DSTALPHABLEND(ALPHAMODE) == 4);
+
+			VOGL_STAT_ADD(stat_num_stencil_ops,    use_stencil_op);
+			VOGL_STAT_ADD(stat_num_depth_tested,   use_depth_test);
+			VOGL_STAT_ADD(stat_num_blended,        use_blend);
+			VOGL_STAT_ADD(stat_num_textured,       (uset[0] || uset[1]));
+			VOGL_STAT_ADD(stat_switches_depth,     (use_depth_test != last_use_depth_test || depth_func != last_depth_func));
+			VOGL_STAT_ADD(stat_switches_depthmask, (depth_masked != last_depth_masked));
+			VOGL_STAT_ADD(stat_switches_colormask, (color_masked != last_color_masked));
+			VOGL_STAT_ADD(stat_switches_alphamask, (alpha_masked != last_alpha_masked));
+			VOGL_STAT_ADD(stat_switches_blending,  (use_blend != last_use_blend || blend_mode.u != last_blend_mode));
+
+			if (use_depth_test != last_use_depth_test || depth_func != last_depth_func)
+			{
+				(use_depth_test ? myglEnable : myglDisable)(MYGL_DEPTH_TEST);
+				myglDepthFunc(MYGL_NEVER + depth_func); GLERRORASSERT
+				last_use_depth_test = use_depth_test;
+				last_depth_func = depth_func;
+			}
+			if (depth_masked != last_depth_masked)
+			{
+				myglDepthMask(depth_masked); GLERRORASSERT
+				last_depth_masked = depth_masked;
+			}
+			if (color_masked != last_color_masked || alpha_masked != last_alpha_masked)
+			{
+				myglColorMask(color_masked, color_masked, color_masked, alpha_masked); GLERRORASSERT
+				last_color_masked = color_masked;
+				last_alpha_masked = alpha_masked;
+			}
+			if (use_blend != last_use_blend)
+			{
+				(use_blend ? myglEnable : myglDisable)(MYGL_BLEND); GLERRORASSERT
+				last_use_blend = use_blend;
+			}
+			if (blend_mode.u != last_blend_mode)
+			{
+				static const unsigned ogl_sfactor[16] = { MYGL_ZERO, MYGL_SRC_ALPHA, MYGL_DST_COLOR, MYGL_DST_ALPHA, MYGL_ONE, MYGL_ONE_MINUS_SRC_ALPHA, MYGL_ONE_MINUS_DST_COLOR, MYGL_ONE_MINUS_DST_ALPHA, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_SRC_ALPHA_SATURATE };
+				static const unsigned ogl_dfactor[16] = { MYGL_ZERO, MYGL_SRC_ALPHA, MYGL_SRC_COLOR, MYGL_DST_ALPHA, MYGL_ONE, MYGL_ONE_MINUS_SRC_ALPHA, MYGL_ONE_MINUS_SRC_COLOR, MYGL_ONE_MINUS_DST_ALPHA, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_ZERO, MYGL_SRC_COLOR };
+				myglBlendFuncSeparate(ogl_sfactor[blend_mode.rgb.r], ogl_dfactor[blend_mode.rgb.g], (blend_mode.rgb.b ? MYGL_ONE : MYGL_ZERO), (blend_mode.rgb.a ? MYGL_ONE : MYGL_ZERO)); GLERRORASSERT
+				last_blend_mode = blend_mode.u;
+			}
+
+			if (cmd.type == ogl_command::POINT)
+			{
+				if (vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
+				myglDrawArrays(MYGL_POINTS, idx, idxNext - idx); GLERRORASSERT
+				if (vogl->cmdbuf.live_clipping.active) { myglEnable(MYGL_SCISSOR_TEST); GLERRORASSERT }
+			}
+			else
+			{
+				myglDrawArrays(MYGL_TRIANGLES, idx, idxNext - idx); GLERRORASSERT
+			}
+
+			#if 0
+			if (use_stencil_op)
+				myglDisable(MYGL_STENCIL_TEST);
+			#endif
+
+			GLERRORASSERT
+		}
+	}
+
+	// Reset GL states
+	GLERRORASSERT
+	if (last_use_blend == 1) { myglDisable(MYGL_BLEND); GLERRORASSERT }
+	if (last_depth_masked == 0) { myglDepthMask(MYGL_TRUE); GLERRORASSERT }
+	if (!last_color_masked || !last_alpha_masked) { myglColorMask(MYGL_TRUE, MYGL_TRUE, MYGL_TRUE, MYGL_TRUE); GLERRORASSERT }
+	if (vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
+	if (vogl->scale != 1.0f) myglPointSize(1.0f);
+
+	#ifdef VOGL_DRAW_STATS
+	GFX_ShowMsg("[VOGL] stats - drawcalls: %u - vertices: %u - stencil_ops: %u - depth_tested: %u - blended: %u - textured: %u - tris: %u - pixls: %u - fastfill: %u (c:%u,d:%u) - chg_depth: %u - chg_depthmask: %u - chg_colormask: %u - chg_alphamask: %u - chg_blending: %u", flush_commands, flush_vertices, stat_num_stencil_ops, stat_num_depth_tested, stat_num_blended, stat_num_textured, stat_num_triangles, stat_num_pixels, stat_num_fastfill, stat_num_fastfill_color, stat_num_fastfill_depth, stat_switches_depth, stat_switches_depthmask, stat_switches_colormask, stat_switches_alphamask, stat_switches_blending);
+	#endif
+
+	// Initiate readback for next frame
+	vogl->readback.NextMode();
+	if (vogl->readback.depth.width != fbi_width || vogl->readback.depth.height != fbi_height) vogl->readback.SetSize(fbi_width, fbi_height); // also inits PBO
+	while (!vogl->readback.GetCurrentModeFBO(vogl->drawbuffers)) vogl->readback.NextMode();
+	if (vogl->readback.mode == OGL_READBACK_MODE_DEPTH)
+	{
+		// Convert depth texture to readable color texture
+		if (view_width != fbi_width || view_height != fbi_height) { myglViewport(0, 0, fbi_width, fbi_height); GLERRORASSERT }
+		myglBindVertexArray(vogl->readback.depth_vao);
+		myglUseProgram(vogl->readback.depth_prog);
+		myglActiveTexture(MYGL_TEXTURE0);
+		myglBindTexture(MYGL_TEXTURE_2D, vogl->depthstenciltex);
+		myglBindFramebuffer(MYGL_FRAMEBUFFER, vogl->readback.depth_fbo);
+		myglDrawArrays(MYGL_TRIANGLE_STRIP, 0, 4); GLERRORASSERT
+	}
+	if (vogl->readback.pbo)
+	{
+		const ogl_pixels& readpixels = vogl->readback.GetCurrentModePixels(vogl->drawbuffers);
+		myglBindFramebuffer(MYGL_READ_FRAMEBUFFER, vogl->readback.GetCurrentModeFBO(vogl->drawbuffers));
+		myglReadBuffer(MYGL_COLOR_ATTACHMENT0);
+		myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, vogl->readback.pbo);
+		if (vogl->readback.pbosize < readpixels.width * readpixels.height * 4)
+			myglBufferData(MYGL_PIXEL_PACK_BUFFER, (vogl->readback.pbosize = readpixels.width * readpixels.height * 4), NULL, MYGL_STREAM_READ);
+		myglReadPixels(0, 0, readpixels.width, readpixels.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, 0);
+		myglBindFramebuffer(MYGL_READ_FRAMEBUFFER, 0);
+		myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, 0);
+		if (myglGetError()) vogl->readback.DisablePBO(); // No PBO support
+	}
+
+	// Remove flushed commands and vertices
+	if (UINT32 late_commands = (vogl->cmdbuf.commands.num - flush_commands))
+		memmove(vogl->cmdbuf.commands.data, vogl->cmdbuf.commands.data + flush_commands, late_commands * sizeof(*vogl->cmdbuf.commands.data));
+	vogl->cmdbuf.commands.num -= flush_commands;
+	vogl->cmdbuf.flushed_commands = 0;
+	DBP_ASSERT(!vogl->cmdbuf.commands.num || vogl->cmdbuf.commands.data->vertex_index == flush_vertices);
+	for (ogl_command& c : vogl->cmdbuf.commands) { DBP_ASSERT(c.vertex_index >= flush_vertices); c.vertex_index -= flush_vertices; }
+	if (UINT32 late_vertices = (vogl->cmdbuf.vertices.num - flush_vertices))
+		memmove(vogl->cmdbuf.vertices.data, vogl->cmdbuf.vertices.data + flush_vertices, late_vertices * sizeof(*vogl->cmdbuf.vertices.data));
+	vogl->cmdbuf.vertices.num -= flush_vertices;
+	vogl->cmdbuf.flushed_vertices = 0;
+
+	// Mark textures not used for a while as available for other data
+	if (vogl->textures.num >= 32)
+	{
+		for (UINT32 i = vogl->renderframe*32, j = i + 32, checkedPartialFlush = 0, idx; i != j; i++)
+		{
+			ogl_texture& tex = vogl->textures.data[idx = (i % vogl->textures.num)];
+			if ((vogl->renderframe - tex.lastframe) < 600 || tex.lastframe == ogl_texture::FREED_LASTFRAME) continue;
+
+			if (!checkedPartialFlush)
+			{
+				// Mark all textures used by commands already queued but not yet flushed as having been accessed this frame
+				for (const ogl_command& cmd : vogl->cmdbuf.commands)
+					if (cmd.type == ogl_command::TRIANGLE)
+						for (int t = 1; t >= 0; t--)
+							if (cmd.geometry.eff.tex_mode[t] != VOODOO_OGL_TEXMODE_DISABLED)
+							{
+								DBP_ASSERT(vogl->textures.data[cmd.geometry.textureidx[t]].lastframe != ogl_texture::FREED_LASTFRAME);
+								vogl->textures.data[cmd.geometry.textureidx[t]].lastframe = vogl->renderframe;
+							}
+				checkedPartialFlush = 1;
+				if (tex.lastframe == vogl->renderframe) continue;
+			}
+
+			tex.lastframe = ogl_texture::FREED_LASTFRAME;
+			vogl->free_textures.AddOne() = idx;
+			bool removed = vogl->texture_hashes.Remove(tex.key);
+			DBP_ASSERT(removed);
+			GFX_ShowMsg("[VOGL] Marking texture #%d with id %d and texkey %08x as free", idx, tex.id, tex.key);
+	
+			for (ogl_texbase& tb : vogl->texbases)
+			{
+				if (tb.textureidx != idx) continue;
+				tb.textureidx = (UINT32)-1;
+				GFX_ShowMsg("       Marking texbase with texkey %08x as unassigned", (tb.data_hash ^ tb.pal_hash));
+			}
+		}
+	}
+	vogl->renderframe++;
+
+	vogl->display_buffer = vogl->flushed_buffer;
+}
+
+INLINE void voodoo_ogl_texture_clear(UINT32 tmunum, UINT32 texbase1, UINT32 texbase2)
+{
+	const UINT64 op = (((UINT64)(tmunum + 1) << 60) | ((UINT64)texbase1 << 30) | texbase2);
+	if (!vogl || vogl->last_texture_clear_op == op) return;
+	vogl->last_texture_clear_op = op;
+	//GFX_ShowMsg("[VOGL] texture_clear TMU: %u - 0x%08x/0x%08x", tmunum, texbase1, texbase2); // too much
+	UINT32 texmapkeybase = (tmunum << 30);
+	UINT32* it1 = vogl->texbase_hashes.Get(texmapkeybase | texbase1);
+	if (it1) vogl->texbases.data[*it1].valid_data = false;
+	if (texbase1 != texbase2)
+		if (UINT32* it2 = vogl->texbase_hashes.Get(texmapkeybase | texbase2))
+			vogl->texbases.data[*it2].valid_data = false;
+}
+
+void voodoo_ogl_fastfill()
+{
+	ogl_command cmd;
+	switch (FBZMODE_DRAW_BUFFER(v->reg[fbzMode].u))
+	{
+		case 0: cmd.fastfill.drawbuffer = v->fbi.frontbuf; break; /* front buffer */
+		case 1: cmd.fastfill.drawbuffer = v->fbi.backbuf;  break; /* back buffer */
+		default: return; /* reserved */
+	}
+	cmd.fastfill.clip.active = 1;
+	cmd.fastfill.clip.sx = (v->reg[clipLeftRight].u >> 16) & 0x3ff;
+	cmd.fastfill.clip.ex = (v->reg[clipLeftRight].u >>  0) & 0x3ff;
+	cmd.fastfill.clip.sy = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >>  0) & 0x3ff)) & 0x3ff;
+	cmd.fastfill.clip.ey = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >> 16) & 0x3ff)) & 0x3ff;
+	if (!cmd.fastfill.clip.sx && !cmd.fastfill.clip.sy && cmd.fastfill.clip.ex == v->fbi.width && cmd.fastfill.clip.ey == v->fbi.height)
+		cmd.fastfill.clip.active = cmd.fastfill.clip.sx = cmd.fastfill.clip.sy = cmd.fastfill.clip.ex = cmd.fastfill.clip.ey = 0;
+
+	cmd.fastfill.col1 = v->reg[color1].rgb;
+	cmd.fastfill.fbz_mode = v->reg[fbzMode].u;
+	cmd.fastfill.zacolor = v->reg[zaColor].u;
+	cmd.fastfill.auxoffs = v->fbi.auxoffs;
+
+	vogl->cmdbuf.AddCommand(cmd, ogl_command::FASTFILL);
+}
+
+void voodoo_ogl_draw_pixel(int x, int y, bool set_rgb, bool set_alpha, bool set_depth, bool use_blend, int r, int g, int b, int a, UINT16 d = 0, INT32 fogblend = 0)
+{
+	const voodoo_reg* reg = v->reg;
+	ogl_command cmd;
+	switch (LFBMODE_WRITE_BUFFER_SELECT(reg[lfbMode].u))
+	{
+		case 0: cmd.geometry.drawbuffer = v->fbi.frontbuf; break; /* front buffer */
+		case 1: cmd.geometry.drawbuffer = v->fbi.backbuf; break; /* back buffer */
+		default: return; /* reserved */
+	}
+
+	cmd.geometry.eff.fbz_mode = 0;
+	if (set_rgb)   cmd.geometry.eff.fbz_mode |= FBZMODE_RGB_BUFFER_MASK_BIT;
+	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
+	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
+	DBP_ASSERT((set_rgb || set_alpha || set_depth) && ((int)set_alpha + (int)set_depth) < 2); // both together aren't supported
+	cmd.geometry.eff.color_path = 0;
+	cmd.geometry.eff.alpha_mode = (use_blend ? (reg[alphaMode].u & VOODOO_OGL_ALPHAMODE_USEDBITS) : 0);
+	cmd.geometry.eff.fog_mode = ((use_blend && FOGMODE_ENABLE_FOG(reg[fogMode].u)) ? (reg[fogMode].u & VOODOO_OGL_FOGMODE_USEDBITS) : 0);
+	cmd.geometry.uni.col0.u = 0;
+	cmd.geometry.uni.col1.u = 0;
+	cmd.geometry.uni.chromakey.u = 0;
+	//cmd.geometry.uni.chromarange.u = 0;
+	cmd.geometry.uni.fogcolor.u = (cmd.geometry.eff.fog_mode ? reg[fogColor].u : 0);
+	//cmd.geometry.uni.zacolor = 0;
+	cmd.geometry.eff.tex_mode[0] = cmd.geometry.eff.tex_mode[1] = VOODOO_OGL_TEXMODE_DISABLED;
+	cmd.geometry.textureidx[0] = cmd.geometry.textureidx[1] = 0;
+
+	if (memcmp(&cmd.geometry, &vogl->cmdbuf.last_geometry, sizeof(cmd.geometry)))
+		vogl->cmdbuf.AddCommand(cmd, ogl_command::POINT);
+
+	ogl_vertex& vd = *vogl->cmdbuf.vertices.Add(1);
+	vd.x = (float)x + 0.5f;
+	vd.y = (float)y - 0.5f;
+	vd.d = (float)d / (float)0xffff;
+	vd.r = (float)r / (float)0xff;
+	vd.g = (float)g / (float)0xff;
+	vd.b = (float)b / (float)0xff;
+	vd.a = (float)a / (float)0xff;
+	vd.fogblend = (float)fogblend / (float)0xff;
+}
+
+UINT32 voodoo_ogl_read_pixel(int x, int y)
+{
+	const ogl_pixels* pixels; UINT32 off; const UINT8* rgba;
+	switch (LFBMODE_READ_BUFFER_SELECT(v->reg[lfbMode].u))
+	{
+		default: invalidread: return 0xffffffff;
+		case 0: pixels = &vogl->drawbuffers[v->fbi.frontbuf].color; break; // front buffer
+		case 1: pixels = &vogl->drawbuffers[v->fbi.backbuf].color; break; // back buffer
+		case 2: // aux buffer (size matches fbi, only support depth for now)
+			pixels = &vogl->readback.depth;
+			off = (pixels->width * (pixels->height-y) + x);
+			if (off > pixels->width * pixels->height) goto invalidread;
+			rgba = pixels->data + (pixels->width * (pixels->height - y) + x) * 4;
+			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | (rgba[5] << 16);
+	}
+	if (vogl->scale != 1.0f) // color buffers are scaled
+	{
+		x = (int)(x * vogl->scale);
+		y = (int)(y * vogl->scale);
+	}
+	off = (pixels->width * (pixels->height-y) + x);
+	if (off > pixels->width * pixels->height) goto invalidread;
+	rgba = pixels->data + (pixels->width * (pixels->height - y) + x) * 4;
+	return ((rgba[0]>>3)<<11) | ((rgba[1]>>2)<<5) | (rgba[2]>>3) |
+			((rgba[4]>>3)<<27) | ((rgba[5]>>2)<<21) | ((rgba[6]>>3)<<16);
+}
+
+static void prepare_tmu(tmu_state *t);
+
+static void voodoo_ogl_draw_triangle()
+{
+	const fbi_state& fbi = v->fbi;
+	const voodoo_reg* reg = v->reg;
+	const UINT32 FBZMODE = reg[fbzMode].u;
+	const UINT32 FBZCOLORPATH = reg[fbzColorPath].u;
+	const UINT32 ALPHAMODE = reg[alphaMode].u;
+	const UINT32 FOGMODE = reg[fogMode].u;
+	
+	ogl_command cmd;
+	switch (FBZMODE_DRAW_BUFFER(FBZMODE))
+	{
+		case 0: cmd.base.drawbuffer = fbi.frontbuf; break; /* front buffer */
+		case 1: cmd.base.drawbuffer = fbi.backbuf; break; /* back buffer */
+		default: return; /* reserved */
+	}
+
+	UINT32 clipping_active = FBZMODE_ENABLE_CLIPPING(FBZMODE);
+	if (vogl->cmdbuf.last_clipping.active | clipping_active)
+	{
+		if (clipping_active)
+		{
+			cmd.clipping.clip.sx = (v->reg[clipLeftRight].u >> 16) & 0x3ff;
+			cmd.clipping.clip.ex = (v->reg[clipLeftRight].u >>  0) & 0x3ff;
+			cmd.clipping.clip.sy = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >>  0) & 0x3ff)) & 0x3ff;
+			cmd.clipping.clip.ey = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >> 16) & 0x3ff)) & 0x3ff;
+			if (!cmd.clipping.clip.sx && !cmd.clipping.clip.sy && cmd.clipping.clip.ex == fbi.width && cmd.clipping.clip.ey == fbi.height)
+			{
+				if (!vogl->cmdbuf.last_clipping.active) goto skip_clip;
+				goto clear_clipping;
+			}
+			cmd.clipping.clip.active = 1;
+		}
+		else
+		{
+			clear_clipping:
+			cmd.clipping.clip.active = cmd.clipping.clip.sx = cmd.clipping.clip.sy = cmd.clipping.clip.ex = cmd.clipping.clip.ey = 0;
+		}
+		if (memcmp(&cmd.clipping.clip, &vogl->cmdbuf.last_clipping, sizeof(cmd.clipping.clip)))
+		{
+			vogl->cmdbuf.AddCommand(cmd, ogl_command::CLIPPING);
+			vogl->cmdbuf.last_clipping = cmd.clipping.clip;
+		}
+	}
+	skip_clip:
+
+	cmd.geometry.eff.fbz_mode = (FBZMODE & VOODOO_OGL_FBZMODE_USEDBITS);
+	cmd.geometry.eff.color_path = (FBZCOLORPATH & VOODOO_OGL_FBZCOLORPATH_USEDBITS);
+	cmd.geometry.eff.alpha_mode = (ALPHAMODE & VOODOO_OGL_ALPHAMODE_USEDBITS);
+	cmd.geometry.eff.fog_mode = (FOGMODE_ENABLE_FOG(FOGMODE) ? (FOGMODE & VOODOO_OGL_FOGMODE_USEDBITS) : 0); /* if not doing fogging, ignore all the other fog bits */
+
+	cmd.geometry.uni.col0 = reg[color0];
+	cmd.geometry.uni.col1 = reg[color1];
+	cmd.geometry.uni.chromakey = reg[chromaKey];
+	//cmd.geometry.uni.chromarange = reg[chromaRange];
+	cmd.geometry.uni.fogcolor.u = (cmd.geometry.eff.fog_mode ? reg[fogColor].u : 0);
+	//cmd.geometry.uni.zacolor = (UINT16)reg[zaColor].u;
+
+	cmd.geometry.eff.tex_mode[0] = cmd.geometry.eff.tex_mode[1] = VOODOO_OGL_TEXMODE_DISABLED;
+	cmd.geometry.textureidx[0] = cmd.geometry.textureidx[1] = 0;
+	if (!FBIINIT3_DISABLE_TMUS(reg[fbiInit3].u) && FBZCP_TEXTURE_ENABLE(FBZCOLORPATH))
+		for (unsigned i = 0; i != 2; i++)
+		{
+			tmu_state& tmu = v->tmu[i];
+			if (tmu.lodmin >= (8 << 8) || (i && !(v->chipmask & 0x04))) continue;
+			prepare_tmu(&tmu); // this was moved here from triangle()
+			const UINT32 TEXMODE = tmu.reg[textureMode].u;
+			const UINT8 tformat = (UINT8)TEXMODE_FORMAT(TEXMODE);
+			const rgb_t* tlookup = tmu.lookup;
+			const bool is_palette = (tformat == 5 || tformat == 14), is_ncc = ((tformat & 7) == 1);
+			DBP_ASSERT(tmu.lookup == tmu.texel[tformat]); // prepare_tmu ensures this
+			cmd.geometry.eff.tex_mode[i] = (TEXMODE & VOODOO_OGL_TEXMODE_USEDBITS);
+
+			if (is_palette && vogl_palette_changed)
+			{
+				for (ogl_texbase& tb : vogl->texbases)
+					if (tb.valid_format == 5 || tb.valid_format == 14)
+						tb.valid_format = 0xFF;
+				vogl_palette_changed = false;
+			}
+			if (is_ncc && vogl_ncctexel_changed)
+			{
+				for (ogl_texbase& tb : vogl->texbases)
+					if ((tb.valid_format & 7) == 1)
+						tb.valid_format = 0xFF;
+				vogl_ncctexel_changed = false;
+			}
+
+			UINT32 ilod = tmu.lodmin >> 8;
+			if (!((tmu.lodmask >> ilod) & 1))
+				ilod++;
+			const UINT32 texbase = tmu.lodoffset[ilod], texbasekey = (i<<30) | texbase;
+
+			ogl_texbase* tb;
+			if (UINT32* ptexbaseidx = vogl->texbase_hashes.Get(texbasekey)) tb = &vogl->texbases.data[*ptexbaseidx];
+			else tb = NULL;
+
+			if (tb && (tb->valid_data & (tb->valid_format == tformat) && tb->textureidx != (UINT32)-1))
+			{
+				cmd.geometry.textureidx[i] = tb->textureidx;
+				continue;
+			}
+
+			UINT32 data_hash;
+			if (tb && tb->valid_data) data_hash = tb->data_hash;
+			else
+			{
+				const INT32 smax = (tmu.wmask >> ilod) + 1, tmax = (tmu.hmask >> ilod) + 1, stmax = (smax * tmax);
+				const UINT32 texboffset = texbase, texboffset_end = (texbase + stmax * (tformat < 8 ? 1 : 2)) & tmu.mask;
+				if (texboffset_end < texboffset)
+					data_hash = fast4checksum(tmu.ram + texboffset, tmu.mask - texboffset, fast4checksum(tmu.ram, texboffset_end));
+				else
+					data_hash = fast4checksum(tmu.ram + texboffset, texboffset_end - texboffset);
+			}
+
+			UINT32 pal_hash;
+			if (tb && tb->valid_format == tformat) pal_hash = tb->pal_hash;
+			else if (is_palette || is_ncc) pal_hash = fast4checksum(tmu.lookup, 1024);
+			else pal_hash = 0x10001U << tformat;
+
+			if (!tb)
+			{
+				vogl->texbase_hashes.Put(texbasekey, vogl->texbases.num);
+				tb = &vogl->texbases.AddOne();
+			}
+			tb->valid_data = true;
+			tb->valid_format = tformat;
+			tb->data_hash = data_hash;
+			tb->pal_hash = pal_hash;
+			vogl->last_texture_clear_op = 0;
+
+			const UINT32 texturekey = data_hash ^ pal_hash;
+			UINT32* ptextureidx = vogl->texture_hashes.Get(texturekey);
+			if (ptextureidx)
+			{
+				cmd.geometry.textureidx[i] = tb->textureidx = *ptextureidx;
+			}
+			else
+			{
+				UINT32 textureidx;
+				if (vogl->free_textures.num)
+				{
+					textureidx = vogl->free_textures.data[--vogl->free_textures.num];
+					DBP_ASSERT(vogl->textures.data[textureidx].lastframe == ogl_texture::FREED_LASTFRAME);
+					vogl->textures.data[textureidx].lastframe = vogl->renderframe;
+					vogl->textures.data[textureidx].key = texturekey;
+				}
+				else
+				{
+					textureidx = vogl->textures.num;
+					vogl->textures.AddOne() = { 0, vogl->renderframe, texturekey };
+				}
+
+				bool wasaddednew = vogl->texture_hashes.Put(texturekey, textureidx);
+				DBP_ASSERT(wasaddednew);
+
+				ogl_texupload& tu = vogl->texuploads.AddOne();
+				const INT32 smax = (tmu.wmask >> ilod) + 1, tmax = (tmu.hmask >> ilod) + 1, stmax = (smax * tmax);
+				tu.smax = smax;
+				tu.tmax = tmax;
+				cmd.geometry.textureidx[i] = tb->textureidx = tu.textureidx = textureidx;
+
+				UINT32 texboffset = texbase, *texrgbp = tu.buf, *texrgbpend = texrgbp + stmax;
+				const UINT8* tmuram = tmu.ram;
+				const UINT32 tmask = tmu.mask;
+				switch (tformat)
+				{
+					case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7: // 8-bit texture case
+						for (; texrgbp != texrgbpend;)
+							*(texrgbp++) = tlookup[tmuram[texboffset++ & tmask]];
+						break;
+
+					case 10: case 11: case 12: // 16-bit lookup tables
+						for (; texrgbp != texrgbpend; texboffset += 2)
+							*(texrgbp++) = tlookup[*(const UINT16*)&tmuram[texboffset & tmask]];
+						break;
+
+					case 8: case 9: case 13: case 14: case 15:
+						for (; texrgbp != texrgbpend; texboffset += 2) { // 16-bit texture, 8-bit lookup
+							const UINT16 texptr16 = *(const UINT16*)&tmuram[texboffset & tmask];
+							*(texrgbp++) = (tlookup[texptr16 & 0xFF] & 0xFFFFFF) | ((texptr16 & 0xff00) << 16);
+						}
+						break;
+				}
+				GFX_ShowMsg("[VOGL] Preparing texture #%d with id %d and texkey %08x and size %d,%d", textureidx, vogl->textures.data[textureidx].id, texturekey, smax, tmax);
+			}
+		}
+
+	if (memcmp(&cmd.geometry, &vogl->cmdbuf.last_geometry, sizeof(cmd.geometry)))
+		vogl->cmdbuf.AddCommand(cmd, ogl_command::TRIANGLE);
+
+	ogl_vertex* vds = vogl->cmdbuf.vertices.Add(3);
+	const INT16 xs[] = { fbi.ax, fbi.bx, fbi.cx }, ys[] = { fbi.ay, fbi.by, fbi.cy };
+	for (unsigned i = 0; i != 3; i++)
+	{
+		const INT32 x = xs[i], y = ys[i], dx = (x - xs[0]), dy = (y - ys[0]);
+		ogl_vertex& vd = vds[i];
+
+		// OpenGL-correction for Blood/ShadowWarrior
+		vd.x = ((float)x - (1.0f/16.0f)) / 16.0f;
+		vd.y = ((float)y - (1.0f/16.0f)) / 16.0f;
+
+		//// without OpenGL-correction for Blood/ShadowWarrior
+		//vd.x = (float)x / (16.0f);
+		//vd.y = (float)y / (16.0f);
+
+		vd.r = (float)(fbi.startr + ((dy * fbi.drdy)>>4) + ((dx * fbi.drdx)>>4)) / (float)(1<<20);
+		vd.g = (float)(fbi.startg + ((dy * fbi.dgdy)>>4) + ((dx * fbi.dgdx)>>4)) / (float)(1<<20);
+		vd.b = (float)(fbi.startb + ((dy * fbi.dbdy)>>4) + ((dx * fbi.dbdx)>>4)) / (float)(1<<20);
+		vd.a = (float)(fbi.starta + ((dy * fbi.dady)>>4) + ((dx * fbi.dadx)>>4)) / (float)(1<<20);
+
+		const INT32 iterz = fbi.startz + ((dy * fbi.dzdy)>>4) + ((dx * fbi.dzdx)>>4);
+		const INT64 iterw = fbi.startw + ((dy * fbi.dwdy)>>4) + ((dx * fbi.dwdx)>>4);
+
+		/* compute "floating point" W value (used for depth and fog) */
+		INT32 wfloat;
+		if ((iterw) & LONGTYPE(0xffff00000000))
+			wfloat = 0x0000;
+		else
+		{
+			UINT32 temp = (UINT32)(iterw);
+			if ((temp & 0xffff0000) == 0)
+				wfloat = 0xffff;
+			else
+			{
+				int exp = count_leading_zeros(temp);
+				wfloat = ((exp << 12) | ((~temp >> (19 - exp)) & 0xfff));
+				if (wfloat < 0xffff) wfloat++;
+			}
+		}
+
+		/* compute depth value (W or Z) for this pixel */
+		INT32 d;
+		if (FBZMODE_WBUFFER_SELECT(FBZMODE) == 0)
+			CLAMPED_Z(iterz, FBZCOLORPATH, d);
+		else if (FBZMODE_DEPTH_FLOAT_SELECT(FBZMODE) == 0)
+			d = wfloat;
+		else
+		{
+			if (iterz & 0xf0000000)
+				d = 0x0000;
+			else
+			{
+				UINT32 temp = iterz << 4;
+				if ((temp & 0xffff0000) == 0)
+					d = 0xffff;
+				else
+				{
+					int exp = count_leading_zeros(temp);
+					d = ((exp << 12) | ((~temp >> (19 - exp)) & 0xfff));
+					if (d < 0xffff) (d)++;
+				}
+			}
+		}
+
+		/* add the bias */
+		if (FBZMODE_ENABLE_DEPTH_BIAS(FBZMODE))
+		{
+			d += (INT16)reg[zaColor].u;
+			CLAMP(d, 0, 0xffff);
+		}
+
+
+		vd.d = (float)d / (float)0xffff;
+		//vd.w = (float)iterw / (float)0xffffff;
+		//vd.z = (float)iterz / (float)(1<<20);
+
+		INT32 fogblend = 0;
+		if (FOGMODE_ENABLE_FOG(FOGMODE) && !FOGMODE_FOG_CONSTANT(FOGMODE))
+			GET_FOGBLEND(fbi, FOGMODE, FBZCOLORPATH, wfloat, 0, ((UINT8*)NULL), iterz, iterw, 0);
+		vd.fogblend = (float)fogblend / 255.0f;
+
+		for (unsigned i = 0; i != 2; i++)
+		{
+			if (cmd.geometry.eff.tex_mode[i] == VOODOO_OGL_TEXMODE_DISABLED) continue;
+			const tmu_state& tmu = v->tmu[i];
+			const UINT32 TEXMODE = tmu.reg[textureMode].u;
+
+			UINT32 ilod = tmu.lodmin >> 8;
+			if (!((tmu.lodmask >> ilod) & 1))
+				ilod++;
+
+			const UINT32 smax = (tmu.wmask >> ilod) + 1, tmax = (tmu.hmask >> ilod) + 1;
+			const INT64 titerw = tmu.startw + ((dy * tmu.dwdy)>>4) + ((dx * tmu.dwdx)>>4);
+			const INT64 titers = tmu.starts + ((dy * tmu.dsdy)>>4) + ((dx * tmu.dsdx)>>4);
+			const INT64 titert = tmu.startt + ((dy * tmu.dtdy)>>4) + ((dx * tmu.dtdx)>>4);
+
+			/* determine the S/T/LOD values for this texture */
+			INT64 s, t;
+			INT32 lod = 0;
+			if (TEXMODE_ENABLE_PERSPECTIVE(TEXMODE))
+			{
+				INT64 oow = fast_reciplog(titerw, &lod);
+				s = (oow * (titers)) >> 29;
+				t = (oow * (titert)) >> 29;
+				lod += tmu.lodbasetemp;
+			}
+			else
+			{
+				s = (titers) >> 14;
+				t = (titert) >> 14;
+				lod = tmu.lodbasetemp;
+			}
+
+			/* clamp the LOD */
+			lod += tmu.lodbias;
+			//if (TEXMODE_ENABLE_LOD_DITHER(TEXMODE))
+			//	lod += DITHER4[(XX) & 3] << 4;
+			if (lod < tmu.lodmin) lod = tmu.lodmin;
+			if (lod > tmu.lodmax) lod = tmu.lodmax;
+
+			/* clamp W */
+			if (TEXMODE_CLAMP_NEG_W(TEXMODE) && (titerw) < 0)
+				s = t = 0;
+
+			const float ts = (s ? (float)s / (float)(smax*(1<<(18+ilod))) : 0.0f);
+			const float tt = (t ? (float)t / (float)(tmax*(1<<(18+ilod))) : 0.0f);
+			float tw = (titerw ? (float)titerw / (float)0xffffff : 0.0f);
+			vd.m[i].sw = ts * tw;
+			vd.m[i].tw = tt * tw;
+			vd.m[i].w = tw;
+
+			INT32 lodblend = 0;
+			if ((TEXMODE_TC_MSELECT(TEXMODE)==4) || (TEXMODE_TCA_MSELECT(TEXMODE)==4))
+			{
+				if (tmu.detailbias <= lod)
+					lodblend = 0;
+				else
+				{
+					lodblend = (((tmu.detailbias - lod) << tmu.detailscale) >> 8);
+					if (lodblend > tmu.detailmax)
+						lodblend = tmu.detailmax;
+				}
+			}
+			else if ((TEXMODE_TC_MSELECT(TEXMODE)==5) || (TEXMODE_TCA_MSELECT(TEXMODE)==5))
+				lodblend = (lod & 0xff);
+			vd.mlodblend[i] = (float)lodblend/255.0f;
+		}
+	}
+}
+
+#endif
+
 /*
     3dfx Voodoo Graphics SST-1/2 emulator
 
@@ -3013,8 +4870,6 @@ iterated Z    = 20.12 [32 bits]
 iterated W    = 18.32 [48 bits]
 
 **************************************************************************/
-
-static voodoo_state *v;
 
 /* fast dither lookup */
 static UINT8 dither4_lookup[256*16*2];
@@ -3425,104 +5280,6 @@ static INLINE void raster_generic(const voodoo_state *v, UINT32 TMUS, UINT32 TEX
 	}
 }
 
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-/*-------------------------------------------------
-    add_rasterizer - add a rasterizer to our
-    hash table
--------------------------------------------------*/
-static raster_info *add_rasterizer(voodoo_state *v, const raster_info *cinfo)
-{
-	if (v->next_rasterizer >= MAX_RASTERIZERS)
-	{
-		E_Exit("Out of space for new rasterizers!");
-		v->next_rasterizer = 0;
-	}
-
-	raster_info *info = &v->rasterizer[v->next_rasterizer++];
-	int hash = compute_raster_hash(cinfo);
-
-	/* make a copy of the info */
-	*info = *cinfo;
-
-#ifdef C_DBP_ENABLE_VOODOO_DEBUG
-	/* fill in the data */
-	info->hits = 0;
-	info->polys = 0;
-#endif
-
-	/* hook us into the hash table */
-	info->next = v->raster_hash[hash];
-	v->raster_hash[hash] = info;
-
-	if (LOG_RASTERIZERS)
-		LOG_MSG("Adding rasterizer @ %p : %08X %08X %08X %08X %08X %08X (hash=%d)\n",
-				info->callback,
-				info->eff_color_path, info->eff_alpha_mode, info->eff_fog_mode, info->eff_fbz_mode,
-				info->eff_tex_mode_0, info->eff_tex_mode_1, hash);
-
-	return info;
-}
-
-/*-------------------------------------------------
-    find_rasterizer - find a rasterizer that
-    matches  our current parameters and return
-    it, creating a new one if necessary
--------------------------------------------------*/
-static raster_info *find_rasterizer(voodoo_state *v, int texcount)
-{
-	raster_info *info, *prev = NULL;
-	raster_info curinfo;
-	int hash;
-
-	/* build an info struct with all the parameters */
-	curinfo.eff_color_path = normalize_color_path(v->reg[fbzColorPath].u);
-	curinfo.eff_alpha_mode = normalize_alpha_mode(v->reg[alphaMode].u);
-	curinfo.eff_fog_mode = normalize_fog_mode(v->reg[fogMode].u);
-	curinfo.eff_fbz_mode = normalize_fbz_mode(v->reg[fbzMode].u);
-	curinfo.eff_tex_mode_0 = (texcount >= 1) ? normalize_tex_mode(v->tmu[0].reg[textureMode].u) : 0xffffffff;
-	curinfo.eff_tex_mode_1 = (texcount >= 2) ? normalize_tex_mode(v->tmu[1].reg[textureMode].u) : 0xffffffff;
-
-	/* compute the hash */
-	hash = compute_raster_hash(&curinfo);
-
-	/* find the appropriate hash entry */
-	for (info = v->raster_hash[hash]; info; prev = info, info = info->next)
-		if (info->eff_color_path == curinfo.eff_color_path &&
-			info->eff_alpha_mode == curinfo.eff_alpha_mode &&
-			info->eff_fog_mode == curinfo.eff_fog_mode &&
-			info->eff_fbz_mode == curinfo.eff_fbz_mode &&
-			info->eff_tex_mode_0 == curinfo.eff_tex_mode_0 &&
-			info->eff_tex_mode_1 == curinfo.eff_tex_mode_1)
-		{
-			/* got it, move us to the head of the list */
-			if (prev)
-			{
-				prev->next = info->next;
-				info->next = v->raster_hash[hash];
-				v->raster_hash[hash] = info;
-			}
-
-			/* return the result */
-			return info;
-		}
-
-	/* generate a new one using the generic entry */
-	curinfo.callback = (texcount == 0) ? raster_generic_0tmu : (texcount == 1) ? raster_generic_1tmu : raster_generic_2tmu;
-#ifdef C_DBP_ENABLE_VOODOO_DEBUG
-	curinfo.is_generic = true;
-	curinfo.display = 0;
-	curinfo.polys = 0;
-	curinfo.hits = 0;
-#endif
-	curinfo.next = 0;
-	curinfo.shader_ready = false;
-
-	return add_rasterizer(v, &curinfo);
-}
-#endif
-
-
 /***************************************************************************
     GENERIC RASTERIZERS
 ***************************************************************************/
@@ -3605,11 +5362,6 @@ static void init_fbi(voodoo_state *v, fbi_state *f, int fbmem)
 	//f->yoffs = 0;
 
 	//f->vsyncscan = 0;
-
-	/* init the pens */
-	//for (UINT8 pen = 0; pen < 32; pen++)
-	//	v->fbi.clut[pen] = MAKE_ARGB(pen, pal5bit(pen), pal5bit(pen), pal5bit(pen));
-	//v->fbi.clut[32] = MAKE_ARGB(32,0xff,0xff,0xff);
 
 	/* allocate a VBLANK timer */
 	f->vblank = false;
@@ -3718,44 +5470,6 @@ static void init_tmu(voodoo_state *v, tmu_state *t, voodoo_reg *reg, int tmem)
 	t->lodmin=0;
 	t->lodmax=0;
 }
-
-
-/*************************************
- *
- *  VBLANK management
- *
- *************************************/
-
-static void voodoo_swap_buffers(voodoo_state *v)
-{
-	//if (LOG_VBLANK_SWAP) LOG(LOG_VOODOO,LOG_WARN)("--- swap_buffers @ %d\n", video_screen_get_vpos(v->screen));
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (v->ogl && v->active) {
-		voodoo_ogl_swap_buffer();
-		return;
-	}
-#endif
-
-	/* keep a history of swap intervals */
-	v->reg[fbiSwapHistory].u = (v->reg[fbiSwapHistory].u << 4);
-
-	/* rotate the buffers */
-	if (v->type < VOODOO_2 || !v->fbi.vblank_dont_swap)
-	{
-		if (v->fbi.rgboffs[2] == (UINT32)(~0))
-		{
-			v->fbi.frontbuf = (UINT8)(1 - v->fbi.frontbuf);
-			v->fbi.backbuf = (UINT8)(1 - v->fbi.frontbuf);
-		}
-		else
-		{
-			v->fbi.frontbuf = (v->fbi.frontbuf + 1) % 3;
-			v->fbi.backbuf = (v->fbi.frontbuf + 1) % 3;
-		}
-	}
-}
-
 
 /*************************************
  *
@@ -3872,9 +5586,9 @@ static void ncc_table_write(ncc_table *n, UINT32 regnum, UINT32 data)
 		if (n->palette[index] != palette_entry) {
 			/* set the ARGB for this palette index */
 			n->palette[index] = palette_entry;
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-			v->ogl_palette_changed = true;
-#endif
+			#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+			vogl_palette_changed = true;
+			#endif
 		}
 
 		/* if we have an ARGB palette as well, compute its value */
@@ -4114,7 +5828,12 @@ static void prepare_tmu(tmu_state *t)
 			ncc_table *n = &t->ncc[TEXMODE_NCC_TABLE_SELECT(t->reg[textureMode].u)];
 			t->texel[1] = t->texel[9] = n->texel;
 			if (n->dirty)
+			{
 				ncc_table_update(n);
+				#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+				vogl_ncctexel_changed = true;
+				#endif
+			}
 		}
 	}
 
@@ -4202,7 +5921,7 @@ static void triangle_worker_work(triangle_worker& tworker, INT32 worktstart, INT
 			tmus = 2;
 			texmode1 = v->tmu[1].reg[textureMode].u;
 		}
-		if (tworker.disable_bilinear_filter) //force disable bilinear filter
+		if (v_perf & V_PERFFLAG_LOWQUALITY) //force disable bilinear filter
 		{
 			texmode0 &= ~6;
 			texmode1 &= ~6;
@@ -4278,7 +5997,7 @@ static void triangle_worker_shutdown(triangle_worker& tworker)
 
 static void triangle_worker_run(triangle_worker& tworker)
 {
-	if (!tworker.triangle_threads)
+	if (v_perf & V_PERFFLAG_MULTITHREAD)
 	{
 		// do not use threaded calculation
 		tworker.totalpix = 0xFFFFFFF;
@@ -4345,13 +6064,15 @@ static void triangle(voodoo_state *v)
 			texcount = 2;
 	}
 
+	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	if (vogl_active) {
+		voodoo_ogl_draw_triangle();
+		return;
+	}
+	#endif
+
 	/* perform subpixel adjustments */
-	if (
-		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		!v->ogl &&
-		#endif
-		FBZCP_CCA_SUBPIXEL_ADJUST(v->reg[fbzColorPath].u))
-	{
+	if (FBZCP_CCA_SUBPIXEL_ADJUST(v->reg[fbzColorPath].u)) {
 		INT32 dx = 8 - (v->fbi.ax & 15);
 		INT32 dy = 8 - (v->fbi.ay & 15);
 
@@ -4388,93 +6109,6 @@ static void triangle(voodoo_state *v)
 	vert[1].y = (float)v->fbi.by * (1.0f / 16.0f);
 	vert[2].x = (float)v->fbi.cx * (1.0f / 16.0f);
 	vert[2].y = (float)v->fbi.cy * (1.0f / 16.0f);
-
-	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	/* find a rasterizer that matches our current state */
-	//    setup and create the work item
-	//DBP: Changed allocated pointer to stack
-	poly_extra_data extra; //poly_extra_data *extra = new poly_extra_data;
-	/* fill in the extra data */
-	extra.state = v;
-
-	raster_info *info  = find_rasterizer(v, texcount);
-	extra.info = info;
-
-	/* fill in triangle parameters */
-	extra.ax = v->fbi.ax;
-	extra.ay = v->fbi.ay;
-	extra.startr = v->fbi.startr;
-	extra.startg = v->fbi.startg;
-	extra.startb = v->fbi.startb;
-	extra.starta = v->fbi.starta;
-	extra.startz = v->fbi.startz;
-	extra.startw = v->fbi.startw;
-	extra.drdx = v->fbi.drdx;
-	extra.dgdx = v->fbi.dgdx;
-	extra.dbdx = v->fbi.dbdx;
-	extra.dadx = v->fbi.dadx;
-	extra.dzdx = v->fbi.dzdx;
-	extra.dwdx = v->fbi.dwdx;
-	extra.drdy = v->fbi.drdy;
-	extra.dgdy = v->fbi.dgdy;
-	extra.dbdy = v->fbi.dbdy;
-	extra.dady = v->fbi.dady;
-	extra.dzdy = v->fbi.dzdy;
-	extra.dwdy = v->fbi.dwdy;
-
-	/* fill in texture 0 parameters */
-	if (texcount > 0)
-	{
-		extra.starts0 = v->tmu[0].starts;
-		extra.startt0 = v->tmu[0].startt;
-		extra.startw0 = v->tmu[0].startw;
-		extra.ds0dx = v->tmu[0].dsdx;
-		extra.dt0dx = v->tmu[0].dtdx;
-		extra.dw0dx = v->tmu[0].dwdx;
-		extra.ds0dy = v->tmu[0].dsdy;
-		extra.dt0dy = v->tmu[0].dtdy;
-		extra.dw0dy = v->tmu[0].dwdy;
-		extra.lodbase0 = v->tmu[0].lodbasetemp;
-
-		/* fill in texture 1 parameters */
-		if (texcount > 1)
-		{
-			extra.starts1 = v->tmu[1].starts;
-			extra.startt1 = v->tmu[1].startt;
-			extra.startw1 = v->tmu[1].startw;
-			extra.ds1dx = v->tmu[1].dsdx;
-			extra.dt1dx = v->tmu[1].dtdx;
-			extra.dw1dx = v->tmu[1].dwdx;
-			extra.ds1dy = v->tmu[1].dsdy;
-			extra.dt1dy = v->tmu[1].dtdy;
-			extra.dw1dy = v->tmu[1].dwdy;
-			extra.lodbase1 = v->tmu[1].lodbasetemp;
-		}
-	}
-
-	extra.texcount = texcount;
-	extra.r_fbzColorPath = v->reg[fbzColorPath].u;
-	extra.r_fbzMode = v->reg[fbzMode].u;
-	extra.r_alphaMode = v->reg[alphaMode].u;
-	extra.r_fogMode = v->reg[fogMode].u;
-	extra.r_textureMode0 = v->tmu[0].reg[textureMode].u;
-	if (v->tmu[1].ram != NULL) extra.r_textureMode1 = v->tmu[1].reg[textureMode].u;
-
-	#ifdef C_DBP_ENABLE_VOODOO_DEBUG
-	info->polys++;
-	#endif
-
-	if (v->ogl_palette_changed && v->ogl && v->active) {
-		voodoo_ogl_invalidate_paltex();
-		v->ogl_palette_changed = false;
-	}
-
-	if (v->ogl && v->active) {
-		if (extra.info)
-			voodoo_ogl_draw_triangle(&extra);
-		return;
-	}
-	#endif
 
 	/* first sort by Y */
 	const poly_vertex *v1 = &vert[0], *v2 = &vert[1], *v3 = &vert[2];
@@ -4725,6 +6359,17 @@ static void draw_triangle(voodoo_state *v)
 -------------------------------------------------*/
 static void fastfill(voodoo_state *v)
 {
+	/* if we're not clearing either, take no time */
+	if (!FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u) && !FBZMODE_AUX_BUFFER_MASK(v->reg[fbzMode].u))
+		return;
+
+#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	if (vogl_active) {
+		voodoo_ogl_fastfill();
+		return;
+	}
+#endif
+
 	int sx = (v->reg[clipLeftRight].u >> 16) & 0x3ff;
 	int ex = (v->reg[clipLeftRight].u >> 0) & 0x3ff;
 	int sy = (v->reg[clipLowYHighY].u >> 16) & 0x3ff;
@@ -4734,10 +6379,6 @@ static void fastfill(voodoo_state *v)
 	UINT16 dithermatrix[16];
 	UINT16 *drawbuf = NULL;
 	int extnum, x, y;
-
-	/* if we're not clearing either, take no time */
-	if (!FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u) && !FBZMODE_AUX_BUFFER_MASK(v->reg[fbzMode].u))
-		return;
 
 	/* are we clearing the RGB buffer? */
 	if (FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u))
@@ -4781,13 +6422,6 @@ static void fastfill(voodoo_state *v)
 	for (extnum = 1; extnum < ARRAY_LENGTH(extents); extnum++)
 		extents[extnum] = extents[0];
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (v->ogl && v->active) {
-		voodoo_ogl_fastfill();
-		return;
-	}
-#endif
-
 	/* iterate over blocks of extents */
 	for (y = sy; y < ey; y += ARRAY_LENGTH(extents))
 	{
@@ -4830,7 +6464,26 @@ static void swapbuffer(voodoo_state *v, UINT32 data)
 	/* set the don't swap value for Voodoo 2 */
 	v->fbi.vblank_dont_swap = ((data >> 9) & 1)>0;
 
-	voodoo_swap_buffers(v);
+	/* VBLANK management */
+	//if (LOG_VBLANK_SWAP) LOG(LOG_VOODOO,LOG_WARN)("--- swap_buffers @ %d\n", video_screen_get_vpos(v->screen));
+
+	/* keep a history of swap intervals */
+	v->reg[fbiSwapHistory].u = (v->reg[fbiSwapHistory].u << 4);
+
+	/* rotate the buffers */
+	if (v->type < VOODOO_2 || !v->fbi.vblank_dont_swap)
+	{
+		if (v->fbi.rgboffs[2] == (UINT32)(~0))
+		{
+			v->fbi.frontbuf = (UINT8)(1 - v->fbi.frontbuf);
+			v->fbi.backbuf = (UINT8)(1 - v->fbi.frontbuf);
+		}
+		else
+		{
+			v->fbi.frontbuf = (v->fbi.frontbuf + 1) % 3;
+			v->fbi.backbuf = (v->fbi.frontbuf + 1) % 3;
+		}
+	}
 }
 
 
@@ -5145,15 +6798,7 @@ static void register_w(UINT32 offset, UINT32 data) {
 			if (v->type < VOODOO_2)
 				data &= 0x001fffff;
 			if (chips & 1) {
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-				if (v->ogl && v->active && (FBZMODE_Y_ORIGIN(v->reg[fbzMode].u)!=FBZMODE_Y_ORIGIN(data))) {
-					v->reg[fbzMode].u = data;
-					voodoo_ogl_set_window(v);
-				} else
-#endif
-				{
-					v->reg[fbzMode].u = data;
-				}
+				v->reg[fbzMode].u = data;
 			}
 			break;
 
@@ -5198,7 +6843,6 @@ static void register_w(UINT32 offset, UINT32 data) {
 
 		/* gamma table access -- Voodoo/Voodoo2 only */
 		case clutData:
-			/*
 			if (chips & 1)
 			{
 				if (!FBIINIT1_VIDEO_TIMING_RESET(v->reg[fbiInit1].u))
@@ -5206,13 +6850,16 @@ static void register_w(UINT32 offset, UINT32 data) {
 					int index = data >> 24;
 					if (index <= 32)
 					{
-						//v->fbi.clut[index] = data;
+						if (index == 32) data = 0xFFFFFF;
+						v->clutRaw.r[index] = (data >> 16) & 0xff;
+						v->clutRaw.g[index] = (data >> 8) & 0xff;
+						v->clutRaw.b[index] = data & 0xff;
 					}
+					v->clutDirty = v->ogl_clutDirty = true;
 				}
 				else
 					LOG(LOG_VOODOO,LOG_WARN)("clutData ignored because video timing reset = 1\n");
 			}
-			*/
 			break;
 
 		/* external DAC access -- Voodoo/Voodoo2 only */
@@ -5302,7 +6949,7 @@ static void register_w(UINT32 offset, UINT32 data) {
 						v->fbi.width = new_width;
 						v->fbi.height = new_height;
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-						v->ogl_dimchange = true;
+						if (vogl) vogl->CalcScale();
 #endif
 					}
 					//v->fbi.xoffs = hbp;
@@ -5472,11 +7119,6 @@ static void register_w(UINT32 offset, UINT32 data) {
 		case clipLowYHighY:
 		case clipLeftRight:
 			if (chips & 1) v->reg[0x000 + regnum].u = data;
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-			if (v->ogl) {
-				voodoo_ogl_clip_window(v);
-			}
-#endif
 			break;
 
 		/* these registers are referenced in the renderer; we must wait for pending work before changing */
@@ -5731,7 +7373,7 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 			break;
 
 		default:		/* reserved */
-			E_Exit("reserved lfb write");
+			//E_Exit("reserved lfb write");
 			return;
 	}
 	depth = (UINT16 *)(v->fbi.ram + v->fbi.auxoffs);
@@ -5766,15 +7408,12 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 				bool has_alpha = ((mask & LFB_ALPHA_PRESENT) > 0) && (FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u) > 0);
 				bool has_depth = ((mask & (LFB_DEPTH_PRESENT | LFB_DEPTH_PRESENT_MSW)) && !FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u));
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-				if (v->ogl && v->active) {
-					if (has_rgb || has_alpha) {
-						// if enabling dithering: output is 565 not 888 anymore
-						//APPLY_DITHER(v->reg[fbzMode].u, x, dither_lookup, sr[pix], sg[pix], sb[pix]);
-						voodoo_ogl_draw_pixel(x, scry+1, has_rgb, has_alpha, sr[pix], sg[pix], sb[pix], sa[pix]);
-					}
-					if (has_depth) {
-						voodoo_ogl_draw_z(x, scry+1, sw[pix]);
-					}
+				if (vogl_active) {
+					//if (has_rgb || has_alpha) {
+					//	 if enabling dithering: output is 565 not 888 anymore
+					//	APPLY_DITHER(v->reg[fbzMode].u, x, dither_lookup, sr[pix], sg[pix], sb[pix]);
+					//}
+					voodoo_ogl_draw_pixel(x, scry+1, has_rgb, has_alpha, has_depth, false, sr[pix], sg[pix], sb[pix], sa[pix]);
 				} else
 #endif
 				{
@@ -5856,7 +7495,7 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 				}
 
 				/* pixel pipeline part 1 handles depth testing and stippling */
-				// TODO: in the v->ogl case this macro doesn't really work with depth testing
+				// TODO: in the vogl case this macro doesn't really work with depth testing
 				PIXEL_PIPELINE_BEGIN(v, stats, x, y, v->reg[fbzColorPath].u, v->reg[fbzMode].u, iterz, iterw, v->reg[zaColor].u, v->reg[stipple].u);
 
 				color.rgb.r = sr[pix];
@@ -6080,19 +7719,19 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 					a ^= 0xff;
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-				if (v->ogl && v->active) {
-					if (FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u)) {
-						//APPLY_DITHER(FBZMODE, XX, DITHER_LOOKUP, r, g, b);
-						voodoo_ogl_draw_pixel_pipeline(x, scry+1, r, g, b);
-					}
-					/*
-					if (depth && FBZMODE_AUX_BUFFER_MASK(v->reg[fbzMode].u)) {
-						if (FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u) == 0)
-							voodoo_ogl_draw_z(x, y, depthval&0xffff, depthval>>16);
-						//else
-						//	depth[XX] = a;
-					}
-					*/
+				if (vogl_active) {
+					INT32 fogblend = 0;
+					if (FOGMODE_ENABLE_FOG(v->reg[fogMode].u) && !FOGMODE_FOG_CONSTANT(v->reg[fogMode].u))
+						GET_FOGBLEND(v->fbi, v->reg[fogMode].u, v->reg[fbzColorPath].u, wfloat, 0, ((UINT8*)NULL), iterz, iterw, 0);
+
+					const bool set_rgb = FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u) == 1;
+					const bool use_aux = FBZMODE_AUX_BUFFER_MASK(v->reg[fbzMode].u) == 1;
+					const bool set_alpha = use_aux && FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u) == 1;
+					const bool set_depth = use_aux && !set_alpha;
+					//if (FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u)) {
+					//	APPLY_DITHER(FBZMODE, XX, DITHER_LOOKUP, r, g, b);
+					//}
+					voodoo_ogl_draw_pixel(x, scry+1, set_rgb, set_alpha, set_depth, true, r, g, b, a, (UINT16)depthval, fogblend);
 				} else
 #endif
 				{
@@ -6118,15 +7757,15 @@ nextpixel:
  *  Voodoo texture RAM writes
  *
  *************************************/
-static INT32 texture_w(UINT32 offset, UINT32 data) {
-	int tmunum = (offset >> 19) & 0x03;
+static void texture_w(UINT32 offset, UINT32 data) {
+	UINT32 tmunum = (offset >> 19) & 0x03;
 	//LOG(LOG_VOODOO,LOG_WARN)("V3D:write TMU%x offset %X value %X", tmunum, offset, data);
 
 	tmu_state *t;
 
 	/* point to the right TMU */
 	if (!(v->chipmask & (2 << tmunum)))
-		return 0;
+		return;
 	t = &v->tmu[tmunum];
 
 	if (TEXLOD_TDIRECT_WRITE(t->reg[tLOD].u))
@@ -6143,9 +7782,10 @@ static INT32 texture_w(UINT32 offset, UINT32 data) {
 		data = (data >> 16) | (data << 16);
 
 	/* 8-bit texture case */
-	if (TEXMODE_FORMAT(t->reg[textureMode].u) < 8)
+	int lod, tt, ts;
+	UINT32 texformat = TEXMODE_FORMAT(t->reg[textureMode].u);
+	if (texformat < 8)
 	{
-		int lod, tt, ts;
 		UINT32 tbaseaddr;
 		UINT8 *dest;
 
@@ -6161,7 +7801,7 @@ static INT32 texture_w(UINT32 offset, UINT32 data) {
 
 		/* validate parameters */
 		if (lod > 8)
-			return 0;
+			return;
 
 		/* compute the base address */
 		tbaseaddr = t->lodoffset[lod];
@@ -6190,19 +7830,14 @@ static INT32 texture_w(UINT32 offset, UINT32 data) {
 			dest[BYTE4_XOR_LE(tbaseaddr + 3)] = (data >> 24) & 0xff;
 			changed = true;
 		}
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (changed && v->ogl && v->active) {
-			voodoo_ogl_texture_clear(t->lodoffset[lod],tmunum);
-			voodoo_ogl_texture_clear(t->lodoffset[t->lodmin],tmunum);
-		}
-#endif
+		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+		if (!changed) return;
+		#endif
 	}
 
 	/* 16-bit texture case */
 	else
 	{
-		int lod, tt, ts;
 		UINT32 tbaseaddr;
 		UINT16 *dest;
 
@@ -6214,7 +7849,7 @@ static INT32 texture_w(UINT32 offset, UINT32 data) {
 
 		/* validate parameters */
 		if (lod > 8)
-			return 0;
+			return;
 
 		/* compute the base address */
 		tbaseaddr = t->lodoffset[lod];
@@ -6236,16 +7871,14 @@ static INT32 texture_w(UINT32 offset, UINT32 data) {
 			dest[BYTE_XOR_LE(tbaseaddr + 1)] = (data >> 16) & 0xffff;
 			changed = true;
 		}
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (changed && v->ogl && v->active) {
-			voodoo_ogl_texture_clear(t->lodoffset[lod],tmunum);
-			voodoo_ogl_texture_clear(t->lodoffset[t->lodmin],tmunum);
-		}
-#endif
+		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+		if (!changed) return;
+		#endif
 	}
 
-	return 0;
+	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	voodoo_ogl_texture_clear(tmunum, t->lodoffset[lod], t->lodoffset[t->lodmin]);
+	#endif
 }
 
 /*************************************
@@ -6410,7 +8043,7 @@ static UINT32 lfb_r(UINT32 offset)
 		scry = (v->fbi.yorigin - y) & 0x3ff;
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (v->ogl && v->active) {
+	if (vogl_active) {
 		data = voodoo_ogl_read_pixel(x, scry+1);
 	} else
 #endif
@@ -6466,9 +8099,6 @@ static UINT32 voodoo_r(UINT32 offset) {
 static void voodoo_init(UINT8 type) {
 	DBP_ASSERT(!v);
 	v = new voodoo_state;
-	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	v->ogl = (emulation_type == VOODOO_EMU_TYPE_ACCELERATED);
-	#endif
 
 	v->active = false;
 
@@ -6497,20 +8127,9 @@ static void voodoo_init(UINT8 type) {
 
 	v->output_on = false;
 	v->clock_enabled = false;
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	v->ogl_dimchange = true;
-#endif
 	v->send_config = false;
 
 	memset(v->dac.reg, 0, sizeof(v->dac.reg));
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	v->next_rasterizer = 0;
-	//for (UINT32 rct=0; rct<MAX_RASTERIZERS; rct++)
-	//	v->rasterizer[rct] = raster_info();
-	memset(v->rasterizer, 0, sizeof(v->rasterizer));
-	memset(v->raster_hash, 0, sizeof(v->raster_hash));
-#endif
 
 	update_statistics(v, false);
 
@@ -6646,6 +8265,14 @@ static void voodoo_init(UINT8 type) {
 	v->reg[fbiInit3].u = (UINT32)((2 << 13) | (0xf << 17));
 	v->reg[fbiInit4].u = (UINT32)(1 << 0);
 
+	/* init the clut */
+	for (UINT32 i = 0; i != 32; i++) v->clutRaw.r[i] = v->clutRaw.g[i] = v->clutRaw.b[i] = i * 8;
+	v->clutRaw.r[32] = v->clutRaw.g[32] = v->clutRaw.b[32] = 255;
+	v->clutDirty = v->ogl_clutDirty = true;
+	v->gammafix = 0.0f;
+
+	v->render_scale = 0.0f;
+
 	/* do a soft reset to reset everything else */
 	soft_reset(v);
 
@@ -6654,10 +8281,6 @@ static void voodoo_init(UINT8 type) {
 
 static void voodoo_shutdown() {
 	if (v!=NULL) {
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (v->ogl)
-			voodoo_ogl_shutdown(v);
-#endif
 		free(v->fbi.ram);
 		if (v->tmu[0].ram != NULL) {
 			free(v->tmu[0].ram);
@@ -6667,103 +8290,93 @@ static void voodoo_shutdown() {
 			free(v->tmu[1].ram);
 			v->tmu[1].ram = NULL;
 		}
-		v->active=false;
+		v->active = false;
 		triangle_worker_shutdown(v->tworker);
 		delete v;
 		v = NULL;
 	}
+#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	if (vogl_active)
+		voodoo_ogl_state::Deactivate();
+#endif
 }
 
-static void voodoo_vblank_flush(void) {
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (v->ogl)
-		voodoo_ogl_vblank_flush();
-#endif
-	v->fbi.vblank_flush_pending=false;
-}
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-static void voodoo_set_window(void) {
-	if (v->ogl && v->active) {
-		voodoo_ogl_set_window(v);
-	}
-}
-#endif
-
-static void voodoo_leave(void) {
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (v->ogl) {
-		voodoo_ogl_leave(true);
-	}
-#endif
+static void voodoo_deactivate(void) {
 	v->active = false;
+#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	if (vogl_active) {
+		voodoo_ogl_state::Deactivate();
+	}
+#endif
 }
 
 static void voodoo_activate(void) {
 	v->active = true;
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (v->ogl) {
-		if (voodoo_ogl_init(v)) {
-			voodoo_ogl_clear();
-		} else {
-			v->ogl = false;
-			LOG_MSG("VOODOO: acceleration disabled");
-		}
-	}
+	if (v_perf & V_PERFFLAG_OPENGL)
+		voodoo_ogl_state::Activate();
 #endif
-}
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-static void voodoo_update_dimensions(void) {
-	v->ogl_dimchange = false;
-
-	if (v->ogl) {
-		voodoo_ogl_update_dimensions();
-	}
 }
-#endif
 
 static void Voodoo_VerticalTimer(Bitu /*val*/) {
 	v->draw.frame_start = PIC_FullIndex();
 	PIC_AddEvent( Voodoo_VerticalTimer, v->draw.vfreq );
 
-	if (v->fbi.vblank_flush_pending) {
-		voodoo_vblank_flush();
-#ifdef C_DBP_USE_SDL
-		if (GFX_LazyFullscreenRequested()) {
-			v->ogl_dimchange = true;
-		}
+#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	const UINT8 use_vogl = (vogl && (v_perf & V_PERFFLAG_OPENGL));
+	const float new_scale = (use_vogl ? vogl->scale : 1.0f);
+	if (v->render_scale != new_scale)
+	{
+		v->render_scale = new_scale;
+		RENDER_SetSize((Bitu)(v->fbi.width * new_scale + .49f), (Bitu)(v->fbi.height * new_scale + .49f), 16, 1000.0f / v->draw.vfreq, 1.0, false, false);
+	}
 #endif
+
+	bool frameskip = !RENDER_StartUpdate();
+	if (frameskip) {
+		//GFX_ShowMsg("[VOODOO] frameskip");
+		return;
 	}
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (!v->ogl)
+	if (use_vogl) {
+		vogl->VBlankFlush();
+	}
+	else
 #endif
 	{
-		if (!RENDER_StartUpdate()) return; // frameskip
+		UINT32* clut = v->clut;
+		if (v->clutDirty)
+		{
+			float clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB;
+			FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 255.49f, v->gammafix);
+			FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 255.49f, v->gammafix);
+			FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 255.49f, v->gammafix);
+			for (UINT32 i = 0; i != 65536; i++)
+			{
+				float r = (float)pow(((i >> 8) & 0xf8) / (float)0xf8, clutExpR) * clutFacR;
+				float g = (float)pow(((i >> 3) & 0xfc) / (float)0xfc, clutExpG) * clutFacG;
+				float b = (float)pow(((i << 3) & 0xf8) / (float)0xf8, clutExpB) * clutFacB;
+				clut[i] = ((r > 255 ? 255 : r < 0 ? 0 : (int)r) << 16) | ((g > 255 ? 255 : g < 0 ? 0 : (int)g) << 8) | (b > 255 ? 255 : b < 0 ? 0 : (int)b);
+			}
+			v->clutDirty = false;
+		}
 
-#ifdef C_DBP_ENABLE_VOODOO_DEBUG
-		rectangle r;
-		r.min_x = r.min_y = 0;
-		r.max_x = (int)v->fbi.width;
-		r.max_y = (int)v->fbi.height;
-#endif
-
-		// draw all lines at once
-		Bit16u *viewbuf = (Bit16u *)(v->fbi.ram + v->fbi.rgboffs[v->fbi.frontbuf]);
-		for(Bitu i = 0; i < v->fbi.height; i++) {
-			RENDER_DrawLine((Bit8u*) viewbuf);
+		// draw all lines with clut lookups
+		const Bit16u *viewbuf = (Bit16u *)(v->fbi.ram + v->fbi.rgboffs[v->fbi.frontbuf]);
+		for (Bitu i = 0, w = v->fbi.width; i < v->fbi.height; i++)
+		{
+			const Bit16u *src = viewbuf;
+			Bit32u *dst = (Bit32u*)(render.scale.outWrite);
+			for (Bitu x = 0; x != w; x++)
+				*(dst++) = clut[*(src++)];
+			render.scale.outWrite += render.scale.outPitch;
 			viewbuf += v->fbi.rowpixels;
 		}
-		RENDER_EndUpdate(false);
 	}
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	else {
-		// ???
-		voodoo_set_window();
-	}
-#endif
+	RENDER_EndUpdate(false);
 }
 
 static bool Voodoo_GetRetrace() {
@@ -6818,7 +8431,7 @@ static void Voodoo_UpdateScreen(void) {
 	if ((!v->clock_enabled || !v->output_on) && v->draw.override_on) {
 		// switching off
 		PIC_RemoveEvents(Voodoo_VerticalTimer);
-		voodoo_leave();
+		voodoo_deactivate();
 
 		VGA_SetOverride(false);
 		v->draw.override_on=false;
@@ -6835,23 +8448,9 @@ static void Voodoo_UpdateScreen(void) {
 
 		voodoo_activate();
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (v->ogl) {
-			v->ogl_dimchange = false;
-		} else
-#endif
-		{
-			RENDER_SetSize(v->fbi.width, v->fbi.height, 16, 1000.0f / v->draw.vfreq, 1.0, false, false);
-		}
-
+		v->render_scale = 0.0f; // force call to  RENDER_SetSize
 		Voodoo_VerticalTimer(0);
 	}
-
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if ((v->clock_enabled && v->output_on) && v->ogl_dimchange) {
-		voodoo_update_dimensions();
-	}
-#endif
 
 	v->draw.screen_update_requested = false;
 }
@@ -6962,19 +8561,14 @@ static struct Voodoo_Init_PageHandler : public PageHandler {
 #define VOODOO_TEX_PAGES	2048
 #define VOODOO_PAGES (VOODOO_REG_PAGES+VOODOO_LFB_PAGES+VOODOO_TEX_PAGES)
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-#define VOODOO_EMU_TYPE_OFF			0
-#define VOODOO_EMU_TYPE_SOFTWARE	1
-#define VOODOO_EMU_TYPE_ACCELERATED	2
-#endif
-
 static Bit32u voodoo_current_lfb;
 static PageHandler* voodoo_pagehandler;
 
 static struct PCI_SSTDevice : public PCI_Device {
 	enum { vendor = 0x121a, device_voodoo_1 = 0x0001, device_voodoo_2 = 0x0002 }; // 0x121a = 3dfx
 	Bit16u oscillator_ctr, pci_ctr;
-	UINT8 type, perf;
+	UINT8 type;
+	float gammafix;
 
 	PCI_SSTDevice() : PCI_Device(vendor,0), oscillator_ctr(0), pci_ctr(0), type(VOODOO_1) { }
 
@@ -7101,14 +8695,15 @@ static void Voodoo_Startup() {
 	if (v) return;
 
 	voodoo_init(voodoo_pci_sstdevice.type);
+	v->gammafix = voodoo_pci_sstdevice.gammafix;
 
 	memset(&v->draw, 0, sizeof(v->draw));
 	v->draw.vfreq = 1000.0f/60.0f;
 
 	memset(&v->tworker, 0, sizeof(v->tworker));
+	extern unsigned cpu_features_get_core_amount(void);
 	unsigned cores = cpu_features_get_core_amount();
-	v->tworker.triangle_threads = ((voodoo_pci_sstdevice.perf & 1) ? (cores <= (MAX_TRIANGLE_THREADS+1) ? (UINT8)(cores - 1) : MAX_TRIANGLE_THREADS) : 0);
-	v->tworker.disable_bilinear_filter = !!(voodoo_pci_sstdevice.perf & 2);
+	v->tworker.triangle_threads = (cores <= (MAX_TRIANGLE_THREADS+1) ? (UINT8)(cores - 1) : MAX_TRIANGLE_THREADS);
 
 	// Switch the pagehandler now that v has been allocated and is in use
 	voodoo_pagehandler = &voodoo_real_pagehandler;
@@ -7129,14 +8724,39 @@ bool VOODOO_Stat() { return voodoo_stat; }
 #endif
 
 void VOODOO_Destroy(Section* /*sec*/) {
+	extern bool DBP_IsShuttingDown();
+	if (!DBP_IsShuttingDown()) return;
+
 	voodoo_shutdown();
+	voodoo_pagehandler = NULL;
 }
 
 void VOODOO_Init(Section* sec) {
 	// Only active on SVGA machines
 	if (machine != MCH_VGA || svgaCard == SVGA_None) return;
+	sec->AddDestroyFunction(&VOODOO_Destroy,true);
 
 	Section_prop * section = static_cast<Section_prop *>(sec);
+	v_perf = (UINT8)section->Get_int("voodoo_perf");
+	voodoo_pci_sstdevice.gammafix = section->Get_int("voodoo_gamma")*.1f;
+
+	if (voodoo_pagehandler)
+	{
+		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+		if (vogl && v)
+		{
+			vogl->CalcScale();
+			if (vogl_active && !(v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Deactivate();
+			if (!vogl_active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
+		}
+		#endif
+		if (v && v->gammafix != voodoo_pci_sstdevice.gammafix)
+		{
+			v->gammafix = voodoo_pci_sstdevice.gammafix;
+			v->clutDirty = v->ogl_clutDirty = true;
+		}
+		return; // already up
+	}
 
 	UINT8 type = VOODOO_1_DTMU;
 	switch (section->Get_string("voodoo")[0])
@@ -7145,8 +8765,6 @@ void VOODOO_Init(Section* sec) {
 		case '4': type = VOODOO_1; break; //4mb
 		default: return; // disabled
 	}
-
-	sec->AddDestroyFunction(&VOODOO_Destroy,false);
 
 	#ifdef C_DBP_USE_SDL
 	voodoo_width = section->Get_int("voodooscale");
@@ -7158,7 +8776,6 @@ void VOODOO_Init(Section* sec) {
 	voodoo_current_lfb = (VOODOO_INITIAL_LFB & 0xffff0000);
 	voodoo_pagehandler = &voodoo_init_pagehandler;
 	voodoo_pci_sstdevice.SetType(type);
-	voodoo_pci_sstdevice.perf = (UINT8)section->Get_int("voodoo_perf");
 
 	void PCI_AddDevice(PCI_Device*);
 	PCI_AddDevice(&voodoo_pci_sstdevice);
@@ -7186,10 +8803,16 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 	if (v)
 	{
 		// Serialize simple data types in voodoo_state
-		ar.Serialize(v->type).Serialize(v->chipmask).SerializeArray(v->reg).Serialize(v->alt_regmap).Serialize(v->pci).Serialize(v->dac)
+		UINT8 vflags = v->chipmask | 0x8; // 0x8 is "have clutRaw", not part of old save states
+		ar.Serialize(v->type).Serialize(vflags).SerializeArray(v->reg).Serialize(v->alt_regmap).Serialize(v->pci).Serialize(v->dac)
 			.Serialize(v->send_config).Serialize(v->clock_enabled).Serialize(v->output_on).Serialize(v->active).Serialize(v->draw);
+		v->chipmask = vflags & 0x7;
+		if (vflags & 0x8) ar.Serialize(v->clutRaw); 
 
 		// Serialize the frame buffer RAM and everything else in fbi_state
+		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+		if (vogl && (v_perf & V_PERFFLAG_OPENGL) && ar.mode == DBPArchive::MODE_SAVE) vogl->WriteBackFrame();
+		#endif
 		ar.SerializeSparse(v->fbi.ram, v->fbi.mask + 1);
 		ar.SerializeBytes(v->fbi.rgboffs, (Bit8u*)((&v->fbi)+1)-(Bit8u*)v->fbi.rgboffs);
 
@@ -7233,6 +8856,16 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 				tmu.texel[1] = tmu.texel[9] = tmu.ncc[texel19Ncc].texel;
 				tmu.lookup = (lookup == 100 ? tmu.ncc[0].texel : (lookup == 101 ? tmu.ncc[1].texel : tmu.texel[lookup]));
 			}
+		}
+
+		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_ZERO)
+		{
+			#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+			if (vogl_active)                               voodoo_ogl_state::Deactivate();
+			if (v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
+			#endif
+			v->render_scale = 0.0f; // force call to  RENDER_SetSize
+			v->clutDirty = v->ogl_clutDirty = true;
 		}
 	}
 }

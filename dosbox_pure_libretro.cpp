@@ -33,6 +33,7 @@
 #include "include/callback.h"
 #include "include/dbp_serialize.h"
 #include "include/dbp_threads.h"
+#include "include/dbp_opengl.h"
 #include "src/ints/int10.h"
 #include "src/dos/drives.h"
 #include "keyb2joypad.h"
@@ -82,6 +83,8 @@ static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], wid
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static double dbp_audio_remain;
+static struct retro_hw_render_callback dbp_hw_render;
+static void (*dbp_opengl_draw)(const DBP_Buffer& buf);
 
 // DOSBOX DISC MANAGEMENT
 struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false; char drive; int dirlen; };
@@ -205,6 +208,7 @@ static DBP_Interceptor *dbp_intercept, *dbp_intercept_next;
 static void DBP_SetIntercept(DBP_Interceptor* intercept) { if (!dbp_intercept) dbp_intercept = intercept; dbp_intercept_next = intercept; }
 
 // LIBRETRO CALLBACKS
+#ifndef ANDROID
 static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
 {
 	(void)level;
@@ -213,9 +217,9 @@ static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
 	vfprintf(stderr, fmt, va);
 	va_end(va);
 }
-#ifdef ANDROID
+#else
 extern "C" int __android_log_write(int prio, const char *tag, const char *text);
-static void AndroidLogFallback(int level, const char *fmt, ...) { static char buf[8192]; va_list va; va_start(va, fmt); vsprintf(buf, fmt, va); va_end(va); __android_log_write(2, "DBP", buf); }
+static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...) { static char buf[8192]; va_list va; va_start(va, fmt); vsprintf(buf, fmt, va); va_end(va); __android_log_write(2, "DBP", buf); }
 #endif
 static retro_time_t time_in_microseconds()
 {
@@ -1998,13 +2002,17 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)buf.video + sizeof(buf.video));
 
 	if (dbp_intercept_next)
+	{
+		if (voodoo_ogl_is_active()) // zero all including alpha because we'll blend the OSD after displaying voodoo
+			memset(buf.video, 0, 4*SCALER_MAXWIDTH*buf.height);
 		dbp_intercept_next->gfx(buf);
+	}
 
 	if (
 		#ifndef DBP_ENABLE_FPS_COUNTERS
 		dbp_perf == DBP_PERF_DETAILED &&
 		#endif
-		memcmp(dbp_buffers[0].video, dbp_buffers[1].video, buf.width * buf.height * 4))
+		(!voodoo_ogl_is_active() ? memcmp(dbp_buffers[0].video, dbp_buffers[1].video, buf.width * buf.height * 4) : (int)voodoo_ogl_have_new_image()))
 	{
 		DBP_FPSCOUNT(dbp_fpscount_gfxend)
 		dbp_perf_uniquedraw++;
@@ -2785,10 +2793,15 @@ static bool check_variables(bool is_startup = false)
 	retro_set_visibility("dosbox_pure_svgamem", machine_is_svga);
 	retro_set_visibility("dosbox_pure_voodoo", machine_is_svga);
 	retro_set_visibility("dosbox_pure_voodoo_perf", machine_is_svga);
+	retro_set_visibility("dosbox_pure_voodoo_gamma", machine_is_svga);
 	if (machine_is_svga)
 	{
 		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "12mb"), true, true);
-		Variables::DosBoxSet("pci", "voodoo_perf", retro_get_variable("dosbox_pure_voodoo_perf", "1"), true);
+		const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "1");
+		Variables::DosBoxSet("pci", "voodoo_perf", voodoo_perf);
+		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE && (atoi(voodoo_perf) & 0x4))
+			retro_notify(0, RETRO_LOG_WARN, "To enable OpenGL hardware rendering, close and re-open.");
+		Variables::DosBoxSet("pci", "voodoo_gamma", retro_get_variable("dosbox_pure_voodoo_gamma", "-2"));
 	}
 
 	retro_set_visibility("dosbox_pure_cga", machine_is_cga);
@@ -3498,9 +3511,6 @@ void retro_init(void) //#3
 
 	struct retro_log_callback logging;
 	log_cb = (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &logging) ? logging.log : retro_fallback_log);
-	#ifdef ANDROID
-	log_cb = (void (*)(enum retro_log_level, const char *, ...))AndroidLogFallback;
-	#endif
 
 	static const struct retro_keyboard_callback kc = { CallBacks::keyboard_event };
 	environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, (void*)&kc);
@@ -3540,7 +3550,208 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		retro_notify(0, RETRO_LOG_ERROR, "Frontend does not support XRGB8888.\n");
 		return false;
 	}
-	
+
+	if (atoi(retro_get_variable("dosbox_pure_voodoo_perf", "1")) & 0x4) // 3dfx wants to use OpenGL, request hardware render context
+	{
+		static struct sglproc { retro_proc_address_t& ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
+		static unsigned prog_dosboxbuffer, vao, vbo, tex, fbo, lastw, lasth;
+
+		static const Bit8u testhwcontexts[] = { RETRO_HW_CONTEXT_OPENGL_CORE, RETRO_HW_CONTEXT_OPENGLES_VERSION, RETRO_HW_CONTEXT_OPENGLES3, RETRO_HW_CONTEXT_OPENGLES2, RETRO_HW_CONTEXT_OPENGL };
+		static const Bit8u hwcontexttests[] = { 0, 4, 3, 0, 2, 1 }; // reverse map
+		struct HWContext
+		{
+			static void Reset(void)
+			{
+				bool missRequired = false;
+				for (sglproc& glproc : glprocs)
+				{
+					glproc.ptr = dbp_hw_render.get_proc_address(glproc.name);
+					if (!glproc.ptr)
+					{
+						//GFX_ShowMsg("[DBP:GL] OpenGL Function %s is not available!", glproc.name);
+						char buf[256], *arboes = buf + strlen(glproc.name);
+						memcpy(buf, glproc.name, (arboes - buf));
+						memcpy(arboes, "ARB", 4);
+						glproc.ptr = dbp_hw_render.get_proc_address(buf);
+						if (!glproc.ptr)
+						{
+							//GFX_ShowMsg("[DBP:GL] OpenGL Function %s is not available!", buf);
+							memcpy(arboes, "OES", 4);
+							glproc.ptr = dbp_hw_render.get_proc_address(buf);
+							if (!glproc.ptr)
+							{
+								GFX_ShowMsg("[DBP:GL] %s OpenGL Function %s is not available!", (glproc.required ? "Required" : "Optional"), glproc.name);
+								if (glproc.required) { DBP_ASSERT(0); missRequired = true; }
+							}
+							else GFX_ShowMsg("[DBP:GL] Using OpenGL extension function %s", buf);
+						}
+						else GFX_ShowMsg("[DBP:GL] Using OpenGL extension function %s", buf);
+					}
+				}
+				if (missRequired)
+				{
+					gl_error:
+					retro_notify(0, RETRO_LOG_INFO, "Error during OpenGL initialization. Please disable 'Hardware OpenGL' in the '3dfx Voodoo Performance' video core option.");
+					dbp_opengl_draw = NULL;
+					return;
+				}
+
+				//GFX_ShowMsg("[DBP:GL] GL Version: %s", myglGetString(/*MYGL_VERSION*/0x1F02));
+				//GFX_ShowMsg("[DBP:GL] GL Extensions: %s", myglGetString(/*MYGL_EXTENSIONS*/0x1F03));
+
+				//float pointsizes[2];
+				//myglGetFloatv(/*GL_POINT_SIZE_RANGE*/0x0B12, pointsizes);
+				//GFX_ShowMsg("[DBP:GL] GL Point Size Range: %f ~ %f", pointsizes[0], pointsizes[1]);
+
+				static const char* vertex_shader_src =
+					DBP_OPENGL_HIGH_PRECISION
+					"attribute vec2 a_position;"
+					"attribute vec2 a_texcoord;"
+					"varying vec2 v_texcoord;"
+					"void main()"
+					"{"
+						"v_texcoord = a_texcoord;"
+						"gl_Position = vec4(a_position, 0.0, 1.0);"
+					"}";
+
+				static const char* fragment_shader_src =
+					DBP_OPENGL_HIGH_PRECISION
+					"uniform sampler2D u_texture;"
+					"varying vec2 v_texcoord;"
+					"void main()"
+					"{"
+						"gl_FragColor = texture2D(u_texture, v_texcoord).bgra;"
+					"}";
+
+				static const char* bind_attrs[] = { "a_position", "a_texcoord" };
+				prog_dosboxbuffer = DBP_Build_GL_Program(1, &vertex_shader_src, 1, &fragment_shader_src, 2, bind_attrs);
+				if (myglGetError()) { DBP_ASSERT(0); goto gl_error; }
+
+				myglUseProgram(prog_dosboxbuffer);
+				myglUniform1i(myglGetUniformLocation(prog_dosboxbuffer, "u_texture"), 0);
+
+				myglGenBuffers(1, &vbo);
+				myglGenVertexArrays(1, &vao);
+
+				int tw = SCALER_MAXWIDTH, th = SCALER_MAXHEIGHT;
+				myglGenTextures(1, &tex);
+				myglBindTexture(MYGL_TEXTURE_2D, tex);
+				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MIN_FILTER, MYGL_NEAREST);
+				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MAG_FILTER, MYGL_NEAREST);
+				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_S, MYGL_CLAMP_TO_EDGE);
+				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_T, MYGL_CLAMP_TO_EDGE);
+				myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, SCALER_MAXWIDTH, SCALER_MAXHEIGHT, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
+				myglGenFramebuffers(1, &fbo);
+				myglBindFramebuffer(MYGL_FRAMEBUFFER, fbo);
+				myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_COLOR_ATTACHMENT0, MYGL_TEXTURE_2D, tex, 0);
+				if (myglGetError()) { DBP_ASSERT(0); goto gl_error; }
+
+				lastw = lasth = 0;
+				dbp_opengl_draw = Draw;
+			}
+
+			static void Destroy(void)
+			{
+				if (!dbp_opengl_draw) return; // RetroArch can call destroy even when context is not inited
+				myglDeleteFramebuffers(1, &fbo); fbo = 0;
+				myglDeleteTextures(1, &tex); tex = 0;
+				myglDeleteBuffers(1, &vbo); vbo = 0;
+				myglDeleteVertexArrays(1, &vao); vao = 0;
+				myglDeleteProgram(prog_dosboxbuffer); prog_dosboxbuffer = 0;
+				dbp_opengl_draw = NULL;
+			}
+
+			static void Draw(const DBP_Buffer& buf)
+			{
+				myglGetError(); // clear any frontend error state
+
+				if (lastw != buf.width || lasth != buf.height)
+				{
+					lastw = buf.width;
+					lasth = buf.height;
+					const float uvx = (float)lastw / (float)SCALER_MAXWIDTH, uvy = (float)lasth / (float)SCALER_MAXHEIGHT;
+					const float vertices[] = {
+						-1.0f, -1.0f,   0.0f,uvy, // bottom left
+						 1.0f, -1.0f,   uvx,uvy, // bottom right
+						-1.0f,  1.0f,   0.0f,0.0f, // top left
+						 1.0f,  1.0f,   uvx,0.0f, // top right
+						-1.0f,  1.0f,   0.0f,1.0f, // bottom left
+						 1.0f,  1.0f,   1.0f,1.0f, // bottom right
+						-1.0f, -1.0f,   0.0f,0.0f, // top left
+						 1.0f, -1.0f,   1.0f,0.0f, // top right
+					};
+					myglBindVertexArray(vao);
+					myglBindBuffer(MYGL_ARRAY_BUFFER, vbo);
+					myglBufferData(MYGL_ARRAY_BUFFER, sizeof(vertices), vertices, MYGL_STATIC_DRAW);
+					myglEnableVertexAttribArray(0);
+					myglEnableVertexAttribArray(1);
+					myglVertexAttribPointer(0, 2, MYGL_FLOAT, MYGL_FALSE, 4 * sizeof(float), (void*)0);
+					myglVertexAttribPointer(1, 2, MYGL_FLOAT, MYGL_FALSE, 4 * sizeof(float), (void*)(sizeof(float)*2));
+				}
+				if (myglGetError()) { DBP_ASSERT(0); } // clear any error state
+
+				bool is_voodoo_display = voodoo_ogl_display();
+
+				myglBindFramebuffer(MYGL_FRAMEBUFFER, (unsigned)dbp_hw_render.get_current_framebuffer());
+				myglViewport(0, 0, buf.width, buf.height);
+				myglBindVertexArray(vao);
+				if (is_voodoo_display)
+					myglDrawArrays(MYGL_TRIANGLE_STRIP, 4, 4);
+
+				if (!is_voodoo_display || dbp_intercept_next)
+				{
+					myglBindTexture(MYGL_TEXTURE_2D, tex);
+					myglTexSubImage2D(MYGL_TEXTURE_2D, 0, 0, 0, buf.width, buf.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, buf.video);
+					if (is_voodoo_display)
+					{
+						myglEnable(MYGL_BLEND);
+						myglBlendFuncSeparate(MYGL_SRC_ALPHA, MYGL_ONE_MINUS_SRC_ALPHA, MYGL_SRC_ALPHA, MYGL_ONE_MINUS_SRC_ALPHA);
+					}
+					else myglDisable(MYGL_BLEND);
+					myglUseProgram(prog_dosboxbuffer);
+					myglActiveTexture(MYGL_TEXTURE0);
+					myglDrawArrays(MYGL_TRIANGLE_STRIP, 0, 4);
+					if (is_voodoo_display) myglDisable(MYGL_BLEND);
+				}
+
+				// Unbind buffers and arrays before leaving
+				myglBindBuffer(MYGL_ARRAY_BUFFER, 0);
+				myglBindVertexArray(0);
+				myglBindFramebuffer(MYGL_FRAMEBUFFER, 0);
+				if (myglGetError()) { DBP_ASSERT(0); } // clear any error state
+
+				video_cb(RETRO_HW_FRAME_BUFFER_VALID, buf.width, buf.height, 0);
+			}
+		};
+
+		for (int test = -1; test < 5; test++)
+		{
+			if (test < 0)
+			{
+				unsigned preffered_hw_render = RETRO_HW_CONTEXT_NONE;
+				if (!environ_cb(RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER, &preffered_hw_render)) continue;
+				if (preffered_hw_render == RETRO_HW_CONTEXT_NONE || preffered_hw_render >= RETRO_HW_CONTEXT_VULKAN) continue;
+				dbp_hw_render.context_type = (enum retro_hw_context_type)preffered_hw_render;
+			}
+			else dbp_hw_render.context_type = (enum retro_hw_context_type)testhwcontexts[test];
+			dbp_hw_render.version_major = (dbp_hw_render.context_type >= RETRO_HW_CONTEXT_OPENGL_CORE ? 3 : 0);
+			dbp_hw_render.version_minor = (dbp_hw_render.context_type >= RETRO_HW_CONTEXT_OPENGL_CORE ? 1 : 0);
+			dbp_hw_render.context_reset = HWContext::Reset;
+			dbp_hw_render.context_destroy = HWContext::Destroy;
+			dbp_hw_render.depth = false;
+			dbp_hw_render.stencil = false;
+			dbp_hw_render.bottom_left_origin = true;
+
+			if (environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &dbp_hw_render))
+			{
+				const char* names[] = { "NONE", "OpenGL 2.x", "OpenGL ES 2.0", "OpenGL 3/4", "Open GL ES 3.0", "Open GL ES 3.1+", "Vulkan", "D3D11", "D3D10", "D3D12", "D3D9", "DUMMY" };
+				GFX_ShowMsg("[DBP:GL] Selected HW Renderer: %s : %d.%d", names[dbp_hw_render.context_type], dbp_hw_render.version_major, dbp_hw_render.version_minor);
+				break;
+			}
+			dbp_hw_render.context_type = RETRO_HW_CONTEXT_NONE;
+		}
+	}
+
 	//// RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK crashes RetroArch with the XAudio driver when launching from the command line
 	//// Also it explicitly doesn't support save state rewinding when used so give up on this for now.
 	//struct CallBacks
@@ -3847,14 +4058,18 @@ void retro_run(void)
 			DBP_ThreadControl(TCM_PAUSE_FRAME); 
 		}
 		MIXER_CallBack(0, (Bit8u*)dbp_audio, mixSamples * 4);
-		if (dbp_latency == DBP_LATENCY_VARIABLE)
-		{
-			DBP_ThreadControl(TCM_RESUME_FRAME);
-		}
+		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_opengl_draw) DBP_ThreadControl(TCM_RESUME_FRAME);
+	}
+
+	if (dbp_opengl_draw)
+	{
+		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
+		voodoo_ogl_mainthread();
+		if (dbp_latency == DBP_LATENCY_VARIABLE) DBP_ThreadControl(TCM_RESUME_FRAME);
 	}
 
 	// Read buffer_active before waking up emulation thread
-	const DBP_Buffer& buf = dbp_buffers[buffer_active];
+	const Bit8u cur_buffer_active = buffer_active;
 
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
 	{
@@ -3889,6 +4104,7 @@ void retro_run(void)
 
 	// handle video mode changes
 	double targetfps = DBP_GetFPS();
+	const DBP_Buffer& buf = dbp_buffers[cur_buffer_active];
 	if (av_info.geometry.base_width != buf.width || av_info.geometry.base_height != buf.height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
 	{
 		log_cb(RETRO_LOG_INFO, "[DOSBOX] Resolution changed %ux%u @ %.3fHz AR: %.5f => %ux%u @ %.3fHz AR: %.5f\n",
@@ -3903,6 +4119,11 @@ void retro_run(void)
 	}
 
 	// submit video
+	if (dbp_opengl_draw)
+	{
+		dbp_opengl_draw(buf);
+		return;
+	}
 	video_cb(buf.video, buf.width, buf.height, buf.width * 4);
 }
 
@@ -4066,4 +4287,70 @@ bool fpath_nocase(char* path)
 		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
 		base_dir = subdir.append(path).c_str();
 	}
+}
+
+MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCPTR)
+
+static unsigned CreateShaderOfType(int type, int count, const char** shader_src)
+{
+	unsigned shdr = myglCreateShader(type);
+	myglShaderSource(shdr, count, shader_src, NULL);
+	myglCompileShader(shdr);
+	int compiled = 0;
+	myglGetShaderiv(shdr, MYGL_COMPILE_STATUS, &compiled);
+	if (!compiled)
+	{
+		GFX_ShowMsg("[DBP:GL] %s_shader_src:", (type == MYGL_VERTEX_SHADER ? "vertex" : "fragment"));
+		GFX_ShowMsg("------------------------------------------");
+		for (int i = 0; i < count; i++) GFX_ShowMsg("%s", shader_src[i]);
+		GFX_ShowMsg("------------------------------------------");
+		GFX_ShowMsg("[DBP:GL] compiled: %d", compiled);
+		int info_len = 0;
+		myglGetShaderiv(shdr, MYGL_INFO_LOG_LENGTH, &info_len);
+		GFX_ShowMsg("[DBP:GL] info_len: %d", info_len);
+		if (info_len > 1)
+		{
+			char* info_log = (char*)malloc(sizeof(char) * info_len);
+			myglGetShaderInfoLog(shdr, info_len, NULL, info_log);
+			GFX_ShowMsg("[DBP:GL] Error compiling shader: %s", info_log);
+			free(info_log);
+		}
+		DBP_ASSERT(0);
+		myglDeleteShader(shdr);
+		shdr = 0;
+	}
+	return shdr;
+}
+
+unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs)
+{
+	unsigned vert = CreateShaderOfType(MYGL_VERTEX_SHADER, vertex_shader_srcs_count, vertex_shader_srcs);
+	unsigned frag = CreateShaderOfType(MYGL_FRAGMENT_SHADER, fragment_shader_srcs_count, fragment_shader_srcs);
+	unsigned prog = myglCreateProgram();
+	myglAttachShader(prog, vert);
+	myglAttachShader(prog, frag);
+	for (int i = 0; i < bind_attribs_count; i++) myglBindAttribLocation(prog, i, bind_attribs[i]);
+
+	int linked;
+	myglLinkProgram(prog);
+	myglDetachShader(prog, vert); myglDeleteShader(vert);
+	myglDetachShader(prog, frag); myglDeleteShader(frag);
+	myglGetProgramiv(prog, MYGL_LINK_STATUS, &linked);
+	GFX_ShowMsg("[DBP:GL] linked_prog: %d", linked);
+	if (!linked)
+	{
+		int info_len = 0;
+		myglGetProgramiv(prog, MYGL_INFO_LOG_LENGTH, &info_len);
+		if (info_len > 1)
+		{
+			char* info_log = (char*)malloc(info_len);
+			myglGetProgramInfoLog(prog, info_len, NULL, info_log);
+			GFX_ShowMsg("[DBP:GL] Error linking program: %s", info_log);
+			free(info_log);
+		}
+		DBP_ASSERT(0);
+		myglDeleteProgram(prog);
+		prog = 0;
+	}
+	return prog;
 }
