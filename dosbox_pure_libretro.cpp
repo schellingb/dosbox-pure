@@ -1839,7 +1839,7 @@ static std::vector<std::string>& DBP_ScanSystem(bool force_midi_scan)
 	retro_time_t scan_start = time_cb();
 	while (subdirs.size())
 	{
-		std::swap(subdir, subdirs.back());
+		subdir.swap(subdirs.back());
 		subdirs.pop_back();
 		struct retro_vfs_dir_handle *dir = vfs.iface->opendir(path.assign(system_dir).append(subdir.length() ? "/" : "").append(subdir).c_str(), false);
 		if (!dir) continue;
@@ -2388,7 +2388,7 @@ static void DBP_PureLabelProgram(Program** make)
 					Drives[drive-'A']->label.SetLabel(newlabel, MSCDEX_HasDrive(drive), true);
 					std::string result = Drives[drive-'A']->GetLabel();
 					if (lbl == result) msg = "Label of drive %c: was not changed it is read-only set to '%s'\n";
-					else { std::swap(lbl, result); msg = "Label of drive %c: was changed to '%s'\n"; }
+					else { lbl.swap(result); msg = "Label of drive %c: was changed to '%s'\n"; }
 				}
 			}
 			if (lbl.find('.') != std::string::npos) lbl.erase(lbl.find('.'), 1);

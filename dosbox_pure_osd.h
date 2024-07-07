@@ -1149,7 +1149,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		for (; insert_index != (int)m->list.size(); insert_index++)
 			if (m->list[insert_index].str > entry) break;
 		m->list.insert(m->list.begin() + insert_index, item);
-		std::swap(m->list[insert_index].str, entry);
+		m->list[insert_index].str.swap(entry);
 	}
 
 	int MenuIndexByString(const char* findit)

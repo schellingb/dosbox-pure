@@ -310,7 +310,7 @@ struct DBP_Run
 	{
 		startup.mode = mode;
 		startup.info = info;
-		std::swap(startup.str, str); // remember to set cursor again and for rebooting a different IT_RUN
+		startup.str.swap(str); // remember to set cursor again and for rebooting a different IT_RUN
 
 		if (write_auto_boot)
 			WriteAutoBoot();
