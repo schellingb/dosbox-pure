@@ -826,23 +826,15 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
-		FILE* zip_file_h = fopen_wrap(path, "rb");
-		if (!zip_file_h)
+		std::string* ziperr = NULL;
+		drive = zipDrive::MountWithDependencies(path, ziperr, dbp_strict_mode, dbp_legacy_save);
+		if (!drive)
 		{
+			if (ziperr) { retro_notify(0, RETRO_LOG_ERROR, "%s", ziperr->c_str()); delete ziperr; }
 			error_type = "ZIP";
 			goto TRY_DIRECTORY;
 		}
-		drive = new zipDrive(new rawFile(zip_file_h, false), dbp_strict_mode, dbp_legacy_save);
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
-		if (ext[3] == 'Z' || ext[3] == 'z')
-		{
-			// Load .DOSC patch file overlay for .DOSZ
-			if (path_no_fragment.empty()) path_no_fragment.append(path);
-			path_no_fragment.back() = (ext[3] == 'Z' ? 'C' : 'c');
-			FILE* c_file_h = fopen_wrap(path_no_fragment.c_str(), "rb");
-			if (c_file_h)
-				drive = new patchDrive(drive, true, new rawFile(c_file_h, false), dbp_strict_mode);
-		}
 		if (boot && letter == 'C') return drive;
 	}
 	else if (!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC") || !strcasecmp(ext, "TC"))

@@ -723,7 +723,8 @@ private:
 
 class zipDrive : public DOS_Drive {
 public:
-	zipDrive(DOS_File* zip, bool enable_crc_check = false, bool enter_solo_root_dir = false);
+	static DOS_Drive* MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check = false, bool enter_solo_root_dir = false);
+	zipDrive(DOS_File* zip, bool enable_crc_check = false);
 	virtual ~zipDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
@@ -746,6 +747,7 @@ public:
 	static void Uncompress(const Bit8u* src, Bit32u src_len, Bit8u* trg, Bit32u trg_len);
 private:
 	struct zipDriveImpl* impl;
+	INLINE zipDrive() {}
 };
 
 class unionDrive : public DOS_Drive {
@@ -779,7 +781,7 @@ private:
 
 class patchDrive : public DOS_Drive {
 public:
-	patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip = NULL, bool enable_crc_check = false);
+	patchDrive(DOS_Drive& under, bool autodelete_under, DOS_File* patchzip = NULL, bool enable_crc_check = false);
 	virtual ~patchDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);

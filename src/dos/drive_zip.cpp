@@ -1664,7 +1664,6 @@ struct zipDriveImpl
 	// Various ZIP archive enums. To completely avoid cross platform compiler alignment and platform endian issues, miniz.c doesn't use structs for any of this stuff.
 	enum
 	{
-		MZ_METHOD_DEFLATED = 8,
 		// ZIP archive identifiers and record sizes
 		MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG = 0x06054b50, MZ_ZIP_CENTRAL_DIR_HEADER_SIG = 0x02014b50, MZ_ZIP_LOCAL_DIR_HEADER_SIG = 0x04034b50,
 		MZ_ZIP_LOCAL_DIR_HEADER_SIZE = 30, MZ_ZIP_CENTRAL_DIR_HEADER_SIZE = 46, MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE = 22,
@@ -1686,7 +1685,7 @@ struct zipDriveImpl
 		MZ_ZIP_LDH_FILENAME_LEN_OFS = 26, MZ_ZIP_LDH_EXTRA_LEN_OFS = 28,
 	};
 
-	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), archive(_zip, enable_crc_check), total_decomp_size(0)
+	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir = false, std::string** out_parent = NULL, bool* out_multi_parent = NULL) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), archive(_zip, enable_crc_check), total_decomp_size(0)
 	{
 		// Basic sanity checks - reject files which are too small.
 		if (archive.size < MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
@@ -1829,6 +1828,13 @@ struct zipDriveImpl
 				if (n != nEnd && *n != '/' && *n != '\\') continue;
 				if (n == nDir) { nDir++; continue; }
 
+				if (nDir == name && (n - nDir) > 7 && decomp_size == 0 && !strncasecmp(n - 7, ".parent", 7) && out_parent && !enter_solo_root_dir)
+				{
+					if (!*out_parent) *out_parent = new std::string(nDir, (size_t)(n - nDir - 7));
+					else *out_multi_parent = true; 
+					break;
+				}
+
 				// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
 				Bit32u dos_len = DBP_Make8dot3FileName(p_dos, (Bit32u)(dos_path + DOS_PATHLENGTH - p_dos), nDir, (Bit32u)(n - nDir));
 				p_dos[dos_len] = '\0';
@@ -1894,7 +1900,55 @@ struct zipDriveImpl
 	}
 };
 
-zipDrive::zipDrive(DOS_File* zip, bool enable_crc_check, bool enter_solo_root_dir) : impl(new zipDriveImpl(zip, enable_crc_check, enter_solo_root_dir))
+DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check, bool enter_solo_root_dir)
+{
+	FILE* zip_file_h = fopen_wrap(path, "rb");
+	if (!zip_file_h)
+		return NULL;
+
+	bool multi_parent = false;
+	std::string* parent = NULL;
+	DOS_Drive* parent_drive = NULL;
+	zipDriveImpl* impl = new zipDriveImpl(new rawFile(zip_file_h, false), enable_crc_check, enter_solo_root_dir, &parent, &multi_parent);
+
+	if (parent)
+	{
+		const char *lastfslash = strrchr(path, '/'), *lastbslash = strrchr(path, '\\'), *lastslash = (lastbslash > lastfslash ? lastbslash : lastfslash);
+		std::string parentpath(path, (size_t)(lastslash ? (lastslash + 1) - path : 0));
+		parentpath += *parent;
+		if (!multi_parent)
+		{
+			parent_drive = MountWithDependencies(parentpath.c_str(), error_msg, enable_crc_check, enter_solo_root_dir);
+			if (!parent_drive && !error_msg) (error_msg = new std::string("DOSZ parent does not exist: "))->append(*parent);
+		}
+		else (error_msg = new std::string("DOSZ file has multiple parents: "))->append(lastslash ? (lastslash + 1) : path);
+		delete parent;
+		if (!parent_drive)
+		{
+			delete impl;
+			return NULL;
+		}
+	}
+
+	zipDrive* zip_drive = new zipDrive();
+	zip_drive->impl = impl;
+	zip_drive->label.SetLabel("ZIP", false, true);
+
+	DOS_Drive* drive = zip_drive;
+	size_t len = strlen(path);
+	if (path[len - 1] == 'Z' || path[len - 1] == 'z')
+	{
+		// Load .DOSC patch file overlay for .DOSZ
+		std::string doscpath(path);
+		doscpath.back() = (path[len - 1] == 'Z' ? 'C' : 'c');
+		FILE* c_file_h = fopen_wrap(doscpath.c_str(), "rb");
+		if (c_file_h)
+			drive = new patchDrive(*drive, true, new rawFile(c_file_h, false), enable_crc_check);
+	}
+	return (!parent_drive ? drive : new unionDrive(*parent_drive, *drive, true, true));
+}
+
+zipDrive::zipDrive(DOS_File* zip, bool enable_crc_check) : impl(new zipDriveImpl(zip, enable_crc_check))
 {
 	label.SetLabel("ZIP", false, true);
 }

@@ -549,7 +549,10 @@ struct patchDriveImpl
 	}
 };
 
-patchDrive::patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip, bool enable_crc_check) : impl(new patchDriveImpl(*under, autodelete_under, patchzip, enable_crc_check)) { }
+patchDrive::patchDrive(DOS_Drive& under, bool autodelete_under, DOS_File* patchzip, bool enable_crc_check) : impl(new patchDriveImpl(under, autodelete_under, patchzip, enable_crc_check))
+{
+	label.SetLabel(under.GetLabel(), false, true);
+}
 
 patchDrive::~patchDrive()
 {
