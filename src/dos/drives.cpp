@@ -592,7 +592,7 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 	std::string dir;
 	while (dirs.size())
 	{
-		std::swap(dirs.back(), dir);
+		dirs.back().swap(dir);
 		dirs.pop_back();
 		Iter::ParseDir(drv, dir.c_str(), dirs, func, data);
 	}
