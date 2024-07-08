@@ -2267,7 +2267,10 @@ void GFX_Events()
 		#endif
 		switch (e.type)
 		{
-			case DBPET_KEYDOWN: KEYBOARD_AddKey((KBD_KEYS)e.val, true);  break;
+			case DBPET_KEYDOWN:
+				BIOS_SetKeyboardLEDOverwrite((KBD_KEYS)e.val, (KBD_LEDS)e.val2);
+				KEYBOARD_AddKey((KBD_KEYS)e.val, true);
+				break;
 			case DBPET_KEYUP:   KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
 
 			case DBPET_ONSCREENKEYBOARD: DBP_StartOSD(DBPOSD_OSK); break;
@@ -3410,8 +3413,9 @@ void retro_init(void) //#3
 			if (!val) return;
 			if (down && !dbp_keys_down[val])
 			{
+				int leds = ((key_modifiers & RETROKMOD_NUMLOCK) ? KLED_NUMLOCK : 0) | ((key_modifiers & RETROKMOD_CAPSLOCK) ? KLED_CAPSLOCK : 0) | ((key_modifiers & RETROKMOD_SCROLLOCK) ? KLED_SCROLLLOCK : 0);
 				dbp_keys_down[val] |= DBP_DOWN_BY_KEYBOARD;
-				DBP_QueueEvent(DBPET_KEYDOWN, val);
+				DBP_QueueEvent(DBPET_KEYDOWN, val, leds);
 			}
 			else if (!down && (dbp_keys_down[val] & DBP_DOWN_BY_KEYBOARD))
 			{

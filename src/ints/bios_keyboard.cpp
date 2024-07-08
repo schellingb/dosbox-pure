@@ -236,6 +236,19 @@ static bool check_key(Bit16u &code) {
 	*/
 
 
+// DBP: Added for syncing host LEDs (and states) with DOSBox
+#ifdef C_DBP_LIBRETRO
+KBD_LEDS biosKeyLEDOverwrite;
+static Bit8u biosKeyLEDOverwriteMask;
+void BIOS_SetKeyboardLEDOverwrite(KBD_KEYS event_key, KBD_LEDS leds) {
+	biosKeyLEDOverwriteMask |= (Bit8u)leds;
+	biosKeyLEDOverwrite = leds;
+	if (event_key == KBD_scrolllock || event_key == KBD_numlock || event_key == KBD_capslock) return; // let IRQ1_Handler or booted OS deal with it
+	mem_writeb(BIOS_KEYBOARD_FLAGS1, (mem_readb(BIOS_KEYBOARD_FLAGS1) & ~(biosKeyLEDOverwriteMask<<4)) | ((Bit8u)leds<<4));
+	mem_writeb(BIOS_KEYBOARD_LEDS, (mem_readb(BIOS_KEYBOARD_LEDS) & ~biosKeyLEDOverwriteMask) | (Bit8u)leds);
+}
+#endif
+
 /* the scancode is in reg_al */
 static Bitu IRQ1_Handler(void) {
 /* handling of the locks key is difficult as sdl only gives
@@ -252,6 +265,12 @@ static Bitu IRQ1_Handler(void) {
 	/* No hack anymore! */
 #else
 	flags2&=~(0x40+0x20);//remove numlock/capslock pressed (hack for sdl only reporting states)
+#endif
+#ifdef C_DBP_LIBRETRO
+	Bit8u fixFlags1 = (flags1 & ~(biosKeyLEDOverwriteMask<<4)) | ((Bit8u)biosKeyLEDOverwrite<<4);
+	if (flags1 != fixFlags1) { flags1 = fixFlags1; mem_writeb(BIOS_KEYBOARD_FLAGS1,flags1); }
+	Bit8u fixLeds = (leds & ~biosKeyLEDOverwriteMask) | (Bit8u)biosKeyLEDOverwrite;
+	if (leds != fixLeds) { leds = fixLeds; mem_writeb(BIOS_KEYBOARD_LEDS,leds); }
 #endif
 	if (DOS_LayoutKey(scancode,flags1,flags2,flags3)) return CBRET_NONE;
 //LOG_MSG("key input %d %d %d %d",scancode,flags1,flags2,flags3);
@@ -599,12 +618,9 @@ static Bitu INT16_Handler(void) {
 }
 
 //Keyboard initialisation. src/gui/sdlmain.cpp
-#ifdef C_DBP_USE_SDL
+#if SDL_VERSION_ATLEAST(1, 2, 14) || defined(C_DBP_USE_SDL)
 extern bool startup_state_numlock;
 extern bool startup_state_capslock;
-#else
-static bool startup_state_numlock;
-static bool startup_state_capslock;
 #endif
 
 static void InitBiosSegment(void) {
@@ -618,9 +634,12 @@ static void InitBiosSegment(void) {
 
 #if SDL_VERSION_ATLEAST(1, 2, 14)
 //Nothing, mapper handles all.
-#else
+#elif defined(C_DBP_USE_SDL)
 	if (startup_state_capslock) { flag1|=0x40; leds|=0x04;}
 	if (startup_state_numlock)  { flag1|=0x20; leds|=0x02;}
+#else
+	flag1|=(Bit8u)(biosKeyLEDOverwrite<<4);
+	leds|=(Bit8u)biosKeyLEDOverwrite;
 #endif
 
 	mem_writeb(BIOS_KEYBOARD_FLAGS1,flag1);

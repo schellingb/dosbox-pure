@@ -47,6 +47,15 @@ enum KBD_KEYS {
 	KBD_LAST
 };
 
+// DBP: Added for syncing host LEDs (and states) with DOSBox
+enum KBD_LEDS : Bit8u {
+	KLED_SCROLLLOCK = 0x01,
+	KLED_NUMLOCK = 0x02,
+	KLED_CAPSLOCK = 0x04,
+};
+extern KBD_LEDS biosKeyLEDOverwrite;
+void BIOS_SetKeyboardLEDOverwrite(KBD_KEYS event_key, KBD_LEDS leds);
+
 void KEYBOARD_ClrBuffer(void);
 void KEYBOARD_AddKey(KBD_KEYS keytype,bool pressed);
 
