@@ -1336,7 +1336,7 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 				DBP_STATIC_ASSERT(sizeof(SeekCursor) < 0xFFFF); // for DOS_File max read/write length
 				df->AddRef();
 				Bit8u* compbuf = new Bit8u[sizeof(SeekCursor)];
-				Bit16u hdrin[4], hdrtest[4] = { (Bit16u)0x5344, (Bit16u)sizeof(SeekCursor), (Bit16u)(f.comp_size>>16), (Bit16u)f.comp_size }, sz;
+				Bit16u hdrin[7], hdrtest[7] = { (Bit16u)0x5345, (Bit16u)sizeof(SeekCursor), (Bit16u)(f.comp_size>>16), (Bit16u)f.comp_size, (Bit16u)(f.data_ofs>>32), (Bit16u)(f.data_ofs>>16), (Bit16u)f.data_ofs }, sz;
 				bool valid = (df->Read((Bit8u*)hdrin, &(sz = (Bit16u)sizeof(hdrin))) && !memcmp(hdrin, hdrtest, sizeof(hdrin)));
 				for (Bit16u idx_complen[2]; valid; seek_cache->cache_count++)
 				{
@@ -1494,7 +1494,7 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 								df->AddRef();
 								sdefl* compressor = new sdefl;
 								Bit8u* compbuf = new Bit8u[SEEK_CURSOR_MAX_DEFL];
-								Bit16u hdr[4] = { (Bit16u)0x5344, (Bit16u)sizeof(SeekCursor), (Bit16u)(f.comp_size>>16), (Bit16u)f.comp_size }, idx_complen[2], sz;
+								Bit16u hdr[7] = { (Bit16u)0x5345, (Bit16u)sizeof(SeekCursor), (Bit16u)(f.comp_size>>16), (Bit16u)f.comp_size, (Bit16u)(f.data_ofs>>32), (Bit16u)(f.data_ofs>>16), (Bit16u)f.data_ofs }, idx_complen[2], sz;
 								df->Write((Bit8u*)hdr, &(sz = (Bit16u)sizeof(hdr)));
 								for (idx_complen[0] = 0; idx_complen[0] < cursor_count; idx_complen[0] += SEEK_CACHE_CURSOR_STEPS)
 								{
