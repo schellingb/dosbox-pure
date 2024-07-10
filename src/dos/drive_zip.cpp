@@ -1685,7 +1685,7 @@ struct zipDriveImpl
 		MZ_ZIP_LDH_FILENAME_LEN_OFS = 26, MZ_ZIP_LDH_EXTRA_LEN_OFS = 28,
 	};
 
-	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir = false, std::string** out_parent = NULL, bool* out_multi_parent = NULL) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), archive(_zip, enable_crc_check), total_decomp_size(0)
+	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir, std::string** out_parent = NULL, bool* out_multi_parent = NULL) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), archive(_zip, enable_crc_check), total_decomp_size(0)
 	{
 		// Basic sanity checks - reject files which are too small.
 		if (archive.size < MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
@@ -1902,53 +1902,65 @@ struct zipDriveImpl
 
 DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check, bool enter_solo_root_dir)
 {
-	FILE* zip_file_h = fopen_wrap(path, "rb");
-	if (!zip_file_h)
-		return NULL;
-
-	bool multi_parent = false;
-	std::string* parent = NULL;
-	DOS_Drive* parent_drive = NULL;
-	zipDriveImpl* impl = new zipDriveImpl(new rawFile(zip_file_h, false), enable_crc_check, enter_solo_root_dir, &parent, &multi_parent);
-
-	if (parent)
+	struct Local
 	{
-		const char *lastfslash = strrchr(path, '/'), *lastbslash = strrchr(path, '\\'), *lastslash = (lastbslash > lastfslash ? lastbslash : lastfslash);
-		std::string parentpath(path, (size_t)(lastslash ? (lastslash + 1) - path : 0));
-		parentpath += *parent;
-		if (!multi_parent)
+		struct ZFILE { const char* path; const ZFILE* child; };
+		static DOS_Drive* Open(const ZFILE& z, std::string*& error_msg, bool enable_crc_check, bool enter_solo_root_dir)
 		{
-			parent_drive = MountWithDependencies(parentpath.c_str(), error_msg, enable_crc_check, enter_solo_root_dir);
-			if (!parent_drive && !error_msg) (error_msg = new std::string("DOSZ parent does not exist: "))->append(*parent);
-		}
-		else (error_msg = new std::string("DOSZ file has multiple parents: "))->append(lastslash ? (lastslash + 1) : path);
-		delete parent;
-		if (!parent_drive)
-		{
-			delete impl;
-			return NULL;
-		}
-	}
+			const char* path = z.path;
+			FILE* zip_file_h = fopen_wrap(path, "rb");
+			if (!zip_file_h)
+				return NULL;
 
-	zipDrive* zip_drive = new zipDrive();
-	zip_drive->impl = impl;
-	zip_drive->label.SetLabel("ZIP", false, true);
+			bool multi_parent = false;
+			std::string* parent = NULL;
+			DOS_Drive* parent_drive = NULL;
+			zipDriveImpl* impl = new zipDriveImpl(new rawFile(zip_file_h, false), enable_crc_check, enter_solo_root_dir, &parent, &multi_parent);
 
-	DOS_Drive* drive = zip_drive;
-	size_t len = strlen(path);
-	if (path[len - 1] == 'Z' || path[len - 1] == 'z')
-	{
-		// Load .DOSC patch file overlay for .DOSZ
-		std::string doscpath(path);
-		doscpath.back() = (path[len - 1] == 'Z' ? 'C' : 'c');
-		FILE* c_file_h = fopen_wrap(doscpath.c_str(), "rb");
-		if (c_file_h)
-			drive = new patchDrive(*drive, true, new rawFile(c_file_h, false), enable_crc_check);
-	}
-	return (!parent_drive ? drive : new unionDrive(*parent_drive, *drive, true, true));
+			if (parent)
+			{
+				const char *lastfslash = strrchr(path, '/'), *lastbslash = strrchr(path, '\\'), *lastslash = (lastbslash > lastfslash ? lastbslash : lastfslash);
+				std::string parentpath(path, (size_t)(lastslash ? (lastslash + 1) - path : 0));
+				parentpath += *parent;
+				if (!multi_parent)
+				{
+					const ZFILE* recurse = z.child;
+					while (recurse && strcmp(recurse->path, parentpath.c_str())) recurse = recurse->child;
+					if (recurse) (error_msg = new std::string("DOSZ file has recursive parents: "))->append(lastslash ? (lastslash + 1) : path);
+					else parent_drive = Open({parentpath.c_str(), &z}, error_msg, enable_crc_check, enter_solo_root_dir);
+					if (!parent_drive && !error_msg) (error_msg = new std::string("DOSZ parent does not exist: "))->append(*parent);
+				}
+				else (error_msg = new std::string("DOSZ file has multiple parents: "))->append(lastslash ? (lastslash + 1) : path);
+				delete parent;
+				if (!parent_drive)
+				{
+					delete impl;
+					return NULL;
+				}
+			}
+
+			zipDrive* zip_drive = new zipDrive();
+			zip_drive->impl = impl;
+			zip_drive->label.SetLabel("ZIP", false, true);
+
+			DOS_Drive* drive = zip_drive;
+			size_t len = strlen(path);
+			if (path[len - 1] == 'Z' || path[len - 1] == 'z')
+			{
+				// Load .DOSC patch file overlay for .DOSZ
+				std::string doscpath(path);
+				doscpath.back() = (path[len - 1] == 'Z' ? 'C' : 'c');
+				FILE* c_file_h = fopen_wrap(doscpath.c_str(), "rb");
+				if (c_file_h)
+					drive = new patchDrive(*drive, true, new rawFile(c_file_h, false), enable_crc_check);
+			}
+			return (!parent_drive ? drive : new unionDrive(*parent_drive, *drive, true, true));
+		}
+	};
+	return Local::Open({path, NULL}, error_msg, enable_crc_check, enter_solo_root_dir);
 }
 
-zipDrive::zipDrive(DOS_File* zip, bool enable_crc_check) : impl(new zipDriveImpl(zip, enable_crc_check))
+zipDrive::zipDrive(DOS_File* zip, bool enable_crc_check) : impl(new zipDriveImpl(zip, enable_crc_check, false))
 {
 	label.SetLabel("ZIP", false, true);
 }
