@@ -3801,6 +3801,8 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	av_info.geometry.aspect_ratio = buf.ratio;
 	av_info.timing.fps = DBP_GetFPS();
 	av_info.timing.sample_rate = DBP_MIXER_GetFrequency();
+	if (dbp_perf == DBP_PERF_DETAILED)
+		retro_notify(0, RETRO_LOG_INFO, "Startup Resolution: %d x %d @ %4.2f hz", (int)render.src.width, (int)render.src.height, render.src.fps);
 	*info = av_info;
 }
 
@@ -4087,7 +4089,7 @@ void retro_run(void)
 	{
 		extern const char* DBP_CPU_GetDecoderName();
 		if (dbp_perf == DBP_PERF_DETAILED)
-			retro_notify(-1500, RETRO_LOG_INFO, "Speed: %4.1f%%, DOS: %dx%d@%4.2ffps, Actual: %4.2ffps, Drawn: %dfps, Cycles: %u (%s)"
+			retro_notify(-1500, RETRO_LOG_INFO, "Speed: %4.1f%%, DOS: %dx%d@%4.2fhz, Actual: %4.2ffps, Drawn: %dfps, Cycles: %u (%s)"
 				#ifdef DBP_ENABLE_WAITSTATS
 				", Waits: p%u|f%u|z%u|c%u"
 				#endif
