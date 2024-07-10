@@ -1497,11 +1497,11 @@ struct DBP_MenuInterceptor : DBP_Interceptor
 			}
 		}
 
-		// query input states and generate input events
-		for (DBP_InputBind &b : intercept_binds)
+		// query input states and generate input events (ignore mouse on touchpad mode)
+		for (DBP_InputBind* b = intercept_binds + (dbp_mouse_input == 'p' ? 3 : 0), *bEnd = intercept_binds + sizeof(intercept_binds)/sizeof(*intercept_binds); b != bEnd; b++)
 		{
-			Bit16s val = input_state_cb(b.port, b.device, b.index, b.id);
-			if (val != b.lastval) b.Update(val);
+			Bit16s val = input_state_cb(b->port, b->device, b->index, b->id);
+			if (val != b->lastval) b->Update(val);
 		}
 
 		if (DBP_MenuInterceptorRefreshSystem)
