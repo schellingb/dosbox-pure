@@ -2673,6 +2673,7 @@ static bool check_variables(bool is_startup = false)
 			"dosbox_pure_sblaster_adlib_mode",
 			"dosbox_pure_sblaster_adlib_emu",
 			"dosbox_pure_gus",
+			"dosbox_pure_tandysound",
 			"dosbox_pure_swapstereo",
 		};
 		for (const char* i : advanced_options) retro_set_visibility(i, show_advanced);
@@ -2850,6 +2851,7 @@ static bool check_variables(bool is_startup = false)
 	Variables::DosBoxSet("sblaster", "oplmode", retro_get_variable("dosbox_pure_sblaster_adlib_mode", "auto"));
 	Variables::DosBoxSet("sblaster", "oplemu", retro_get_variable("dosbox_pure_sblaster_adlib_emu", "default"));
 	Variables::DosBoxSet("gus", "gus", retro_get_variable("dosbox_pure_gus", "false"));
+	Variables::DosBoxSet("speaker", "tandy", retro_get_variable("dosbox_pure_tandysound", "auto"));
 
 	Variables::DosBoxSet("joystick", "timed", retro_get_variable("dosbox_pure_joystick_timed", "true"));
 
@@ -3036,6 +3038,7 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 						||l.Parse("sound_mpu401", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
 						||l.Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
 						||l.Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
+						||l.Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
 					) break; else goto syntaxerror;
 			case 'r':
 				if (0

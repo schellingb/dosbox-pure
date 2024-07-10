@@ -380,9 +380,9 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			{ "svga",     "SVGA (Super Video Graphics Array) (default)" },
 			{ "vga",      "VGA (Video Graphics Array)" },
-			{ "ega",      "EGA (Enhanced Graphics Adapter" },
+			{ "ega",      "EGA (Enhanced Graphics Adapter)" },
 			{ "cga",      "CGA (Color Graphics Adapter)" },
-			{ "tandy",    "Tandy (Tandy Graphics Adapter" },
+			{ "tandy",    "Tandy (Tandy Graphics Adapter)" },
 			{ "hercules", "Hercules (Hercules Graphics Card)" },
 			{ "pcjr",     "PCjr" },
 		},
@@ -719,6 +719,14 @@ static retro_core_option_v2_definition option_defs[] =
 		"Audio",
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
+	},
+	{
+		"dosbox_pure_tandysound",
+		"Advanced > Enable Tandy Sound Device (restart required)", NULL,
+		"Enable Tandy Sound Device emulation even when running without Tandy Graphics Adapter emulation.", NULL,
+		"Audio",
+		{ { "auto", "Off (default)" }, { "on", "On" } },
+		"auto"
 	},
 	{
 		"dosbox_pure_swapstereo",
