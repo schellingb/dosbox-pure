@@ -3910,7 +3910,10 @@ void retro_run(void)
 			Bit32u numEmptySamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
 			memset(dbp_audio, 0, numEmptySamples * 4);
 			audio_batch_cb(dbp_audio, numEmptySamples);
-			video_cb(buf.video, buf.width, buf.height, buf.width * 4);
+			if (dbp_opengl_draw)
+				dbp_opengl_draw(buf);
+			else
+				video_cb(buf.video, buf.width, buf.height, buf.width * 4);
 			return;
 		}
 
@@ -4121,11 +4124,9 @@ void retro_run(void)
 
 	// submit video
 	if (dbp_opengl_draw)
-	{
 		dbp_opengl_draw(buf);
-		return;
-	}
-	video_cb(buf.video, buf.width, buf.height, buf.width * 4);
+	else
+		video_cb(buf.video, buf.width, buf.height, buf.width * 4);
 }
 
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
