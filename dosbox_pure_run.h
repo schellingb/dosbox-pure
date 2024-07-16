@@ -59,17 +59,22 @@ struct DBP_Run
 				case 0:
 				{
 					ConsoleClearScreen();
-
-					char *p = (char*)filename.c_str(), *f = strrchr(p, '\\') + 1, *fext;
-					DOS_SetDefaultDrive(p[0]-'A');
-					if (f - p > 3)
+					const char *fn = filename.c_str(), *r = fn + ((fn[0] && fn[1] == ':') ? 2 : 0), *p = r + (*r == '\\' ? 1 : 0), *sl = strrchr(p, '\\');
+					const Bit8u drive = ((((fn[0] >= 'A' && fn[0] <= 'Z') || (fn[0] >= 'a' && fn[0] <= 'z')) && fn[1] == ':') ? (fn[0] & 0x5F) : 'C') - 'A';
+					if (Drives[drive])
 					{
-						memcpy(Drives[p[0]-'A']->curdir,p + 3, f - p - 4);
-						Drives[p[0]-'A']->curdir[f - p - 4] = '\0';
+						DOS_SetDefaultDrive(drive);
+						if (sl)
+						{
+							memcpy(Drives[drive]->curdir,p, sl - p);
+							Drives[drive]->curdir[sl - p] = '\0';
+						}
+						else Drives[drive]->curdir[0] = '\0';
 					}
-					else Drives[p[0]-'A']->curdir[0] = '\0';
+					else { sl = NULL; p = fn; } // try call full string which will likely show an error to tell the user auto start is wrong
 
-					bool isbat = ((fext = strrchr(f, '.')) && !strcasecmp(fext, ".bat"));
+					const char* f = (sl  ? sl + 1 : p), *fext = strchr(f, '.');
+					bool isbat = (fext && !strcasecmp(fext, ".bat"));
 					int call_cmd_len = (isbat ? 5 : 0), flen = (int)strlen(f);
 					memcpy(line, "call ", call_cmd_len);
 					memcpy(line+call_cmd_len, f, flen);
