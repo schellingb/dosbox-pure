@@ -3476,7 +3476,7 @@ bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation 
 		FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 1.0f, v->gammafix);
 		FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 1.0f, v->gammafix);
 		FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 1.0f, v->gammafix);
-		GFX_ShowMsg("[VOGL] CLUT - EXP RGB: %f / %f / %f - FAC RGB: %f / %f / %f", clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB);
+		//GFX_ShowMsg("[VOGL] CLUT - EXP RGB: %f / %f / %f - FAC RGB: %f / %f / %f", clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB);
 		myglUniform3f(vogl->displayprog_clut_exp, clutExpR, clutExpG, clutExpB);
 		myglUniform3f(vogl->displayprog_clut_fac, clutFacR, clutFacG, clutFacB);
 		v->ogl_clutDirty = false;
@@ -3954,7 +3954,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		{
 			ogl_texture& tex = vogl->textures.data[tu.textureidx];
 			if (!tex.id) { myglGenTextures(1, &tex.id); GLERRORASSERT }
-			GFX_ShowMsg("[VOGL] Upload texture #%d with id %d and texkey %08x and size %d,%d", tu.textureidx, tex.id, tex.key, tu.smax, tu.tmax);
+			//GFX_ShowMsg("[VOGL] Upload texture #%d with id %d and texkey %08x and size %d,%d", tu.textureidx, tex.id, tex.key, tu.smax, tu.tmax);
 			myglBindTexture(MYGL_TEXTURE_2D, tex.id);
 			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, tu.smax, tu.tmax, 0, MYGL_RGBA /*MYGL_RGBA*/, MYGL_UNSIGNED_BYTE /*MYGL_UNSIGNED_INT_8_8_8_8_REV*/, tu.buf);
 			if (myglGenerateMipmap) myglGenerateMipmap(MYGL_TEXTURE_2D);
@@ -4368,13 +4368,13 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			vogl->free_textures.AddOne() = idx;
 			bool removed = vogl->texture_hashes.Remove(tex.key);
 			DBP_ASSERT(removed);
-			GFX_ShowMsg("[VOGL] Marking texture #%d with id %d and texkey %08x as free", idx, tex.id, tex.key);
+			//GFX_ShowMsg("[VOGL] Marking texture #%d with id %d and texkey %08x as free", idx, tex.id, tex.key);
 	
 			for (ogl_texbase& tb : vogl->texbases)
 			{
 				if (tb.textureidx != idx) continue;
 				tb.textureidx = (UINT32)-1;
-				GFX_ShowMsg("       Marking texbase with texkey %08x as unassigned", (tb.data_hash ^ tb.pal_hash));
+				//GFX_ShowMsg("       Marking texbase with texkey %08x as unassigned", (tb.data_hash ^ tb.pal_hash));
 			}
 		}
 	}
@@ -4677,7 +4677,7 @@ static void voodoo_ogl_draw_triangle()
 						}
 						break;
 				}
-				GFX_ShowMsg("[VOGL] Preparing texture #%d with id %d and texkey %08x and size %d,%d", textureidx, vogl->textures.data[textureidx].id, texturekey, smax, tmax);
+				//GFX_ShowMsg("[VOGL] Preparing texture #%d with id %d and texkey %08x and size %d,%d", textureidx, vogl->textures.data[textureidx].id, texturekey, smax, tmax);
 			}
 		}
 
