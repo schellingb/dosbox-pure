@@ -1685,8 +1685,8 @@ private:
 
 	struct BindDecoder
 	{
-		INLINE BindDecoder(const Bit8u *ptr) : P(ptr), OutPtr(NULL), Remain(*(P++)+1), KeyCount(0) { ++*this; }
-		INLINE BindDecoder(const Bit8u **ptr) : P(*ptr), OutPtr(ptr), Remain(*(P++)+1), KeyCount(0) { ++*this; }
+		INLINE BindDecoder(const Bit8u *ptr) : P(ptr), OutPtr(NULL), Remain(P ? *(P++)+1 : 1), KeyCount(0) { ++*this; }
+		INLINE BindDecoder(const Bit8u **ptr) : P(*ptr), OutPtr(ptr), Remain(P ? *(P++)+1 : 1), KeyCount(0) { ++*this; }
 		INLINE const BindDecoder& begin() const { return *this; }
 		INLINE const BindDecoder& end() const { return *this; }
 		INLINE const BindDecoder& operator*() const { return *this; }
