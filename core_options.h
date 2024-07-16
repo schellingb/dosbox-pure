@@ -470,7 +470,7 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "4", "Hardware OpenGL" },
 			{ "12", "Hardware OpenGL High Resolution" },
 			{ "3", "Software Multi Threaded, low quality" },
-			{ "2", "Software Low quality" },
+			{ "2", "Software Single Threaded, low quality" },
 			{ "0", "Software Single Threaded" },
 		},
 		"1",
