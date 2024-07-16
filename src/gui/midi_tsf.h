@@ -35,18 +35,38 @@ struct MidiHandler_tsf : public MidiHandler
 	MixerChannel* chan;
 	MixerObject*  mo;
 	DOS_File*     f;
+	DOS_Drive*    d_zip;
 	tsf*          sf;
 
 	const char * GetName(void) { return "tsf"; };
+
+	static void IterateZip(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
+	{
+		MidiHandler_tsf& self = *(MidiHandler_tsf*)data;
+		if (self.f || !self.d_zip->FileOpen(&self.f, (char*)path, OPEN_READ)) return;
+		self.f->AddRef();
+		Bit16u sz = 4; Bit8u hdr[4]; Bit32u pos0 = 0;
+		if (self.f->Read(hdr, &sz) && sz == 4 && !memcmp(hdr, "RIFF", 4)) { self.f->Seek(&pos0, DOS_SEEK_SET); } else { self.f->Close(); delete self.f; self.f = NULL; }
+	}
 
 	bool Open(const char * conf)
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len <= 4 || strncasecmp(conf + conf_len - 4, ".sf", 3)) return false;
+		if (conf_len > 1 && *conf == '^') // a path to a ZIP on the host file system
+		{
+			FILE* zip_file_h = fopen_wrap(conf + 1, "rb");
+			if (!zip_file_h) return false;
+			d_zip = new zipDrive(new rawFile(zip_file_h, false));
+			DriveFileIterator(d_zip, IterateZip, (Bitu)this);
+		}
+		else
+		{
+			if (conf_len <= 4 || strncasecmp(conf + conf_len - 4, ".sf", 3)) return false;
 
-		DBP_ASSERT(!f);
-		f = FindAndOpenDosFile(conf);
+			DBP_ASSERT(!f);
+			f = FindAndOpenDosFile(conf);
+		}
 		if (!f) return false;
 
 		DBP_ASSERT(!chan);
@@ -60,6 +80,7 @@ struct MidiHandler_tsf : public MidiHandler
 	void Close(void)
 	{
 		if (f)      { f->Close();delete f; f      = NULL; }
+		if (d_zip)  { delete d_zip;        d_zip  = NULL; }
 		if (sf)     { tsf_close(sf);       sf     = NULL; }
 		if (chan)   { chan->Enable(false); chan   = NULL; }
 		if (mo)     { delete mo;           mo     = NULL; } // also deletes chan!
@@ -81,6 +102,7 @@ struct MidiHandler_tsf : public MidiHandler
 		f->Close();
 		delete f;
 		f = NULL;
+		if (d_zip) { delete d_zip; d_zip = NULL; }
 		if (!sf) return false;
 
 		extern Bit32u DBP_MIXER_GetFrequency();

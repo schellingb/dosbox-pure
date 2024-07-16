@@ -31,13 +31,14 @@ struct MidiHandler_mt32 : public MidiHandler
 	MixerObject*    mo;
 	DOS_File*       f_control;
 	DOS_File*       f_pcm;
+	DOS_Drive*      d_zip;
 	MT32Emu::Synth* syn;
 
 	const char * GetName(void) { return "mt32"; };
 
 	struct RomFile : public MT32Emu::File
 	{
-		RomFile(DOS_File* f) : data(NULL), size(0)
+		RomFile(DOS_File*& f) : data(NULL), size(0)
 		{
 			if (!f) return;
 			Bit32u begin = 0;
@@ -47,6 +48,7 @@ struct MidiHandler_mt32 : public MidiHandler
 			for (Bit32u sz = size, p = 0; sz;) { Bit16u read = (Bit16u)(sz > 0xFFFF ? 0xFFFF : sz); if (!f->Read(data+p, &read)) break; sz -= read; p += read; }
 			f->Close();
 			delete f;
+			f = NULL;
 
 			SHA1_CTX ctx;
 			SHA1_CTX::SHA1Process(&ctx, (const unsigned char*)data, size);
@@ -152,29 +154,47 @@ struct MidiHandler_mt32 : public MidiHandler
 		};
 	};
 
+	static void IterateZip(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
+	{
+		MidiHandler_mt32& self = *(MidiHandler_mt32*)data;
+		if (DOS_File** pf = (((size == 65536 || size == 131072) && !self.f_control) ? &self.f_control : (((size == 524288 || size == 1048576) && !self.f_pcm) ? &self.f_pcm : NULL)))
+			if (self.d_zip->FileOpen(pf, (char*)path, OPEN_READ))
+				(*pf)->AddRef();
+	}
+
 	bool Open(const char * conf)
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len <= 12 || strcasecmp(conf + conf_len - 4, ".ROM")) return false;
-
-		DBP_ASSERT(!f_control);
-		f_control = FindAndOpenDosFile(conf);
-		if (!f_control) return false;
-
-		// When using the $ prefix, we are loading a fixed file name from the mounted C drive via FindAndOpenDosFile
-		const char* pcmpath = "$C:\\MT32_PCM.ROM";
-		std::string pcmpathstr;
-		if (*conf != '$')
+		if (conf_len > 1 && *conf == '^') // a path to a ZIP on the host file system
 		{
-			// Try to open the matching _PCM file using the same capitalization used for _CONTROL
-			char charC = conf[conf_len - 12 + 1], charO = conf[conf_len - 12 + 2];
-			pcmpath = pcmpathstr.assign(conf, conf_len - 12 + 1).append(charC == 'C' ? "P" : "p").append(charO == 'O' ? "CM" : "cm").append(conf + conf_len - 4).c_str();
+			FILE* zip_file_h = fopen_wrap(conf + 1, "rb");
+			if (!zip_file_h) return false;
+			d_zip = new zipDrive(new rawFile(zip_file_h, false));
+			DriveFileIterator(d_zip, IterateZip, (Bitu)this);
 		}
+		else
+		{
+			if (conf_len <= 12 || strcasecmp(conf + conf_len - 4, ".ROM")) return false;
 
-		DBP_ASSERT(!f_pcm);
-		f_pcm = FindAndOpenDosFile(pcmpath);
-		if (!f_pcm) { f_control->Close(); delete f_control; f_control = NULL; return false; }
+			DBP_ASSERT(!f_control);
+			f_control = FindAndOpenDosFile(conf);
+			if (!f_control) return false;
+
+			// When using the $ prefix, we are loading a fixed file name from the mounted C drive via FindAndOpenDosFile
+			const char* pcmpath = "$C:\\MT32_PCM.ROM";
+			std::string pcmpathstr;
+			if (*conf != '$')
+			{
+				// Try to open the matching _PCM file using the same capitalization used for _CONTROL
+				char charC = conf[conf_len - 12 + 1], charO = conf[conf_len - 12 + 2];
+				pcmpath = pcmpathstr.assign(conf, conf_len - 12 + 1).append(charC == 'C' ? "P" : "p").append(charO == 'O' ? "CM" : "cm").append(conf + conf_len - 4).c_str();
+			}
+
+			DBP_ASSERT(!f_pcm);
+			f_pcm = FindAndOpenDosFile(pcmpath);
+		}
+		if (!f_control || !f_pcm) { Close(); return false; }
 
 		DBP_ASSERT(!mo && !chan);
 		mo = new MixerObject;
@@ -186,6 +206,7 @@ struct MidiHandler_mt32 : public MidiHandler
 	{
 		if (f_control) { f_control->Close(); delete f_control; f_control = NULL; }
 		if (f_pcm)     { f_pcm->Close(); delete f_pcm;         f_pcm     = NULL; }
+		if (d_zip)     { delete d_zip;                         d_zip     = NULL; }
 		if (syn)       { syn->close(); delete syn;             syn       = NULL; }
 		if (chan)      { chan->Enable(false);                  chan      = NULL; }
 		if (mo)        { delete mo;                            mo        = NULL; } // also deletes chan!
@@ -196,8 +217,9 @@ struct MidiHandler_mt32 : public MidiHandler
 		if (syn) return true;
 		if (!f_control || !f_pcm) return false;
 
-		RomFile control_rom_file(f_control); f_control = NULL;
-		RomFile pcm_rom_file(f_pcm);         f_pcm     = NULL;
+		RomFile control_rom_file(f_control); // deletes and NULL's f_control
+		RomFile pcm_rom_file(f_pcm); // deletes and NULL's f_pcm
+		if (d_zip) { delete d_zip; d_zip = NULL; }
 
 		syn = new MT32Emu::Synth();
 		const MT32Emu::ROMImage *control = MT32Emu::ROMImage::makeROMImage(&control_rom_file), *pcm = MT32Emu::ROMImage::makeROMImage(&pcm_rom_file);

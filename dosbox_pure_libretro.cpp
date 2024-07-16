@@ -2929,6 +2929,15 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 					sprintf(buf, "%d", (atoi(Val) / 1024));
 					val = buf;
 				}
+				else if (*mapFrom == '^')
+				{
+					const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
+					((val += '^').append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
+					Property* prop = control->GetSection("midi")->GetProp("midiconfig");
+					prop->SetValue(val);
+					prop->OnChangedByConfigProgram();
+					val.assign("intelligent");
+				}
 				else
 				{
 					const char* mapTo = va_arg(ap, const char*);
@@ -3035,8 +3044,8 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 						||l.Parse("sound_irq", "sblaster", "irq", "~")
 						||l.Parse("sound_dma", "sblaster", "dma", "~")
 						||l.Parse("sound_hdma", "sblaster", "hdma", "~")
-						||l.Parse("sound_mpu401", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
-						||l.Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "")
+						||l.Parse("sound_midi", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
+						||l.Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
 						||l.Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
 						||l.Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
 					) break; else goto syntaxerror;
