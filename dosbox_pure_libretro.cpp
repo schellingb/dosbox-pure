@@ -2012,7 +2012,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	// frameskip is best to be modified in this function (otherwise it can be off by one)
 	dbp_framecount += 1 + render.frameskip.max;
-	render.frameskip.max = (DBP_NeedFrameSkip(true) ? 1 : 0);
+	if (!dbp_last_fastforward) render.frameskip.max = (DBP_NeedFrameSkip(true) ? 1 : 0);
 
 	// handle frame skipping and CPU speed during fast forwarding
 	if (dbp_last_fastforward == (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD)) return;
@@ -2030,7 +2030,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		}
 		else
 		{
-			render.frameskip.max = 10;
+			render.frameskip.max = 8;
 			CPU_CycleMax = (cpu.pmode ? 30000 : 10000);
 		}
 	}
