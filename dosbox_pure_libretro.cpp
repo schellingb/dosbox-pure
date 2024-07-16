@@ -3570,6 +3570,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		{
 			static void Reset(void)
 			{
+				if (dbp_opengl_draw) voodoo_ogl_contextlost();
 				bool missRequired = false;
 				for (sglproc& glproc : glprocs)
 				{
@@ -3661,6 +3662,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 			static void Destroy(void)
 			{
 				if (!dbp_opengl_draw) return; // RetroArch can call destroy even when context is not inited
+				voodoo_ogl_reset();
 				myglDeleteFramebuffers(1, &fbo); fbo = 0;
 				myglDeleteTextures(1, &tex); tex = 0;
 				myglDeleteBuffers(1, &vbo); vbo = 0;

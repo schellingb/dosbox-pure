@@ -3191,8 +3191,15 @@ struct ogl_drawbuffer
 
 	void Cleanup()
 	{
+		if (!colortex) return;
 		myglDeleteTextures(1, &colortex);
 		myglDeleteFramebuffers(1, &fbo);
+		ContextLost();
+	}
+
+	void ContextLost()
+	{
+		if (!colortex) return;
 		color.Free();
 		*this = ogl_drawbuffer();
 	}
@@ -3262,6 +3269,11 @@ struct ogl_readbackdata
 		myglDeleteBuffers(1, &depth_vbo);
 		myglDeleteVertexArrays(1, &depth_vao);
 		myglDeleteBuffers(1, &pbo);
+	}
+
+	void ContextLost()
+	{
+		if (!depth_fbo) return;
 		depth.Free();
 		*this = ogl_readbackdata();
 	}
@@ -3338,20 +3350,29 @@ struct voodoo_ogl_state
 
 	void Cleanup()
 	{
-		DBP_ASSERT(vbo);
+		if (!vbo) return;
 		if (v) WriteBackFrame();
-		myglDeleteBuffers(1, &vbo); vbo = 0;
-		myglDeleteVertexArrays(1, &vao); vao = 0;
-		myglDeleteProgram(displayprog); displayprog = 0;
+		myglDeleteBuffers(1, &vbo);
+		myglDeleteVertexArrays(1, &vao);
+		myglDeleteProgram(displayprog);
 		readback.Cleanup();
 		for (ogl_program& p : programs) myglDeleteProgram(p.id);
-		programs.Free();
-		program_hashes.Free();
 		for (ogl_texture& t : textures) if (t.id) myglDeleteTextures(1, &t.id);
-		textures.Free();
-		free_textures.Free();
 		for (ogl_drawbuffer& db : drawbuffers) db.Cleanup();
 		myglDeleteTextures(1, &depthstenciltex);
+		ContextLost();
+	}
+
+	void ContextLost()
+	{
+		if (!vbo) return;
+		vbo = vao = displayprog = 0;
+		programs.Free();
+		program_hashes.Free();
+		textures.Free();
+		free_textures.Free();
+		for (ogl_drawbuffer& db : drawbuffers) db.ContextLost();
+		readback.ContextLost();
 		depthstenciltex = depthstenciltex_width = depthstenciltex_height = 0;
 		vogl_active = true;
 		Deactivate(); // make sure cmdbuf is still empty
@@ -3487,6 +3508,9 @@ bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation 
 	//myglBindTexture(MYGL_TEXTURE_2D, vogl->readback.depth_color); // debug
 	return true;
 }
+
+void voodoo_ogl_reset() { if (vogl) vogl->Cleanup(); }
+void voodoo_ogl_contextlost() { if (vogl) vogl->ContextLost(); }
 
 enum : UINT32
 {
@@ -8729,6 +8753,10 @@ void VOODOO_Destroy(Section* /*sec*/) {
 
 	voodoo_shutdown();
 	voodoo_pagehandler = NULL;
+
+	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	if (vogl) { vogl->Cleanup(); delete vogl; vogl = NULL; }
+	#endif
 }
 
 void VOODOO_Init(Section* sec) {
