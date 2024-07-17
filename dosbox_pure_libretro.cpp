@@ -3562,7 +3562,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	if (atoi(retro_get_variable("dosbox_pure_voodoo_perf", "1")) & 0x4) // 3dfx wants to use OpenGL, request hardware render context
 	{
 		static struct sglproc { retro_proc_address_t& ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
-		static unsigned prog_dosboxbuffer, vao, vbo, tex, fbo, lastw, lasth;
+		static unsigned prog_dosboxbuffer, vbo, vao, tex, fbo, lastw, lasth;
 
 		static const Bit8u testhwcontexts[] = { RETRO_HW_CONTEXT_OPENGL_CORE, RETRO_HW_CONTEXT_OPENGLES_VERSION, RETRO_HW_CONTEXT_OPENGLES3, RETRO_HW_CONTEXT_OPENGLES2, RETRO_HW_CONTEXT_OPENGL };
 		static const Bit8u hwcontexttests[] = { 0, 4, 3, 0, 2, 1 }; // reverse map
@@ -3570,7 +3570,6 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		{
 			static void Reset(void)
 			{
-				if (dbp_opengl_draw) voodoo_ogl_contextlost();
 				bool missRequired = false;
 				for (sglproc& glproc : glprocs)
 				{
@@ -3601,7 +3600,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				{
 					gl_error:
 					retro_notify(0, RETRO_LOG_INFO, "Error during OpenGL initialization. Please disable 'Hardware OpenGL' in the '3dfx Voodoo Performance' video core option.");
-					dbp_opengl_draw = NULL;
+					if (dbp_opengl_draw) OnReset(voodoo_ogl_contextlost, true);
 					return;
 				}
 
@@ -3657,18 +3656,27 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 
 				lastw = lasth = 0;
 				dbp_opengl_draw = Draw;
+				if (dbp_state == DBPSTATE_RUNNING) OnReset(voodoo_ogl_resetcontext, false);
 			}
 
 			static void Destroy(void)
 			{
 				if (!dbp_opengl_draw) return; // RetroArch can call destroy even when context is not inited
-				voodoo_ogl_reset();
-				myglDeleteFramebuffers(1, &fbo); fbo = 0;
-				myglDeleteTextures(1, &tex); tex = 0;
-				myglDeleteBuffers(1, &vbo); vbo = 0;
-				myglDeleteVertexArrays(1, &vao); vao = 0;
-				myglDeleteProgram(prog_dosboxbuffer); prog_dosboxbuffer = 0;
-				dbp_opengl_draw = NULL;
+				myglDeleteFramebuffers(1, &fbo);
+				myglDeleteTextures(1, &tex);
+				myglDeleteVertexArrays(1, &vao);
+				myglDeleteBuffers(1, &vbo);
+				myglDeleteProgram(prog_dosboxbuffer);
+				OnReset(voodoo_ogl_cleanup, true);
+			}
+
+			static void OnReset(void (*func_voodoo_ogl)(), bool context_destroyed)
+			{
+				const bool pauseThread = (dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
+				if (pauseThread) DBP_ThreadControl(TCM_PAUSE_FRAME);
+				func_voodoo_ogl();
+				if (pauseThread) DBP_ThreadControl(TCM_RESUME_FRAME);
+				if (context_destroyed) { prog_dosboxbuffer = vbo = vao = tex = fbo = lastw = lasth = 0; dbp_opengl_draw = NULL; }
 			}
 
 			static void Draw(const DBP_Buffer& buf)
@@ -4349,7 +4357,6 @@ unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_
 	myglDetachShader(prog, vert); myglDeleteShader(vert);
 	myglDetachShader(prog, frag); myglDeleteShader(frag);
 	myglGetProgramiv(prog, MYGL_LINK_STATUS, &linked);
-	GFX_ShowMsg("[DBP:GL] linked_prog: %d", linked);
 	if (!linked)
 	{
 		int info_len = 0;

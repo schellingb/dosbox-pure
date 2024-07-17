@@ -155,7 +155,7 @@ typedef UINT16 rgb15_t;
 /*-------------------------------------------------
     pal5bit - convert a 5-bit value to 8 bits
 -------------------------------------------------*/
-INLINE UINT8 pal5bit(UINT8 bits)
+static INLINE UINT8 pal5bit(UINT8 bits)
 {
 	bits &= 0x1f;
 	return (bits << 3) | (bits >> 2);
@@ -2958,12 +2958,12 @@ template <typename TVal> struct GrowArray
 {
 	Bit32u num, cap;
 	TVal* data;
-	inline GrowArray() { memset(this, 0, sizeof(*this)); }
-	inline ~GrowArray() { free(data); }
-	inline TVal& AddOne() { if ((++num) > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data[num - 1]; }
-	inline TVal* Add(UINT32 n) { num += n; while (num > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data + num - n; }
-	inline void Reset() { num = 0; }
-	inline void Free() { free(data); memset(this, 0, sizeof(*this)); }
+	INLINE GrowArray() { memset(this, 0, sizeof(*this)); }
+	INLINE ~GrowArray() { free(data); }
+	INLINE TVal& AddOne() { if ((++num) > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data[num - 1]; }
+	INLINE TVal* Add(UINT32 n) { num += n; while (num > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data + num - n; }
+	INLINE void Reset() { num = 0; }
+	INLINE void Free() { free(data); memset(this, 0, sizeof(*this)); }
 	INLINE TVal* begin() { return data; }
 	INLINE TVal* end() { return data + num; }
 };
@@ -3055,9 +3055,9 @@ struct ogl_cmdbuffer
 	UINT32 flushed_vertices = 0, flushed_commands = 0;
 	ogl_geometrycmd last_geometry;
 	ogl_clipping last_clipping, live_clipping;
-	inline ogl_cmdbuffer() { last_geometry.drawbuffer = 255; last_clipping.active = live_clipping.active = 0; }
+	INLINE ogl_cmdbuffer() { last_geometry.drawbuffer = 255; last_clipping.active = live_clipping.active = 0; }
 
-	inline void AddCommand(ogl_command& cmd, ogl_command::EType type)
+	INLINE void AddCommand(ogl_command& cmd, ogl_command::EType type)
 	{
 		cmd.type = type;
 		cmd.vertex_index = vertices.num;
@@ -3376,7 +3376,6 @@ struct voodoo_ogl_state
 		depthstenciltex = depthstenciltex_width = depthstenciltex_height = 0;
 		vogl_active = true;
 		Deactivate(); // make sure cmdbuf is still empty
-		vogl_active = false;
 	}
 
 	void VBlankFlush()
@@ -3509,8 +3508,9 @@ bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation 
 	return true;
 }
 
-void voodoo_ogl_reset() { if (vogl) vogl->Cleanup(); }
+void voodoo_ogl_cleanup() { if (vogl) vogl->Cleanup(); }
 void voodoo_ogl_contextlost() { if (vogl) vogl->ContextLost(); }
+void voodoo_ogl_resetcontext() { voodoo_ogl_contextlost(); if (v && v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate(); }
 
 enum : UINT32
 {
@@ -3599,7 +3599,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 	struct Local
 	{
-		INLINE static bool ProgEqual(ogl_program* programs_data, UINT32 test_idx, const ogl_effective& test_eff)
+		static INLINE bool ProgEqual(ogl_program* programs_data, UINT32 test_idx, const ogl_effective& test_eff)
 		{
 			return !memcmp(&programs_data[test_idx].eff, &test_eff, sizeof(test_eff));
 		}
@@ -4407,7 +4407,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	vogl->display_buffer = vogl->flushed_buffer;
 }
 
-INLINE void voodoo_ogl_texture_clear(UINT32 tmunum, UINT32 texbase1, UINT32 texbase2)
+static INLINE void voodoo_ogl_texture_clear(UINT32 tmunum, UINT32 texbase1, UINT32 texbase2)
 {
 	const UINT64 op = (((UINT64)(tmunum + 1) << 60) | ((UINT64)texbase1 << 30) | texbase2);
 	if (!vogl || vogl->last_texture_clear_op == op) return;
@@ -4421,7 +4421,7 @@ INLINE void voodoo_ogl_texture_clear(UINT32 tmunum, UINT32 texbase1, UINT32 texb
 			vogl->texbases.data[*it2].valid_data = false;
 }
 
-void voodoo_ogl_fastfill()
+static void voodoo_ogl_fastfill()
 {
 	ogl_command cmd;
 	switch (FBZMODE_DRAW_BUFFER(v->reg[fbzMode].u))
@@ -4446,7 +4446,7 @@ void voodoo_ogl_fastfill()
 	vogl->cmdbuf.AddCommand(cmd, ogl_command::FASTFILL);
 }
 
-void voodoo_ogl_draw_pixel(int x, int y, bool set_rgb, bool set_alpha, bool set_depth, bool use_blend, int r, int g, int b, int a, UINT16 d = 0, INT32 fogblend = 0)
+static void voodoo_ogl_draw_pixel(int x, int y, bool set_rgb, bool set_alpha, bool set_depth, bool use_blend, int r, int g, int b, int a, UINT16 d = 0, INT32 fogblend = 0)
 {
 	const voodoo_reg* reg = v->reg;
 	ogl_command cmd;
@@ -4488,7 +4488,7 @@ void voodoo_ogl_draw_pixel(int x, int y, bool set_rgb, bool set_alpha, bool set_
 	vd.fogblend = (float)fogblend / (float)0xff;
 }
 
-UINT32 voodoo_ogl_read_pixel(int x, int y)
+static UINT32 voodoo_ogl_read_pixel(int x, int y)
 {
 	const ogl_pixels* pixels; UINT32 off; const UINT8* rgba;
 	switch (LFBMODE_READ_BUFFER_SELECT(v->reg[lfbMode].u))
