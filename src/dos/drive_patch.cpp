@@ -635,7 +635,14 @@ bool patchDrive::FindFirst(char* dir_path, DOS_DTA & dta, bool fcb_findfirst)
 		impl->free_search_ids.pop_back();
 	}
 
-	if (s.index || DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
+	if (over_id != 0xFFFF)
+	{
+		char dta_name[DOS_NAMELENGTH_ASCII];Bit32u dta_size;Bit16u dta_date;Bit16u dta_time;Bit8u dta_attr;
+		dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
+		if ((dta_attr & DOS_ATTR_VOLUME) || (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') || !dir || !dir->entries.Get(dta_name))
+			return true;
+	}
+	if (DriveFindDriveVolume(this, dir_path, dta, fcb_findfirst)) return true;
 	return FindNext(dta);
 }
 
