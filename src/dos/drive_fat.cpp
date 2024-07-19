@@ -241,6 +241,11 @@ finalizeWrite:
 	myDrive->directoryBrowse(dirCluster, &tmpentry, dirIndex);
 	tmpentry.entrysize = filelength;
 	tmpentry.loFirstClust = (Bit16u)firstCluster;
+	//DBP: Added updating of modification time stamp
+	time_t curtime = ::time(NULL);
+	tm* t = localtime(&curtime);
+	tmpentry.modTime = (t ? DOS_PackTime((Bit16u)t->tm_hour,(Bit16u)t->tm_min,(Bit16u)t->tm_sec) : 0);
+	tmpentry.modDate = (t ? DOS_PackDate((Bit16u)(t->tm_year+1900),(Bit16u)(t->tm_mon+1),(Bit16u)t->tm_mday) : 0);
 	myDrive->directoryChange(dirCluster, &tmpentry, dirIndex);
 
 	*size =sizecount;
@@ -285,8 +290,22 @@ bool fatFile::Close() {
 	//DBP: As every modification of sectorBuffer always automatically calls writeSector already
 	//DBP: It would cause copy-on-write drives to always copy the source on file closing
 	//if (loadedSector) myDrive->writeSector(currentSector, sectorBuffer);
-
-	return false;
+	
+	//DBP: Added for date and time modification support
+	if (refCtr == 1)
+	{
+		if (newtime && OPEN_IS_WRITING(flags))
+		{
+			direntry tmpentry;
+			myDrive->directoryBrowse(dirCluster, &tmpentry, (int32_t)dirIndex);
+			tmpentry.modTime = time;
+			tmpentry.modDate = date;
+			myDrive->directoryChange(dirCluster, &tmpentry, dirIndex);
+			newtime = false;
+		}
+		open = false;
+	}
+	return true;
 }
 
 Bit16u fatFile::GetInformation(void) {
@@ -995,9 +1014,12 @@ bool fatDrive::FileCreate(DOS_File **file, char *name, Bit16u attributes) {
 	(*file)->flags=OPEN_READWRITE;
 	((fatFile *)(*file))->dirCluster = dirClust;
 	((fatFile *)(*file))->dirIndex = subEntry;
-	/* Maybe modTime and date should be used ? (crt matches findnext) */
-	((fatFile *)(*file))->time = fileEntry.crtTime;
-	((fatFile *)(*file))->date = fileEntry.crtDate;
+	//DBP: Switched to modTime and date
+	///* Maybe modTime and date should be used ? (crt matches findnext) */
+	//((fatFile *)(*file))->time = fileEntry.crtTime;
+	//((fatFile *)(*file))->date = fileEntry.crtDate;
+	((fatFile *)(*file))->time = fileEntry.modTime;
+	((fatFile *)(*file))->date = fileEntry.modDate;
 
 	dos.errorcode=save_errorcode;
 	return true;
@@ -1021,9 +1043,12 @@ bool fatDrive::FileOpen(DOS_File **file, char *name, Bit32u flags) {
 	(*file)->flags = flags;
 	((fatFile *)(*file))->dirCluster = dirClust;
 	((fatFile *)(*file))->dirIndex = subEntry;
-	/* Maybe modTime and date should be used ? (crt matches findnext) */
-	((fatFile *)(*file))->time = fileEntry.crtTime;
-	((fatFile *)(*file))->date = fileEntry.crtDate;
+	//DBP: Switched to modTime and date
+	///* Maybe modTime and date should be used ? (crt matches findnext) */
+	//((fatFile *)(*file))->time = fileEntry.crtTime;
+	//((fatFile *)(*file))->date = fileEntry.crtDate;
+	((fatFile *)(*file))->time = fileEntry.modTime;
+	((fatFile *)(*file))->date = fileEntry.modDate;
 	return true;
 }
 
