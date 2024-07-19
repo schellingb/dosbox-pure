@@ -31,6 +31,9 @@
 #include "support.h"
 #include "serialport.h"
 
+// DBP: Added exit check to support shutdown/restart
+extern bool DBP_IsShuttingDown();
+
 DOS_Block dos;
 DOS_InfoBlock dos_infoblock;
 
@@ -247,7 +250,7 @@ static Bitu DOS_21Handler(void) {
 			Bit8u read=0;Bit8u c;Bit16u n=1;
 			if (!free) break;
 			free--;
-			for(;;) {
+			for(;!DBP_IsShuttingDown();) { // DBP: Added exit check to support shutdown/restart
 				DOS_ReadFile(STDIN,&c,&n);
 				if (n == 0)				// End of file
 					E_Exit("DOS:0x0a:Redirected input reached EOF");
@@ -290,8 +293,7 @@ static Bitu DOS_21Handler(void) {
 			Bit8u handle=RealHandle(STDIN);
 			if (handle!=0xFF && Files[handle] && Files[handle]->IsName("CON")) {
 				Bit8u c;Bit16u n;
-				extern bool DBP_IsShuttingDown(); // DBP: Added exit check to support shutdown/restart
-				while (DOS_GetSTDINStatus() && !DBP_IsShuttingDown()) {
+				while (DOS_GetSTDINStatus() && !DBP_IsShuttingDown()) { // DBP: Added exit check to support shutdown/restart
 					n=1;	DOS_ReadFile(STDIN,&c,&n);
 				}
 			}
