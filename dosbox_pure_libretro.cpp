@@ -3266,17 +3266,15 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
 	if (!loadcfg && drive_c->FileExists("DOS.YML"))
 	{
-		DOS_Drive* drvarr[3] = { drive_c, };
-		if (drvarr[0]->GetShadows(drvarr[0], drvarr[2])) drvarr[0]->GetShadows(drvarr[0], drvarr[1]);
-		std::string ymlcontent;
-		for (DOS_Drive* drv : drvarr)
+		struct Local { static void LoadYML(DOS_Drive *drv, std::string& ymlcontent)
 		{
+			DOS_Drive *a, *b;
+			if (drv->GetShadows(a, b)) { LoadYML(a, ymlcontent); if (a != b) LoadYML(b, ymlcontent); return; }
 			DOS_File *df;
-			if (!drv || !drv->FileOpen(&df, (char*)"DOS.YML", OPEN_READ)) continue;
-			df->AddRef();
-			if (ymlcontent.length()) ymlcontent += '\n';
-			ReadAndClose(df, ymlcontent);
-		}
+			if (drv->FileOpen(&df, (char*)"DOS.YML", OPEN_READ)) { df->AddRef(); if (ymlcontent.length()) ymlcontent += '\n'; ReadAndClose(df, ymlcontent); }
+		}};
+		std::string ymlcontent;
+		Local::LoadYML(drive_c, ymlcontent);
 		if (ymlcontent.length()) return init_dosbox(firsttime, forcemenu, init_dosbox_load_dos_yml, &ymlcontent);
 	}
 
