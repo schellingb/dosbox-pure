@@ -2921,10 +2921,9 @@ static bool vogl_active;
 static const char* ogl_display_bind_attrs[] = { "a_position", "a_texcoord" };
 
 static const char* ogl_display_vertex_shader_src =
-	DBP_OPENGL_HEADER
-	"attribute vec3 a_position;"
-	"attribute vec2 a_texcoord;"
-	"varying vec2 v_texcoord;"
+	"in vec3 a_position;"
+	"in vec2 a_texcoord;"
+	"out vec2 v_texcoord;"
 	"void main()"
 	"{"
 		"v_texcoord = a_texcoord;"
@@ -2932,24 +2931,22 @@ static const char* ogl_display_vertex_shader_src =
 	"}";
 
 static const char* ogl_display_fragment_shader_src =
-	DBP_OPENGL_HEADER
 	"uniform vec3 clut_exp, clut_fac;"
 	"uniform sampler2D u_texture;"
-	"varying vec2 v_texcoord;"
+	"in vec2 v_texcoord;"
 	"void main()"
 	"{"
-		//"gl_FragColor = texture2D(u_texture, v_texcoord);"
-		"gl_FragColor = vec4(pow(texture2D(u_texture, v_texcoord).rgb, clut_exp) * clut_fac, 1.0);"
+		//"fragColor = texture(u_texture, v_texcoord);"
+		"fragColor = vec4(pow(texture(u_texture, v_texcoord).rgb, clut_exp) * clut_fac, 1.0);"
 	"}";
 
 static const char* ogl_drawdepth_fragment_shader_src = // encode 0.0 to 1.0 with 16 bits of accuracy
-	DBP_OPENGL_HEADER
 	"uniform sampler2D u_texture;"
-	"varying vec2 v_texcoord;"
+	"in vec2 v_texcoord;"
 	"void main()"
 	"{"
-		"float d = texture2D(u_texture, v_texcoord).r * 65535.0, m = mod(d, 256.0);"
-		"gl_FragColor = vec4((d - m) * 0.000015318627450980392156862745098039, m * 0.003921568627450980392156862745098, 0.0, 0.0);"
+		"float d = texture(u_texture, v_texcoord).r * 65535.0, m = mod(d, 256.0);"
+		"fragColor = vec4((d - m) * 0.000015318627450980392156862745098039, m * 0.003921568627450980392156862745098, 0.0, 0.0);"
 	"}";
 
 enum ogl_readback_mode : UINT8 { OGL_READBACK_MODE_COLOR0, OGL_READBACK_MODE_COLOR1, OGL_READBACK_MODE_COLOR2, OGL_READBACK_MODE_DEPTH, _OGL_READBACK_MODE_COUNT };
@@ -3652,22 +3649,20 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			ogl_program* prog = &vogl->programs.AddOne();
 			prog->eff = eff;
 
-			int vshadernum = 0, fshadernum = 0;
+			int vshadernum = 1, fshadernum = 1;
 			const char *vshadersrcs[16], *fshadersrcs[72]; // more than max possible
-
-			addshdr(v, DBP_OPENGL_HEADER);
-			addshdr(f, DBP_OPENGL_HEADER);
+			vshadersrcs[0] = fshadersrcs[0] = NULL; // leave space for header
 
 			addshdr(v,
-				"attribute vec3 a_position;" nl
-				"attribute vec4 a_color;" nl
-				"attribute vec3 a_foglodblend;" nl
-				"attribute vec3 a_texcoord0;" nl
-				"attribute vec3 a_texcoord1;");
-			condshdr(v, usevcolor, "varying vec4 v_color;");
-			condshdr(v, uset[0], "varying vec3 v_texcoord0;");
-			condshdr(v, uset[1], "varying vec3 v_texcoord1;");
-			condshdr(v, usefoglodblend, "varying vec3 v_foglodblend;");
+				"in vec3 a_position;" nl
+				"in vec4 a_color;" nl
+				"in vec3 a_foglodblend;" nl
+				"in vec3 a_texcoord0;" nl
+				"in vec3 a_texcoord1;");
+			condshdr(v, usevcolor, "out vec4 v_color;");
+			condshdr(v, uset[0], "out vec3 v_texcoord0;");
+			condshdr(v, uset[1], "out vec3 v_texcoord1;");
+			condshdr(v, usefoglodblend, "out vec3 v_foglodblend;");
 			addshdr(v,
 				"uniform vec3 view;" nl
 				"void main()" nl
@@ -3687,10 +3682,10 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 			//---------------------------------------------------------------------------------------------
 
-			condshdr(f, usevcolor, "varying vec4 v_color;");
-			condshdr(f, uset[0], "varying vec3 v_texcoord0;");
-			condshdr(f, uset[1], "varying vec3 v_texcoord1;");
-			condshdr(f, usefoglodblend, "varying vec3 v_foglodblend;");
+			condshdr(f, usevcolor, "in vec4 v_color;");
+			condshdr(f, uset[0], "in vec3 v_texcoord0;");
+			condshdr(f, uset[1], "in vec3 v_texcoord1;");
+			condshdr(f, usefoglodblend, "in vec3 v_foglodblend;");
 			condshdr(f, uset[0], "uniform sampler2D tex0;");
 			condshdr(f, uset[1], "uniform sampler2D tex1;");
 			addshdr(f,
@@ -3702,7 +3697,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				"uniform vec4 fogcolor_alpharef;" nl
 				"void main()" nl
 				"{" nl
-					//"gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); return;" nl // debug draw red
+					//"fragColor = vec4(1.0, 0.0, 0.0, 1.0); return;" nl // debug draw red
 					"vec4 texel  = vec4(1.0);" nl
 					"vec4 clocal = vec4(1.0);" nl
 					"vec4 cother = vec4(0.0);" nl
@@ -3710,7 +3705,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 			if (uset[1])
 			{
-				addshdr(f, "clocal = texture2D(tex1, v_texcoord1.xy / v_texcoord1.z).bgra;");
+				addshdr(f, "clocal = texture(tex1, v_texcoord1.xy / v_texcoord1.z).bgra;");
 				//addshdr(f, "clocal = vec4(v_texcoord1.x/v_texcoord1.z, v_texcoord1.y/v_texcoord1.z, 0.0f, 1.0f);");
 				//addshdr(f, "clocal = vec4(0.5f, 0.5f, 0.5f, 0.5f);");
 				Local::MakeTexShader(fshadernum, fshadersrcs, 1, eff.tex_mode[1]);
@@ -3719,12 +3714,12 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 			if (uset[0])
 			{
-				addshdr(f, "clocal = texture2D(tex0, v_texcoord0.xy/v_texcoord0.z).bgra;");
+				addshdr(f, "clocal = texture(tex0, v_texcoord0.xy/v_texcoord0.z).bgra;");
 				//addshdr(f, "clocal = vec4(v_texcoord0.x/v_texcoord0.z, v_texcoord0.y/v_texcoord0.z, 1.0f, 1.0f);");
 				//addshdr(f, "clocal = vec4(1.0f, 0.0f, 0.0f, 1.0f);");
 				Local::MakeTexShader(fshadernum, fshadersrcs, 0, eff.tex_mode[0]);
 				addshdr(f, "texel = tt;");
-				//addshdr(f, "gl_FragColor = texel; return;");
+				//addshdr(f, "fragColor = texel; return;");
 			}
 
 			// color path
@@ -3867,9 +3862,9 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				selectshdr(f, FOGMODE_FOG_MULT(FOGMODE), "tt.rgb = ff;", "tt.rgb += ff;");
 			}
 
-			//addshdr(f, "gl_FragColor = pow(tt, vec4(1.0/2.2));" nl //	"}");
-			//addshdr(f, "gl_FragColor = tt * 2.0;" nl "}");
-			addshdr(f, "gl_FragColor = tt;" nl
+			//addshdr(f, "fragColor = pow(tt, vec4(1.0/2.2));" nl //	"}");
+			//addshdr(f, "fragColor = tt * 2.0;" nl "}");
+			addshdr(f, "fragColor = tt;" nl
 				"}");
 
 			DBP_ASSERT(vshadernum <= ARRAY_LENGTH(vshadersrcs));

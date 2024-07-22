@@ -3611,10 +3611,9 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				//GFX_ShowMsg("[DBP:GL] GL Point Size Range: %f ~ %f", pointsizes[0], pointsizes[1]);
 
 				static const char* vertex_shader_src =
-					DBP_OPENGL_HEADER
-					"attribute vec2 a_position;"
-					"attribute vec2 a_texcoord;"
-					"varying vec2 v_texcoord;"
+					"in vec2 a_position;"
+					"in vec2 a_texcoord;"
+					"out vec2 v_texcoord;"
 					"void main()"
 					"{"
 						"v_texcoord = a_texcoord;"
@@ -3622,12 +3621,11 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 					"}";
 
 				static const char* fragment_shader_src =
-					DBP_OPENGL_HEADER
 					"uniform sampler2D u_texture;"
-					"varying vec2 v_texcoord;"
+					"in vec2 v_texcoord;"
 					"void main()"
 					"{"
-						"gl_FragColor = texture2D(u_texture, v_texcoord).bgra;"
+						"fragColor = texture(u_texture, v_texcoord).bgra;"
 					"}";
 
 				static const char* bind_attrs[] = { "a_position", "a_texcoord" };
@@ -4344,6 +4342,27 @@ static unsigned CreateShaderOfType(int type, int count, const char** shader_src)
 
 unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs)
 {
+	const char *tmpvsrcs[2], *tmpfsrcs[2];
+	if (vertex_shader_srcs_count   == 1) { tmpvsrcs[0] = NULL; tmpvsrcs[1] = *vertex_shader_srcs;   vertex_shader_srcs_count   = 2; vertex_shader_srcs   = tmpvsrcs; }
+	if (fragment_shader_srcs_count == 1) { tmpfsrcs[0] = NULL; tmpfsrcs[1] = *fragment_shader_srcs; fragment_shader_srcs_count = 2; fragment_shader_srcs = tmpfsrcs; }
+	DBP_ASSERT(vertex_shader_srcs[0] == NULL && fragment_shader_srcs[0] == NULL); // need slot for header
+
+	if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES2 || dbp_hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES3 || dbp_hw_render.context_type == RETRO_HW_CONTEXT_OPENGLES_VERSION)
+	{
+		vertex_shader_srcs[0] = "#define in attribute\n#define out varying\nprecision highp float;";
+		fragment_shader_srcs[0] = "#define in varying\n#define texture texture2D\n#define fragColor gl_FragColor\nprecision highp float;";
+	}
+	else if (((dbp_hw_render.version_major << 16) | dbp_hw_render.version_minor) < 0x30001)
+	{
+		vertex_shader_srcs[0] = "#define in attribute\n#define out varying\n";
+		fragment_shader_srcs[0] = "#define in varying\n#define texture texture2D\n#define fragColor gl_FragColor\n";
+	}
+	else
+	{
+		vertex_shader_srcs[0] = "#version 140\n";
+		fragment_shader_srcs[0] = "#version 140\nout vec4 fragColor;";
+	}
+
 	unsigned vert = CreateShaderOfType(MYGL_VERTEX_SHADER, vertex_shader_srcs_count, vertex_shader_srcs);
 	unsigned frag = CreateShaderOfType(MYGL_FRAGMENT_SHADER, fragment_shader_srcs_count, fragment_shader_srcs);
 	unsigned prog = myglCreateProgram();
