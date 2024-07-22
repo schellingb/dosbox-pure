@@ -666,7 +666,7 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			// dynamically filled in retro_init
 		},
-		"none"
+		"disabled"
 	},
 	{
 		"dosbox_pure_sblaster_type",

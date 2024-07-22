@@ -546,13 +546,13 @@ void Section_prop::Add_double(char const * const _propname, double _value) {
 }*/
 
 void Property::Set_values(const char * const *in) {
+	//DBP: Performance improvement
 	Value::Etype type = default_value.type;
-	int i = 0;
-	while (in[i]) {
-		Value val(in[i],type);
-		suggested_values.push_back(val);
-		i++;
-	}
+	size_t oldsize = suggested_values.size(), n = 0;
+	while (in[n]) n++;
+	suggested_values.resize(oldsize + n);
+	for (size_t i = 0; in[i]; i++)
+		suggested_values[oldsize + i] = Value(in[i],type);
 }
 
 Prop_int* Section_prop::Add_int(string const& _propname, Property::Changeable::Value when, int _value) {

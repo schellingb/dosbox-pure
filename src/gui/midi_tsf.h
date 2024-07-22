@@ -53,7 +53,7 @@ struct MidiHandler_tsf : public MidiHandler
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len > 1 && *conf == '^') // a path to a ZIP on the host file system
+		if (conf[0] == '^' && conf[1] == 'T') // a path to a ZIP on the host file system
 		{
 			FILE* zip_file_h = fopen_wrap(conf + 1, "rb");
 			if (!zip_file_h) return false;

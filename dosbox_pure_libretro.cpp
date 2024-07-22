@@ -297,7 +297,7 @@ void IDE_RefreshCDROMs();
 void IDE_SetupControllers(char force_cd_drive_letter = 0);
 void NET_SetupEthernet();
 bool MIDI_TSF_SwitchSF(const char*);
-bool MIDI_Retro_HasOutputIssue();
+const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg);
 
 static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
 {
@@ -2842,10 +2842,11 @@ static bool check_variables(bool is_startup = false)
 	}
 
 	std::string soundfontpath;
-	if (!strcmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
-	else if (*midi && strcmp(midi, "frontend") && strcmp(midi, "scan"))
+	if (!*midi || !strcmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
+	else if (strcmp(midi, "frontend") && strcmp(midi, "scan"))
 		midi = (soundfontpath = DBP_GetSaveFile(SFT_SYSTEMDIR)).append(midi).c_str();
 	Variables::DosBoxSet("midi", "midiconfig", midi);
+	Variables::DosBoxSet("midi", "mpu401", (*midi ? "intelligent" : "none"));
 
 	Variables::DosBoxSet("sblaster", "sbtype", retro_get_variable("dosbox_pure_sblaster_type", "sb16"));
 	Variables::DosBoxSet("sblaster", "oplmode", retro_get_variable("dosbox_pure_sblaster_adlib_mode", "auto"));
@@ -2932,7 +2933,7 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 				else if (*mapFrom == '^')
 				{
 					const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
-					((val += '^').append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
+					(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
 					Property* prop = control->GetSection("midi")->GetProp("midiconfig");
 					prop->SetValue(val);
 					prop->OnChangedByConfigProgram();
@@ -3937,8 +3938,8 @@ void retro_run(void)
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME);
 		DBP_ThreadControl(TCM_FINISH_FRAME);
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && dbp_biosreboot));
-		if (MIDI_Retro_HasOutputIssue())
-			retro_notify(0, RETRO_LOG_WARN, "The frontend MIDI output is not set up correctly");
+		const char* midiarg, *midierr = DBP_MIDI_StartupError(control->GetSection("midi"), midiarg);
+		if (midierr) retro_notify(0, RETRO_LOG_WARN, midierr, midiarg);
 		if (dbp_state == DBPSTATE_FIRST_FRAME)
 			dbp_state = DBPSTATE_RUNNING;
 		if (dbp_latency == DBP_LATENCY_VARIABLE)

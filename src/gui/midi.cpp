@@ -68,6 +68,7 @@ MidiHandler::MidiHandler(){
 	handler_list = this;
 };
 
+MidiHandler Midi_none;
 
 #ifdef C_DBP_SUPPORT_MIDI_TSF
 #include "midi_tsf.h"
@@ -83,10 +84,6 @@ MidiHandler::MidiHandler(){
 
 #ifdef C_DBP_SUPPORT_MIDI_ADLIB
 #include "midi_opl.h"
-#endif
-
-#if !defined(C_DBP_SUPPORT_MIDI_TSF) && !defined(C_DBP_SUPPORT_MIDI_RETRO)
-MidiHandler Midi_none;
 #endif
 
 #ifdef C_DBP_NATIVE_MIDI
@@ -370,4 +367,19 @@ void DBP_MIDI_ReplayCache()
 		for (Bit8u ctrl = 0; ctrl != (sizeof(midi.cache[0].control)/sizeof(midi.cache[0].control[0])); ctrl++)
 			Local::PlayControl(ch, ctrl, midi.cache[ch].control[ctrl]);
 	}
+}
+
+const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg)
+{
+	if (midi.handler == &Midi_retro && (!Midi_retro.midi_interface.output_enabled || !Midi_retro.midi_interface.output_enabled()))
+		{ arg = NULL; return "The frontend MIDI output is not set up correctly"; }
+	if (midi.handler == &Midi_none)
+	{
+		const char* conf = midisec->GetProp("midiconfig")->GetValue();
+		if (conf[0] == '^' && conf[1] == 'T')
+			{ arg = conf + 2; return "SF2 sound font file not found in %s"; }
+		if (conf[0] == '^' && conf[1] == 'M')
+			{ arg = conf + 2; return "MT-32 ROM pair not found in %s"; }
+	}
+	return NULL;
 }

@@ -112,8 +112,3 @@ struct MidiHandler_retro : public MidiHandler
 };
 
 static MidiHandler_retro Midi_retro;
-
-bool MIDI_Retro_HasOutputIssue()
-{
-	return (midi.handler == &Midi_retro && (!Midi_retro.midi_interface.output_enabled || !Midi_retro.midi_interface.output_enabled()));
-}
