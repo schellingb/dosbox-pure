@@ -151,7 +151,14 @@ MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCEXT)
 #define MYGL_MAKEFUNCPTR(REQUIRE, RET, NAME, ARGS) RET (RETRO_CALLCONV* mygl##NAME)ARGS;
 #define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t&)mygl##NAME , "gl" #NAME, REQUIRE },
 
-#if defined(__ARM_NEON__) || defined(IOS) || defined(ANDROID) || defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)  || defined(_M_ARM)
+#if defined(__APPLE__) || defined(__MACH__)
+#include "TargetConditionals.h"
+#if (!defined(TARGET_OS_IPHONE) || !TARGET_OS_IPHONE) && (!defined(TARGET_OS_SIMULATOR) || !TARGET_OS_SIMULATOR)
+#define DBP_IS_MAC_OS_DESKTOP
+#endif
+#endif
+
+#if (defined(__ARM_NEON__) || defined(IOS) || defined(ANDROID) || defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)  || defined(_M_ARM)) && !defined(DBP_IS_MAC_OS_DESKTOP)
 #define DBP_OPENGL_HEADER "precision highp float;"
 #else
 #define DBP_OPENGL_HEADER "#version 110\n"
