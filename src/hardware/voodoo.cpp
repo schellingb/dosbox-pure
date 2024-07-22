@@ -2921,7 +2921,7 @@ static bool vogl_active;
 static const char* ogl_display_bind_attrs[] = { "a_position", "a_texcoord" };
 
 static const char* ogl_display_vertex_shader_src =
-	DBP_OPENGL_HIGH_PRECISION
+	DBP_OPENGL_HEADER
 	"attribute vec3 a_position;"
 	"attribute vec2 a_texcoord;"
 	"varying vec2 v_texcoord;"
@@ -2932,7 +2932,7 @@ static const char* ogl_display_vertex_shader_src =
 	"}";
 
 static const char* ogl_display_fragment_shader_src =
-	DBP_OPENGL_HIGH_PRECISION
+	DBP_OPENGL_HEADER
 	"uniform vec3 clut_exp, clut_fac;"
 	"uniform sampler2D u_texture;"
 	"varying vec2 v_texcoord;"
@@ -2943,7 +2943,7 @@ static const char* ogl_display_fragment_shader_src =
 	"}";
 
 static const char* ogl_drawdepth_fragment_shader_src = // encode 0.0 to 1.0 with 16 bits of accuracy
-	DBP_OPENGL_HIGH_PRECISION
+	DBP_OPENGL_HEADER
 	"uniform sampler2D u_texture;"
 	"varying vec2 v_texcoord;"
 	"void main()"
@@ -3655,10 +3655,8 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			int vshadernum = 0, fshadernum = 0;
 			const char *vshadersrcs[16], *fshadersrcs[72]; // more than max possible
 
-			#ifdef DBP_OPENGL_USE_PRECISION_SPECIFIER
-			addshdr(v, DBP_OPENGL_HIGH_PRECISION);
-			addshdr(f, DBP_OPENGL_HIGH_PRECISION);
-			#endif
+			addshdr(v, DBP_OPENGL_HEADER);
+			addshdr(f, DBP_OPENGL_HEADER);
 
 			addshdr(v,
 				"attribute vec3 a_position;" nl

@@ -152,10 +152,9 @@ MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCEXT)
 #define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t&)mygl##NAME , "gl" #NAME, REQUIRE },
 
 #if defined(__ARM_NEON__) || defined(IOS) || defined(ANDROID) || defined(__aarch64__) || defined(_M_ARM64) || defined(__arm__)  || defined(_M_ARM)
-#define DBP_OPENGL_USE_PRECISION_SPECIFIER
-#define DBP_OPENGL_HIGH_PRECISION "precision highp float;"
+#define DBP_OPENGL_HEADER "precision highp float;"
 #else
-#define DBP_OPENGL_HIGH_PRECISION ""
+#define DBP_OPENGL_HEADER "#version 110\n"
 #endif
 
 unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs);

@@ -3611,7 +3611,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				//GFX_ShowMsg("[DBP:GL] GL Point Size Range: %f ~ %f", pointsizes[0], pointsizes[1]);
 
 				static const char* vertex_shader_src =
-					DBP_OPENGL_HIGH_PRECISION
+					DBP_OPENGL_HEADER
 					"attribute vec2 a_position;"
 					"attribute vec2 a_texcoord;"
 					"varying vec2 v_texcoord;"
@@ -3622,7 +3622,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 					"}";
 
 				static const char* fragment_shader_src =
-					DBP_OPENGL_HIGH_PRECISION
+					DBP_OPENGL_HEADER
 					"uniform sampler2D u_texture;"
 					"varying vec2 v_texcoord;"
 					"void main()"
