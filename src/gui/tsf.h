@@ -963,7 +963,6 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 
 	// Trim the sample buffer down then return success (unless out of memory)
 	if (!(*pFloatBuffer = (float*)TSF_REALLOC(res, resNum * sizeof(float)))) *pFloatBuffer = res;
-	*pFloatBuffer = res;
 	*pSmplCount = resNum;
 	return (res ? 1 : 0);
 }
