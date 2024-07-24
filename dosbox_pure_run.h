@@ -311,14 +311,17 @@ struct DBP_Run
 	static struct Autoboot { bool have, use; int skip, hash; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr; } autoinput;
 
-	static void Run(EMode mode, int info, std::string& str, bool write_auto_boot = false)
+	static void Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
 		startup.mode = mode;
 		startup.info = info;
 		startup.str.swap(str); // remember to set cursor again and for rebooting a different IT_RUN
 
-		if (write_auto_boot)
+		if (from_osd)
+		{
 			WriteAutoBoot();
+			autoinput.str.clear();
+		}
 
 		char mchar;
 		if (dbp_game_running || (mode == RUN_BOOTIMG && info && info != (mchar = GetDosBoxMachineChar())))
@@ -431,7 +434,6 @@ struct DBP_Run
 	{
 		if (autoboot.have && !autoboot.use)
 		{
-			autoinput.str.clear();
 			autoboot.have = false;
 			Drives['C'-'A']->FileUnlink((char*)"AUTOBOOT.DBP");
 		}
