@@ -3000,7 +3000,11 @@ struct ogl_effective
 	UINT32 fbz_mode, color_path, alpha_mode, fog_mode, tex_mode[2];
 };
 
-struct ogl_cmdbase { UINT8 drawbuffer; };
+struct ogl_cmdbase
+{
+	enum EType : UINT16 { TRIANGLE, PIXEL_RAW, PIXEL_BLENDED, _LAST_GEOMETRY, FASTFILL, CLIPPING } type;
+	UINT16 drawbuffer;
+};
 
 struct ogl_geometrycmd : ogl_cmdbase
 {
@@ -3034,7 +3038,6 @@ struct ogl_fastfillcmd : ogl_cmdbase
 
 struct ogl_command
 {
-	enum EType : UINT8 { TRIANGLE, POINT, _LAST_GEOMETRY, FASTFILL, CLIPPING } type;
 	UINT32 vertex_index; // keep here so we can use memcmp on geometry
 	union
 	{
@@ -3054,12 +3057,11 @@ struct ogl_cmdbuffer
 	ogl_clipping last_clipping, live_clipping;
 	INLINE ogl_cmdbuffer() { last_geometry.drawbuffer = 255; last_clipping.active = live_clipping.active = 0; }
 
-	INLINE void AddCommand(ogl_command& cmd, ogl_command::EType type)
+	INLINE void AddCommand(ogl_command& cmd)
 	{
-		cmd.type = type;
 		cmd.vertex_index = vertices.num;
 		commands.AddOne() = cmd;
-		if (type < ogl_command::_LAST_GEOMETRY) last_geometry = cmd.geometry;
+		if (cmd.base.type < ogl_cmdbase::_LAST_GEOMETRY) last_geometry = cmd.geometry;
 		else last_geometry.drawbuffer = 255;
 	}
 
@@ -3152,7 +3154,7 @@ struct ogl_drawbuffer
 	unsigned fbo = 0, colortex = 0;
 	ogl_pixels color;
 
-	void SetSize(UINT8 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
+	void SetSize(UINT16 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
 	{
 		if (!fbo)
 		{
@@ -4050,7 +4052,8 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
 	if (vogl->scale != 1.0f) myglPointSize(vogl->scale);
 
-	UINT8 last_drawbuffer = 255, last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
+	UINT16 last_drawbuffer = 255;
+	UINT8 last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
 	UINT32 last_blend_mode = 0xFFFFFFFF;
 	ogl_program* prog = NULL;
 	float view[3];
@@ -4077,7 +4080,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			myglBindFramebuffer(MYGL_FRAMEBUFFER, drawbuffer.fbo); GLERRORASSERT
 		}
 
-		if (cmd.type == ogl_command::FASTFILL)
+		if (cmd.base.type == ogl_cmdbase::FASTFILL)
 		{
 			VOGL_STAT_ADD(stat_num_fastfill, 1);
 			VOGL_STAT_ADD(stat_num_fastfill_color, FBZMODE_RGB_BUFFER_MASK(cmd.fastfill.fbz_mode));
@@ -4120,7 +4123,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 			if (clipchange) Local::ApplyClipping(vogl->cmdbuf.live_clipping);
 		}
-		else if (cmd.type == ogl_command::CLIPPING)
+		else if (cmd.base.type == ogl_cmdbase::CLIPPING)
 		{
 			Local::ApplyClipping(cmd.clipping.clip);
 			vogl->cmdbuf.live_clipping = cmd.clipping.clip;
@@ -4129,7 +4132,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		{
 			UINT32 idx = cmd.vertex_index, idxNext = (c != cLast ? vogl->cmdbuf.commands.data[c+1].vertex_index : flush_vertices);
 			DBP_ASSERT(idx < idxNext);
-			if (cmd.type == ogl_command::POINT) { VOGL_STAT_ADD(stat_num_pixels, idxNext - idx); } else { VOGL_STAT_ADD(stat_num_triangles, (idxNext - idx) / 3); }
+			if (cmd.base.type != ogl_cmdbase::TRIANGLE) { VOGL_STAT_ADD(stat_num_pixels, idxNext - idx); } else { VOGL_STAT_ADD(stat_num_triangles, (idxNext - idx) / 3); }
 
 			const UINT32 FBZMODE = cmd.geometry.eff.fbz_mode;
 			const UINT32 ALPHAMODE = cmd.geometry.eff.alpha_mode;
@@ -4149,7 +4152,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				// 4. myglClear(MYGL_STENCIL_BUFFER_BIT);
 				// 5. myglStencilFunc(MYGL_ALWAYS, 1, 1);
 				// 6. myglStencilOp(MYGL_KEEP, MYGL_KEEP, MYGL_REPLACE);
-				// 7. myglDrawArrays((cmd.type == ogl_command::POINT ? MYGL_POINTS : MYGL_TRIANGLES), idx, idxNext - idx);
+				// 7. myglDrawArrays((cmd.base.type != ogl_cmdbase::TRIANGLE ? MYGL_POINTS : MYGL_TRIANGLES), idx, idxNext - idx);
 				// 8. After rendering normally below, do if (use_stencil_op) myglDisable(MYGL_STENCIL_TEST);
 				#endif
 			}
@@ -4285,15 +4288,15 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				last_blend_mode = blend_mode.u;
 			}
 
-			if (cmd.type == ogl_command::POINT)
+			if (cmd.base.type == ogl_cmdbase::TRIANGLE)
+			{
+				myglDrawArrays(MYGL_TRIANGLES, idx, idxNext - idx); GLERRORASSERT
+			}
+			else
 			{
 				if (vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
 				myglDrawArrays(MYGL_POINTS, idx, idxNext - idx); GLERRORASSERT
 				if (vogl->cmdbuf.live_clipping.active) { myglEnable(MYGL_SCISSOR_TEST); GLERRORASSERT }
-			}
-			else
-			{
-				myglDrawArrays(MYGL_TRIANGLES, idx, idxNext - idx); GLERRORASSERT
 			}
 
 			#if 0
@@ -4370,7 +4373,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			{
 				// Mark all textures used by commands already queued but not yet flushed as having been accessed this frame
 				for (const ogl_command& cmd : vogl->cmdbuf.commands)
-					if (cmd.type == ogl_command::TRIANGLE)
+					if (cmd.base.type == ogl_cmdbase::TRIANGLE)
 						for (int t = 1; t >= 0; t--)
 							if (cmd.geometry.eff.tex_mode[t] != VOODOO_OGL_TEXMODE_DISABLED)
 							{
@@ -4417,6 +4420,7 @@ static INLINE void voodoo_ogl_texture_clear(UINT32 tmunum, UINT32 texbase1, UINT
 static void voodoo_ogl_fastfill()
 {
 	ogl_command cmd;
+	cmd.fastfill.type = ogl_cmdbase::FASTFILL;
 	switch (FBZMODE_DRAW_BUFFER(v->reg[fbzMode].u))
 	{
 		case 0: cmd.fastfill.drawbuffer = v->fbi.frontbuf; break; /* front buffer */
@@ -4436,28 +4440,63 @@ static void voodoo_ogl_fastfill()
 	cmd.fastfill.zacolor = v->reg[zaColor].u;
 	cmd.fastfill.auxoffs = v->fbi.auxoffs;
 
-	vogl->cmdbuf.AddCommand(cmd, ogl_command::FASTFILL);
+	vogl->cmdbuf.AddCommand(cmd);
 }
 
-static void voodoo_ogl_draw_pixel(int x, int y, bool set_rgb, bool set_alpha, bool set_depth, bool use_blend, int r, int g, int b, int a, UINT16 d = 0, INT32 fogblend = 0)
+static INLINE void voodoo_ogl_draw_pixel_raw(UINT8 drawbuffer, int x, int y, bool set_rgb, bool set_alpha, bool set_depth, float r, float g, float b, float a)
+{
+	ogl_command cmd;
+	cmd.geometry.eff.fbz_mode = 0;
+	if (set_rgb)   cmd.geometry.eff.fbz_mode |= FBZMODE_RGB_BUFFER_MASK_BIT;
+	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
+	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
+	DBP_ASSERT((set_rgb || set_alpha || set_depth) && ((int)set_alpha + (int)set_depth) < 2); // both together aren't supported
+
+	const ogl_geometrycmd& last_geometry = vogl->cmdbuf.last_geometry;
+
+	if ((last_geometry.type != ogl_cmdbase::PIXEL_RAW) | (last_geometry.drawbuffer != drawbuffer) | (last_geometry.eff.fbz_mode != cmd.geometry.eff.fbz_mode))
+	{
+		cmd.geometry.type = ogl_cmdbase::PIXEL_RAW;
+		cmd.geometry.drawbuffer = drawbuffer;
+		cmd.geometry.eff.color_path = 0;
+		cmd.geometry.eff.alpha_mode = 0;
+		cmd.geometry.eff.fog_mode = 0;
+		cmd.geometry.uni.col0.u = 0;
+		cmd.geometry.uni.col1.u = 0;
+		cmd.geometry.uni.chromakey.u = 0;
+		//cmd.geometry.uni.chromarange.u = 0;
+		cmd.geometry.uni.fogcolor.u = 0;
+		//cmd.geometry.uni.zacolor = 0;
+		cmd.geometry.eff.tex_mode[0] = cmd.geometry.eff.tex_mode[1] = VOODOO_OGL_TEXMODE_DISABLED;
+		cmd.geometry.textureidx[0] = cmd.geometry.textureidx[1] = 0;
+		vogl->cmdbuf.AddCommand(cmd);
+	}
+
+	ogl_vertex& vd = *vogl->cmdbuf.vertices.Add(1);
+	vd.x = (float)x + 0.5f;
+	vd.y = (float)y - 0.5f;
+	vd.d = 0;
+	vd.r = r;
+	vd.g = g;
+	vd.b = b;
+	vd.a = a;
+	vd.fogblend = 0;
+}
+
+static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y, bool set_rgb, bool set_alpha, bool set_depth, float r, float g, float b, float a, float d, float fogblend)
 {
 	const voodoo_reg* reg = v->reg;
 	ogl_command cmd;
-	switch (LFBMODE_WRITE_BUFFER_SELECT(reg[lfbMode].u))
-	{
-		case 0: cmd.geometry.drawbuffer = v->fbi.frontbuf; break; /* front buffer */
-		case 1: cmd.geometry.drawbuffer = v->fbi.backbuf; break; /* back buffer */
-		default: return; /* reserved */
-	}
-
+	cmd.geometry.type = ogl_cmdbase::PIXEL_BLENDED;
+	cmd.geometry.drawbuffer = drawbuffer;
 	cmd.geometry.eff.fbz_mode = 0;
 	if (set_rgb)   cmd.geometry.eff.fbz_mode |= FBZMODE_RGB_BUFFER_MASK_BIT;
 	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
 	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
 	DBP_ASSERT((set_rgb || set_alpha || set_depth) && ((int)set_alpha + (int)set_depth) < 2); // both together aren't supported
 	cmd.geometry.eff.color_path = 0;
-	cmd.geometry.eff.alpha_mode = (use_blend ? (reg[alphaMode].u & VOODOO_OGL_ALPHAMODE_USEDBITS) : 0);
-	cmd.geometry.eff.fog_mode = ((use_blend && FOGMODE_ENABLE_FOG(reg[fogMode].u)) ? (reg[fogMode].u & VOODOO_OGL_FOGMODE_USEDBITS) : 0);
+	cmd.geometry.eff.alpha_mode = (reg[alphaMode].u & VOODOO_OGL_ALPHAMODE_USEDBITS);
+	cmd.geometry.eff.fog_mode = (FOGMODE_ENABLE_FOG(reg[fogMode].u) ? (reg[fogMode].u & VOODOO_OGL_FOGMODE_USEDBITS) : 0);
 	cmd.geometry.uni.col0.u = 0;
 	cmd.geometry.uni.col1.u = 0;
 	cmd.geometry.uni.chromakey.u = 0;
@@ -4468,17 +4507,17 @@ static void voodoo_ogl_draw_pixel(int x, int y, bool set_rgb, bool set_alpha, bo
 	cmd.geometry.textureidx[0] = cmd.geometry.textureidx[1] = 0;
 
 	if (memcmp(&cmd.geometry, &vogl->cmdbuf.last_geometry, sizeof(cmd.geometry)))
-		vogl->cmdbuf.AddCommand(cmd, ogl_command::POINT);
+		vogl->cmdbuf.AddCommand(cmd);
 
 	ogl_vertex& vd = *vogl->cmdbuf.vertices.Add(1);
 	vd.x = (float)x + 0.5f;
 	vd.y = (float)y - 0.5f;
-	vd.d = (float)d / (float)0xffff;
-	vd.r = (float)r / (float)0xff;
-	vd.g = (float)g / (float)0xff;
-	vd.b = (float)b / (float)0xff;
-	vd.a = (float)a / (float)0xff;
-	vd.fogblend = (float)fogblend / (float)0xff;
+	vd.d = d;
+	vd.r = r;
+	vd.g = g;
+	vd.b = b;
+	vd.a = a;
+	vd.fogblend = fogblend;
 }
 
 static UINT32 voodoo_ogl_read_pixel(int x, int y)
@@ -4550,12 +4589,14 @@ static void voodoo_ogl_draw_triangle()
 		}
 		if (memcmp(&cmd.clipping.clip, &vogl->cmdbuf.last_clipping, sizeof(cmd.clipping.clip)))
 		{
-			vogl->cmdbuf.AddCommand(cmd, ogl_command::CLIPPING);
+			cmd.base.type = ogl_cmdbase::CLIPPING;
+			vogl->cmdbuf.AddCommand(cmd);
 			vogl->cmdbuf.last_clipping = cmd.clipping.clip;
 		}
 	}
 	skip_clip:
 
+	cmd.base.type = ogl_cmdbase::TRIANGLE;
 	cmd.geometry.eff.fbz_mode = (FBZMODE & VOODOO_OGL_FBZMODE_USEDBITS);
 	cmd.geometry.eff.color_path = (FBZCOLORPATH & VOODOO_OGL_FBZCOLORPATH_USEDBITS);
 	cmd.geometry.eff.alpha_mode = (ALPHAMODE & VOODOO_OGL_ALPHAMODE_USEDBITS);
@@ -4699,7 +4740,7 @@ static void voodoo_ogl_draw_triangle()
 		}
 
 	if (memcmp(&cmd.geometry, &vogl->cmdbuf.last_geometry, sizeof(cmd.geometry)))
-		vogl->cmdbuf.AddCommand(cmd, ogl_command::TRIANGLE);
+		vogl->cmdbuf.AddCommand(cmd);
 
 	ogl_vertex* vds = vogl->cmdbuf.vertices.Add(3);
 	const INT16 xs[] = { fbi.ax, fbi.bx, fbi.cx }, ys[] = { fbi.ay, fbi.by, fbi.cy };
@@ -7168,12 +7209,9 @@ default_case:
  *************************************/
 static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 	//LOG(LOG_VOODOO,LOG_WARN)("V3D:WR LFB offset %X value %08X", offset, data);
-	UINT16 *dest, *depth;
-	UINT32 destmax, depthmax;
-
 	int sr[2], sg[2], sb[2], sa[2], sw[2];
 	int x, y, scry, mask;
-	int pix, destbuf;
+	int pix;
 
 	/* byte swizzling */
 	if (LFBMODE_BYTE_SWIZZLE_WRITES(v->reg[lfbMode].u))
@@ -7375,33 +7413,18 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 		mask &= ~(0xf0 + LFB_DEPTH_PRESENT_MSW);
 
 	/* select the target buffer */
-	destbuf = LFBMODE_WRITE_BUFFER_SELECT(v->reg[lfbMode].u);
-	//LOG(LOG_VOODOO,LOG_WARN)("destbuf %X lfbmode %X",destbuf, v->reg[lfbMode].u);
-	switch (destbuf)
+
+	UINT8 drawbuffer;
+	switch (LFBMODE_WRITE_BUFFER_SELECT(v->reg[lfbMode].u))
 	{
-		case 0:			/* front buffer */
-			dest = (UINT16 *)(v->fbi.ram + v->fbi.rgboffs[v->fbi.frontbuf]);
-			destmax = (v->fbi.mask + 1 - v->fbi.rgboffs[v->fbi.frontbuf]) / 2;
-			break;
-
-		case 1:			/* back buffer */
-			dest = (UINT16 *)(v->fbi.ram + v->fbi.rgboffs[v->fbi.backbuf]);
-			destmax = (v->fbi.mask + 1 - v->fbi.rgboffs[v->fbi.backbuf]) / 2;
-			break;
-
-		default:		/* reserved */
-			//E_Exit("reserved lfb write");
-			return;
+		case 0: drawbuffer = v->fbi.frontbuf; break; /* front buffer */
+		case 1: drawbuffer = v->fbi.backbuf; break; /* back buffer */
+		default: /* E_Exit("reserved lfb write"); */ return; /* reserved */
 	}
-	depth = (UINT16 *)(v->fbi.ram + v->fbi.auxoffs);
-	depthmax = (v->fbi.mask + 1 - v->fbi.auxoffs) / 2;
 
 	/* simple case: no pipeline */
 	if (!LFBMODE_ENABLE_PIXEL_PIPELINE(v->reg[lfbMode].u))
 	{
-		DECLARE_DITHER_POINTERS;
-		UINT32 bufoffs;
-
 		if (LOG_LFB) LOG(LOG_VOODOO,LOG_WARN)("VOODOO.LFB:write raw mode %X (%d,%d) = %08X & %08X\n", LFBMODE_WRITE_FORMAT(v->reg[lfbMode].u), x, y, data, mem_mask);
 
 		/* determine the screen Y */
@@ -7409,31 +7432,50 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 		if (LFBMODE_Y_ORIGIN(v->reg[lfbMode].u))
 			scry = (v->fbi.yorigin - y) & 0x3ff;
 
-		/* advance pointers to the proper row */
-		bufoffs = scry * v->fbi.rowpixels + x;
-
-		/* compute dithering */
-		COMPUTE_DITHER_POINTERS(v->reg[fbzMode].u, y);
-
-		/* loop over up to two pixels */
-		for (pix = 0; mask; pix++)
-		{
-			/* make sure we care about this pixel */
-			if (mask & 0x0f)
-			{
-				bool has_rgb = (mask & LFB_RGB_PRESENT) > 0;
-				bool has_alpha = ((mask & LFB_ALPHA_PRESENT) > 0) && (FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u) > 0);
-				bool has_depth = ((mask & (LFB_DEPTH_PRESENT | LFB_DEPTH_PRESENT_MSW)) && !FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u));
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-				if (vogl_active) {
-					//if (has_rgb || has_alpha) {
-					//	 if enabling dithering: output is 565 not 888 anymore
-					//	APPLY_DITHER(v->reg[fbzMode].u, x, dither_lookup, sr[pix], sg[pix], sb[pix]);
-					//}
-					voodoo_ogl_draw_pixel(x, scry+1, has_rgb, has_alpha, has_depth, false, sr[pix], sg[pix], sb[pix], sa[pix]);
-				} else
-#endif
+		if (vogl_active) {
+			/* loop over up to two pixels */
+			for (pix = 0; mask; pix++, x++, mask >>= 4)
+			{
+				/* make sure we care about this pixel */
+				if (mask & 0x0f)
 				{
+					bool has_rgb = (mask & LFB_RGB_PRESENT) > 0;
+					bool has_alpha = ((mask & LFB_ALPHA_PRESENT) > 0) && (FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u) > 0);
+					bool has_depth = ((mask & (LFB_DEPTH_PRESENT | LFB_DEPTH_PRESENT_MSW)) && !FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u));
+
+					// no dithering (if enabling dithering: output is 565 not 888 anymore)
+					voodoo_ogl_draw_pixel_raw(drawbuffer, x, scry+1, has_rgb, has_alpha, has_depth, sr[pix] / (float)0xff, sg[pix] / (float)0xff, sb[pix] / (float)0xff, sa[pix] / (float)0xff);
+
+					/* track pixel writes to the frame buffer regardless of mask */
+					v->reg[fbiPixelsOut].u++;
+				}
+			}
+		} else
+#endif
+		{
+			UINT16 *dest = (UINT16 *)(v->fbi.ram + v->fbi.rgboffs[drawbuffer]);
+			UINT32 destmax = (v->fbi.mask + 1 - v->fbi.rgboffs[drawbuffer]) / 2;
+			UINT16 *depth = (UINT16 *)(v->fbi.ram + v->fbi.auxoffs);
+			UINT32 depthmax = (v->fbi.mask + 1 - v->fbi.auxoffs) / 2;
+
+			/* advance pointers to the proper row */
+			UINT32 bufoffs = scry * v->fbi.rowpixels + x;
+
+			/* compute dithering */
+			DECLARE_DITHER_POINTERS;
+			COMPUTE_DITHER_POINTERS(v->reg[fbzMode].u, y);
+
+			/* loop over up to two pixels */
+			for (pix = 0; mask; pix++, bufoffs++, x++, mask >>= 4)
+			{
+				/* make sure we care about this pixel */
+				if (mask & 0x0f)
+				{
+					bool has_rgb = (mask & LFB_RGB_PRESENT) > 0;
+					bool has_alpha = ((mask & LFB_ALPHA_PRESENT) > 0) && (FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u) > 0);
+					bool has_depth = ((mask & (LFB_DEPTH_PRESENT | LFB_DEPTH_PRESENT_MSW)) && !FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u));
+
 					/* write to the RGB buffer */
 					if (has_rgb && bufoffs < destmax)
 					{
@@ -7453,22 +7495,22 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 						if (has_depth)
 							depth[bufoffs] = (UINT16)sw[pix];
 					}
+
+					/* track pixel writes to the frame buffer regardless of mask */
+					v->reg[fbiPixelsOut].u++;
 				}
-
-				/* track pixel writes to the frame buffer regardless of mask */
-				v->reg[fbiPixelsOut].u++;
 			}
-
-			/* advance our pointers */
-			bufoffs++;
-			x++;
-			mask >>= 4;
 		}
 	}
 
 	/* tricky case: run the full pixel pipeline on the pixel */
 	else
 	{
+		UINT16 *dest = (UINT16 *)(v->fbi.ram + v->fbi.rgboffs[drawbuffer]);
+		UINT32 destmax = (v->fbi.mask + 1 - v->fbi.rgboffs[drawbuffer]) / 2;
+		UINT16 *depth = (UINT16 *)(v->fbi.ram + v->fbi.auxoffs);
+		UINT32 depthmax = (v->fbi.mask + 1 - v->fbi.auxoffs) / 2;
+
 		DECLARE_DITHER_POINTERS;
 
 		if (LOG_LFB) LOG(LOG_VOODOO,LOG_WARN)("VOODOO.LFB:write pipelined mode %X (%d,%d) = %08X & %08X\n", LFBMODE_WRITE_FORMAT(v->reg[lfbMode].u), x, y, data, mem_mask);
@@ -7748,7 +7790,7 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 					//if (FBZMODE_RGB_BUFFER_MASK(v->reg[fbzMode].u)) {
 					//	APPLY_DITHER(FBZMODE, XX, DITHER_LOOKUP, r, g, b);
 					//}
-					voodoo_ogl_draw_pixel(x, scry+1, set_rgb, set_alpha, set_depth, true, r, g, b, a, (UINT16)depthval, fogblend);
+					voodoo_ogl_draw_pixel_blended(drawbuffer, x, scry+1, set_rgb, set_alpha, set_depth, r / (float)0xff, g / (float)0xff, b / (float)0xff, a / (float)0xff, depthval / (float)0xffff, fogblend / (float)0xff);
 				} else
 #endif
 				{
