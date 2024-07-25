@@ -6014,7 +6014,7 @@ static void triangle_worker_shutdown(triangle_worker& tworker)
 
 static void triangle_worker_run(triangle_worker& tworker)
 {
-	if (v_perf & V_PERFFLAG_MULTITHREAD)
+	if (!(v_perf & V_PERFFLAG_MULTITHREAD))
 	{
 		// do not use threaded calculation
 		tworker.totalpix = 0xFFFFFFF;
