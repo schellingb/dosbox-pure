@@ -982,7 +982,7 @@ struct voodoo_state
 	bool				clock_enabled;
 	bool				output_on;
 	bool				active;
-	float				render_scale;
+	bool				resolution_dirty;
 #ifdef C_DBP_ENABLE_VOODOO_DEBUG
 	const char *const *	regnames;				/* register names array */
 #endif
@@ -2900,12 +2900,12 @@ enum : UINT8
 	V_PERFFLAG_LOWQUALITY = 0x2,
 	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
 	V_PERFFLAG_OPENGL = 0x4,
-	V_PERFFLAG_OPENGL_HIGHRES = 0x8,
 	#endif
 };
 static UINT8 v_perf;
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
+UINT8 voodoo_ogl_scale;
 static struct voodoo_ogl_state* vogl;
 static bool vogl_palette_changed;
 static bool vogl_ncctexel_changed;
@@ -3296,7 +3296,6 @@ struct voodoo_ogl_state
 	UINT64 last_texture_clear_op = 0;
 	unsigned vao = 0, vbo = 0, displayprog = 0, displayprog_clut_exp = 0, displayprog_clut_fac = 0;
 	unsigned depthstenciltex = 0, depthstenciltex_width = 0, depthstenciltex_height = 0;
-	float scale = 1.0f;
 
 	static void Activate()
 	{
@@ -3305,7 +3304,6 @@ struct voodoo_ogl_state
 		//GFX_ShowMsg("[VOGL] Activate while voodoo_ogl_state %s", (vogl ? "already exists" : "does not exist yet"));
 		DBP_ASSERT(!vogl_active);
 		if (!vogl) vogl = new voodoo_ogl_state();
-		vogl->CalcScale();
 		vogl_palette_changed = true;
 		vogl_ncctexel_changed = true;
 		vogl_active = true;
@@ -3384,11 +3382,6 @@ struct voodoo_ogl_state
 		cmdbuf.flushed_vertices = cmdbuf.vertices.num;
 		cmdbuf.flushed_commands = cmdbuf.commands.num;
 		cmdbuf.last_geometry.drawbuffer = 255;
-	}
-
-	void CalcScale()
-	{
-		scale = ((v_perf & V_PERFFLAG_OPENGL_HIGHRES) ? (((v->fbi.width * SCALER_MAXHEIGHT) > (v->fbi.height * SCALER_MAXWIDTH)) ? ((float)SCALER_MAXWIDTH / v->fbi.width) : ((float)SCALER_MAXHEIGHT / v->fbi.height)) : 1.0f);
 	}
 
 	void WriteBackFrame()
@@ -3962,7 +3955,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		{
 			if (!clip.active) { myglDisable(MYGL_SCISSOR_TEST); return; }
 			myglEnable(MYGL_SCISSOR_TEST);
-			myglScissor((int)(clip.sx * vogl->scale), (int)(clip.sy * vogl->scale), (int)((clip.ex - clip.sx) * vogl->scale), (int)((clip.ey - clip.sy) * vogl->scale)); GLERRORASSERT
+			myglScissor(clip.sx * voodoo_ogl_scale, clip.sy * voodoo_ogl_scale, (clip.ex - clip.sx) * voodoo_ogl_scale, (clip.ey - clip.sy) * voodoo_ogl_scale); GLERRORASSERT
 		}
 	};
 
@@ -4042,7 +4035,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		GLERRORASSERT
 	}
 
-	const UINT32 fbi_width = v->fbi.width, view_width = (UINT32)(fbi_width * vogl->scale), fbi_height = v->fbi.height, view_height = (UINT32)(fbi_height * vogl->scale);
+	const UINT32 fbi_width = v->fbi.width, view_width = (UINT32)(fbi_width * voodoo_ogl_scale), fbi_height = v->fbi.height, view_height = (UINT32)(fbi_height * voodoo_ogl_scale);
  	if (vogl->depthstenciltex_width != view_width || vogl->depthstenciltex_height != view_height)
  		vogl->DepthStencilTexSetSize(view_width, view_height);
 
@@ -4050,7 +4043,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	Local::ApplyClipping(vogl->cmdbuf.live_clipping);
 	if (myglDepthRange) { myglDepthRange(0.0f, 1.0f); GLERRORASSERT }
 	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
-	if (vogl->scale != 1.0f) myglPointSize(vogl->scale);
+	if (voodoo_ogl_scale != 1) myglPointSize(voodoo_ogl_scale);
 
 	UINT16 last_drawbuffer = 255;
 	UINT8 last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
@@ -4314,7 +4307,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	if (last_depth_masked == 0) { myglDepthMask(MYGL_TRUE); GLERRORASSERT }
 	if (!last_color_masked || !last_alpha_masked) { myglColorMask(MYGL_TRUE, MYGL_TRUE, MYGL_TRUE, MYGL_TRUE); GLERRORASSERT }
 	if (vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
-	if (vogl->scale != 1.0f) myglPointSize(1.0f);
+	if (voodoo_ogl_scale != 1) myglPointSize(1.0f);
 
 	#ifdef VOGL_DRAW_STATS
 	GFX_ShowMsg("[VOGL] stats - drawcalls: %u - vertices: %u - stencil_ops: %u - depth_tested: %u - blended: %u - textured: %u - tris: %u - pixls: %u - fastfill: %u (c:%u,d:%u) - chg_depth: %u - chg_depthmask: %u - chg_colormask: %u - chg_alphamask: %u - chg_blending: %u", flush_commands, flush_vertices, stat_num_stencil_ops, stat_num_depth_tested, stat_num_blended, stat_num_textured, stat_num_triangles, stat_num_pixels, stat_num_fastfill, stat_num_fastfill_color, stat_num_fastfill_depth, stat_switches_depth, stat_switches_depthmask, stat_switches_colormask, stat_switches_alphamask, stat_switches_blending);
@@ -4535,10 +4528,10 @@ static UINT32 voodoo_ogl_read_pixel(int x, int y)
 			rgba = pixels->data + (pixels->width * (pixels->height - y) + x) * 4;
 			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | (rgba[5] << 16);
 	}
-	if (vogl->scale != 1.0f) // color buffers are scaled
+	if (voodoo_ogl_scale != 1) // color buffers are scaled
 	{
-		x = (int)(x * vogl->scale);
-		y = (int)(y * vogl->scale);
+		x = x * voodoo_ogl_scale;
+		y = y * voodoo_ogl_scale;
 	}
 	off = (pixels->width * (pixels->height-y) + x);
 	if (off > pixels->width * pixels->height) goto invalidread;
@@ -6454,7 +6447,9 @@ static void fastfill(voodoo_state *v)
 				break;
 
 			default:	/* reserved */
-				break;
+				DBP_ASSERT(0);
+				//break;
+				return;
 		}
 
 		/* determine the dither pattern */
@@ -7006,9 +7001,6 @@ static void register_w(UINT32 offset, UINT32 data) {
 					if ((v->fbi.width != new_width) || (v->fbi.height != new_height)) {
 						v->fbi.width = new_width;
 						v->fbi.height = new_height;
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-						if (vogl) vogl->CalcScale();
-#endif
 					}
 					//v->fbi.xoffs = hbp;
 					//v->fbi.yoffs = vbp;
@@ -8329,8 +8321,7 @@ static void voodoo_init(UINT8 type) {
 	v->clutRaw.r[32] = v->clutRaw.g[32] = v->clutRaw.b[32] = 255;
 	v->clutDirty = v->ogl_clutDirty = true;
 	v->gammafix = 0.0f;
-
-	v->render_scale = 0.0f;
+	v->resolution_dirty = true;
 
 	/* do a soft reset to reset everything else */
 	soft_reset(v);
@@ -8383,15 +8374,11 @@ static void Voodoo_VerticalTimer(Bitu /*val*/) {
 	v->draw.frame_start = PIC_FullIndex();
 	PIC_AddEvent( Voodoo_VerticalTimer, v->draw.vfreq );
 
-#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	const UINT8 use_vogl = (vogl && (v_perf & V_PERFFLAG_OPENGL));
-	const float new_scale = (use_vogl ? vogl->scale : 1.0f);
-	if (v->render_scale != new_scale)
+	if (v->resolution_dirty)
 	{
-		v->render_scale = new_scale;
-		RENDER_SetSize((Bitu)(v->fbi.width * new_scale + .49f), (Bitu)(v->fbi.height * new_scale + .49f), 16, 1000.0f / v->draw.vfreq, 1.0, false, false);
+		RENDER_SetSize(v->fbi.width, v->fbi.height, 16, 1000.0f / v->draw.vfreq, 1.0, false, false);
+		v->resolution_dirty = false;
 	}
-#endif
 
 	bool frameskip = !RENDER_StartUpdate();
 	if (frameskip) {
@@ -8400,7 +8387,7 @@ static void Voodoo_VerticalTimer(Bitu /*val*/) {
 	}
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (use_vogl) {
+	if (vogl && (v_perf & V_PERFFLAG_OPENGL)) {
 		vogl->VBlankFlush();
 	}
 	else
@@ -8507,7 +8494,7 @@ static void Voodoo_UpdateScreen(void) {
 
 		voodoo_activate();
 
-		v->render_scale = 0.0f; // force call to  RENDER_SetSize
+		v->resolution_dirty = true; // force call to  RENDER_SetSize
 		Voodoo_VerticalTimer(0);
 	}
 
@@ -8802,13 +8789,14 @@ void VOODOO_Init(Section* sec) {
 	Section_prop * section = static_cast<Section_prop *>(sec);
 	v_perf = (UINT8)section->Get_int("voodoo_perf");
 	voodoo_pci_sstdevice.gammafix = section->Get_int("voodoo_gamma")*.1f;
+	voodoo_ogl_scale = ((v_perf & V_PERFFLAG_OPENGL) ? section->Get_int("voodoo_scale") : 1);
+	if (voodoo_ogl_scale < 1 || voodoo_ogl_scale > 16) voodoo_ogl_scale = 1;
 
 	if (voodoo_pagehandler)
 	{
 		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
 		if (vogl && v)
 		{
-			vogl->CalcScale();
 			if (vogl_active && !(v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Deactivate();
 			if (!vogl_active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
 		}
@@ -8927,7 +8915,7 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 			if (vogl_active)                               voodoo_ogl_state::Deactivate();
 			if (v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
 			#endif
-			v->render_scale = 0.0f; // force call to  RENDER_SetSize
+			v->resolution_dirty = true; // force call to  RENDER_SetSize
 			v->clutDirty = v->ogl_clutDirty = true;
 		}
 	}

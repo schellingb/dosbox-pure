@@ -2790,6 +2790,7 @@ static bool check_variables(bool is_startup = false)
 	retro_set_visibility("dosbox_pure_voodoo", machine_is_svga);
 	retro_set_visibility("dosbox_pure_voodoo_perf", machine_is_svga);
 	retro_set_visibility("dosbox_pure_voodoo_gamma", machine_is_svga);
+	retro_set_visibility("dosbox_pure_voodoo_scale", machine_is_svga);
 	if (machine_is_svga)
 	{
 		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "12mb"), true, true);
@@ -2798,6 +2799,7 @@ static bool check_variables(bool is_startup = false)
 		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE && (atoi(voodoo_perf) & 0x4))
 			retro_notify(0, RETRO_LOG_WARN, "To enable OpenGL hardware rendering, close and re-open.");
 		Variables::DosBoxSet("pci", "voodoo_gamma", retro_get_variable("dosbox_pure_voodoo_gamma", "-2"));
+		Variables::DosBoxSet("pci", "voodoo_scale", retro_get_variable("dosbox_pure_voodoo_scale", "1"));
 	}
 
 	retro_set_visibility("dosbox_pure_cga", machine_is_cga);
@@ -3708,7 +3710,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				bool is_voodoo_display = voodoo_ogl_display();
 
 				myglBindFramebuffer(MYGL_FRAMEBUFFER, (unsigned)dbp_hw_render.get_current_framebuffer());
-				myglViewport(0, 0, buf.width, buf.height);
+				myglViewport(0, 0, buf.width * voodoo_ogl_scale, buf.height * voodoo_ogl_scale);
 				myglBindVertexArray(vao);
 				if (is_voodoo_display)
 					myglDrawArrays(MYGL_TRIANGLE_STRIP, 4, 4);
@@ -3735,7 +3737,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				myglBindFramebuffer(MYGL_FRAMEBUFFER, 0);
 				if (myglGetError()) { DBP_ASSERT(0); } // clear any error state
 
-				video_cb(RETRO_HW_FRAME_BUFFER_VALID, buf.width, buf.height, 0);
+				video_cb(RETRO_HW_FRAME_BUFFER_VALID, buf.width * voodoo_ogl_scale, buf.height * voodoo_ogl_scale, 0);
 			}
 		};
 
@@ -3799,8 +3801,17 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 {
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
-	av_info.geometry.max_width = SCALER_MAXWIDTH;
-	av_info.geometry.max_height = SCALER_MAXHEIGHT;
+	const int voodoo_scale = atoi(retro_get_variable("dosbox_pure_voodoo_scale", "1"));
+	if (640 * voodoo_scale > SCALER_MAXWIDTH && voodoo_scale <= 16) // only optimized for 3dfx at 640x480
+	{
+		av_info.geometry.max_width = 640 * voodoo_scale;
+		av_info.geometry.max_height = 480 * voodoo_scale;
+	}
+	else
+	{
+		av_info.geometry.max_width = SCALER_MAXWIDTH;
+		av_info.geometry.max_height = SCALER_MAXHEIGHT;
+	}
 	DBP_ThreadControl(TCM_FINISH_FRAME);
 	if (dbp_biosreboot || dbp_state == DBPSTATE_EXITED)
 	{
@@ -4081,15 +4092,17 @@ void retro_run(void)
 		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_opengl_draw) DBP_ThreadControl(TCM_RESUME_FRAME);
 	}
 
+	// Read buffer_active before waking up emulation thread
+	const DBP_Buffer& buf = dbp_buffers[buffer_active];
+	Bit32u view_width = buf.width, view_height = buf.height;
+
 	if (dbp_opengl_draw)
 	{
 		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
 		voodoo_ogl_mainthread();
 		if (dbp_latency == DBP_LATENCY_VARIABLE) DBP_ThreadControl(TCM_RESUME_FRAME);
+		view_width *= voodoo_ogl_scale; view_height *= voodoo_ogl_scale;
 	}
-
-	// Read buffer_active before waking up emulation thread
-	const Bit8u cur_buffer_active = buffer_active;
 
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
 	{
@@ -4124,25 +4137,26 @@ void retro_run(void)
 
 	// handle video mode changes
 	double targetfps = DBP_GetFPS();
-	const DBP_Buffer& buf = dbp_buffers[cur_buffer_active];
-	if (av_info.geometry.base_width != buf.width || av_info.geometry.base_height != buf.height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
+	if (av_info.geometry.base_width != view_width || av_info.geometry.base_height != view_height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
 	{
 		log_cb(RETRO_LOG_INFO, "[DOSBOX] Resolution changed %ux%u @ %.3fHz AR: %.5f => %ux%u @ %.3fHz AR: %.5f\n",
 			av_info.geometry.base_width, av_info.geometry.base_height, av_info.timing.fps, av_info.geometry.aspect_ratio,
-			buf.width, buf.height, av_info.timing.fps, buf.ratio);
-		bool newfps = (av_info.timing.fps != targetfps);
-		av_info.geometry.base_width = buf.width;
-		av_info.geometry.base_height = buf.height;
+			view_width, view_height, av_info.timing.fps, buf.ratio);
+		bool newfps = (av_info.timing.fps != targetfps), newmax = (av_info.geometry.max_width < view_width || av_info.geometry.max_height < view_height);
+		if (av_info.geometry.max_width < view_width)   av_info.geometry.max_width = view_width;
+		if (av_info.geometry.max_height < view_height) av_info.geometry.max_height = view_height;
+		av_info.geometry.base_width = view_width;
+		av_info.geometry.base_height = view_height;
 		av_info.geometry.aspect_ratio = buf.ratio;
 		av_info.timing.fps = targetfps;
-		environ_cb((newfps ? RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO : RETRO_ENVIRONMENT_SET_GEOMETRY), &av_info);
+		environ_cb(((newfps || newmax) ? RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO : RETRO_ENVIRONMENT_SET_GEOMETRY), &av_info);
 	}
 
 	// submit video
 	if (dbp_opengl_draw)
 		dbp_opengl_draw(buf);
 	else
-		video_cb(buf.video, buf.width, buf.height, buf.width * 4);
+		video_cb(buf.video, view_width, view_height, view_width * 4);
 }
 
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)

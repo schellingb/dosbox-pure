@@ -468,10 +468,19 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			{ "1", "Software Multi Threaded (default)" },
 			{ "4", "Hardware OpenGL" },
-			{ "12", "Hardware OpenGL High Resolution" },
 			{ "3", "Software Multi Threaded, low quality" },
 			{ "2", "Software Single Threaded, low quality" },
 			{ "0", "Software Single Threaded" },
+		},
+		"1",
+	},
+	{
+		"dosbox_pure_voodoo_scale",
+		"3dfx Voodoo OpenGL Scaling", NULL,
+		"Increase the native resolution of the rendered image.", NULL,
+		"Video",
+		{
+			{ "1", "1x" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "5x" }, { "6", "6x" }, { "7", "7x" }, { "8", "8x" },
 		},
 		"1",
 	},

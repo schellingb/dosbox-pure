@@ -153,6 +153,7 @@ MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCEXT)
 
 unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs);
 
+extern Bit8u voodoo_ogl_scale;
 bool voodoo_ogl_is_active();
 bool voodoo_ogl_have_new_image();
 bool voodoo_ogl_display();
