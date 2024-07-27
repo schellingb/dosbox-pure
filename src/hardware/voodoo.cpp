@@ -75,6 +75,7 @@
 #include "render.h"
 #include "pci_bus.h"
 #include "control.h"
+#include "cpu.h"
 #include "dbp_threads.h"
 
 #define C_DBP_ENABLE_VOODOO_OPENGL
@@ -1201,6 +1202,13 @@ static INLINE INT64 float_to_int64(UINT32 data, int fixedbits)
 	if (data & 0x80000000)
 		result = -result;
 	return result;
+}
+
+static INLINE void reduce_cycles(Bit32s delaycyc)
+{
+	if(GCC_UNLIKELY(delaycyc > CPU_Cycles)) delaycyc = CPU_Cycles;
+	CPU_Cycles -= delaycyc;
+	CPU_IODelayRemoved += delaycyc;
 }
 
 /*************************************
@@ -4474,6 +4482,8 @@ static INLINE void voodoo_ogl_draw_pixel_raw(UINT8 drawbuffer, int x, int y, boo
 	vd.b = b;
 	vd.a = a;
 	vd.fogblend = 0;
+
+	reduce_cycles(CPU_CycleMax/32768); // keep auto cycle adjustment smooth
 }
 
 static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y, bool set_rgb, bool set_alpha, bool set_depth, float r, float g, float b, float a, float d, float fogblend)
@@ -4511,6 +4521,8 @@ static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y,
 	vd.b = b;
 	vd.a = a;
 	vd.fogblend = fogblend;
+
+	reduce_cycles(CPU_CycleMax/32768); // keep auto cycle adjustment smooth
 }
 
 static UINT32 voodoo_ogl_read_pixel(int x, int y)
@@ -4883,6 +4895,8 @@ static void voodoo_ogl_draw_triangle()
 			vd.mlodblend[i] = (float)lodblend/255.0f;
 		}
 	}
+
+	reduce_cycles(CPU_CycleMax/2048); // keep auto cycle adjustment smooth
 }
 
 #endif
