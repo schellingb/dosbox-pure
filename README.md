@@ -169,6 +169,8 @@ To open it, select "CONTROLLER MAPPER" in the start menu or click the "PAD MAPPE
 It is available any time in-game and changes are immediately saved and applied when closing the mapper. Up to 4 functions can be mapped
 for any button/direction of the gamepad. A mapping can be to any function of the 3 emulated input devices: keyboard, mouse or joystick.
 
+The mapping is saved to a DOS file named "C:\PADMAP.DBP" which will be stored in the [save files](#store-modifications-in-separate-save-files) or next to the loaded program (when running without ZIP/DOSZ).
+
 ### 3dfx Voodoo Emulation
 The core includes emulation of a 3dfx Voodoo PCI card. Compatible DOS games should work out of the box. If running an
 [installed operating system](#installing-an-operating-system) like Windows 95 or Windows 98, you can get the required drivers
