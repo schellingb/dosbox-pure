@@ -157,7 +157,7 @@ extern Bit8u voodoo_ogl_scale;
 bool voodoo_ogl_is_active();
 bool voodoo_ogl_have_new_image();
 bool voodoo_ogl_display();
-void voodoo_ogl_mainthread();
+bool voodoo_ogl_mainthread();
 void voodoo_ogl_cleanup();
 void voodoo_ogl_contextlost();
 void voodoo_ogl_resetcontext();

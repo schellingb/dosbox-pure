@@ -1204,13 +1204,6 @@ static INLINE INT64 float_to_int64(UINT32 data, int fixedbits)
 	return result;
 }
 
-static INLINE void reduce_cycles(Bit32s delaycyc)
-{
-	if(GCC_UNLIKELY(delaycyc > CPU_Cycles)) delaycyc = CPU_Cycles;
-	CPU_Cycles -= delaycyc;
-	CPU_IODelayRemoved += delaycyc;
-}
-
 /*************************************
  *
  *  Dithering macros
@@ -3319,7 +3312,6 @@ struct voodoo_ogl_state
 
 	static void Deactivate()
 	{
-		//GFX_ShowMsg("[VOGL] Deactivate");
 		DBP_ASSERT(vogl_active);
 		vogl->cmdbuf.Free();
 		vogl->texbases.Free();
@@ -3337,7 +3329,7 @@ struct voodoo_ogl_state
 
 	void Init()
 	{
-		DBP_ASSERT(vogl_active);
+		DBP_ASSERT(vogl_active && !vbo);
 		myglGenBuffers(1, &vbo); GLERRORASSERT
 		myglGenVertexArrays(1, &vao); GLERRORASSERT
 		displayprog = DBP_Build_GL_Program(1, &ogl_display_vertex_shader_src, 1, &ogl_display_fragment_shader_src, 2, ogl_display_bind_attrs);
@@ -3355,7 +3347,7 @@ struct voodoo_ogl_state
 
 	void Cleanup()
 	{
-		if (!vbo) return;
+		if (!vbo) { ContextLost(); return; }
 		if (v) WriteBackFrame();
 		myglDeleteBuffers(1, &vbo);
 		myglDeleteVertexArrays(1, &vao);
@@ -3370,7 +3362,6 @@ struct voodoo_ogl_state
 
 	void ContextLost()
 	{
-		if (!vbo) return;
 		vbo = vao = displayprog = 0;
 		programs.Free();
 		program_hashes.Free();
@@ -3379,7 +3370,7 @@ struct voodoo_ogl_state
 		for (ogl_drawbuffer& db : drawbuffers) db.ContextLost();
 		readback.ContextLost();
 		depthstenciltex = depthstenciltex_width = depthstenciltex_height = 0;
-		vogl_active = true;
+		vogl_active = true; // for Deactivate to set to false again
 		Deactivate(); // make sure cmdbuf is still empty
 	}
 
@@ -3583,13 +3574,13 @@ enum : UINT32
 	VOODOO_OGL_TEXMODE_DISABLED = (UINT32)-1,
 };
 
-void voodoo_ogl_mainthread() // called while emulation thread is sleeping
+bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 {
 	if (!vogl_active)
 	{
 		if (vogl && vogl->vbo)
 			vogl->Cleanup();
-		return;
+		return false;
 	}
 	DBP_ASSERT(v && v->active && (v_perf & V_PERFFLAG_OPENGL));
 	GLERRORCLEAR
@@ -3989,7 +3980,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	#endif
 
 	#if defined(VOODOO_RENDERDOC_H) && defined(VOODOO_RENDERDOC_DLL)
-	if (dbg_ogl_accumulatecommands) { if (dbg_ogl_end_accumulatecommands) { TriggerRenderDocCapture(); dbg_ogl_accumulatecommands = dbg_ogl_end_accumulatecommands = false; } return; }
+	if (dbg_ogl_accumulatecommands) { if (dbg_ogl_end_accumulatecommands) { TriggerRenderDocCapture(); dbg_ogl_accumulatecommands = dbg_ogl_end_accumulatecommands = false; } return true; }
 	#endif
 
 	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", fbi_width, fbi_height, ready_command_num, ready_vertex_num/3);
@@ -4402,6 +4393,7 @@ void voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	vogl->renderframe++;
 
 	vogl->display_buffer = vogl->flushed_buffer;
+	return true;
 }
 
 static INLINE void voodoo_ogl_texture_clear(UINT32 tmunum, UINT32 texbase1, UINT32 texbase2)
@@ -4482,8 +4474,6 @@ static INLINE void voodoo_ogl_draw_pixel_raw(UINT8 drawbuffer, int x, int y, boo
 	vd.b = b;
 	vd.a = a;
 	vd.fogblend = 0;
-
-	reduce_cycles(CPU_CycleMax/32768); // keep auto cycle adjustment smooth
 }
 
 static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y, bool set_rgb, bool set_alpha, bool set_depth, float r, float g, float b, float a, float d, float fogblend)
@@ -4521,8 +4511,6 @@ static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y,
 	vd.b = b;
 	vd.a = a;
 	vd.fogblend = fogblend;
-
-	reduce_cycles(CPU_CycleMax/32768); // keep auto cycle adjustment smooth
 }
 
 static UINT32 voodoo_ogl_read_pixel(int x, int y)
@@ -4895,8 +4883,6 @@ static void voodoo_ogl_draw_triangle()
 			vd.mlodblend[i] = (float)lodblend/255.0f;
 		}
 	}
-
-	reduce_cycles(CPU_CycleMax/2048); // keep auto cycle adjustment smooth
 }
 
 #endif

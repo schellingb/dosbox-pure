@@ -65,7 +65,7 @@ static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64me
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
-static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_serialize_time;
+static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_serialize_time, dbp_paused_time_sum;
 static Semaphore semDoContinue, semDidPause;
 static retro_throttle_state dbp_throttle;
 static retro_time_t dbp_lastrun;
@@ -498,6 +498,7 @@ static void DBP_ReportCoreMemoryMaps()
 enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_ON_PAUSE_FRAME, TCM_RESUME_FRAME, TCM_FINISH_FRAME, TCM_ON_FINISH_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN, TCM_ON_SHUTDOWN };
 static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 {
+	static retro_time_t pausedTimeStart;
 	//#define TCMLOG(x, y)// printf("[%10u] [THREAD CONTROL] %20s %25s - STATE: %d - PENDING: %d - PAUSEEVT: %d - MIDFRAME: %d\n", (unsigned)(time_cb() - dbp_boot_time), x, y, (int)dbp_state, dbp_frame_pending, dbp_pause_events, dbp_paused_midframe);
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
 	switch (m)
@@ -527,8 +528,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			if (!dbp_frame_pending) return;
 			DBP_ASSERT(dbp_pause_events);
 			dbp_pause_events = false;
-			semDoContinue.Post();
-			return;
+			goto case_TCM_EMULATION_CONTINUES;
 		case TCM_FINISH_FRAME:
 			if (!dbp_frame_pending) goto case_TCM_EMULATION_PAUSED;
 			if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME);
@@ -552,8 +552,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			DBP_ASSERT(!dbp_frame_pending);
 			if (dbp_state == DBPSTATE_EXITED) return;
 			dbp_frame_pending = true;
-			semDoContinue.Post();
-			return;
+			goto case_TCM_EMULATION_CONTINUES;
 		case TCM_SHUTDOWN:
 			if (dbp_frame_pending)
 			{
@@ -575,6 +574,12 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			return;
 		case_TCM_EMULATION_PAUSED:
 			if (dbp_refresh_memmaps) DBP_ReportCoreMemoryMaps();
+			pausedTimeStart = time_cb();
+			return;
+		case_TCM_EMULATION_CONTINUES:
+			if (pausedTimeStart) { dbp_paused_time_sum += (Bit32u)(time_cb() - pausedTimeStart); pausedTimeStart = 0; } 
+			semDoContinue.Post();
+			return;
 	}
 }
 
@@ -2141,10 +2146,11 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 	extern Bit64s CPU_IODelayRemoved;
 	Bit32u hc = St.HistoryCursor % HISTORY_SIZE;
 	St.HistoryCycles[hc] = (Bit32u)(((Bit64s)CPU_CycleMax * finishedticks - CPU_IODelayRemoved) / finishedticks);
-	St.HistoryEmulator[hc] = (Bit32u)(time_before - time_last);
+	St.HistoryEmulator[hc] = (Bit32u)(time_before - time_last) + dbp_paused_time_sum;
 	St.HistoryFrame[hc] = (Bit32u)(time_after - time_last);
 	St.HistoryCursor++;
 	CPU_IODelayRemoved = 0;
+	dbp_paused_time_sum = 0;
 
 	if ((St.HistoryCursor % HISTORY_STEP) == 0)
 	{
@@ -2221,8 +2227,8 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 			if (CPU_CycleMax > (Bit64s)recentEmulator * 280) CPU_CycleMax = (Bit32s)(recentEmulator * 280);
 		}
 
-		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS%4d] - EMU: %5d - FE: %5d - SRLZ: %u - TARGET: %5d - EffectiveCycles: %6d - Limit: %6d|%6d - CycleMax: %6d - Scale: %5d\n",
-		//	St.HistoryCursor, (int)recentEmulator, (int)((recentFrameSum / recentCount) - recentEmulator), st, frameTime, 
+		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS%4d] - EMU: %5d - FE: %5d - TARGET: %5d - EffectiveCycles: %6d - Limit: %6d|%6d - CycleMax: %6d - Scale: %5d\n",
+		//	St.HistoryCursor, (int)recentEmulator, (int)((recentFrameSum / recentCount) - recentEmulator), frameTime, 
 		//	recentCyclesSum / recentCount, CPU_CYCLES_LOWER_LIMIT, recentEmulator * 280, CPU_CycleMax, ratio);
 	}
 	return true;
@@ -4099,9 +4105,8 @@ void retro_run(void)
 	if (dbp_opengl_draw)
 	{
 		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
-		voodoo_ogl_mainthread();
+		if (voodoo_ogl_mainthread()) { view_width *= voodoo_ogl_scale; view_height *= voodoo_ogl_scale; }
 		if (dbp_latency == DBP_LATENCY_VARIABLE) DBP_ThreadControl(TCM_RESUME_FRAME);
-		view_width *= voodoo_ogl_scale; view_height *= voodoo_ogl_scale;
 	}
 
 	if (dbp_latency == DBP_LATENCY_DEFAULT)
