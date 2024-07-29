@@ -307,7 +307,7 @@ struct DBP_Run
 	}
 
 	enum EMode { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_COMMANDLINE };
-	static struct Startup { EMode mode; int info; std::string str; } startup;
+	static struct Startup { EMode mode, ymlmode; int info; std::string str; } startup;
 	static struct Autoboot { bool have, use; int skip, hash; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr; } autoinput;
 
@@ -360,6 +360,7 @@ struct DBP_Run
 	static bool HandleStartup(bool is_boot)
 	{
 		if (startup.mode == RUN_NONE) ReadAutoBoot();
+		if (startup.mode == RUN_NONE) startup.mode = startup.ymlmode;
 		if (startup.mode == RUN_NONE || !is_boot) return false;
 		Run(startup.mode, startup.info, startup.str);
 		return true;

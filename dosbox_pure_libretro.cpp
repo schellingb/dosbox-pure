@@ -2982,8 +2982,8 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 					break;
 				case 'p': // run_path
 					DBP_Run::startup.str = std::string(Val, (size_t)(ValX - Val));
-					if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTIMG) goto exec2bootimg;
-					DBP_Run::startup.mode = DBP_Run::RUN_EXEC;
+					if (DBP_Run::startup.ymlmode == DBP_Run::RUN_BOOTIMG) goto exec2bootimg;
+					DBP_Run::startup.ymlmode = DBP_Run::RUN_EXEC;
 					break;
 				case 'b': // run_boot
 				case 'm': // run_mount
@@ -2997,12 +2997,12 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 						dbp_images[imgidx].remount = true;
 					}
 					if (yml_key[4] == 'm') break; // run_mount
-					if (DBP_Run::startup.mode == DBP_Run::RUN_EXEC)
+					if (DBP_Run::startup.ymlmode == DBP_Run::RUN_EXEC)
 					{
 						exec2bootimg:
 						((static_cast<Section_line*>(autoexec)->data += '@') += DBP_Run::startup.str) += '\n';
 					}
-					DBP_Run::startup.mode = DBP_Run::RUN_BOOTIMG;
+					DBP_Run::startup.ymlmode = DBP_Run::RUN_BOOTIMG;
 					DBP_Run::startup.info = 0;
 					break;
 			}
