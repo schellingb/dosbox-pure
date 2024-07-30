@@ -65,7 +65,7 @@ static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64me
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
-static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_serialize_time, dbp_paused_time_sum;
+static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_emu_waiting, dbp_paused_work;
 static Semaphore semDoContinue, semDidPause;
 static retro_throttle_state dbp_throttle;
 static retro_time_t dbp_lastrun;
@@ -235,7 +235,7 @@ static retro_input_state_t        input_state_cb;
 
 // PERF OVERLAY
 static enum DBP_Perf : Bit8u { DBP_PERF_NONE, DBP_PERF_SIMPLE, DBP_PERF_DETAILED } dbp_perf;
-static Bit32u dbp_perf_uniquedraw, dbp_perf_count, dbp_perf_emutime, dbp_perf_totaltime;
+static Bit32u dbp_perf_uniquedraw, dbp_perf_count, dbp_perf_totaltime;
 //#define DBP_ENABLE_WAITSTATS
 #ifdef DBP_ENABLE_WAITSTATS
 static Bit32u dbp_wait_pause, dbp_wait_finish, dbp_wait_paused, dbp_wait_continue;
@@ -498,7 +498,7 @@ static void DBP_ReportCoreMemoryMaps()
 enum DBP_ThreadCtlMode { TCM_PAUSE_FRAME, TCM_ON_PAUSE_FRAME, TCM_RESUME_FRAME, TCM_FINISH_FRAME, TCM_ON_FINISH_FRAME, TCM_NEXT_FRAME, TCM_SHUTDOWN, TCM_ON_SHUTDOWN };
 static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 {
-	static retro_time_t pausedTimeStart;
+	static retro_time_t pausedTimeStart; retro_time_t emuWaitTimeStart;
 	//#define TCMLOG(x, y)// printf("[%10u] [THREAD CONTROL] %20s %25s - STATE: %d - PENDING: %d - PAUSEEVT: %d - MIDFRAME: %d\n", (unsigned)(time_cb() - dbp_boot_time), x, y, (int)dbp_state, dbp_frame_pending, dbp_pause_events, dbp_paused_midframe);
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
 	switch (m)
@@ -517,10 +517,11 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			DBP_ASSERT(dbp_pause_events && !dbp_paused_midframe);
 			dbp_paused_midframe = true;
 			semDidPause.Post();
-			#ifdef DBP_ENABLE_WAITSTATS
-			{ retro_time_t t = time_cb(); semDoContinue.Wait(); dbp_wait_paused += (Bit32u)(time_cb() - t); }
-			#else
+			emuWaitTimeStart = time_cb();
 			semDoContinue.Wait();
+			dbp_emu_waiting += (Bit32u)(time_cb() - emuWaitTimeStart);
+			#ifdef DBP_ENABLE_WAITSTATS
+			dbp_wait_paused += (Bit32u)(time_cb() - emuWaitTimeStart);
 			#endif
 			dbp_paused_midframe = false;
 			return;
@@ -542,10 +543,11 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			goto case_TCM_EMULATION_PAUSED;
 		case TCM_ON_FINISH_FRAME:
 			semDidPause.Post();
-			#ifdef DBP_ENABLE_WAITSTATS
-			{ retro_time_t t = time_cb(); semDoContinue.Wait(); dbp_wait_continue += (Bit32u)(time_cb() - t); }
-			#else
+			emuWaitTimeStart = time_cb();
 			semDoContinue.Wait();
+			dbp_emu_waiting += (Bit32u)(time_cb() - emuWaitTimeStart);
+			#ifdef DBP_ENABLE_WAITSTATS
+			dbp_wait_continue += (Bit32u)(time_cb() - emuWaitTimeStart);
 			#endif
 			return;
 		case TCM_NEXT_FRAME:
@@ -577,7 +579,7 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			if (dbp_refresh_memmaps) DBP_ReportCoreMemoryMaps();
 			return;
 		case_TCM_EMULATION_CONTINUES:
-			if (pausedTimeStart) { dbp_paused_time_sum += (Bit32u)(time_cb() - pausedTimeStart); pausedTimeStart = 0; }
+			if (pausedTimeStart) { dbp_paused_work += (Bit32u)(time_cb() - pausedTimeStart); pausedTimeStart = 0; }
 			if (dbp_serializesize && dbp_serializemode != DBPSERIALIZE_REWIND) dbp_serializesize = 0;
 			semDoContinue.Post();
 			return;
@@ -2057,18 +2059,14 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 	{
 		retro_time_t TimeLast, TimeSleepUntil;
 		double LastModeHash;
-		Bit32u LastFrameCount, FrameTicks, Paused, HistoryCycles[HISTORY_SIZE], HistoryEmulator[HISTORY_SIZE], HistoryFrame[HISTORY_SIZE], HistoryCursor;
+		Bit32u LastFrameCount, FrameTicks, HistoryCycles[HISTORY_SIZE], HistoryEmulator[HISTORY_SIZE], HistoryFrame[HISTORY_SIZE], HistoryCursor;
 	} St;
 
 	St.FrameTicks++;
 	if (St.LastFrameCount == dbp_framecount)
 	{
 		if (dbp_pause_events)
-		{
-			retro_time_t time_before_pause = time_cb();
 			DBP_ThreadControl(TCM_ON_PAUSE_FRAME);
-			St.Paused += (Bit32u)(time_cb() - time_before_pause);
-		}
 		return false;
 	}
 
@@ -2078,18 +2076,20 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 	St.FrameTicks = 0;
 
 	// With certain keyboard layouts, we can end up here during startup which we don't want to do anything further
-	if (dbp_state == DBPSTATE_BOOT) return true;
-
-	retro_time_t time_before = time_cb() - St.Paused;
-	St.Paused = 0;
+	if (dbp_state == DBPSTATE_BOOT)
+	{
+		return_true:
+		CPU_IODelayRemoved = 0;
+		dbp_emu_waiting = 0;
+		dbp_paused_work = 0;
+		return true;
+	}
 
 	if (force_skip)
-		return true;
+		goto return_true;
 
 	if (dbp_latency != DBP_LATENCY_VARIABLE || dbp_state == DBPSTATE_FIRST_FRAME)
-	{
 		DBP_ThreadControl(TCM_ON_FINISH_FRAME);
-	}
 
 	retro_time_t time_after = time_cb();
 	if (dbp_latency == DBP_LATENCY_VARIABLE)
@@ -2117,7 +2117,6 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 	if (dbp_perf)
 	{
 		dbp_perf_count += finishedframes;
-		dbp_perf_emutime += (Bit32u)(time_before - time_last);
 		dbp_perf_totaltime += (Bit32u)(time_after - time_last);
 	}
 
@@ -2129,35 +2128,37 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 		St.LastModeHash = modeHash;
 		St.HistoryEmulator[HISTORY_SIZE-1] = 0;
 		St.HistoryCursor = 0;
-		return true;
+		goto return_true;
 	}
 
 	if (!CPU_CycleAutoAdjust)
 	{
 		St.HistoryEmulator[HISTORY_SIZE-1] = 0;
 		St.HistoryCursor = 0;
-		return true;
+		goto return_true;
 	}
 
 	if (finishedframes > 1)
-		return true;
+		goto return_true;
 
 	if (dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING || dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.mode == RETRO_THROTTLE_REWINDING)
-		return true;
+		goto return_true;
 
 	extern Bit64s CPU_IODelayRemoved;
 	Bit32u hc = St.HistoryCursor % HISTORY_SIZE;
 	St.HistoryCycles[hc] = (Bit32u)(((Bit64s)CPU_CycleMax * finishedticks - CPU_IODelayRemoved) / finishedticks);
-	St.HistoryEmulator[hc] = (Bit32u)(time_before - time_last) + dbp_paused_time_sum;
+	St.HistoryEmulator[hc] = (Bit32u)(time_after - time_last - dbp_emu_waiting + dbp_paused_work);
 	St.HistoryFrame[hc] = (Bit32u)(time_after - time_last);
 	St.HistoryCursor++;
-	CPU_IODelayRemoved = 0;
-	dbp_paused_time_sum = 0;
 
 	if ((St.HistoryCursor % HISTORY_STEP) == 0)
 	{
+		float absFrameTime = (1000000.0f / render.src.fps);
+		Bit32u frameTime = (Bit32u)(absFrameTime * (dbp_auto_target - 0.01f));
+
 		Bit32u frameThreshold = 0;
 		for (Bit32u f : St.HistoryFrame) frameThreshold += f;
+		//float frameMiss = (float)frameThreshold / HISTORY_SIZE - absFrameTime;
 		frameThreshold = (frameThreshold / HISTORY_SIZE) * 3;
 
 		Bit32u recentCount = 0, recentCyclesSum = 0, recentEmulator = 0, recentFrameSum = 0;
@@ -2172,19 +2173,11 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 		}
 		recentEmulator /= (recentCount ? recentCount : 1);
 
-		Bit32u frameTime = (Bit32u)((1000000.0f / render.src.fps) * (dbp_auto_target - 0.01f));
-
-		//Bit32u st = dbp_serialize_time;
-		if (dbp_serialize_time)
-		{
-			// To deal with frontends that have a rewind-feature we need to remove the time used to create rewind states from the available frame time
-			dbp_serialize_time /= HISTORY_STEP;
-			if (dbp_serialize_time > frameTime - 3000)
-				frameTime = 3000;
-			else
-				frameTime -= dbp_serialize_time;
-			dbp_serialize_time = 0;
-		}
+		//// While a frontend is very busy for example with replay buffer calculation this can help a bit with < 100% speed and sound stuttering
+		//static float frameOver;
+		//if (frameMiss > 200) frameOver = (frameOver * .8f) + (frameMiss - 200) * .2f;
+		//else frameOver = (frameOver > 1 ? frameOver * 0.99f : 0.0f);
+		//recentEmulator += (Bit32u)frameOver;
 
 		Bit32s ratio = 0;
 		Bit64s recentCyclesMaxSum = (Bit64s)CPU_CycleMax * recentCount;
@@ -2194,7 +2187,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 			double ratio_not_removed = 1.0 - ((double)(recentCyclesMaxSum - recentCyclesSum) / recentCyclesMaxSum);
 
 			// scale ratio we are aiming for (1024 is no change)
-			ratio = frameTime * 1024 * 100 / 100 / recentEmulator;
+			ratio = frameTime * 1024 / recentEmulator;
 			ratio = (Bit32s)((double)ratio * ratio_not_removed);
 
 			// Don't allow very high ratio which can cause us to lock as we don't scale down
@@ -2224,16 +2217,16 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 				CPU_CycleMax = 1 + (Bit32s)(CPU_CycleMax * r);
 			}
 
-			if (CPU_CycleMax < CPU_CYCLES_LOWER_LIMIT) CPU_CycleMax = CPU_CYCLES_LOWER_LIMIT;
+			if (CPU_CycleMax < (cpu.pmode ? 10000 : 1000)) CPU_CycleMax = (cpu.pmode ? 10000 : 1000);
 			if (CPU_CycleMax > 4000000) CPU_CycleMax = 4000000;
 			if (CPU_CycleMax > (Bit64s)recentEmulator * 280) CPU_CycleMax = (Bit32s)(recentEmulator * 280);
 		}
 
 		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS%4d] - EMU: %5d - FE: %5d - TARGET: %5d - EffectiveCycles: %6d - Limit: %6d|%6d - CycleMax: %6d - Scale: %5d\n",
 		//	St.HistoryCursor, (int)recentEmulator, (int)((recentFrameSum / recentCount) - recentEmulator), frameTime, 
-		//	recentCyclesSum / recentCount, CPU_CYCLES_LOWER_LIMIT, recentEmulator * 280, CPU_CycleMax, ratio);
+		//	recentCyclesSum / recentCount, (cpu.pmode ? 10000 : 1000), recentEmulator * 280, CPU_CycleMax, ratio);
 	}
-	return true;
+	goto return_true;
 }
 
 void GFX_Events()
@@ -4074,7 +4067,7 @@ void retro_run(void)
 		waitPause = dbp_wait_pause / dbp_perf_count, waitFinish = dbp_wait_finish / dbp_perf_count, waitPaused = dbp_wait_paused / dbp_perf_count, waitContinue = dbp_wait_continue / dbp_perf_count;
 		dbp_wait_pause = dbp_wait_finish = dbp_wait_paused = dbp_wait_continue = 0;
 		#endif
-		dbp_perf_uniquedraw = dbp_perf_count = dbp_perf_emutime = dbp_perf_totaltime = 0;
+		dbp_perf_uniquedraw = dbp_perf_count = dbp_perf_totaltime = 0;
 	}
 
 	// mix audio
@@ -4171,9 +4164,7 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 	if (dbp_serializemode == DBPSERIALIZE_DISABLED) return false;
 	bool pauseThread = (dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
 	if (pauseThread) DBP_ThreadControl(TCM_PAUSE_FRAME);
-	retro_time_t timeStart = time_cb();
 	DBPSerialize_All(ar, (dbp_state == DBPSTATE_RUNNING), dbp_game_running);
-	dbp_serialize_time += (Bit32u)(time_cb() - timeStart);
 	//log_cb(RETRO_LOG_WARN, "[SERIALIZE] [%d] [%s] %u\n", (dbp_state == DBPSTATE_RUNNING && dbp_game_running), (ar.mode == DBPArchive::MODE_LOAD ? "LOAD" : ar.mode == DBPArchive::MODE_SAVE ? "SAVE" : ar.mode == DBPArchive::MODE_SIZE ? "SIZE" : ar.mode == DBPArchive::MODE_MAXSIZE ? "MAXX" : ar.mode == DBPArchive::MODE_ZERO ? "ZERO" : "???????"), (Bit32u)ar.GetOffset());
 	if (dbp_game_running && ar.mode == DBPArchive::MODE_LOAD) dbp_lastmenuticks = DBP_GetTicks(); // force show menu on immediate emulation crash
 	if (pauseThread && unlock_thread) DBP_ThreadControl(TCM_RESUME_FRAME);
