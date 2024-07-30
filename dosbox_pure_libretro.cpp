@@ -3683,10 +3683,11 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 			{
 				myglGetError(); // clear any frontend error state
 
-				if (lastw != buf.width || lasth != buf.height)
+				Bit32u view_width = buf.width, view_height = buf.height;
+				if (lastw != view_width || lasth != view_height)
 				{
-					lastw = buf.width;
-					lasth = buf.height;
+					lastw = view_width;
+					lasth = view_height;
 					const float uvx = (float)lastw / (float)SCALER_MAXWIDTH, uvy = (float)lasth / (float)SCALER_MAXHEIGHT;
 					const float vertices[] = {
 						-1.0f, -1.0f,   0.0f,uvy, // bottom left
@@ -3709,9 +3710,10 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				if (myglGetError()) { DBP_ASSERT(0); } // clear any error state
 
 				bool is_voodoo_display = voodoo_ogl_display();
+				if (is_voodoo_display) { view_width *= voodoo_ogl_scale; view_height *= voodoo_ogl_scale; }
 
 				myglBindFramebuffer(MYGL_FRAMEBUFFER, (unsigned)dbp_hw_render.get_current_framebuffer());
-				myglViewport(0, 0, buf.width * voodoo_ogl_scale, buf.height * voodoo_ogl_scale);
+				myglViewport(0, 0, view_width, view_width);
 				myglBindVertexArray(vao);
 				if (is_voodoo_display)
 					myglDrawArrays(MYGL_TRIANGLE_STRIP, 4, 4);
@@ -3738,7 +3740,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				myglBindFramebuffer(MYGL_FRAMEBUFFER, 0);
 				if (myglGetError()) { DBP_ASSERT(0); } // clear any error state
 
-				video_cb(RETRO_HW_FRAME_BUFFER_VALID, buf.width * voodoo_ogl_scale, buf.height * voodoo_ogl_scale, 0);
+				video_cb(RETRO_HW_FRAME_BUFFER_VALID, view_width, view_width, 0);
 			}
 		};
 
