@@ -118,7 +118,7 @@ struct Patch_File : Patch_Entry
 			{
 				char basepath[DOS_PATHLENGTH]; Bit32u filesize, ofs; Bit8u b; Bit64u baseofs = 0, targsz = 0;
 				xorf->Seek(&(filesize = 0), DOS_SEEK_END); xorf->Seek(&(ofs = 4), DOS_SEEK_SET); // skip over header
-				for (; Local::GetU8(xorf, b);) if ((basepath[(ofs++)-4] = (char)(ofs-4 == (sizeof(basepath)-1) ? '\0' : b == '/' ? '\\' : b)) == '\0') break; // read source path
+				for (; Local::GetU8(xorf, b);) { ++ofs; if ((basepath[ofs-5] = (char)(ofs == sizeof(basepath)+4 ? '\0' : b == '/' ? '\\' : b)) == '\0') break; } // read source path
 				for (Bit8u num = 0; Local::GetU8(xorf, b);) { baseofs |= (Bit64u)(b & 0x7F) << (7 * (num++)); ++ofs; if (b < 0x80) break; }
 				for (Bit8u num = 0; Local::GetU8(xorf, b);) { targsz  |= (Bit64u)(b & 0x7F) << (7 * (num++)); ++ofs; if (b < 0x80) break; }
 				if (baseofs > 0xFFFFFFFF || targsz > 0xFFFFFFFF) return false;
@@ -771,3 +771,37 @@ Bit8u patchDrive::GetMediaByte(void) { return 0xF8;  } //Hard Disk
 bool patchDrive::isRemote(void) { return false; }
 bool patchDrive::isRemovable(void) { return false; }
 Bits patchDrive::UnMount(void) { delete this; return 0;  }
+
+/*
+void patchDrive::Patch()
+{
+	const char* underpath = "VIKINGS.EXE";
+
+	FileStat_Block stat;
+	DOS_File* df;
+	if (!impl->under.FileStat(underpath, &stat) || !impl->under.FileOpen(&df, (char*)underpath, 0)) { DBP_ASSERT(false); return; }
+
+	Patch_File* e = new Patch_File(Patch_File::TYPE_PATCH, stat.attr, underpath, stat.date, stat.time);
+	e->patched = true;
+	e->mem_data.resize(stat.size);
+	df->AddRef();
+	struct Local
+	{
+		static bool Read(DOS_File* df, Bit8u* p, Bit32u sz)
+		{
+			for (Bit16u read; sz; sz -= read, p += read) { read = (Bit16u)(sz > 0xFFFF ? 0xFFFF : sz); if (!df->Read(p, &read)) return false; }
+			return true;
+		}
+	};
+	if (!Local::Read(df, (stat.size ? &e->mem_data[0] : NULL), stat.size)) { DBP_ASSERT(0); }
+	df->Close();
+	delete df;
+	impl->root.entries.Put(e->name, e);
+
+	//CHANGE EXE @ 0x3C3B FROM 0x75 0x7B to 0x90 0x90
+	DBP_ASSERT(e->mem_data[0x3C3B + 0] == 0x75);
+	DBP_ASSERT(e->mem_data[0x3C3B + 1] == 0x7B);
+	e->mem_data[0x3C3B + 0] = 0x90;
+	e->mem_data[0x3C3B + 1] = 0x90;
+}
+*/
