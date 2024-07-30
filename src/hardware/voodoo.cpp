@@ -3310,10 +3310,12 @@ struct voodoo_ogl_state
 		vogl_active = true;
 	}
 
-	static void Deactivate()
+	static void Deactivate(bool keep_textures = false)
 	{
 		DBP_ASSERT(vogl_active);
+		vogl_active = false;
 		vogl->cmdbuf.Free();
+		if (keep_textures) return;
 		vogl->texbases.Free();
 		vogl->texbase_hashes.Free();
 		vogl->texuploads.Free();
@@ -3324,7 +3326,6 @@ struct voodoo_ogl_state
 			vogl->textures.data[i].lastframe = ogl_texture::FREED_LASTFRAME;
 			vogl->free_textures.AddOne() = i;
 		}
-		vogl_active = false;
 	}
 
 	void Init()
@@ -8851,6 +8852,13 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 			Voodoo_Startup();
 		}
 	}
+	else if (ar.mode == DBPArchive::MODE_MAXSIZE)
+	{
+		ar.SerializeBytes(NULL, sizeof(*v) - sizeof(v->clut) - sizeof(v->tmushare)
+			+ (4 << 20) + (4 << 20) + (4 << 20) // max fbmemsize, max tmumem0, max tmumem1
+		);
+		return;
+	}
 
 	if (v)
 	{
@@ -8863,7 +8871,9 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 
 		// Serialize the frame buffer RAM and everything else in fbi_state
 		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (vogl && (v_perf & V_PERFFLAG_OPENGL) && (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE)) vogl->WriteBackFrame();
+		if (vogl && (v_perf & V_PERFFLAG_OPENGL) && (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE))
+			if (!DBPArchive::accomodate_delta_encoding) // flag means serialize is called very frequently, so skip this slow process
+				vogl->WriteBackFrame();
 		#endif
 		ar.SerializeSparse(v->fbi.ram, v->fbi.mask + 1);
 		ar.SerializeBytes(v->fbi.rgboffs, (Bit8u*)((&v->fbi)+1)-(Bit8u*)v->fbi.rgboffs);
@@ -8900,7 +8910,6 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 			if (tmu.lookup == tmu.ncc[0].texel) lookup = 100;
 			else if (tmu.lookup == tmu.ncc[1].texel) lookup = 101;
 			else for (Bit8u i = 0; i != ARRAY_LENGTH(tmu.texel); i++) { if (tmu.lookup == tmu.texel[i]) { lookup = i; break; } }
-
 			ar.Serialize(lookup);
 
 			if (ar.mode == DBPArchive::MODE_LOAD)
@@ -8913,8 +8922,9 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_ZERO)
 		{
 			#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-			if (vogl_active)                               voodoo_ogl_state::Deactivate();
-			if (v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
+			bool reactivate_opengl = (v->active && (v_perf & V_PERFFLAG_OPENGL));
+			if (vogl_active)       voodoo_ogl_state::Deactivate(reactivate_opengl);
+			if (reactivate_opengl) voodoo_ogl_state::Activate();
 			#endif
 			v->resolution_dirty = true; // force call to  RENDER_SetSize
 			v->clutDirty = v->ogl_clutDirty = true;
