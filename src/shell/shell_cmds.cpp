@@ -823,6 +823,8 @@ void DOS_Shell::CMD_COPY(char * args) {
 								failed |= !DOS_ReadFile(sourceHandle,buffer,&toread);
 								failed |= !DOS_WriteFile(targetHandle,buffer,&toread);
 							} while (toread==0x8000 && !failed);
+							//DBP: Added copying of file date
+							DOS_SetFileDate(targetHandle, time, date);
 							DOS_CloseFile(sourceHandle);
 							DOS_CloseFile(targetHandle);
 							WriteOut(" %s\n",name);
