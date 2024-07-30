@@ -573,12 +573,10 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry,bool fcb) {
 #ifndef C_DBP_LIBRETRO
 		if (dos.errorcode) return false;
 #else
-		if (dos.errorcode)
-		{
-			// Make sure none of the drive implementations sets an errorcode but still succeeds
-			if (!exists) return false;
-			DBP_ASSERT(false);
-		}
+		//DBP: Abort only for invalid access code (unlike vanilla DOSBox which leads to errors in many programs for example Windows 3.11 install)
+		else if (dos.errorcode == DOSERR_ACCESS_CODE_INVALID) return false;
+		//DBP: Make sure none of the drive implementations sets an errorcode but still succeeds
+		DBP_ASSERT(!dos.errorcode || !exists);
 #endif
 		dos.errorcode=olderror;
 	}
