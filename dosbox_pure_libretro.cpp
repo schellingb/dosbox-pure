@@ -1006,13 +1006,6 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		IDE_RefreshCDROMs();
 	}
 
-	// Register with BIOS/CMOS/IDE controller
-	if (disk && letter < 'A'+MAX_DISK_IMAGES)
-	{
-		imageDiskList[letter-'A'] = disk;
-		dbp_images[image_index].image_disk = true;
-	}
-
 	if (path)
 	{
 		if (boot) image_index = DBP_AppendImage(path, false);
@@ -1020,6 +1013,14 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		dbp_images[image_index].drive = letter;
 		dbp_image_index = image_index;
 	}
+
+	// Register with BIOS/CMOS/IDE controller (after DBP_AppendImage)
+	if (disk && letter < 'A'+MAX_DISK_IMAGES)
+	{
+		imageDiskList[letter-'A'] = disk;
+		dbp_images[image_index].image_disk = true;
+	}
+
 	return NULL;
 }
 
