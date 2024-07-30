@@ -3293,7 +3293,7 @@ struct voodoo_ogl_state
 	ogl_drawbuffer drawbuffers[3];
 	ogl_readbackdata readback;
 	UINT8 flushed_buffer = 0, display_buffer = 0;
-	UINT32 renderframe = 0;
+	UINT32 renderframe = 0, lastbackframe = (UINT32)-1;
 	UINT64 last_texture_clear_op = 0;
 	unsigned vao = 0, vbo = 0, displayprog = 0, displayprog_clut_exp = 0, displayprog_clut_fac = 0;
 	unsigned depthstenciltex = 0, depthstenciltex_width = 0, depthstenciltex_height = 0;
@@ -3385,6 +3385,8 @@ struct voodoo_ogl_state
 
 	void WriteBackFrame()
 	{
+		if (lastbackframe == renderframe) return;
+		lastbackframe = renderframe;
 		for (UINT8 bufnum = 0; bufnum != 3; bufnum++)
 		{
 			const ogl_pixels& src = drawbuffers[bufnum].color;
@@ -4391,7 +4393,6 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		}
 	}
 	vogl->renderframe++;
-
 	vogl->display_buffer = vogl->flushed_buffer;
 	return true;
 }
@@ -8862,7 +8863,7 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 
 		// Serialize the frame buffer RAM and everything else in fbi_state
 		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (vogl && (v_perf & V_PERFFLAG_OPENGL) && ar.mode == DBPArchive::MODE_SAVE) vogl->WriteBackFrame();
+		if (vogl && (v_perf & V_PERFFLAG_OPENGL) && (ar.mode == DBPArchive::MODE_SAVE || ar.mode == DBPArchive::MODE_SIZE)) vogl->WriteBackFrame();
 		#endif
 		ar.SerializeSparse(v->fbi.ram, v->fbi.mask + 1);
 		ar.SerializeBytes(v->fbi.rgboffs, (Bit8u*)((&v->fbi)+1)-(Bit8u*)v->fbi.rgboffs);
