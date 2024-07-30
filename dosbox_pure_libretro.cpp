@@ -573,11 +573,12 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 			semDidPause.Post();
 			return;
 		case_TCM_EMULATION_PAUSED:
+			if (!pausedTimeStart) pausedTimeStart = time_cb();
 			if (dbp_refresh_memmaps) DBP_ReportCoreMemoryMaps();
-			pausedTimeStart = time_cb();
 			return;
 		case_TCM_EMULATION_CONTINUES:
-			if (pausedTimeStart) { dbp_paused_time_sum += (Bit32u)(time_cb() - pausedTimeStart); pausedTimeStart = 0; } 
+			if (pausedTimeStart) { dbp_paused_time_sum += (Bit32u)(time_cb() - pausedTimeStart); pausedTimeStart = 0; }
+			if (dbp_serializesize && dbp_serializemode != DBPSERIALIZE_REWIND) dbp_serializesize = 0;
 			semDoContinue.Post();
 			return;
 	}
@@ -4231,9 +4232,8 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 
 size_t retro_serialize_size(void)
 {
-	bool rewind = (dbp_state != DBPSTATE_RUNNING || dbp_serializemode == DBPSERIALIZE_REWIND);
-	if (rewind && dbp_serializesize) return dbp_serializesize;
-	DBPArchiveCounter ar(rewind);
+	if (dbp_serializesize) return dbp_serializesize;
+	DBPArchiveCounter ar(dbp_state != DBPSTATE_RUNNING || dbp_serializemode == DBPSERIALIZE_REWIND);
 	return dbp_serializesize = (retro_serialize_all(ar, false) ? ar.count : 0);
 }
 
