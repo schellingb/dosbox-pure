@@ -81,12 +81,13 @@ public:
 		source[0] = '\0';
 	}
 
-	bool IsRedirect() { return type != TDELETE; }
-	bool IsDelete()   { return type == TDELETE; }
-	Type  RedirectType()   { DBP_ASSERT(type != TDELETE); return (Type)type; }
-	Bit8u RedirectDirLen() { DBP_ASSERT(type != TDELETE); return target_lastslash; }
-	char* RedirectTarget() { DBP_ASSERT(type != TDELETE); return target; }
-	char* RedirectSource() { DBP_ASSERT(type != TDELETE); return source; }
+	INLINE bool IsRedirect() { return type != TDELETE; }
+	INLINE bool IsDelete()   { return type == TDELETE; }
+	INLINE Type  RedirectType()   { DBP_ASSERT(type != TDELETE); return (Type)type; }
+	INLINE Bit8u RedirectDirLen() { DBP_ASSERT(type != TDELETE); return target_lastslash; }
+	INLINE char* RedirectTarget() { DBP_ASSERT(type != TDELETE); return target; }
+	INLINE char* RedirectSource() { DBP_ASSERT(type != TDELETE); return source; }
+	INLINE char* DeleteTarget()   { DBP_ASSERT(type == TDELETE); return target; }
 
 	void  RedirectSetNewPath(const char* _newpath)
 	{
@@ -189,7 +190,7 @@ struct unionDriveImpl
 
 	bool ExistInOverOrUnder(char* path)
 	{
-		return (under->FileExists(path) || over->FileExists(path) || over->TestDir(path) || under->TestDir(path));
+		Bit16u tmp; return (under->GetFileAttr(path, &tmp) || over->GetFileAttr(path, &tmp));
 	}
 
 	bool UnionUnlink(DOS_Drive* drv, char* path, Union_Modification::Type type, const Bit16u save_errorcode)
@@ -202,14 +203,14 @@ struct unionDriveImpl
 		if (m && m->IsRedirect())
 		{
 			delete m;
-			bool in_under = (under->FileExists(path) || under->TestDir(path));
+			Bit16u tmp; bool in_under = under->GetFileAttr(path, &tmp);
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //re-mark deletion
 			else modifications.Remove(path); //remove redirect
 			return TRUE_RESET_DOSERR;
 		}
 		if (type == Union_Modification::TFILE ? over->FileUnlink(path) : over->RemoveDir(path))
 		{
-			bool in_under = (under->FileExists(path) || under->TestDir(path));
+			Bit16u tmp; bool in_under = under->GetFileAttr(path, &tmp);
 			if (in_under) modifications.Put(path, new Union_Modification(path)); //mark deletion
 			return TRUE_RESET_DOSERR;
 		}
@@ -236,7 +237,7 @@ struct unionDriveImpl
 	{
 		if (!writable || !*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
 		Union_Modification* m = modifications.Get(path);
-		if (!m) return (can_overwrite || (!under->FileExists(path) && !under->TestDir(path)) || FALSE_SET_DOSERR(FILE_ALREADY_EXISTS));
+		if (!m) { Bit16u tmp; return (can_overwrite || !under->GetFileAttr(path, &tmp) || FALSE_SET_DOSERR(FILE_ALREADY_EXISTS)); }
 		if (!can_overwrite && m->IsRedirect()) return FALSE_SET_DOSERR(FILE_ALREADY_EXISTS);
 		delete m;
 		modifications.Remove(path);
@@ -290,6 +291,15 @@ struct unionDriveImpl
 		Loader l(new zipDrive(new rawFile(zip_file_h, false)), this, strict_mode);
 		const Bit16u save_errorcode = dos.errorcode;
 		DriveFileIterator(l.zip, Loader::LoadFiles, (Bitu)&l);
+
+		// Forget delete modifications that have been re-added as files/directories to the save ZIP
+		for (Union_Modification* m : modifications)
+		{
+			Bit16u tmp; if (!m->IsDelete() || !over->GetFileAttr(m->DeleteTarget(), &tmp)) continue;
+			modifications.Remove(m->DeleteTarget());
+			delete m;
+		}
+
 		dos.errorcode = save_errorcode;
 		delete l.zip; // calls fclose
 	}
@@ -777,7 +787,8 @@ bool unionDrive::MakeDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	const Bit16u save_errorcode = dos.errorcode;
-	if (!impl->UnionPrepareCreate(dir_path, false) || !impl->over->MakeDir(dir_path)) return false;
+	if (!impl->UnionPrepareCreate(dir_path, false)) return false;
+	if (!impl->over->MakeDir(dir_path)) { DBP_ASSERT(dos.errorcode != DOSERR_FILE_ALREADY_EXISTS); return false; } // shouldn't already exist after unionDriveImpl::ReadSaveFile
 	impl->ScheduleSave();
 	return TRUE_RESET_DOSERR;
 }
@@ -885,7 +896,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
 				if (dta_attr & DOS_ATTR_VOLUME) continue;
 				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
-				if (impl->over->FileExists(dta_path) || impl->over->TestDir(dta_path)) continue;
+				Bit16u tmp; if (impl->over->GetFileAttr(dta_path, &tmp)) continue;
 				if (impl->modifications.Get(dta_name, DOS_NAMELENGTH_ASCII, s.dir_hash)) continue;
 				dta.SetDirID(my_dir_id);
 				return TRUE_RESET_DOSERR;
@@ -908,6 +919,8 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
 				if (dta_attr & DOS_ATTR_VOLUME) continue;
 				if (dta_name[0] == '.' && dta_name[dta_name[1] == '.' ? 2 : 1] == '\0') continue;
+				Union_Modification* m = impl->modifications.Get(dta_name, DOS_NAMELENGTH_ASCII, s.dir_hash);
+				if (m && m->IsDelete()) { DBP_ASSERT(false); continue; } // a modified deleted file shouldn't exist in over after unionDriveImpl::ReadSaveFile
 				dta.SetDirID(my_dir_id);
 				return TRUE_RESET_DOSERR;
 			}
