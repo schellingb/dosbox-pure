@@ -1063,6 +1063,15 @@ static void FitGammaCurve(const UINT8* crv, float& pow_exponent, float& multiply
 	multiply_factor = bestfac / 256.0f * range;
 }
 
+static void FitGammaCurves(const voodoo_state *v, float& clutExpR, float& clutExpG, float& clutExpB, float& clutFacR, float& clutFacG, float& clutFacB, float range = 1.0f)
+{
+	FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, range, v->gammafix);
+	if (!memcmp(v->clutRaw.r, v->clutRaw.g, sizeof(v->clutRaw.r)) && !memcmp(v->clutRaw.r, v->clutRaw.g, sizeof(v->clutRaw.r)))
+		{ clutExpG = clutExpB = clutExpR; clutFacG = clutFacB = clutFacR; return;}
+	FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, range, v->gammafix);
+	FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, range, v->gammafix);
+}
+
 /*************************************
  *
  *  Computes a fast 16.16 reciprocal
@@ -3085,74 +3094,81 @@ struct ogl_program
 
 struct ogl_pixels
 {
-	UINT32 width = 0, height = 0;
-	UINT8* data = NULL;
-	void SetSize(UINT32 w, UINT32 h) { data = (UINT8*)realloc(data, w * h * 4); width = w; height = h; }
+	UINT32 width = 0, height = 0, *data = NULL;
+	void Set(UINT32 w, UINT32 h, UINT32* alloc_data) { width = w; height = h; data = alloc_data; }
 	void Free() { free(data); *this = ogl_pixels(); }
 };
 
-static void* ogl_convertframe(ogl_readback_mode mode, bool for_fbi, UINT32 ogl_w, UINT32 ogl_h, const ogl_pixels* ogl_src = NULL)
+enum ogl_convertframe_mode { CONVERT_FROM_FBI_TO_OGL, CONVERT_FROM_OGL_TO_FBI, CONVERT_RESCALE_OGL };
+static UINT32* ogl_convertframe(ogl_readback_mode mode, ogl_convertframe_mode convert, const ogl_pixels* ogl_src = NULL, UINT32 out_w = 0, UINT32 out_h = 0)
 {
-	const UINT32 bufnum = (mode - OGL_READBACK_MODE_COLOR0), fbi_offs = (mode != OGL_READBACK_MODE_DEPTH ? v->fbi.rgboffs[bufnum] : v->fbi.auxoffs), fbi_w = v->fbi.width, fbi_h = v->fbi.height, fbi_pitch = v->fbi.rowpixels;
-	if (fbi_offs == (UINT32)(~0) || (ogl_src && !ogl_src->width)) return NULL;
-	if (!for_fbi)
+	if (convert == CONVERT_RESCALE_OGL)
 	{
-		//GFX_ShowMsg("[VOGL] Reading software %s buf %u of size %u x %u into gpu color buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), fbi_w, fbi_h, ogl_w, ogl_h);
-		const UINT16 *fbi_lastrow = (const UINT16*)(v->fbi.ram + fbi_offs) + ((fbi_h - 1) * fbi_pitch);
-		UINT8* ogl_buf = (UINT8*)malloc(ogl_w * ogl_h * 4), *p = ogl_buf;
-		for (UINT32 y = 0; y != ogl_h; y++)
+		DBP_ASSERT(mode != OGL_READBACK_MODE_DEPTH); // no depth rescaling
+		const UINT32 ogl_src_w = ogl_src->width, ogl_src_h = ogl_src->height, *ogl_src_data = ogl_src->data;
+		//GFX_ShowMsg("[VOGL] Rescaling %s buf of size %u x %u into gpu buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), ogl_src_w, ogl_src_h, out_w, out_h);
+		UINT32* ogl_out_buf = (UINT32*)malloc(out_w * out_h * 4), *p = ogl_out_buf;
+		for (UINT32 y = 0; y != out_h; y++)
 		{
-			const UINT16 *fbi_line = fbi_lastrow - fbi_pitch * (y * fbi_h / ogl_h);
+			const UINT32 *ogl_src_line = ogl_src_data + ogl_src_w * (y * ogl_src_h / out_h);
+			for (UINT32 x = 0; x != out_w; x++)
+				*(p++) = *(ogl_src_line + (x * ogl_src_w / out_w));
+		}
+		return ogl_out_buf;
+	}
+	const UINT32 bufnum = (mode - OGL_READBACK_MODE_COLOR0), fbi_offs = (mode != OGL_READBACK_MODE_DEPTH ? v->fbi.rgboffs[bufnum] : v->fbi.auxoffs), fbi_w = v->fbi.width, fbi_h = v->fbi.height, fbi_pitch = v->fbi.rowpixels;
+	if (convert == CONVERT_FROM_FBI_TO_OGL && fbi_offs)
+	{
+		//GFX_ShowMsg("[VOGL] Reading software %s buf %u of size %u x %u into gpu buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), fbi_w, fbi_h, out_w, out_h);
+		const UINT16 *fbi_lastrow = (const UINT16*)(v->fbi.ram + fbi_offs) + ((fbi_h - 1) * fbi_pitch);
+		UINT8* ogl_out_buf = (UINT8*)malloc(out_w * out_h * 4), *p = ogl_out_buf;
+		for (UINT32 y = 0; y != out_h; y++)
+		{
+			const UINT16 *fbi_line = fbi_lastrow - fbi_pitch * (y * fbi_h / out_h);
 			if (mode != OGL_READBACK_MODE_DEPTH)
-			{
-				for (UINT32 x = 0; x != ogl_w; x++)
+				for (UINT32 x = 0; x != out_w; x++)
 				{
-					const UINT16 *fbi_565 = fbi_line + (x * fbi_w / ogl_w);
+					const UINT16 *fbi_565 = fbi_line + (x * fbi_w / out_w);
 					UINT8 r, g, b;
 					EXTRACT_565_TO_888(*fbi_565, r, g, b);
 					*(p++) = r; *(p++) = g; *(p++) = b; *(p++) = 0xFF;
 				}
-			}
-			if (mode == OGL_READBACK_MODE_DEPTH)
-			{
-				for (UINT32 x = 0; x != ogl_w; x++, p += 4)
-					*(UINT32*)p = *(fbi_line + (x * fbi_w / ogl_w));
-			}
+			else
+				for (UINT32 x = 0; x != out_w; x++, p += 4)
+					*(UINT32*)p = *(fbi_line + (x * fbi_w / out_w));
 		}
-		return ogl_buf;
+		return (UINT32*)ogl_out_buf;
 	}
-	else
+	else if (convert == CONVERT_FROM_OGL_TO_FBI && fbi_offs)
 	{
-		//GFX_ShowMsg("[VOGL] Writing back gpu %s buf %u of size %u x %u into software color buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), ogl_w, ogl_h, fbi_w, fbi_h);
-		const UINT32* ogl_lastrow = (const UINT32*)ogl_src->data + ((ogl_h - 1) * ogl_w);
+		if (!ogl_src->width) return NULL;
+		const UINT32 ogl_w = ogl_src->width, ogl_h = ogl_src->height, *ogl_lastrow = ogl_src->data + ((ogl_h - 1) * ogl_w);
+		//GFX_ShowMsg("[VOGL] Writing back gpu %s buf %u of size %u x %u into software buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), ogl_w, ogl_h, fbi_w, fbi_h);
 		UINT16 *fbi_out = (UINT16*)(v->fbi.ram + fbi_offs), *p = fbi_out;
 		for (UINT32 y = 0; y != fbi_h; y++)
 		{
 			const UINT32 *ogl_line = ogl_lastrow - ogl_w * (y * ogl_h / fbi_h);
 			if (mode != OGL_READBACK_MODE_DEPTH)
-			{
 				for (UINT32 x = 0; x != fbi_w; x++)
 				{
 					const UINT8 *ogl_rgba = (const UINT8*)(ogl_line + (x * ogl_w / fbi_w));
 					*(p++) = (UINT16)(((ogl_rgba[0] & 0xF8) << 8) | ((ogl_rgba[1] & 0xFC) << 3) | ((ogl_rgba[2] & 0xF8) >> 3));
 				}
-			}
-			if (mode == OGL_READBACK_MODE_DEPTH)
-			{
+			else
 				for (UINT32 x = 0; x != fbi_w; x++)
 				{
 					const UINT8 *ogl_rgba = (const UINT8*)(ogl_line + (x * ogl_w / fbi_w));
 					*(p++) = (UINT16)((ogl_rgba[0] << 8) | ogl_rgba[1]);
 				}
-			}
 		}
-		return NULL;
 	}
+	return NULL;
 }
 
 struct ogl_drawbuffer
 {
 	unsigned fbo = 0, colortex = 0;
+	UINT8 last_scale = 0;
 	ogl_pixels color;
 
 	void SetSize(UINT16 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
@@ -3174,19 +3190,21 @@ struct ogl_drawbuffer
 			myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_DEPTH_ATTACHMENT, MYGL_TEXTURE_2D, depthstenciltex, 0);
 			myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_STENCIL_ATTACHMENT, MYGL_TEXTURE_2D, depthstenciltex, 0);
 			GLERRORASSERT
+
+			last_scale = voodoo_ogl_scale;
 		}
 
+		bool is_rescale = (color.width / last_scale * voodoo_ogl_scale == w && color.height / last_scale * voodoo_ogl_scale == h);
+		UINT32* pxls = ogl_convertframe((ogl_readback_mode)(OGL_READBACK_MODE_COLOR0 + bufnum), (is_rescale ? CONVERT_RESCALE_OGL : CONVERT_FROM_FBI_TO_OGL), &color, w, h);
+
 		myglBindTexture(MYGL_TEXTURE_2D, colortex);
-		if (void* pxls = ogl_convertframe((ogl_readback_mode)(OGL_READBACK_MODE_COLOR0 + bufnum), false, w, h))
-		{
-			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, pxls);
-			free(pxls);
-		}
+		myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, pxls);
+		if (pxls)
+			free(color.data);
 		else
-		{
-			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
-		}
-		color.SetSize(w, h);
+			memset((pxls = (UINT32*)realloc(color.data, w * h * 4)), 0, w * h * 4);
+		color.Set(w, h, pxls);
+		last_scale = voodoo_ogl_scale;
 	}
 
 	void Cleanup()
@@ -3257,7 +3275,9 @@ struct ogl_readbackdata
 		}
 		myglBindTexture(MYGL_TEXTURE_2D, depth_color);
 		myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, w, h, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
-		depth.SetSize(w, h);
+		UINT32* newdata = (UINT32*)realloc(depth.data, w * h * 4);
+		memset(newdata, 0, w * h * 4);
+		depth.Set(w, h, newdata);
 	}
 
 	void Cleanup()
@@ -3338,9 +3358,7 @@ struct voodoo_ogl_state
 		displayprog_clut_fac = myglGetUniformLocation(displayprog, "clut_fac");
 		myglUseProgram(displayprog);
 		float clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB;
-		FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 1.0f, v->gammafix);
-		FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 1.0f, v->gammafix);
-		FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 1.0f, v->gammafix);
+		FitGammaCurves(v, clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB);
 		myglUniform3f(displayprog_clut_exp, clutExpR, clutExpG, clutExpB);
 		myglUniform3f(displayprog_clut_fac, clutFacR, clutFacG, clutFacB);
 		v->ogl_clutDirty = false;
@@ -3391,10 +3409,10 @@ struct voodoo_ogl_state
 		for (UINT8 bufnum = 0; bufnum != 3; bufnum++)
 		{
 			const ogl_pixels& src = drawbuffers[bufnum].color;
-			ogl_convertframe((ogl_readback_mode)(OGL_READBACK_MODE_COLOR0 + bufnum), true, src.width, src.height, &src);
+			ogl_convertframe((ogl_readback_mode)(OGL_READBACK_MODE_COLOR0 + bufnum), CONVERT_FROM_OGL_TO_FBI, &src);
 		}
 		const ogl_pixels& dep = readback.depth;
-		ogl_convertframe(OGL_READBACK_MODE_DEPTH, true, dep.width, dep.height, &dep);
+		ogl_convertframe(OGL_READBACK_MODE_DEPTH, CONVERT_FROM_OGL_TO_FBI, &dep);
 	}
 
 	void DepthStencilTexSetSize(UINT32 w, UINT32 h)
@@ -3413,7 +3431,7 @@ struct voodoo_ogl_state
 		}
 
 		myglBindTexture(MYGL_TEXTURE_2D, depthstenciltex);
-		if (void* pxls = ogl_convertframe(OGL_READBACK_MODE_DEPTH, false, w, h))
+		if (void* pxls = ogl_convertframe(OGL_READBACK_MODE_DEPTH, CONVERT_FROM_FBI_TO_OGL, NULL, w, h))
 		{
 			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH_STENCIL, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, pxls);
 			free(pxls);
@@ -3487,9 +3505,7 @@ bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation 
 	if (v->ogl_clutDirty)
 	{
 		float clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB;
-		FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 1.0f, v->gammafix);
-		FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 1.0f, v->gammafix);
-		FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 1.0f, v->gammafix);
+		FitGammaCurves(v, clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB);
 		//GFX_ShowMsg("[VOGL] CLUT - EXP RGB: %f / %f / %f - FAC RGB: %f / %f / %f", clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB);
 		myglUniform3f(vogl->displayprog_clut_exp, clutExpR, clutExpG, clutExpB);
 		myglUniform3f(vogl->displayprog_clut_fac, clutFacR, clutFacG, clutFacB);
@@ -4527,7 +4543,7 @@ static UINT32 voodoo_ogl_read_pixel(int x, int y)
 			pixels = &vogl->readback.depth;
 			off = (pixels->width * (pixels->height-y) + x);
 			if (off > pixels->width * pixels->height) goto invalidread;
-			rgba = pixels->data + (pixels->width * (pixels->height - y) + x) * 4;
+			rgba = (const UINT8*)(pixels->data + (pixels->width * (pixels->height - y) + x));
 			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | (rgba[5] << 16);
 	}
 	if (voodoo_ogl_scale != 1) // color buffers are scaled
@@ -4537,7 +4553,7 @@ static UINT32 voodoo_ogl_read_pixel(int x, int y)
 	}
 	off = (pixels->width * (pixels->height-y) + x);
 	if (off > pixels->width * pixels->height) goto invalidread;
-	rgba = pixels->data + (pixels->width * (pixels->height - y) + x) * 4;
+	rgba = (const UINT8*)(pixels->data + (pixels->width * (pixels->height - y) + x));
 	return ((rgba[0]>>3)<<11) | ((rgba[1]>>2)<<5) | (rgba[2]>>3) |
 			((rgba[4]>>3)<<27) | ((rgba[5]>>2)<<21) | ((rgba[6]>>3)<<16);
 }
@@ -8399,9 +8415,7 @@ static void Voodoo_VerticalTimer(Bitu /*val*/) {
 		if (v->clutDirty)
 		{
 			float clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB;
-			FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, 255.49f, v->gammafix);
-			FitGammaCurve(v->clutRaw.g, clutExpG, clutFacG, 255.49f, v->gammafix);
-			FitGammaCurve(v->clutRaw.b, clutExpB, clutFacB, 255.49f, v->gammafix);
+			FitGammaCurves(v, clutExpR, clutExpG, clutExpB, clutFacR, clutFacG, clutFacB, 255.49f);
 			for (UINT32 i = 0; i != 65536; i++)
 			{
 				float r = (float)pow(((i >> 8) & 0xf8) / (float)0xf8, clutExpR) * clutFacR;
