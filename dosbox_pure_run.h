@@ -50,7 +50,7 @@ struct DBP_Run
 
 	struct BatchFileExec : BatchFile
 	{
-		BatchFileExec(const std::string& _exe) : BatchFile(first_shell,"Z:\\AUTOEXEC.BAT","","") { filename = _exe; }
+		BatchFileExec(const std::string& _exe) : BatchFile(first_shell,"Z:\\AUTOEXEC.BAT","","") { filename = _exe; if (!_exe.length()) location = 1; }
 		virtual bool ReadLine(char * line)
 		{
 			*(line++) = '@';
@@ -59,7 +59,8 @@ struct DBP_Run
 				case 0:
 				{
 					ConsoleClearScreen();
-					const char *fn = filename.c_str(), *r = fn + ((fn[0] && fn[1] == ':') ? 2 : 0), *p = r + (*r == '\\' ? 1 : 0), *sl = strrchr(p, '\\');
+					char *fn = (char*)filename.c_str(), *r = fn + ((fn[0] && fn[1] == ':') ? 2 : 0), *p = r + (*r == '\\' ? 1 : 0), *param = strchr(p, ' '), *sl;
+					if (param) { *param = '\0'; sl = strrchr(p, '\\'); *param = ' '; } else { sl = strrchr(p, '\\'); };
 					const Bit8u drive = ((((fn[0] >= 'A' && fn[0] <= 'Z') || (fn[0] >= 'a' && fn[0] <= 'z')) && fn[1] == ':') ? (fn[0] & 0x5F) : 'C') - 'A';
 					if (Drives[drive])
 					{
