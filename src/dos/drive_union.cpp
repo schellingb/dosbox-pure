@@ -787,8 +787,7 @@ bool unionDrive::MakeDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	const Bit16u save_errorcode = dos.errorcode;
-	if (!impl->UnionPrepareCreate(dir_path, false)) return false;
-	if (!impl->over->MakeDir(dir_path)) { DBP_ASSERT(dos.errorcode != DOSERR_FILE_ALREADY_EXISTS); return false; } // shouldn't already exist after unionDriveImpl::ReadSaveFile
+	if (!impl->UnionPrepareCreate(dir_path, false) || !impl->over->MakeDir(dir_path)) return false;
 	impl->ScheduleSave();
 	return TRUE_RESET_DOSERR;
 }
