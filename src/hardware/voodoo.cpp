@@ -3117,7 +3117,7 @@ static UINT32* ogl_convertframe(ogl_readback_mode mode, ogl_convertframe_mode co
 		return ogl_out_buf;
 	}
 	const UINT32 bufnum = (mode - OGL_READBACK_MODE_COLOR0), fbi_offs = (mode != OGL_READBACK_MODE_DEPTH ? v->fbi.rgboffs[bufnum] : v->fbi.auxoffs), fbi_w = v->fbi.width, fbi_h = v->fbi.height, fbi_pitch = v->fbi.rowpixels;
-	if (convert == CONVERT_FROM_FBI_TO_OGL && fbi_offs)
+	if (convert == CONVERT_FROM_FBI_TO_OGL && fbi_offs != (UINT32)(~0))
 	{
 		//GFX_ShowMsg("[VOGL] Reading software %s buf %u of size %u x %u into gpu buf of size %u x %u", (mode != OGL_READBACK_MODE_DEPTH ? "color" : "depth"), (mode != OGL_READBACK_MODE_DEPTH ? bufnum : 0), fbi_w, fbi_h, out_w, out_h);
 		const UINT16 *fbi_lastrow = (const UINT16*)(v->fbi.ram + fbi_offs) + ((fbi_h - 1) * fbi_pitch);
@@ -3139,7 +3139,7 @@ static UINT32* ogl_convertframe(ogl_readback_mode mode, ogl_convertframe_mode co
 		}
 		return (UINT32*)ogl_out_buf;
 	}
-	else if (convert == CONVERT_FROM_OGL_TO_FBI && fbi_offs)
+	else if (convert == CONVERT_FROM_OGL_TO_FBI && fbi_offs != (UINT32)(~0))
 	{
 		if (!ogl_src->width) return NULL;
 		const UINT32 ogl_w = ogl_src->width, ogl_h = ogl_src->height, *ogl_lastrow = ogl_src->data + ((ogl_h - 1) * ogl_w);
@@ -3461,26 +3461,8 @@ static void TriggerRenderDocCapture()
 	if (rdoc_api) { rdoc_api->TriggerCapture(); GFX_ShowMsg("[VOGL] Triggering RenderDoc capture"); }
 	else { GFX_ShowMsg("[VOGL] Unable to trigger RenderDoc capture. Is RenderDoc active?"); }
 }
-static bool dbg_ogl_accumulatecommands, dbg_ogl_end_accumulatecommands;
-#endif
-
-#if 0
 enum KBD_KEYS { KBD_NONE, KBD_1,KBD_2,KBD_3,KBD_4,KBD_5,KBD_6,KBD_7,KBD_8,KBD_9,KBD_0, KBD_q,KBD_w,KBD_e,KBD_r,KBD_t,KBD_y,KBD_u,KBD_i,KBD_o,KBD_p, KBD_a,KBD_s,KBD_d,KBD_f,KBD_g,KBD_h,KBD_j,KBD_k,KBD_l,KBD_z,KBD_x,KBD_c,KBD_v,KBD_b,KBD_n,KBD_m,KBD_f1,KBD_f2,KBD_f3,KBD_f4,KBD_f5,KBD_f6,KBD_f7,KBD_f8,KBD_f9,KBD_f10,KBD_f11,KBD_f12,KBD_esc,KBD_tab,KBD_backspace,KBD_enter,KBD_space,KBD_leftalt,KBD_rightalt,KBD_leftctrl,KBD_rightctrl,KBD_leftshift,KBD_rightshift,KBD_capslock,KBD_scrolllock,KBD_numlock,KBD_grave,KBD_minus,KBD_equals,KBD_backslash,KBD_leftbracket,KBD_rightbracket,KBD_semicolon,KBD_quote,KBD_period,KBD_comma,KBD_slash,KBD_extra_lt_gt,KBD_printscreen,KBD_pause,KBD_insert,KBD_home,KBD_pageup,KBD_delete,KBD_end,KBD_pagedown,KBD_left,KBD_up,KBD_down,KBD_right,KBD_kp1,KBD_kp2,KBD_kp3,KBD_kp4,KBD_kp5,KBD_kp6,KBD_kp7,KBD_kp8,KBD_kp9,KBD_kp0,KBD_kpdivide,KBD_kpmultiply,KBD_kpminus,KBD_kpplus,KBD_kpenter,KBD_kpperiod,KBD_LAST };
-void voodoo_ogl_debugkey(KBD_KEYS k, bool down)
-{
-	//// TO USE VOODOO DEBUG KEYS NEED TO ADD THIS TO GFX_Events:
-	//   if (e.type == DBPET_KEYDOWN || e.type == DBPET_KEYUP) { void voodoo_ogl_debugkey(KBD_KEYS, bool); voodoo_ogl_debugkey((KBD_KEYS)e.val, (e.type == DBPET_KEYDOWN)); }
-	if (!v || !vogl) return;
-	if (down && k == KBD_pageup) { v->gammafix += 0.01f; GFX_ShowMsg("[OGL DBG] voodoo_gammafix: %f\n", v->gammafix); v->ogl_clutDirty = v->clutDirty = true; }
-	if (down && k == KBD_pagedown) { v->gammafix -= 0.01f; GFX_ShowMsg("[OGL DBG] voodoo_gammafix: %f\n", v->gammafix); v->ogl_clutDirty = v->clutDirty = true; }
-	//if ((k == KBD_end) || (down && k == KBD_home)) { voodoo_ogl_fallbacksoftware ^= true; }
-
-	#if defined(VOODOO_RENDERDOC_H) && defined(VOODOO_RENDERDOC_DLL)
-	if (k == KBD_delete && down) { dbg_ogl_accumulatecommands = true; GFX_ShowMsg("[OGL DBG] accumulate commands start"); }
-	if (k == KBD_delete && !down) { dbg_ogl_end_accumulatecommands = true; GFX_ShowMsg("[OGL DBG] accumulate commands end"); }
-	if (k == KBD_insert && down) { TriggerRenderDocCapture(); }
-	#endif
-}
+extern bool DBP_IsKeyDown(KBD_KEYS key);
 #endif
 
 bool voodoo_ogl_is_active()
@@ -3656,7 +3638,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			const UINT32 FOGMODE = eff.fog_mode;
 			const bool uset[] = { (eff.tex_mode[0] != VOODOO_OGL_TEXMODE_DISABLED), (eff.tex_mode[1] != VOODOO_OGL_TEXMODE_DISABLED) };
 			const bool usefoglodblend = ((FOGMODE_ENABLE_FOG(FOGMODE) && !FOGMODE_FOG_CONSTANT(FOGMODE)) || (uset[0] && TEXMODE_TC_MSELECT(eff.tex_mode[0]) >= 4) || (uset[1] && TEXMODE_TC_MSELECT(eff.tex_mode[1]) >= 4));
-			const bool usevcolor = (!FBZCP_CC_RGBSELECT(FBZCOLORPATH) || !FBZCP_CC_ASELECT(FBZCOLORPATH) || (!FBZCP_CC_LOCALSELECT_OVERRIDE(FBZCOLORPATH) && !FBZCP_CC_LOCALSELECT(FBZCOLORPATH)) || !(FBZCP_CCA_LOCALSELECT(FBZCOLORPATH) & 1));
+			const bool usevcolor = (!FBZCP_CC_RGBSELECT(FBZCOLORPATH) || !FBZCP_CC_ASELECT(FBZCOLORPATH) || FBZCP_CC_LOCALSELECT_OVERRIDE(FBZCOLORPATH) || !FBZCP_CC_LOCALSELECT(FBZCOLORPATH) || !(FBZCP_CCA_LOCALSELECT(FBZCOLORPATH) & 1) || (FOGMODE_ENABLE_FOG(FOGMODE) && !FOGMODE_FOG_CONSTANT(FOGMODE) && FOGMODE_FOG_ZALPHA(FOGMODE) == 1));
 
 			vogl->program_hashes.Put(prog_hash, Local::ProgEqual, vogl->programs.data, eff, vogl->programs.num);
 			ogl_program* prog = &vogl->programs.AddOne();
@@ -3999,7 +3981,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	#endif
 
 	#if defined(VOODOO_RENDERDOC_H) && defined(VOODOO_RENDERDOC_DLL)
-	if (dbg_ogl_accumulatecommands) { if (dbg_ogl_end_accumulatecommands) { TriggerRenderDocCapture(); dbg_ogl_accumulatecommands = dbg_ogl_end_accumulatecommands = false; } return true; }
+	bool dbgDel = DBP_IsKeyDown(KBD_delete); static bool lastDbgDel; if (dbgDel) { lastDbgDel = true; return true; } else if (lastDbgDel) { TriggerRenderDocCapture(); lastDbgDel = false; return true; }
 	#endif
 
 	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", fbi_width, fbi_height, ready_command_num, ready_vertex_num/3);
@@ -4541,9 +4523,9 @@ static UINT32 voodoo_ogl_read_pixel(int x, int y)
 		case 1: pixels = &vogl->drawbuffers[v->fbi.backbuf].color; break; // back buffer
 		case 2: // aux buffer (size matches fbi, only support depth for now)
 			pixels = &vogl->readback.depth;
-			off = (pixels->width * (pixels->height-y) + x);
+			off = (pixels->width * (pixels->height - y) + x);
 			if (off > pixels->width * pixels->height) goto invalidread;
-			rgba = (const UINT8*)(pixels->data + (pixels->width * (pixels->height - y) + x));
+			rgba = (const UINT8*)(pixels->data + off);
 			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | (rgba[5] << 16);
 	}
 	if (voodoo_ogl_scale != 1) // color buffers are scaled
@@ -4551,9 +4533,9 @@ static UINT32 voodoo_ogl_read_pixel(int x, int y)
 		x = x * voodoo_ogl_scale;
 		y = y * voodoo_ogl_scale;
 	}
-	off = (pixels->width * (pixels->height-y) + x);
+	off = (pixels->width * (pixels->height - y) + x);
 	if (off > pixels->width * pixels->height) goto invalidread;
-	rgba = (const UINT8*)(pixels->data + (pixels->width * (pixels->height - y) + x));
+	rgba = (const UINT8*)(pixels->data + off);
 	return ((rgba[0]>>3)<<11) | ((rgba[1]>>2)<<5) | (rgba[2]>>3) |
 			((rgba[4]>>3)<<27) | ((rgba[5]>>2)<<21) | ((rgba[6]>>3)<<16);
 }
