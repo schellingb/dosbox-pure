@@ -114,7 +114,7 @@ struct Patch_File : Patch_Entry
 
 		struct XORPatch
 		{
-			static bool Process(DOS_Drive& underdrv, char* trgpath, std::vector<Bit8u>& res, DOS_File* xorf)
+			static bool Process(DOS_Drive& underdrv, char* trgpath, std::vector<Bit8u>& res, DOS_File* xorf, Patch_File* self)
 			{
 				char basepath[DOS_PATHLENGTH]; Bit32u filesize, ofs; Bit8u b; Bit64u baseofs = 0, targsz = 0;
 				xorf->Seek(&(filesize = 0), DOS_SEEK_END); xorf->Seek(&(ofs = 4), DOS_SEEK_SET); // skip over header
@@ -140,6 +140,8 @@ struct Patch_File : Patch_Entry
 						{ bufp = 0; if (!basef->Read(buf, &(bufn = 1024)) || !bufn) { basef->Seek(&(ofs = 0), DOS_SEEK_SET); if (!basef->Read(buf, &(bufn = 1024)) || !bufn) break; } }
 					r ^= buf[bufp++];
 				}
+				self->time = basef->time;
+				self->date = basef->date;
 				basef->Close();
 				delete basef;
 				return (bufp != 0);
@@ -381,7 +383,7 @@ struct Patch_File : Patch_Entry
 		Local::GetU24(df, hdr);
 		bool success = false;
 		if (hdr == 0x584f52) // XOR patch
-			success = XORPatch::Process(under, underpath, mem_data, df);
+			success = XORPatch::Process(under, underpath, mem_data, df, this);
 		else if (!Local::LoadFile(under, underpath, mem_data))
 			success = false;
 		else if (hdr == 0x504154) // IPS file
