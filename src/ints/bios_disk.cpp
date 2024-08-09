@@ -1115,7 +1115,9 @@ void imageDisk::Set_GeometryForHardDisk()
 	partTable mbrData;
 	for (int m = (Read_AbsoluteSector(0, &mbrData) ? 0 : 4); m--;)
 	{
-		if(!mbrData.pentry[m].partSize) continue;
+		if (!mbrData.pentry[m].partSize) continue;
+		mbrData.pentry[m].absSectStart = var_read(&mbrData.pentry[m].absSectStart);
+		mbrData.pentry[m].partSize = var_read(&mbrData.pentry[m].partSize);
 		bootstrap bootbuffer;
 		if (Read_AbsoluteSector(mbrData.pentry[m].absSectStart, &bootbuffer)) continue;
 		bootbuffer.sectorspertrack = var_read(&bootbuffer.sectorspertrack);
