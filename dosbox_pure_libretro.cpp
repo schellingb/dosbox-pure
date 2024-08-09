@@ -588,17 +588,23 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 
 void DBP_SetRealModeCycles()
 {
-	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || render.frameskip.max > 1) return;
+	if (cpu.pmode || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || render.frameskip.max > 1) return;
 
 	int year = (dbp_game_running ? dbp_content_year : 0);
-	CPU_CycleMax = 
+	Bit32s cpu_cycles =
 		(year <= 1970 ?   3000 : // Unknown year, dosbox default
 		(year <  1981 ?    500 : // Very early 8086/8088 CPU
 		(year >  1999 ? 500000 : // Pentium III, 600 MHz and later
 		Cycles1981to1999[year - 1981]))); // Matching speed for year
 
-	// Switch to dynamic core for newer real mode games 
-	if (CPU_CycleMax >= 8192 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
+	// When auto switching to a high-speed CPU, use cycle limit instead of hard max so low spec hardware is allowed to throttle down
+	if (year > 1995)
+		{ CPU_CycleLimit = cpu_cycles; CPU_CycleAutoAdjust = true; }
+	else if (!CPU_CycleAutoAdjust)
+		CPU_CycleMax = cpu_cycles;
+
+	// Switch to dynamic core for newer real mode games
+	if (cpu_cycles >= 8192 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
 	{
 		#if (C_DYNAMIC_X86)
 		if (cpudecoder != CPU_Core_Dyn_X86_Run) { void CPU_Core_Dyn_X86_Cache_Init(bool); CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = CPU_Core_Dyn_X86_Run; }
@@ -2220,6 +2226,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 			if (CPU_CycleMax < (cpu.pmode ? 10000 : 1000)) CPU_CycleMax = (cpu.pmode ? 10000 : 1000);
 			if (CPU_CycleMax > 4000000) CPU_CycleMax = 4000000;
 			if (CPU_CycleMax > (Bit64s)recentEmulator * 280) CPU_CycleMax = (Bit32s)(recentEmulator * 280);
+			if (CPU_CycleLimit > 0 && CPU_CycleMax > CPU_CycleLimit) CPU_CycleMax = CPU_CycleLimit;
 		}
 
 		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS%4d] - EMU: %5d - FE: %5d - TARGET: %5d - EffectiveCycles: %6d - Limit: %6d|%6d - CycleMax: %6d - Scale: %5d\n",
@@ -2652,7 +2659,7 @@ static bool check_variables(bool is_startup = false)
 		}
 	}
 
-	char buf[16];
+	char buf[32];
 	unsigned options_ver = 0;
 	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
 	bool show_advanced = (options_ver != 1 || retro_get_variable("dosbox_pure_advanced", "false")[0] != 'f');
@@ -2765,11 +2772,18 @@ static bool check_variables(bool is_startup = false)
 
 	const char* cycles = retro_get_variable("dosbox_pure_cycles", "auto");
 	bool cycles_numeric = (cycles[0] >= '0' && cycles[0] <= '9');
-	retro_set_visibility("dosbox_pure_cycles_scale", cycles_numeric);
+	int cycles_max = (cycles_numeric ? 0 : atoi(retro_get_variable("dosbox_pure_cycles_max", "none")));
+	retro_set_visibility("dosbox_pure_cycles_max", !cycles_numeric);
+	retro_set_visibility("dosbox_pure_cycles_scale", cycles_numeric || cycles_max);
 	retro_set_visibility("dosbox_pure_cycle_limit", !cycles_numeric);
 	if (cycles_numeric)
 	{
 		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(retro_get_variable("dosbox_pure_cycles_scale", "1.0")) + .499));
+		cycles = buf;
+	}
+	else if (cycles_max)
+	{
+		snprintf(buf, sizeof(buf), "%s limit %d", cycles, (int)(cycles_max * (float)atof(retro_get_variable("dosbox_pure_cycles_scale", "1.0")) + .499));
 		cycles = buf;
 	}
 	visibility_changed |= Variables::DosBoxSet("cpu", "cycles", cycles);
@@ -2914,7 +2928,7 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 	struct Local
 	{
 		const char *Key, *End, *Next, *KeyX, *Val, *ValX;
-		int cpu_cycles = 0, cpu_hz = 0, cpu_year = 0;
+		int cpu_cycles = 0, cpu_hz = 0, cpu_year = 0, cpu_set_max = 0;
 		bool Parse(const char *yml_key, const char* db_section, const char* db_key, ...)
 		{
 			if (yml_key && (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key])) return false;
@@ -2958,14 +2972,12 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 		bool ParseCPU(const char *yml_key)
 		{
 			if (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key]) return false;
-			switch (yml_key[4])
+			again: switch (yml_key[4])
 			{
-				case 'c': // cpu_cycles
-					return ((cpu_cycles = atoi(Val)) >= 100);
-				case 'h': // cpu_hz
-					return ((cpu_hz = atoi(Val)) >= 500);
-				case 'y': // cpu_year
-					return ((cpu_year = atoi(Val)) >= 1970);
+				case 'm': cpu_set_max = 1; yml_key += 4; goto again; // cpu_max_*
+				case 'c': return ((cpu_cycles = atoi(Val)) >=  100); // cpu_cycles
+				case 'h': return ((cpu_hz     = atoi(Val)) >=  500); // cpu_hz
+				case 'y': return ((cpu_year   = atoi(Val)) >= 1970); // cpu_year
 			}
 			return false;
 		}
@@ -3025,7 +3037,7 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 			case 'c':
 				if (0
 						||l.Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
-						||l.ParseCPU("cpu_cycles")||l.ParseCPU("cpu_hz")||l.ParseCPU("cpu_year")
+						||l.ParseCPU("cpu_cycles")||l.ParseCPU("cpu_hz")||l.ParseCPU("cpu_year")||l.ParseCPU("cpu_max_cycles")||l.ParseCPU("cpu_max_hz")||l.ParseCPU("cpu_max_year")
 					) break; else goto syntaxerror;
 			case 'm':
 				if (0
@@ -3090,8 +3102,8 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 			l.cpu_cycles = (int)(l.cpu_hz * cycle_per_hz + .4999f);
 		}
 		char buf[32];
-		l.ValX = (l.Val = buf) + sprintf(buf, "%d", (int)l.cpu_cycles);
-		if (l.Parse(NULL, "cpu", "cycles", "~") && l.cpu_cycles >= 8192) // Switch to dynamic core for newer real mode games 
+		l.ValX = (l.Val = buf) + sprintf(buf, "%s%d", (l.cpu_set_max ? "max limit " : ""), (int)l.cpu_cycles);
+		if (l.Parse(NULL, "cpu", "cycles", "~") && l.cpu_cycles >= 8192) // Switch to dynamic core for newer real mode games
 			{ l.ValX = (l.Val = "dynamic") + 7; l.Parse(NULL, "cpu", "core", "~"); }
 	}
 }

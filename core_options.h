@@ -336,9 +336,30 @@ static retro_core_option_v2_definition option_defs[] =
 		"auto"
 	},
 	{
+		"dosbox_pure_cycles_max",
+		"Detailed > Maximum Emulated Performance", NULL,
+		"With dynamic CPU speed (AUTO or MAX above), the maximum emulated performance level.", NULL,
+		"Performance",
+		{
+			{ "none",    "Unlimited" },
+			{ "315",     "8086/8088, 4.77 MHz from 1980 (315 cps)" },
+			{ "1320",    "286, 6 MHz from 1982 (1320 cps)" },
+			{ "2750",    "286, 12.5 MHz from 1985 (2750 cps)" },
+			{ "4720",    "386, 20 MHz from 1987 (4720 cps)" },
+			{ "7800",    "386DX, 33 MHz from 1989 (7800 cps)" },
+			{ "13400",   "486DX, 33 MHz from 1990 (13400 cps)" },
+			{ "26800",   "486DX2, 66 MHz from 1992 (26800 cps)" },
+			{ "77000",   "Pentium, 100 MHz from 1995 (77000 cps)" },
+			{ "200000",  "Pentium II, 300 MHz from 1997 (200000 cps)" },
+			{ "500000",  "Pentium III, 600 MHz from 1999 (500000 cps)" },
+			{ "1000000", "AMD Athlon, 1.2 GHz from 2000 (1000000 cps)" },
+		},
+		"auto"
+	},
+	{
 		"dosbox_pure_cycles_scale",
 		"Detailed > Performance Scale", NULL,
-		"Fine tune the emulated performance for specific needs." "\n\n", NULL, //end of Performance > Detailed section
+		"Fine tune the emulated performance for specific needs.", NULL,
 		"Performance",
 		{
 			{ "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" },
