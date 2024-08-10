@@ -723,7 +723,9 @@ private:
 
 class zipDrive : public DOS_Drive {
 public:
-	static DOS_Drive* MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check = false, bool enter_solo_root_dir = false);
+	enum DOSC_Lookup { _C_NONE = 0, C_MT32_BEFORE = 0x1, C_MIDI = 0x2, C_MT32_AFTER = 0x4, _C_NO_SND = 0x8, C_3DFX = 0x100, C_CGA = 0x200, _C_NO_GFX = 0x400 };
+	static int doscLookup;
+	static DOS_Drive* MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check = false, bool enter_solo_root_dir = false, const char* dosc_path = NULL);
 	zipDrive(DOS_File* zip, bool enable_crc_check = false);
 	virtual ~zipDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);

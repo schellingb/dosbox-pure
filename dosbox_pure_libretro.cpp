@@ -825,7 +825,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	std::string path_no_fragment;
 	if (fragment)
 	{
-		path_no_fragment = std::string(path, fragment - path);
+		path_no_fragment.assign(path, fragment - path);
 		ext       = path_no_fragment.c_str() + (ext       - path);
 		path_file = path_no_fragment.c_str() + (path_file - path);
 		path      = path_no_fragment.c_str();
@@ -836,12 +836,26 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	CDROM_Interface* cdrom = NULL;
 	Bit8u media_byte = 0;
 	const char* error_type = "content";
-	if (!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ"))
+	if (!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ") || !strcasecmp(ext, "DOSC"))
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
 		std::string* ziperr = NULL;
-		drive = zipDrive::MountWithDependencies(path, ziperr, dbp_strict_mode, dbp_legacy_save);
+		if ((ext[3]|0x20) != 'c')
+			drive = zipDrive::MountWithDependencies(path, ziperr, dbp_strict_mode, dbp_legacy_save);
+		else
+		{
+			// When loading a DOSC file, load the corresponding DOSZ file, but strip out a [VARIANT] specifier at the end.
+			std::string dosz_path(path);
+			dosz_path.back() = (ext[3] == 'c' ? 'z' : 'Z'); // swap dosc -> dosz with same capitalization
+			if (const char* dosc_variant = (ext[-2] == ']' ? strrchr(path_file, '[') : NULL))
+			{
+				while (dosc_variant > path_file && dosc_variant[-1] == ' ') dosc_variant--;
+				size_t dosc_variant_len = (ext - 1 - dosc_variant);
+				dosz_path.erase(dosc_variant - path, dosc_variant_len);
+			}
+			drive = zipDrive::MountWithDependencies(dosz_path.c_str(), ziperr, dbp_strict_mode, dbp_legacy_save, path);
+		}
 		if (!drive)
 		{
 			if (ziperr) { retro_notify(0, RETRO_LOG_ERROR, "%s", ziperr->c_str()); delete ziperr; }
@@ -2503,7 +2517,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 	info->library_version  = "0.9.9";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
-	info->valid_extensions = "zip|dosz|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf";
+	info->valid_extensions = "zip|dosz|dosc|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf";
 }
 
 void retro_set_environment(retro_environment_t cb) //#2
@@ -2767,6 +2781,7 @@ static bool check_variables(bool is_startup = false)
 		default: dbp_serializemode = DBPSERIALIZE_STATES; break;
 	}
 	DBPArchive::accomodate_delta_encoding = (dbp_serializemode == DBPSERIALIZE_REWIND);
+	zipDrive::doscLookup = atoi(retro_get_variable("dosbox_pure_dosc_snd", "0")) | atoi(retro_get_variable("dosbox_pure_dosc_gfx", "0"));
 	dbp_conf_loading = retro_get_variable("dosbox_pure_conf", "false")[0];
 	dbp_menu_time = (char)atoi(retro_get_variable("dosbox_pure_menu_time", "99"));
 
