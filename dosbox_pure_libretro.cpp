@@ -75,7 +75,7 @@ static std::string dbp_content_name;
 static retro_time_t dbp_boot_time;
 static size_t dbp_serializesize;
 static Bit16s dbp_content_year;
-static const Bit32s Cycles1981to1999[1+1999-1981] = { 900, 1400, 1800, 2300, 2800, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000, 55000, 66800, 93000, 125000, 200000, 350000 };
+static const Bit32s Cycles1981to1999[1+1999-1981] = { 315, 900, 1500, 2100, 2750, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000, 55000, 66800, 93000, 125000, 200000, 350000 };
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
@@ -590,7 +590,7 @@ static void DBP_SetCyclesByContentYear()
 {
 	DBP_ASSERT(dbp_content_year > 1970);
 	CPU_CycleMax =
-		(dbp_content_year <  1981 ?    500 : // Very early 8086/8088 CPU
+		(dbp_content_year <  1981 ?    315 : // Very early 8086/8088 CPU
 		(dbp_content_year >  1999 ? 500000 : // Pentium III, 600 MHz and later
 		Cycles1981to1999[dbp_content_year - 1981])); // Matching speed for year
 
