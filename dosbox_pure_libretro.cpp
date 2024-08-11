@@ -586,25 +586,16 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 	}
 }
 
-void DBP_SetRealModeCycles()
+static void DBP_SetCyclesByContentYear()
 {
-	if (cpu.pmode || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || render.frameskip.max > 1) return;
+	DBP_ASSERT(dbp_content_year > 1970);
+	CPU_CycleMax =
+		(dbp_content_year <  1981 ?    500 : // Very early 8086/8088 CPU
+		(dbp_content_year >  1999 ? 500000 : // Pentium III, 600 MHz and later
+		Cycles1981to1999[dbp_content_year - 1981])); // Matching speed for year
 
-	int year = (dbp_game_running ? dbp_content_year : 0);
-	Bit32s cpu_cycles =
-		(year <= 1970 ?   3000 : // Unknown year, dosbox default
-		(year <  1981 ?    500 : // Very early 8086/8088 CPU
-		(year >  1999 ? 500000 : // Pentium III, 600 MHz and later
-		Cycles1981to1999[year - 1981]))); // Matching speed for year
-
-	// When auto switching to a high-speed CPU, use cycle limit instead of hard max so low spec hardware is allowed to throttle down
-	if (year > 1995)
-		{ CPU_CycleLimit = cpu_cycles; CPU_CycleAutoAdjust = true; }
-	else if (!CPU_CycleAutoAdjust)
-		CPU_CycleMax = cpu_cycles;
-
-	// Switch to dynamic core for newer real mode games
-	if (cpu_cycles >= 8192 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
+	// Also switch to dynamic core for newer real mode games
+	if (dbp_content_year >= 1990 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
 	{
 		#if (C_DYNAMIC_X86)
 		if (cpudecoder != CPU_Core_Dyn_X86_Run) { void CPU_Core_Dyn_X86_Cache_Init(bool); CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = CPU_Core_Dyn_X86_Run; }
@@ -612,6 +603,16 @@ void DBP_SetRealModeCycles()
 		if (cpudecoder != CPU_Core_Dynrec_Run)  { void CPU_Core_Dynrec_Cache_Init(bool);  CPU_Core_Dynrec_Cache_Init(true);  cpudecoder = CPU_Core_Dynrec_Run;  }
 		#endif
 	}
+}
+
+void DBP_SetRealModeCycles()
+{
+	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || !dbp_game_running || dbp_content_year <= 1970) return;
+	DBP_SetCyclesByContentYear();
+
+	// When auto switching to a high-speed CPU, enable auto adjust so low spec hardware is allowed to throttle down
+	if (dbp_content_year > 1995)
+		CPU_CycleAutoAdjust = true;
 }
 
 static bool DBP_NeedFrameSkip(bool in_emulation)
@@ -2065,7 +2066,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	}
 	else if (old_max)
 	{
-		// If we switched to protected mode while locked (likely at startup) with auto adjust cycles on, choose a reasonable base rate
+		// If we switched to protected mode while locked with auto adjust cycles on, choose a reasonable base rate
 		CPU_CycleMax = (old_pmode == cpu.pmode || !CPU_CycleAutoAdjust ? old_max : 20000);
 		old_max = 0;
 		DBP_SetRealModeCycles();
@@ -2237,10 +2238,12 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 				CPU_CycleMax = 1 + (Bit32s)(CPU_CycleMax * r);
 			}
 
+			Bit32s limit = 4000000;
+			if (CPU_CycleLimit > 0) limit = CPU_CycleLimit;
+			else if (!cpu.pmode && dbp_content_year > 1995) limit = (dbp_content_year > 1999 ? 500000 : Cycles1981to1999[dbp_content_year- 1981]); // enforce max from DBP_SetRealModeCycles
+			if (limit > (Bit64s)recentEmulator * 280) limit = (Bit32s)(recentEmulator * 280);
+			if (CPU_CycleMax > limit) CPU_CycleMax = limit;
 			if (CPU_CycleMax < (cpu.pmode ? 10000 : 1000)) CPU_CycleMax = (cpu.pmode ? 10000 : 1000);
-			if (CPU_CycleMax > 4000000) CPU_CycleMax = 4000000;
-			if (CPU_CycleMax > (Bit64s)recentEmulator * 280) CPU_CycleMax = (Bit32s)(recentEmulator * 280);
-			if (CPU_CycleLimit > 0 && CPU_CycleMax > CPU_CycleLimit) CPU_CycleMax = CPU_CycleLimit;
 		}
 
 		//log_cb(RETRO_LOG_INFO, "[DBPTIMERS%4d] - EMU: %5d - FE: %5d - TARGET: %5d - EffectiveCycles: %6d - Limit: %6d|%6d - CycleMax: %6d - Scale: %5d\n",
@@ -2360,9 +2363,9 @@ void GFX_SetTitle(Bit32s cycles, int frameskip, bool paused)
 	dbp_had_game_running |= (dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU")));
 	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] Program: %s - Cycles: %d - Frameskip: %d - Paused: %d\n", RunningProgram, cycles, frameskip, paused);
 	if (was_game_running != dbp_game_running && !strcmp(RunningProgram, "BOOT")) dbp_refresh_memmaps = true;
-	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000 && !dbp_content_year)
+	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000)
 	{
-		// Choose a reasonable base rate when switching to protected mode (avoid autoinput getting stuck with a very slow CPU)
+		// Choose a reasonable base rate when switching to protected mode
 		CPU_CycleMax = 30000;
 	}
 }

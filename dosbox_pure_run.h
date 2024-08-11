@@ -275,7 +275,7 @@ struct DBP_Run
 		if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
 		if (Property* p = section->GetProp("cputype")) p->OnChangedByConfigProgram();
-		if (dbp_content_year < 1993) { dbp_content_year = 1993; DBP_SetRealModeCycles(); }
+		if (dbp_content_year < 1993) { dbp_content_year = 1993; dbp_game_running = true; DBP_SetRealModeCycles(); }
 
 		RunBatchFile(new BatchFileBoot(!is_install ? 'C' : 'A'));
 	}
@@ -339,6 +339,12 @@ struct DBP_Run
 		}
 
 		autoinput.ptr = ((mode != RUN_COMMANDLINE && autoinput.str.size()) ? autoinput.str.c_str() : NULL);
+		if (autoinput.ptr && dbp_content_year > 1970)
+		{
+			// enforce cycle rate during auto input
+			CPU_OldCycleMax = CPU_CycleMax;
+			DBP_SetCyclesByContentYear();
+		}
 
 		// if a booted OS does a bios reboot, auto reboot that OS from now on
 		if (mode == RUN_EXEC || mode == RUN_COMMANDLINE)
@@ -569,7 +575,13 @@ struct DBP_Run
 			if (mixSamples > DBP_MAX_SAMPLES) mixSamples = DBP_MAX_SAMPLES;
 			if (mixSamples > 200) MIXER_CallBack(0, (Bit8u*)dbp_audio, (mixSamples - 100) * 4);
 		}
-		else DBP_KEYBOARD_ReleaseKeys(); // done
+		else
+		{
+			// done
+			DBP_KEYBOARD_ReleaseKeys();
+			if (!CPU_CycleAutoAdjust && dbp_content_year > 1970)
+				CPU_CycleMax = CPU_OldCycleMax; // revert from Run()
+		}
 	}
 };
 
