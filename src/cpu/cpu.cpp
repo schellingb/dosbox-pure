@@ -54,9 +54,9 @@ Bit32s CPU_Cycles = 0;
 Bit32s CPU_CycleLeft = 3000;
 Bit32s CPU_CycleMax = 3000;
 Bit32s CPU_OldCycleMax = 3000;
-Bit32s CPU_CyclePercUsed = 100;
 Bit32s CPU_CycleLimit = -1;
 #ifdef C_DBP_ENABLE_MAPPER
+Bit32s CPU_CyclePercUsed = 100;
 Bit32s CPU_CycleUp = 0;
 Bit32s CPU_CycleDown = 0;
 #endif
@@ -1584,12 +1584,14 @@ void CPU_SET_CRX(Bitu cr,Bitu value) {
 					CPU_CycleLeft=0;
 					CPU_Cycles=0;
 					CPU_OldCycleMax=CPU_CycleMax;
-					GFX_SetTitle(CPU_CyclePercUsed,-1,false);
 #ifdef C_DBP_ENABLE_MAPPER
+					GFX_SetTitle(CPU_CyclePercUsed,-1,false);
 					if(!printed_cycles_auto_info) {
 						printed_cycles_auto_info = true;
 						LOG_MSG("DOSBox has switched to max cycles, because of the setting: cycles=auto.\nIf the game runs too fast, try a fixed cycles amount in DOSBox's options.");
 					}
+#else
+					GFX_SetTitle(-1,-1,false);
 #endif
 				} else {
 					GFX_SetTitle(-1,-1,false);
@@ -2688,6 +2690,17 @@ void DBPSerialize_CPU(DBPArchive& ar)
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 		CPU_IODelayRemoved = 0;
+	else if (ar.mode == DBPArchive::MODE_ZERO)
+	{
+		// Reset static variables
+		CPU_Cycles = 0;
+		CPU_CycleLeft = CPU_CycleMax = CPU_OldCycleMax = 3000;
+		CPU_CycleLimit = -1;
+		CPU_IODelayRemoved = 0;
+		CPU_CycleAutoAdjust = CPU_SkipCycleAutoAdjust = false;
+		CPU_ArchitectureType = CPU_ARCHTYPE_MIXED;
+		CPU_AutoDetermineMode = CPU_extflags_toggle = CPU_PrefetchQueueSize = 0;
+	}
 }
 
 const char* DBP_CPU_GetDecoderName()
