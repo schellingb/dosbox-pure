@@ -586,13 +586,17 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 	}
 }
 
+static inline Bit32s DBP_CyclesForYear(int year)
+{
+	return (year < 1981 ? 315 : // Very early 8086/8088 CPU
+		(year > 1999 ? 500000 : // Pentium III, 600 MHz and later
+		Cycles1981to1999[year - 1981])); // Matching speed for year
+}
+
 static void DBP_SetCyclesByContentYear()
 {
 	DBP_ASSERT(dbp_content_year > 1970);
-	CPU_CycleMax =
-		(dbp_content_year <  1981 ?    315 : // Very early 8086/8088 CPU
-		(dbp_content_year >  1999 ? 500000 : // Pentium III, 600 MHz and later
-		Cycles1981to1999[dbp_content_year - 1981])); // Matching speed for year
+	CPU_CycleMax = DBP_CyclesForYear(dbp_content_year);
 
 	// Also switch to dynamic core for newer real mode games
 	if (dbp_content_year >= 1990 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))

@@ -310,7 +310,7 @@ struct DBP_Run
 	enum EMode { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_COMMANDLINE };
 	static struct Startup { EMode mode, ymlmode; int info; std::string str; } startup;
 	static struct Autoboot { bool have, use; int skip, hash; } autoboot;
-	static struct Autoinput { std::string str; const char* ptr; } autoinput;
+	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; } autoinput;
 
 	static void Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
@@ -342,7 +342,8 @@ struct DBP_Run
 		if (autoinput.ptr && dbp_content_year > 1970)
 		{
 			// enforce cycle rate during auto input
-			CPU_OldCycleMax = CPU_CycleMax;
+			autoinput.oldcycles = CPU_CycleMax;
+			autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange();
 			DBP_SetCyclesByContentYear();
 		}
 
@@ -579,8 +580,8 @@ struct DBP_Run
 		{
 			// done
 			DBP_KEYBOARD_ReleaseKeys();
-			if (!CPU_CycleAutoAdjust && dbp_content_year > 1970)
-				CPU_CycleMax = CPU_OldCycleMax; // revert from Run()
+			if (!CPU_CycleAutoAdjust && dbp_content_year > 1970 && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
+				CPU_CycleMax = autoinput.oldcycles; // revert from Run()
 		}
 	}
 };
