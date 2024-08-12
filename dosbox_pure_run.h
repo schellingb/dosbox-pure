@@ -580,8 +580,13 @@ struct DBP_Run
 		{
 			// done
 			DBP_KEYBOARD_ReleaseKeys();
-			if (!CPU_CycleAutoAdjust && dbp_content_year > 1970 && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
-				CPU_CycleMax = autoinput.oldcycles; // revert from Run()
+			if (dbp_content_year > 1970)
+			{
+				if (!CPU_CycleAutoAdjust && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
+					CPU_CycleMax = autoinput.oldcycles; // revert from Run()
+				else if (CPU_CycleAutoAdjust && cpu.pmode && CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT))
+					CPU_OldCycleMax = autoinput.oldcycles; // we switched to protected mode since auto input, fix up old cycles
+			}
 		}
 	}
 };
