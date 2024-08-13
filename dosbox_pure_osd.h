@@ -1765,7 +1765,7 @@ static void DBP_WheelOSD(Bit8u _port)
 			const Bit32u black = ((alpha/1)<<24);
 			const Bit32u white = black | 0xFFFFFF;
 			const Bit32u selcolor = black | (((State == STATE_OPEN) || (tickd & 64)) ? 0xFFFF00 : 0xFF8000);
-			const Bit32u whiteHighlight = ((alpha*(State == STATE_OPEN ? (40+10*wdistsq/maxdistsq) : 50)/100)<<24) | 0xFFFFFF;
+			const Bit32u whiteHighlight = ((alpha*(State == STATE_OPEN ? (40+15*wdistsq/maxdistsq) : 55)/100)<<24) | ((State != STATE_OPEN || wdistsq > seldistsq) ? 0xFFFF40 : 0xFFFFFF);
 
 			Bit32u* video = drw.video;
 			const int sqrOut = rad*rad, sqrIn = sqrOut/4, sqrOut1 = (rad+1)*(rad+1), sqrOut3 = (rad+3)*(rad+3), sqrOut4 = (rad4)*(rad4);
