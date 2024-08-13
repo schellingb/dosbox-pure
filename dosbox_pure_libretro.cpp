@@ -2056,7 +2056,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	{
 		old_max = CPU_CycleMax;
 		old_pmode = cpu.pmode;
-		if (dbp_throttle.rate && dbp_state == DBPSTATE_RUNNING)
+		if (dbp_throttle.rate && (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME))
 		{
 			// If fast forwarding at a desired rate, apply custom frameskip and max cycle rules
 			render.frameskip.max = (int)(dbp_throttle.rate / av_info.timing.fps * 1.5f + .4f);
@@ -3690,7 +3690,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 
 				lastw = lasth = 0;
 				dbp_opengl_draw = Draw;
-				if (dbp_state == DBPSTATE_RUNNING) OnReset(voodoo_ogl_resetcontext, false);
+				if (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME) OnReset(voodoo_ogl_resetcontext, false);
 			}
 
 			static void Destroy(void)
@@ -4200,8 +4200,8 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 	if (dbp_serializemode == DBPSERIALIZE_DISABLED) return false;
 	bool pauseThread = (dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
 	if (pauseThread) DBP_ThreadControl(TCM_PAUSE_FRAME);
-	DBPSerialize_All(ar, (dbp_state == DBPSTATE_RUNNING), dbp_game_running);
-	//log_cb(RETRO_LOG_WARN, "[SERIALIZE] [%d] [%s] %u\n", (dbp_state == DBPSTATE_RUNNING && dbp_game_running), (ar.mode == DBPArchive::MODE_LOAD ? "LOAD" : ar.mode == DBPArchive::MODE_SAVE ? "SAVE" : ar.mode == DBPArchive::MODE_SIZE ? "SIZE" : ar.mode == DBPArchive::MODE_MAXSIZE ? "MAXX" : ar.mode == DBPArchive::MODE_ZERO ? "ZERO" : "???????"), (Bit32u)ar.GetOffset());
+	DBPSerialize_All(ar, (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME), dbp_game_running);
+	//log_cb(RETRO_LOG_WARN, "[SERIALIZE] [%d] [%s] %u\n", ((dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME) && dbp_game_running), (ar.mode == DBPArchive::MODE_LOAD ? "LOAD" : ar.mode == DBPArchive::MODE_SAVE ? "SAVE" : ar.mode == DBPArchive::MODE_SIZE ? "SIZE" : ar.mode == DBPArchive::MODE_MAXSIZE ? "MAXX" : ar.mode == DBPArchive::MODE_ZERO ? "ZERO" : "???????"), (Bit32u)ar.GetOffset());
 	if (dbp_game_running && ar.mode == DBPArchive::MODE_LOAD) dbp_lastmenuticks = DBP_GetTicks(); // force show menu on immediate emulation crash
 	if (pauseThread && unlock_thread) DBP_ThreadControl(TCM_RESUME_FRAME);
 
@@ -4260,7 +4260,7 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 size_t retro_serialize_size(void)
 {
 	if (dbp_serializesize) return dbp_serializesize;
-	DBPArchiveCounter ar(dbp_state != DBPSTATE_RUNNING || dbp_serializemode == DBPSERIALIZE_REWIND);
+	DBPArchiveCounter ar((dbp_state != DBPSTATE_RUNNING && dbp_state != DBPSTATE_FIRST_FRAME) || dbp_serializemode == DBPSERIALIZE_REWIND);
 	return dbp_serializesize = (retro_serialize_all(ar, false) ? ar.count : 0);
 }
 
@@ -4277,7 +4277,7 @@ bool retro_unserialize(const void *data, size_t size)
 	DBPArchiveReader ar(data, size);
 	bool res = retro_serialize_all(ar, true);
 	if ((ar.had_error != DBPArchive::ERR_DOSNOTRUNNING && ar.had_error != DBPArchive::ERR_GAMENOTRUNNING) || dbp_serializemode != DBPSERIALIZE_REWIND) return res;
-	if (dbp_state != DBPSTATE_RUNNING || dbp_game_running) retro_reset();
+	if ((dbp_state != DBPSTATE_RUNNING && dbp_state != DBPSTATE_FIRST_FRAME) || dbp_game_running) retro_reset();
 	return true;
 }
 
