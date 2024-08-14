@@ -2689,7 +2689,24 @@ void DBPSerialize_CPU(DBPArchive& ar)
 	#endif
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
+	{
 		CPU_IODelayRemoved = 0;
+		if (cpu.pmode && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_MASK)) // apply auto changes (similar to CPU_SET_CRX)
+		{
+			if (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES)
+			{
+				CPU_CycleAutoAdjust = true;
+				CPU_CycleLeft = CPU_Cycles = 0;
+				CPU_OldCycleMax = CPU_CycleMax;
+			}
+			#if (C_DYNAMIC_X86)
+			if (cpudecoder != &CPU_Core_Dyn_X86_Run && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE)) { CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = &CPU_Core_Dyn_X86_Run; }
+			#elif (C_DYNREC)
+			if (cpudecoder != &CPU_Core_Dynrec_Run && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE)) { CPU_Core_Dynrec_Cache_Init(true); cpudecoder = &CPU_Core_Dynrec_Run; }
+			#endif
+			CPU_AutoDetermineMode <<= CPU_AUTODETERMINE_SHIFT;
+		}
+	}
 	else if (ar.mode == DBPArchive::MODE_ZERO)
 	{
 		// Reset static variables
