@@ -275,7 +275,7 @@ struct DBP_Run
 		if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
 		if (Property* p = section->GetProp("cputype")) p->OnChangedByConfigProgram();
-		if (dbp_content_year < 1993) { dbp_content_year = 1993; dbp_game_running = true; DBP_SetRealModeCycles(); }
+		if (dbp_content_year < 1993) { Bit16s &y = dbp_content_year, oldy = y; y = 1993; DBP_SetCyclesByContentYear(); y = oldy; }
 
 		RunBatchFile(new BatchFileBoot(!is_install ? 'C' : 'A'));
 	}
