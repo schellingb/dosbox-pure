@@ -1650,7 +1650,7 @@ void DBPSerialize_VGA_Draw(DBPArchive& ar)
 {
 	ar.SerializeExcept(vga.draw, vga.draw.linear_base, vga.draw.font, vga.draw.font_tables);
 	ar.SerializeSparse(vga.draw.font, sizeof(vga.draw.font));
-	ar.SerializeArray(TempLine);
+	ar.SerializeBytes(TempLine, (render.src.width <= 1280 ? 1280 : render.src.width) * 4); // backwards compatible
 	ar.SerializeArray(temp);
 	ar.Serialize(FontMask[1]);
 	ar.Serialize(bg_color_index);

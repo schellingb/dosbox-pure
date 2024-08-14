@@ -23,8 +23,8 @@
 #include "video.h"
 
 #ifdef C_DBP_LIBRETRO
-#define SCALER_MAXWIDTH       1280 
-#define SCALER_MAXHEIGHT      1024
+#define SCALER_MAXWIDTH       1600
+#define SCALER_MAXHEIGHT      1200
 #define SCALER_MAX_MUL_HEIGHT 1
 #define SCALER_MAX_MUL_WIDTH  1
 #else

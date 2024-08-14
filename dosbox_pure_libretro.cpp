@@ -79,7 +79,7 @@ static const Bit32s Cycles1981to1999[1+1999-1981] = { 315, 900, 1500, 2100, 2750
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
-static struct DBP_Buffer { Bit32u video[SCALER_MAXWIDTH * SCALER_MAXHEIGHT], width, height, border_color; float ratio; } dbp_buffers[2];
+static struct DBP_Buffer { Bit32u* video, width, height, cap, border, border_color; float ratio; } dbp_buffers[3];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static double dbp_audio_remain;
@@ -1967,8 +1967,8 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 
 Bit8u* GFX_GetPixels()
 {
-	Bit8u* pixels = (Bit8u*)dbp_buffers[buffer_active^1].video;
-	if (dbp_overscan)
+	Bit8u* pixels = (Bit8u*)dbp_buffers[(buffer_active + 1) % 3].video;
+	if (pixels && dbp_overscan)
 	{
 		Bit32u w = (Bit32u)render.src.width, border = w * dbp_overscan / 160;
 		pixels += ((w + border * 2) * border + border) * 4;
@@ -1980,40 +1980,32 @@ bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 {
 	if (dbp_state == DBPSTATE_BOOT) return false;
 	DBP_FPSCOUNT(dbp_fpscount_gfxstart)
-	Bit32u full_width = (Bit32u)render.src.width, full_height = (Bit32u)render.src.height;
-	DBP_Buffer& buf = dbp_buffers[buffer_active^1];
-	pixels = (Bit8u*)buf.video;
-	if (dbp_overscan)
+	Bit32u w = (Bit32u)render.src.width, h = (Bit32u)render.src.height, border = 0, overscan_offset = 0;
+	if (render.aspect)
 	{
-		Bit32u border = full_width * dbp_overscan / 160;
-		full_width += border * 2;
-		full_height += border * 2;
-		pixels += (full_width * border + border) * 4;
+		w <<= (Bit32u)render.src.dblw;
+		h <<= (Bit32u)render.src.dblh;
 	}
-	pitch = full_width * 4;
-
-	float ratio = (float)full_width / full_height;
-	if (render.aspect) ratio /= (float)render.src.ratio;
-	if (ratio < 1) ratio *= 2; //because render.src.dblw is not reliable
-	if (ratio > 2) ratio /= 2; //because render.src.dblh is not reliable
-	if (buf.width != full_width || buf.height != full_height || buf.ratio != ratio)
+	if (dbp_overscan && (!dbp_opengl_draw || !voodoo_ogl_is_active()))
 	{
-		buf.width = full_width;
-		buf.height = full_height;
-		buf.ratio = ratio;
+		border = w * dbp_overscan / 160;
+		w += border * 2;
+		h += border * 2;
+		overscan_offset = (w * border + border) * 4;
+	}
+
+	DBP_Buffer& buf = dbp_buffers[(buffer_active + 1) % 3];
+	if ((buf.width != w) | (buf.height != h) | (buf.border != border))
+	{
+		if (buf.cap < w * h * 4) buf.video = (Bit32u*)realloc(buf.video, (buf.cap = w * h * 4));
+		memset(buf.video, 0, w * h * 4); // clear to black
+		buf.width = w;
+		buf.height = h;
+		buf.border = border;
 		buf.border_color = 0xDEADBEEF; // force refresh
 	}
-
-	if (dbp_overscan)
-	{
-		Bit32u border_color = (Bit32u)GFX_GetRGB(vga.dac.rgb[vga.attr.overscan_color].red<<2, vga.dac.rgb[vga.attr.overscan_color].green<<2, vga.dac.rgb[vga.attr.overscan_color].blue<<2);
-		if (border_color != buf.border_color)
-		{
-			buf.border_color = border_color;
-			for (Bit32u* p = (Bit32u*)buf.video, *pEnd = p + full_width*full_height; p != pEnd;) *(p++) = border_color;
-		}
-	}
-
+	pixels = (Bit8u*)buf.video + overscan_offset;
+	pitch = w * 4;
 	return true;
 }
 
@@ -2022,27 +2014,59 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	if (!changedLines) return;
 	if (dbp_state == DBPSTATE_BOOT) return;
 
-	buffer_active ^= 1;
-	DBP_Buffer& buf = dbp_buffers[buffer_active];
+	DBP_Buffer& buf = dbp_buffers[(buffer_active + 1) % 3];
 	//DBP_ASSERT((Bit8u*)buf.video == render.scale.outWrite - render.scale.outPitch * render.src.height); // this assert can fail after loading a save game
-	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)buf.video + sizeof(buf.video));
+	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)(buf.video + buf.width * buf.height));
+
+	if (render.aspect)
+	{
+		const Bit32u dblw = (Bit32u)render.src.dblw, dblh = (Bit32u)render.src.dblh, srcw = (Bit32u)render.src.width, srch = (Bit32u)render.src.height, pitch = buf.width, trgpitch = pitch<<dblh;
+		if (dblw | dblh) for (Bit32u *pVid = buf.video + (pitch * buf.border + buf.border), *pLine = pVid + (pitch * (srch - 1)), *pTrgRight = pVid + (trgpitch * (srch - 1) + ((srcw - 1) << dblw)); pLine >= pVid; pLine -= pitch, pTrgRight -= trgpitch)
+		{
+			Bit32u *src = pLine + srcw, *srcEnd = pLine, *trg = pTrgRight;
+			if      (!dblw) for (; src != srcEnd; trg -= 1) trg[0] = trg[pitch] = *(--src);
+			else if (!dblh) for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = *(--src);
+			else            for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = trg[pitch] = trg[pitch+1] = *(--src);
+		}
+		buf.ratio = 4.f/3.f;
+	}
+	else
+	{
+		float ratio = (float)buf.width / buf.height;
+		if (ratio < 1) ratio *= 2;
+		if (ratio > 2) ratio /= 2;
+		buf.ratio = ratio;
+	}
+
+	if (Bit32u brd = buf.border)
+	{
+		Bit32u border_color = (Bit32u)GFX_GetRGB(vga.dac.rgb[vga.attr.overscan_color].red<<2, vga.dac.rgb[vga.attr.overscan_color].green<<2, vga.dac.rgb[vga.attr.overscan_color].blue<<2);
+		if (border_color != buf.border_color)
+		{
+			buf.border_color = border_color;
+			Bit32u w = buf.width, wb = (w - brd), *v = buf.video, *topEnd = v + w * brd, *bottomStart = v + w * (buf.height - brd), *vb, *vr, x;
+			for (vb = bottomStart; v != topEnd;) *(v++) = *(vb++) = border_color;
+			for (vr = v + wb; v != bottomStart; v += wb, vr += wb) { for (x = 0; x != brd; x++) *(v++) = *(vr++) = border_color; }
+		}
+	}
 
 	if (dbp_intercept_next)
 	{
-		if (voodoo_ogl_is_active()) // zero all including alpha because we'll blend the OSD after displaying voodoo
-			memset(buf.video, 0, 4*SCALER_MAXWIDTH*buf.height);
+		if (dbp_opengl_draw && voodoo_ogl_is_active()) // zero all including alpha because we'll blend the OSD after displaying voodoo
+			memset(buf.video, 0, buf.width * buf.height * 4);
 		dbp_intercept_next->gfx(buf);
+		buf.border_color = 0xDEADBEEF; // force redraw
 	}
 
-	if (
-		#ifndef DBP_ENABLE_FPS_COUNTERS
-		dbp_perf == DBP_PERF_DETAILED &&
-		#endif
-		(!voodoo_ogl_is_active() ? memcmp(dbp_buffers[0].video, dbp_buffers[1].video, buf.width * buf.height * 4) : (int)voodoo_ogl_have_new_image()))
+	#ifndef DBP_ENABLE_FPS_COUNTERS
+	if (dbp_perf == DBP_PERF_DETAILED)
+	#endif
 	{
-		DBP_FPSCOUNT(dbp_fpscount_gfxend)
-		dbp_perf_uniquedraw++;
+		const DBP_Buffer& lbuf = dbp_buffers[buffer_active];
+		bool diff = (!voodoo_ogl_is_active() ? (!lbuf.video || lbuf.width != buf.width || lbuf.height != buf.height || memcmp(buf.video, lbuf.video, buf.width * buf.height * 4)) : voodoo_ogl_have_new_image());
+		if (diff) { DBP_FPSCOUNT(dbp_fpscount_gfxend) dbp_perf_uniquedraw++; }
 	}
+	buffer_active = (buffer_active + 1) % 3;
 
 	// frameskip is best to be modified in this function (otherwise it can be off by one)
 	dbp_framecount += 1 + render.frameskip.max;
@@ -2858,13 +2882,7 @@ static bool check_variables(bool is_startup = false)
 	}
 
 	Variables::DosBoxSet("render", "aspect", retro_get_variable("dosbox_pure_aspect_correction", "false"));
-
-	unsigned char new_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
-	if (new_overscan != dbp_overscan)
-	{
-		for (DBP_Buffer& buf : dbp_buffers) buf.border_color = 0xDEADBEEF; // force refresh
-		dbp_overscan = new_overscan;
-	}
+	dbp_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
 
 	const char* sblaster_conf = retro_get_variable("dosbox_pure_sblaster_conf", "A220 I7 D1 H5");
 	static const char sb_attribs[] = { 'A', 'I', 'D', 'H' };
@@ -3675,14 +3693,12 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				myglGenBuffers(1, &vbo);
 				myglGenVertexArrays(1, &vao);
 
-				int tw = SCALER_MAXWIDTH, th = SCALER_MAXHEIGHT;
 				myglGenTextures(1, &tex);
 				myglBindTexture(MYGL_TEXTURE_2D, tex);
 				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MIN_FILTER, MYGL_NEAREST);
 				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_MAG_FILTER, MYGL_NEAREST);
 				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_S, MYGL_CLAMP_TO_EDGE);
 				myglTexParameteri(MYGL_TEXTURE_2D, MYGL_TEXTURE_WRAP_T, MYGL_CLAMP_TO_EDGE);
-				myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, SCALER_MAXWIDTH, SCALER_MAXHEIGHT, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
 				myglGenFramebuffers(1, &fbo);
 				myglBindFramebuffer(MYGL_FRAMEBUFFER, fbo);
 				myglFramebufferTexture2D(MYGL_FRAMEBUFFER, MYGL_COLOR_ATTACHMENT0, MYGL_TEXTURE_2D, tex, 0);
@@ -3722,12 +3738,11 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				{
 					lastw = view_width;
 					lasth = view_height;
-					const float uvx = (float)lastw / (float)SCALER_MAXWIDTH, uvy = (float)lasth / (float)SCALER_MAXHEIGHT;
-					const float vertices[] = {
-						-1.0f, -1.0f,   0.0f,uvy, // bottom left
-						 1.0f, -1.0f,   uvx,uvy, // bottom right
+					const float vertices[] = { // TODO: Flip view[1]/view[2] in voodoo_ogl_mainthread and use same vertices for both myglDrawArrays calls
+						-1.0f, -1.0f,   0.0f,1.0f, // bottom left
+						 1.0f, -1.0f,   1.0f,1.0f, // bottom right
 						-1.0f,  1.0f,   0.0f,0.0f, // top left
-						 1.0f,  1.0f,   uvx,0.0f, // top right
+						 1.0f,  1.0f,   1.0f,0.0f, // top right
 						-1.0f,  1.0f,   0.0f,1.0f, // bottom left
 						 1.0f,  1.0f,   1.0f,1.0f, // bottom right
 						-1.0f, -1.0f,   0.0f,0.0f, // top left
@@ -3740,6 +3755,8 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 					myglEnableVertexAttribArray(1);
 					myglVertexAttribPointer(0, 2, MYGL_FLOAT, MYGL_FALSE, 4 * sizeof(float), (void*)0);
 					myglVertexAttribPointer(1, 2, MYGL_FLOAT, MYGL_FALSE, 4 * sizeof(float), (void*)(sizeof(float)*2));
+					myglBindTexture(MYGL_TEXTURE_2D, tex);
+					myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_RGBA, view_width, view_height, 0, MYGL_RGBA, MYGL_UNSIGNED_BYTE, NULL);
 				}
 				if (myglGetError()) { DBP_ASSERT(0); } // clear any error state
 
@@ -3838,17 +3855,6 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 {
 	DBP_ASSERT(dbp_state != DBPSTATE_BOOT);
-	const int voodoo_scale = atoi(retro_get_variable("dosbox_pure_voodoo_scale", "1"));
-	if (640 * voodoo_scale > SCALER_MAXWIDTH && voodoo_scale <= 16) // only optimized for 3dfx at 640x480
-	{
-		av_info.geometry.max_width = 640 * voodoo_scale;
-		av_info.geometry.max_height = 480 * voodoo_scale;
-	}
-	else
-	{
-		av_info.geometry.max_width = SCALER_MAXWIDTH;
-		av_info.geometry.max_height = SCALER_MAXHEIGHT;
-	}
 	DBP_ThreadControl(TCM_FINISH_FRAME);
 	if (dbp_biosreboot || dbp_state == DBPSTATE_EXITED)
 	{
@@ -3860,6 +3866,11 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	}
 	DBP_ASSERT(render.src.fps > 10.0); // validate initialized video mode after first frame
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];
+	const Bit32u vscale = (Bit32u)atoi(retro_get_variable("dosbox_pure_voodoo_scale", "1")), vscale2 = (vscale < 16 ? vscale : 1), vw = 640 * vscale2, vh = 480 * vscale2;
+	av_info.geometry.max_width = (buf.width > 1024 ? buf.width : 1024);
+	av_info.geometry.max_height = (buf.height > 1024 ? buf.height : 1024);
+	if (vw > av_info.geometry.max_width) av_info.geometry.max_width = vw;
+	if (vh > av_info.geometry.max_height) av_info.geometry.max_height = vh;
 	av_info.geometry.base_width = buf.width;
 	av_info.geometry.base_height = buf.height;
 	av_info.geometry.aspect_ratio = buf.ratio;
@@ -3965,7 +3976,7 @@ void retro_run(void)
 				else
 				#endif
 				{
-					for (Bit8u *p = (Bit8u*)buf.video, *pEnd = p + sizeof(buf.video); p < pEnd; p += 56) p[2] = 255;
+					for (Bit8u *p = (Bit8u*)buf.video, *pEnd = p + buf.width * buf.height * 4; p < pEnd; p += 56) p[2] = 255;
 					retro_sleep(10);
 				}
 			}
