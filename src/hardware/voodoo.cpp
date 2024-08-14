@@ -276,6 +276,7 @@ struct poly_vertex
 enum
 {
 	VOODOO_1,
+	VOODOO_1_8MB,
 	VOODOO_1_DTMU,
 	VOODOO_2,
 };
@@ -8155,15 +8156,12 @@ static void voodoo_init(UINT8 type) {
 
 	v->type = VOODOO_1;
 
-	switch (type) {
-		case VOODOO_1:
-			break;
-		case VOODOO_1_DTMU:
-			v->type = VOODOO_1_DTMU;
-			break;
-		case VOODOO_2:
-			v->type = VOODOO_2;
-			break;
+	switch (type)
+	{
+		case VOODOO_1: break;
+		case VOODOO_1_8MB:  v->type = VOODOO_1_8MB;  break;
+		case VOODOO_1_DTMU: v->type = VOODOO_1_DTMU; break;
+		case VOODOO_2:      v->type = VOODOO_2;      break;
 		default:
 			LOG_MSG("invalid voodoo card type initialization [%x]",type);
 			DBP_ASSERT(false);
@@ -8243,6 +8241,13 @@ static void voodoo_init(UINT8 type) {
 			v->regaccess = voodoo_register_access;
 			fbmemsize = 2;
 			tmumem0 = 2;
+			break;
+
+		case VOODOO_1_8MB:
+			v->regaccess = voodoo_register_access;
+			fbmemsize = 4;
+			tmumem0 = 4;
+			tmumem1 = 0;
 			break;
 
 		case VOODOO_1_DTMU:
@@ -8811,6 +8816,7 @@ void VOODOO_Init(Section* sec) {
 	switch (section->Get_string("voodoo")[0])
 	{
 		case '1': type = VOODOO_1_DTMU; break; //12mb
+		case '8': type = VOODOO_1_8MB; break; //8mb
 		case '4': type = VOODOO_1; break; //4mb
 		default: return; // disabled
 	}
