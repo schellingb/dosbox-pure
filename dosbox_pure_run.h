@@ -310,7 +310,7 @@ struct DBP_Run
 	enum EMode { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_COMMANDLINE };
 	static struct Startup { EMode mode, ymlmode; int info; std::string str; } startup;
 	static struct Autoboot { bool have, use; int skip, hash; } autoboot;
-	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; } autoinput;
+	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; Bit16s oldyear; } autoinput;
 
 	static void Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
@@ -341,9 +341,11 @@ struct DBP_Run
 		autoinput.ptr = ((mode != RUN_COMMANDLINE && autoinput.str.size()) ? autoinput.str.c_str() : NULL);
 		if (autoinput.ptr && dbp_content_year > 1970)
 		{
-			// enforce cycle rate during auto input
+			// enforce cycle rate during auto input (but limited to 1995 CPU speed, above will likely just waste time waiting for frames being drawn)
 			autoinput.oldcycles = CPU_CycleMax;
-			autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange();
+			autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange(); // allow config program to permanently change cycles
+			autoinput.oldyear = dbp_content_year;
+			if (dbp_content_year > 1995) dbp_content_year = 1995;
 			DBP_SetCyclesByContentYear();
 		}
 
@@ -586,6 +588,8 @@ struct DBP_Run
 					CPU_CycleMax = autoinput.oldcycles; // revert from Run()
 				else if (CPU_CycleAutoAdjust && cpu.pmode && CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT))
 					CPU_OldCycleMax = autoinput.oldcycles; // we switched to protected mode since auto input, fix up old cycles
+				dbp_content_year = autoinput.oldyear;
+				DBP_SetRealModeCycles(); // if still in real mode reset the defaults
 			}
 		}
 	}

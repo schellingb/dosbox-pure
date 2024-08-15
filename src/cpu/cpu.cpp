@@ -2596,6 +2596,7 @@ void DBP_CPU_ModifyCycles(const char* val, const char* params)
 		} else {
 			CPU_AutoDetermineMode |= CPU_AUTODETERMINE_CYCLES;
 			CPU_CycleAutoAdjust = false;
+			CPU_CycleMax = 3000; // default when not overridden by DBP_SetRealModeCycles
 			void DBP_SetRealModeCycles();
 			DBP_SetRealModeCycles();
 		}
