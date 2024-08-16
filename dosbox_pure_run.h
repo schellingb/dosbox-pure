@@ -469,14 +469,27 @@ struct DBP_Run
 		return (13 * autoboot.skip) ^ (int)StringToPointerHashMap<void>::Hash(startup.str.c_str()) ^ (93911 * dbp_image_index);
 	}
 
+	static Bit32u ModeHash()
+	{
+		return (Bit32u)((render.src.width * 2100781) ^ (render.src.height * 65173) ^ ((Bitu)(render.src.fps * 521)) ^ (render.src.bpp * 31) ^ ((Bitu)vga.mode + 1));
+	}
+
 	static void ProcessAutoInput()
 	{
 		extern Bitu PIC_Ticks;
-		static Bitu InpTickStart, InpNextTick; static Bit32u InpDelay, InpReleaseKey;
+		static Bitu InpTickStart, InpNextTick; static Bit32u InpDelay, InpReleaseKey, InpSkipMode;
 		if (autoinput.ptr == autoinput.str.c_str())
-			InpTickStart = PIC_Ticks, InpNextTick = 0, InpDelay = 70, InpReleaseKey = 0;
+			InpTickStart = PIC_Ticks, InpNextTick = 0, InpDelay = 70, InpReleaseKey = InpSkipMode = 0;
 
-		Bitu InpDoneTicks = PIC_Ticks - InpTickStart;
+		const Bitu InpDoneTicks = PIC_Ticks - InpTickStart;
+		if (InpSkipMode && !vga.draw.resizing)
+		{
+			Bit32u mode = ModeHash();
+			if (InpSkipMode == mode) { } // video mode unchanged
+			else if (InpSkipMode < 31) { InpSkipMode = mode; } // initial resolution was set (before it was size 0)
+			else { InpSkipMode = 0; InpNextTick = InpDoneTicks; } // new video mode
+		}
+
 		while (InpDoneTicks >= InpNextTick)
 		{
 			if (InpReleaseKey)
@@ -525,17 +538,17 @@ struct DBP_Run
 				cmdNext++;
 			}
 
-			static const char* DBP_Commands[KBD_LAST+2] =
+			static const char* DBP_Commands[KBD_LAST+3] =
 			{
 				"","1","2","3","4","5","6","7","8","9","0","q","w","e","r","t","y","u","i","o","p","a","s","d","f","g","h","j","k","l","z","x","c","v","b","n","m",
 				"f1","f2","f3","f4","f5","f6","f7","f8","f9","f10","f11","f12","esc","tab","backspace","enter","space","leftalt","rightalt","leftctrl","rightctrl","leftshift","rightshift",
 				"capslock","scrolllock","numlock","grave","minus","equals","backslash","leftbracket","rightbracket","semicolon","quote","period","comma","slash","extra_lt_gt",
 				"printscreen","pause","insert","home","pageup","delete","end","pagedown","left","up","down","right","kp1","kp2","kp3","kp4","kp5","kp6","kp7","kp8","kp9","kp0",
 				"kpdivide","kpmultiply","kpminus","kpplus","kpenter","kpperiod",
-				"wait","delay",
+				"wait","waitmodechange","delay"
 			};
 			if (i == 0)
-				for (; i != KBD_LAST+2; i++)
+				for (; i != KBD_LAST+3; i++)
 					if (!strncasecmp(DBP_Commands[i], cmd, cmdlen) && DBP_Commands[i][cmdlen] == '\0')
 						break;
 
@@ -543,7 +556,13 @@ struct DBP_Run
 			{
 				InpNextTick += atoi(cmdColon+1);
 			}
-			else if (i == KBD_LAST+1 && cmdColon) // delay command
+			else if (i == KBD_LAST+1) // waitmodechange command
+			{
+				if (vga.draw.resizing && InpDoneTicks && (InpDoneTicks - InpNextTick < 5000)) break; // don't start while vga is resizing
+				InpNextTick += 30000; // wait max 30 seconds (if the game crashes, auto input is aborted below)
+				InpSkipMode = ModeHash();
+			}
+			else if (i == KBD_LAST+2 && cmdColon) // delay command
 			{
 				InpDelay = (Bit32u)atoi(cmdColon+1);
 			}
@@ -568,7 +587,8 @@ struct DBP_Run
 			autoinput.ptr = cmdNext;
 		}
 
-		if (autoinput.ptr)
+		// Check if done, dbp_game_running should switch to true at tick 1 unless the game crashes or exits but give it 5 seconds to be sure
+		if (autoinput.ptr && (dbp_game_running || InpDoneTicks < 5000))
 		{
 			// Disable line rendering (without using VGA frameskipping which affects the emulation)
 			struct Local { static void EmptyLineHandler(const void*) { } };
@@ -581,6 +601,7 @@ struct DBP_Run
 		else
 		{
 			// done
+			autoinput.ptr = NULL; // reset on game crash/exit (dbp_game_running is false)
 			DBP_KEYBOARD_ReleaseKeys();
 			if (dbp_content_year > 1970)
 			{
