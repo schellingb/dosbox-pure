@@ -75,7 +75,6 @@ static std::string dbp_content_name;
 static retro_time_t dbp_boot_time;
 static size_t dbp_serializesize;
 static Bit16s dbp_content_year;
-static const Bit32s Cycles1981to1999[1+1999-1981] = { 315, 900, 1500, 2100, 2750, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000, 55000, 66800, 93000, 125000, 200000, 350000 };
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
@@ -586,20 +585,22 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 	}
 }
 
-static inline Bit32s DBP_CyclesForYear(int year)
+static inline Bit32s DBP_CyclesForYear(int year, int year_max = 0x7FFFFFF)
 {
-	return (year < 1981 ? 315 : // Very early 8086/8088 CPU
-		(year > 1999 ? 500000 : // Pentium III, 600 MHz and later
-		Cycles1981to1999[year - 1981])); // Matching speed for year
+	static const Bit32s Cycles1982to1999[1+1999-1982] = { 900, 1500, 2100, 2750, 3800, 4800, 6300, 7800, 14000, 23800, 27000, 44000, 55000, 66800, 93000, 125000, 200000, 350000 };
+	return (year > year_max ? DBP_CyclesForYear(year_max, year_max) :
+		(year < 1982 ? 315 : // Very early 8086/8088 CPU
+		(year > 1999 ? (500000 + ((year - 2000) * 200000)) : // Pentium III, 600 MHz and later
+		Cycles1982to1999[year - 1982]))); // Matching speed for year
 }
 
-static void DBP_SetCyclesByContentYear()
+static void DBP_SetCyclesByYear(int year, int year_max)
 {
-	DBP_ASSERT(dbp_content_year > 1970);
-	CPU_CycleMax = DBP_CyclesForYear(dbp_content_year);
+	DBP_ASSERT(year > 1970);
+	CPU_CycleMax = DBP_CyclesForYear(year, year_max);
 
 	// Also switch to dynamic core for newer real mode games
-	if (dbp_content_year >= 1990 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
+	if (year >= 1990 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
 	{
 		#if (C_DYNAMIC_X86)
 		if (cpudecoder != CPU_Core_Dyn_X86_Run) { void CPU_Core_Dyn_X86_Cache_Init(bool); CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = CPU_Core_Dyn_X86_Run; }
@@ -612,10 +613,10 @@ static void DBP_SetCyclesByContentYear()
 void DBP_SetRealModeCycles()
 {
 	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || !dbp_game_running || dbp_content_year <= 1970) return;
-	DBP_SetCyclesByContentYear();
+	DBP_SetCyclesByYear(dbp_content_year, 1996);
 
 	// When auto switching to a high-speed CPU, enable auto adjust so low spec hardware is allowed to throttle down
-	if (dbp_content_year > 1995)
+	if (dbp_content_year >= 1995)
 		CPU_CycleAutoAdjust = true;
 }
 
@@ -2268,7 +2269,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 
 			Bit32s limit = 4000000;
 			if (CPU_CycleLimit > 0) limit = CPU_CycleLimit;
-			else if (!cpu.pmode && dbp_content_year > 1995) limit = (dbp_content_year > 1999 ? 500000 : Cycles1981to1999[dbp_content_year- 1981]); // enforce max from DBP_SetRealModeCycles
+			else if (!cpu.pmode && dbp_content_year >= 1995) limit = DBP_CyclesForYear(dbp_content_year, 1996); // enforce max from DBP_SetRealModeCycles
 			if (limit > (Bit64s)recentEmulator * 280) limit = (Bit32s)(recentEmulator * 280);
 			if (CPU_CycleMax > limit) CPU_CycleMax = limit;
 			if (CPU_CycleMax < (cpu.pmode ? 10000 : 1000)) CPU_CycleMax = (cpu.pmode ? 10000 : 1000);
@@ -3121,13 +3122,7 @@ static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoe
 	if (l.cpu_cycles || l.cpu_year || l.cpu_hz)
 	{
 		if (l.cpu_cycles) {}
-		else if (l.cpu_year)
-		{
-			l.cpu_cycles = (int)(
-				(l.cpu_year < 1981 ? 500 : // Very early 8086/8088 CPU
-				(l.cpu_year > 1999 ? (500000 + ((l.cpu_year - 2000) * 200000)) : // Pentium III, 600 MHz and later
-				Cycles1981to1999[l.cpu_year - 1981]))); // Matching speed for year
-		}
+		else if (l.cpu_year) l.cpu_cycles = (int)DBP_CyclesForYear(l.cpu_year);
 		else
 		{
 			float cycle_per_hz = .3f; // default with auto (just a bad guess)

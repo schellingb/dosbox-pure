@@ -274,8 +274,8 @@ struct DBP_Run
 		section->HandleInputline("cputype=pentium_slow");
 		if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
-		if (Property* p = section->GetProp("cputype")) p->OnChangedByConfigProgram();
-		if (dbp_content_year < 1993) { Bit16s &y = dbp_content_year, oldy = y; y = 1993; DBP_SetCyclesByContentYear(); y = oldy; }
+		section->GetProp("cputype")->OnChangedByConfigProgram();
+		if (dbp_content_year < 1993) DBP_SetCyclesByYear(1993, 1993);
 
 		RunBatchFile(new BatchFileBoot(!is_install ? 'C' : 'A'));
 	}
@@ -339,14 +339,14 @@ struct DBP_Run
 		}
 
 		autoinput.ptr = ((mode != RUN_COMMANDLINE && autoinput.str.size()) ? autoinput.str.c_str() : NULL);
-		if (autoinput.ptr && dbp_content_year > 1970)
+		autoinput.oldcycles = 0;
+		if (autoinput.ptr && dbp_content_year > 1970 && ((autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange()) != Property::Changeable::OnlyByConfigProgram || CPU_CycleAutoAdjust)) // if it has been fixed (i.e. by DOS.YML) don't touch it
 		{
-			// enforce cycle rate during auto input (but limited to 1995 CPU speed, above will likely just waste time waiting for frames being drawn)
+			// enforce cycle rate during auto input (but limited to 1994 CPU speed, above will likely just waste time waiting for rendering out the skipped frames)
 			autoinput.oldcycles = CPU_CycleMax;
-			autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange(); // allow config program to permanently change cycles
 			autoinput.oldyear = dbp_content_year;
-			if (dbp_content_year > 1995) dbp_content_year = 1995;
-			DBP_SetCyclesByContentYear();
+			if (dbp_content_year > 1994) dbp_content_year = 1994;
+			DBP_SetCyclesByYear(dbp_content_year, 1994);
 		}
 
 		// if a booted OS does a bios reboot, auto reboot that OS from now on
@@ -603,9 +603,9 @@ struct DBP_Run
 			// done
 			autoinput.ptr = NULL; // reset on game crash/exit (dbp_game_running is false)
 			DBP_KEYBOARD_ReleaseKeys();
-			if (dbp_content_year > 1970)
+			if (autoinput.oldcycles)
 			{
-				if (!CPU_CycleAutoAdjust && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
+				if (!CPU_CycleAutoAdjust && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year, 1994) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
 					CPU_CycleMax = autoinput.oldcycles; // revert from Run()
 				else if (CPU_CycleAutoAdjust && cpu.pmode && CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT))
 					CPU_OldCycleMax = autoinput.oldcycles; // we switched to protected mode since auto input, fix up old cycles
