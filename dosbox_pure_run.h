@@ -340,10 +340,11 @@ struct DBP_Run
 
 		autoinput.ptr = ((mode != RUN_COMMANDLINE && autoinput.str.size()) ? autoinput.str.c_str() : NULL);
 		autoinput.oldcycles = 0;
-		if (autoinput.ptr && dbp_content_year > 1970 && ((autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange()) != Property::Changeable::OnlyByConfigProgram || CPU_CycleAutoAdjust)) // if it has been fixed (i.e. by DOS.YML) don't touch it
+		if (autoinput.ptr && dbp_content_year > 1970 && (CPU_CycleAutoAdjust || (CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT)))))
 		{
 			// enforce cycle rate during auto input (but limited to 1994 CPU speed, above will likely just waste time waiting for rendering out the skipped frames)
 			autoinput.oldcycles = CPU_CycleMax;
+			autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange();
 			autoinput.oldyear = dbp_content_year;
 			if (dbp_content_year > 1994) dbp_content_year = 1994;
 			DBP_SetCyclesByYear(dbp_content_year, 1994);
@@ -607,7 +608,7 @@ struct DBP_Run
 			{
 				if (!CPU_CycleAutoAdjust && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year, 1994) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
 					CPU_CycleMax = autoinput.oldcycles; // revert from Run()
-				else if (CPU_CycleAutoAdjust && cpu.pmode && CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT))
+				else if (CPU_CycleAutoAdjust && cpu.pmode && (CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT)))
 					CPU_OldCycleMax = autoinput.oldcycles; // we switched to protected mode since auto input, fix up old cycles
 				dbp_content_year = autoinput.oldyear;
 				DBP_SetRealModeCycles(); // if still in real mode reset the defaults
