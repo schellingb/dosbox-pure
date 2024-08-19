@@ -500,12 +500,13 @@ static retro_core_option_v2_definition option_defs[] =
 		"3dfx Voodoo Graphics SST-1/2 emulator by Aaron Giles and the MAME team (license: BSD-3-Clause)", NULL,
 		"Video",
 		{
-			{ "12mb", "Enabled - 12MB memory with 2 TMUs (default)" },
-			{ "8mb", "Enabled - 8MB memory" },
-			{ "4mb", "Enabled - 4MB memory" },
+			{ "8mb", "Enabled - 8MB memory (default)" },
+			{ "12mb", "Enabled - 12MB memory, Dual Texture" },
+			{ "16mb", "Enabled - 16MB memory (Experimental)" },
+			{ "4mb", "Enabled - 4MB memory, Low Resolution Only" },
 			{ "off", "Disabled" },
 		},
-		"12mb",
+		"8mb",
 	},
 	{
 		"dosbox_pure_voodoo_perf",

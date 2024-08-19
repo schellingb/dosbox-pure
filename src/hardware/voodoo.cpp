@@ -276,6 +276,7 @@ struct poly_vertex
 enum
 {
 	VOODOO_1,
+	VOODOO_1_16MB,
 	VOODOO_1_8MB,
 	VOODOO_1_DTMU,
 	VOODOO_2,
@@ -4190,7 +4191,6 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			//if (prog->u_zaColor != -1) myglUniform1f(prog->u_zaColor, cmd.geometry.uni.zacolor/65535.0f);
 			if (prog->u_fogcolor_alpharef != -1) myglUniform4f(prog->u_fogcolor_alpharef, cmd.geometry.uni.fogcolor.rgb.r/255.0f, cmd.geometry.uni.fogcolor.rgb.g/255.0f, cmd.geometry.uni.fogcolor.rgb.b/255.0f, ALPHAMODE_ALPHAREF(ALPHAMODE)/255.0f);
 			GLERRORASSERT
-
 
 			if (uset[0] || uset[1])
 			{
@@ -8160,6 +8160,7 @@ static void voodoo_init(UINT8 type) {
 	{
 		case VOODOO_1: break;
 		case VOODOO_1_8MB:  v->type = VOODOO_1_8MB;  break;
+		case VOODOO_1_16MB: v->type = VOODOO_1_16MB; break;
 		case VOODOO_1_DTMU: v->type = VOODOO_1_DTMU; break;
 		case VOODOO_2:      v->type = VOODOO_2;      break;
 		default:
@@ -8247,6 +8248,13 @@ static void voodoo_init(UINT8 type) {
 			v->regaccess = voodoo_register_access;
 			fbmemsize = 4;
 			tmumem0 = 4;
+			tmumem1 = 0;
+			break;
+
+		case VOODOO_1_16MB:
+			v->regaccess = voodoo_register_access;
+			fbmemsize = 8;
+			tmumem0 = 8;
 			tmumem1 = 0;
 			break;
 
@@ -8813,9 +8821,10 @@ void VOODOO_Init(Section* sec) {
 	}
 
 	UINT8 type = VOODOO_1_DTMU;
-	switch (section->Get_string("voodoo")[0])
+	const char* typestr = section->Get_string("voodoo");
+	switch (typestr[0])
 	{
-		case '1': type = VOODOO_1_DTMU; break; //12mb
+		case '1': type = (typestr[1] == '6' ? VOODOO_1_16MB : VOODOO_1_DTMU); break; //16mb / 12mb
 		case '8': type = VOODOO_1_8MB; break; //8mb
 		case '4': type = VOODOO_1; break; //4mb
 		default: return; // disabled
