@@ -4608,8 +4608,9 @@ static void voodoo_ogl_draw_triangle()
 	if (!FBIINIT3_DISABLE_TMUS(reg[fbiInit3].u) && FBZCP_TEXTURE_ENABLE(FBZCOLORPATH))
 		for (unsigned i = 0; i != 2; i++)
 		{
+			if (i && !(v->chipmask & 0x04)) continue;
 			tmu_state& tmu = v->tmu[i];
-			if (tmu.lodmin >= (8 << 8) || (i && !(v->chipmask & 0x04))) continue;
+			if (TEXLOD_LODMIN(tmu.reg[tLOD].u) >= ((8 << 8) >> 6)) continue; // they set LOD min to 8 to "disable" a TMU
 			prepare_tmu(&tmu); // this was moved here from triangle()
 			const UINT32 TEXMODE = tmu.reg[textureMode].u;
 			const UINT8 tformat = (UINT8)TEXMODE_FORMAT(TEXMODE);
