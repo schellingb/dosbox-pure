@@ -6108,6 +6108,13 @@ static void triangle_worker_run(triangle_worker& tworker)
 -------------------------------------------------*/
 static void triangle(voodoo_state *v)
 {
+	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
+	if (vogl_active) {
+		voodoo_ogl_draw_triangle();
+		return;
+	}
+	#endif
+
 	/* determine the number of TMUs involved */
 	int texcount = 0;
 	if (!FBIINIT3_DISABLE_TMUS(v->reg[fbiInit3].u) && FBZCP_TEXTURE_ENABLE(v->reg[fbzColorPath].u))
@@ -6116,13 +6123,6 @@ static void triangle(voodoo_state *v)
 		if (v->chipmask & 0x04)
 			texcount = 2;
 	}
-
-	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (vogl_active) {
-		voodoo_ogl_draw_triangle();
-		return;
-	}
-	#endif
 
 	/* perform subpixel adjustments */
 	if (FBZCP_CCA_SUBPIXEL_ADJUST(v->reg[fbzColorPath].u)) {
