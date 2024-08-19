@@ -275,11 +275,12 @@ struct poly_vertex
 /* enumeration specifying which model of Voodoo we are emulating */
 enum
 {
-	VOODOO_1,
-	VOODOO_1_16MB,
-	VOODOO_1_8MB,
+	VOODOO_1_4MB,
 	VOODOO_1_DTMU,
 	VOODOO_2,
+	VOODOO_1_16MB,
+	VOODOO_1_8MB,
+	_VOODOO_TYPE_MAX,
 };
 
 enum { MAX_TRIANGLE_THREADS = 7, MAX_TRIANGLE_WORKERS = MAX_TRIANGLE_THREADS + 1 };
@@ -8157,20 +8158,13 @@ static void voodoo_init(UINT8 type) {
 
 	v->active = false;
 
-	v->type = VOODOO_1;
-
-	switch (type)
+	if (type >= _VOODOO_TYPE_MAX)
 	{
-		case VOODOO_1: break;
-		case VOODOO_1_8MB:  v->type = VOODOO_1_8MB;  break;
-		case VOODOO_1_16MB: v->type = VOODOO_1_16MB; break;
-		case VOODOO_1_DTMU: v->type = VOODOO_1_DTMU; break;
-		case VOODOO_2:      v->type = VOODOO_2;      break;
-		default:
-			LOG_MSG("invalid voodoo card type initialization [%x]",type);
-			DBP_ASSERT(false);
-			break;
+		LOG_MSG("invalid voodoo card type initialization [%x]",type);
+		DBP_ASSERT(false);
+		type = VOODOO_1_8MB;
 	}
+	v->type = type;
 
 	memset(v->reg, 0, sizeof(v->reg));
 
@@ -8241,7 +8235,7 @@ static void voodoo_init(UINT8 type) {
 	/* configure type-specific values */
 	switch (v->type)
 	{
-		case VOODOO_1:
+		case VOODOO_1_4MB:
 			v->regaccess = voodoo_register_access;
 			fbmemsize = 2;
 			tmumem0 = 2;
@@ -8630,7 +8624,7 @@ static struct PCI_SSTDevice : public PCI_Device {
 	UINT8 type;
 	float gammafix;
 
-	PCI_SSTDevice() : PCI_Device(vendor,0), oscillator_ctr(0), pci_ctr(0), type(VOODOO_1) { }
+	PCI_SSTDevice() : PCI_Device(vendor,0), oscillator_ctr(0), pci_ctr(0), type(VOODOO_1_4MB) { }
 
 	void SetType(UINT8 _type) {
 		type = _type;
@@ -8823,13 +8817,13 @@ void VOODOO_Init(Section* sec) {
 		return; // already up
 	}
 
-	UINT8 type = VOODOO_1_DTMU;
+	UINT8 type = VOODOO_1_8MB;
 	const char* typestr = section->Get_string("voodoo");
 	switch (typestr[0])
 	{
 		case '1': type = (typestr[1] == '6' ? VOODOO_1_16MB : VOODOO_1_DTMU); break; //16mb / 12mb
 		case '8': type = VOODOO_1_8MB; break; //8mb
-		case '4': type = VOODOO_1; break; //4mb
+		case '4': type = VOODOO_1_4MB; break; //4mb
 		default: return; // disabled
 	}
 
