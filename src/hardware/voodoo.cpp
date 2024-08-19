@@ -3662,7 +3662,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			condshdr(v, uset[1], "out vec3 v_texcoord1;");
 			condshdr(v, usefoglodblend, "out vec3 v_foglodblend;");
 			addshdr(v,
-				"uniform vec4 view;" nl
+				"uniform vec3 view;" nl
 				"void main()" nl
 				"{");
 			condshdr(v, usevcolor, "v_color = a_color;");
@@ -3672,8 +3672,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			addshdr(v, 
 					//"gl_Position = mvp * vec4(a_position, 1.0f);" nl
 					"gl_Position = vec4("
-						"(a_position.x + view.x) * view.y,"
-						"(a_position.y + view.z) * view.w,"
+						"a_position.x * view.x - 1.0,"
+						"a_position.y * view.y + view.z,"
 						"a_position.z * 2.0 - 1.0,"
 						"1.0);" nl
 				"}");
@@ -4052,7 +4052,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	UINT8 last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
 	UINT32 last_blend_mode = 0xFFFFFFFF;
 	ogl_program* prog = NULL;
-	float view[4];
+	float view[3];
 
 	//#define VOGL_DRAW_STATS
 	#ifdef VOGL_DRAW_STATS
@@ -4178,15 +4178,13 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			UINT8 yorigin = FBZMODE_Y_ORIGIN(FBZMODE);
 			if (yorigin != last_yorigin)
 			{
-				float half_width = fbi_width * 0.5f, half_height = fbi_height * 0.5f;
-				view[0] = -half_width;
-				view[1] = (view_width - 1.0f) / (view_width - voodoo_ogl_scale) / half_width;
-				view[2] = -half_height;
-				view[3] = (view_height - 1.0f) / (view_height - voodoo_ogl_scale) / (yorigin ? half_height : view[2]);
+				view[0] = 2.0f / (float)fbi_width;
+				view[1] = (yorigin ? 2.0f : -2.0f) / (float)fbi_height;
+				view[2] = (yorigin ? -1.0f : 1.0f);
 				last_yorigin = yorigin;
 			}
 
-			myglUniform4f(prog->u_view, view[0], view[1], view[2], view[3]);
+			myglUniform3f(prog->u_view, view[0], view[1], view[2]);
 			if (prog->u_color0 != -1) myglUniform4f(prog->u_color0, cmd.geometry.uni.col0.rgb.r/255.0f, cmd.geometry.uni.col0.rgb.g/255.0f, cmd.geometry.uni.col0.rgb.b/255.0f, cmd.geometry.uni.col0.rgb.a/255.0f);
 			if (prog->u_color1 != -1) myglUniform4f(prog->u_color1, cmd.geometry.uni.col1.rgb.r/255.0f, cmd.geometry.uni.col1.rgb.g/255.0f, cmd.geometry.uni.col1.rgb.b/255.0f, cmd.geometry.uni.col1.rgb.a/255.0f);
 			if (prog->u_chromaKey != -1) myglUniform4f(prog->u_chromaKey, cmd.geometry.uni.chromakey.rgb.r/255.0f, cmd.geometry.uni.chromakey.rgb.g/255.0f, cmd.geometry.uni.chromakey.rgb.b/255.0f, cmd.geometry.uni.chromakey.rgb.a/255.0f);
