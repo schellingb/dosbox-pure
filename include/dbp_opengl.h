@@ -36,6 +36,7 @@
 #define MYGL_RGBA                           0x1908
 #define MYGL_DEPTH_COMPONENT                0x1902
 #define MYGL_UNSIGNED_BYTE                  0x1401
+#define MYGL_DEPTH24_STENCIL8               0x88F0
 #define MYGL_DEPTH_STENCIL                  0x84F9
 #define MYGL_UNSIGNED_INT_24_8              0x84FA
 #define MYGL_DEPTH_TEST                     0x0B71

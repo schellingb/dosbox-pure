@@ -3434,14 +3434,17 @@ struct voodoo_ogl_state
 		}
 
 		myglBindTexture(MYGL_TEXTURE_2D, depthstenciltex);
+		GLERRORASSERT
 		if (void* pxls = ogl_convertframe(OGL_READBACK_MODE_DEPTH, CONVERT_FROM_FBI_TO_OGL, NULL, w, h))
 		{
-			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH_STENCIL, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, pxls);
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH24_STENCIL8, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, pxls);
+			GLERRORASSERT
 			free(pxls);
 		}
 		else
 		{
-			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH_STENCIL, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, NULL);
+			myglTexImage2D(MYGL_TEXTURE_2D, 0, MYGL_DEPTH24_STENCIL8, w, h, 0, MYGL_DEPTH_STENCIL,  MYGL_UNSIGNED_INT_24_8, NULL);
+			GLERRORASSERT
 		}
 		depthstenciltex_width = w;
 		depthstenciltex_height = h;
