@@ -277,9 +277,9 @@ enum
 {
 	VOODOO_1_4MB,
 	VOODOO_1_DTMU,
-	VOODOO_2,
 	VOODOO_1_16MB,
 	VOODOO_1_8MB,
+	VOODOO_2, // must be after all Voodoo 1 types
 	_VOODOO_TYPE_MAX,
 };
 
@@ -8625,7 +8625,7 @@ static struct PCI_SSTDevice : public PCI_Device {
 	UINT8 type;
 	float gammafix;
 
-	PCI_SSTDevice() : PCI_Device(vendor,0), oscillator_ctr(0), pci_ctr(0), type(VOODOO_1_4MB) { }
+	PCI_SSTDevice() : PCI_Device(vendor,0), oscillator_ctr(0), pci_ctr(0), type(VOODOO_1_8MB) { }
 
 	void SetType(UINT8 _type) {
 		type = _type;
