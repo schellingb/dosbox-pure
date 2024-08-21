@@ -475,7 +475,7 @@ static void DBP_ReportCoreMemoryMaps()
 	else
 	{
 		mdescs[0].flags      = RETRO_MEMDESC_SYSTEM_RAM;
-		mdescs[0].start      = 0x00100000;
+		mdescs[0].start      = 0x00000000;
 		mdescs[0].len        = conventional_end;
 		mdescs[0].ptr        = MemBase;
 		mdesc_expandedmem = &mdescs[1];
