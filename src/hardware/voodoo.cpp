@@ -8804,7 +8804,7 @@ void VOODOO_Init(Section* sec) {
 	if (voodoo_pagehandler)
 	{
 		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (vogl && v)
+		if (vogl && v && v->active)
 		{
 			if (vogl_active && !(v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Deactivate();
 			if (!vogl_active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
