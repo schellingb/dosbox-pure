@@ -2940,7 +2940,7 @@ static const char* ogl_display_vertex_shader_src =
 	"void main()"
 	"{"
 		"v_texcoord = a_texcoord;"
-		"gl_Position = vec4(a_position, 1.0f);"
+		"gl_Position = vec4(a_position, 1.0);"
 	"}";
 
 static const char* ogl_display_fragment_shader_src =
@@ -3670,7 +3670,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			condshdr(v, uset[1], "v_texcoord1 = a_texcoord1;");
 			condshdr(v, usefoglodblend, "v_foglodblend = a_foglodblend;");
 			addshdr(v, 
-					//"gl_Position = mvp * vec4(a_position, 1.0f);" nl
+					//"gl_Position = mvp * vec4(a_position, 1.0);" nl
 					"gl_Position = vec4("
 						"a_position.x * view.x - 1.0,"
 						"a_position.y * view.y + view.z,"
@@ -3704,8 +3704,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			if (uset[1])
 			{
 				addshdr(f, "clocal = texture(tex1, v_texcoord1.xy / v_texcoord1.z).bgra;");
-				//addshdr(f, "clocal = vec4(v_texcoord1.x/v_texcoord1.z, v_texcoord1.y/v_texcoord1.z, 0.0f, 1.0f);");
-				//addshdr(f, "clocal = vec4(0.5f, 0.5f, 0.5f, 0.5f);");
+				//addshdr(f, "clocal = vec4(v_texcoord1.x/v_texcoord1.z, v_texcoord1.y/v_texcoord1.z, 0.0, 1.0);");
+				//addshdr(f, "clocal = vec4(0.5, 0.5, 0.5, 0.5);");
 				Local::MakeTexShader(fshadernum, fshadersrcs, 1, eff.tex_mode[1]);
 				selectshdr(f, uset[0], "cother = tt;", "texel = tt;");
 			}
@@ -3713,8 +3713,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			if (uset[0])
 			{
 				addshdr(f, "clocal = texture(tex0, v_texcoord0.xy/v_texcoord0.z).bgra;");
-				//addshdr(f, "clocal = vec4(v_texcoord0.x/v_texcoord0.z, v_texcoord0.y/v_texcoord0.z, 1.0f, 1.0f);");
-				//addshdr(f, "clocal = vec4(1.0f, 0.0f, 0.0f, 1.0f);");
+				//addshdr(f, "clocal = vec4(v_texcoord0.x/v_texcoord0.z, v_texcoord0.y/v_texcoord0.z, 1.0, 1.0);");
+				//addshdr(f, "clocal = vec4(1.0, 0.0, 0.0, 1.0);");
 				Local::MakeTexShader(fshadernum, fshadersrcs, 0, eff.tex_mode[0]);
 				addshdr(f, "texel = tt;");
 				//addshdr(f, "fragColor = texel; return;");
@@ -3727,7 +3727,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				case 0:  addshdr(f, "cother = v_color;"); break;
 				case 1:  addshdr(f, "cother = texel;"); break;
 				case 2:  addshdr(f, "cother = color1;"); break;
-				default: addshdr(f, "cother = vec4(0.0f);"); break;
+				default: addshdr(f, "cother = vec4(0.0);"); break;
 			}
 
 			// TODO: fix chroma key
@@ -3749,7 +3749,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 			// alpha mask
 			if (FBZMODE_ENABLE_ALPHA_MASK(FBZMODE))
-				addshdr(f, "if (mod(cother.a+0.0001f, 2.0f/255.0f) > (1.0f/255.0f)) discard;");
+				addshdr(f, "if (mod(cother.a+0.0001, 2.0/255.0) > (1.0/255.0)) discard;");
 
 			if (ALPHAMODE_ALPHATEST(ALPHAMODE))
 				switch (ALPHAMODE_ALPHAFUNCTION(ALPHAMODE))
@@ -3945,8 +3945,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				case 2: addshdr(f, "tt.rgb += vec3(clocal.a);"); break;
 			}
 			condshdr(f, TEXMODE_TCA_ADD_ACLOCAL(TEXMODE), "tt.a += clocal.a;");
-			condshdr(f, TEXMODE_TC_INVERT_OUTPUT(TEXMODE), "tt.rgb = vec3(1.0f) - tt.rgb;");
-			condshdr(f, TEXMODE_TCA_INVERT_OUTPUT(TEXMODE), "tt.a = 1.0f - tt.a;");
+			condshdr(f, TEXMODE_TC_INVERT_OUTPUT(TEXMODE), "tt.rgb = vec3(1.0) - tt.rgb;");
+			condshdr(f, TEXMODE_TCA_INVERT_OUTPUT(TEXMODE), "tt.a = 1.0 - tt.a;");
 		}
 
 		#undef nl
