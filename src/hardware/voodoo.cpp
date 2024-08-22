@@ -4425,8 +4425,14 @@ static void voodoo_ogl_fastfill()
 	cmd.fastfill.clip.active = 1;
 	cmd.fastfill.clip.sx = (v->reg[clipLeftRight].u >> 16) & 0x3ff;
 	cmd.fastfill.clip.ex = (v->reg[clipLeftRight].u >>  0) & 0x3ff;
-	cmd.fastfill.clip.sy = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >>  0) & 0x3ff)) & 0x3ff;
-	cmd.fastfill.clip.ey = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >> 16) & 0x3ff)) & 0x3ff;
+	cmd.fastfill.clip.sy = (v->reg[clipLowYHighY].u >> 16) & 0x3ff;
+	cmd.fastfill.clip.ey = (v->reg[clipLowYHighY].u >>  0) & 0x3ff;
+	if (FBZMODE_Y_ORIGIN(v->reg[fbzMode].u))
+	{
+		cmd.fastfill.clip.sy = (v->fbi.yorigin + 1 - cmd.fastfill.clip.sy) & 0x3ff;
+		cmd.fastfill.clip.ey = (v->fbi.yorigin + 1 - cmd.fastfill.clip.ey) & 0x3ff;
+		std::swap(cmd.fastfill.clip.sy, cmd.fastfill.clip.ey);
+	}
 	if (!cmd.fastfill.clip.sx && !cmd.fastfill.clip.sy && cmd.fastfill.clip.ex == v->fbi.width && cmd.fastfill.clip.ey == v->fbi.height)
 		cmd.fastfill.clip.active = cmd.fastfill.clip.sx = cmd.fastfill.clip.sy = cmd.fastfill.clip.ex = cmd.fastfill.clip.ey = 0;
 
@@ -4566,10 +4572,16 @@ static void voodoo_ogl_draw_triangle()
 	{
 		if (clipping_active)
 		{
-			cmd.clipping.clip.sx = (v->reg[clipLeftRight].u >> 16) & 0x3ff;
-			cmd.clipping.clip.ex = (v->reg[clipLeftRight].u >>  0) & 0x3ff;
-			cmd.clipping.clip.sy = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >>  0) & 0x3ff)) & 0x3ff;
-			cmd.clipping.clip.ey = (v->fbi.yorigin+1 - ((v->reg[clipLowYHighY].u >> 16) & 0x3ff)) & 0x3ff;
+			cmd.clipping.clip.sx = (reg[clipLeftRight].u >> 16) & 0x3ff;
+			cmd.clipping.clip.ex = (reg[clipLeftRight].u >>  0) & 0x3ff;
+			cmd.clipping.clip.sy = (reg[clipLowYHighY].u >> 16) & 0x3ff;
+			cmd.clipping.clip.ey = (reg[clipLowYHighY].u >>  0) & 0x3ff;
+			if (FBZMODE_Y_ORIGIN(FBZMODE))
+			{
+				cmd.clipping.clip.sy = (v->fbi.yorigin + 1 - cmd.clipping.clip.sy) & 0x3ff;
+				cmd.clipping.clip.ey = (v->fbi.yorigin + 1 - cmd.clipping.clip.ey) & 0x3ff;
+				std::swap(cmd.clipping.clip.sy, cmd.clipping.clip.ey);
+			}
 			if (!cmd.clipping.clip.sx && !cmd.clipping.clip.sy && cmd.clipping.clip.ex == fbi.width && cmd.clipping.clip.ey == fbi.height)
 			{
 				if (!vogl->cmdbuf.last_clipping.active) goto skip_clip;
