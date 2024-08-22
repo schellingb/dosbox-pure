@@ -4876,10 +4876,19 @@ static void voodoo_ogl_draw_triangle()
 
 			const float ts = (s ? (float)s / (float)(smax*(1<<(18+ilod))) : 0.0f);
 			const float tt = (t ? (float)t / (float)(tmax*(1<<(18+ilod))) : 0.0f);
-			float tw = (titerw ? (float)titerw / (float)0xffffff : 0.0f);
-			vd.m[i].sw = ts * tw;
-			vd.m[i].tw = tt * tw;
-			vd.m[i].w = tw;
+			if (TEXMODE_ENABLE_PERSPECTIVE(TEXMODE))
+			{
+				float tw = (titerw ? (float)titerw / (float)0xffffff : 0.0f);
+				vd.m[i].sw = ts * tw;
+				vd.m[i].tw = tt * tw;
+				vd.m[i].w = tw;
+			}
+			else
+			{
+				vd.m[i].sw = ts;
+				vd.m[i].tw = tt;
+				vd.m[i].w = 1.0f;
+			}
 
 			INT32 lodblend = 0;
 			if ((TEXMODE_TC_MSELECT(TEXMODE)==4) || (TEXMODE_TCA_MSELECT(TEXMODE)==4))
