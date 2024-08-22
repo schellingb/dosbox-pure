@@ -8943,11 +8943,11 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_ZERO)
 		{
 			#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-			bool reactivate_opengl = (v->active && (v_perf & V_PERFFLAG_OPENGL));
-			if (vogl_active)       voodoo_ogl_state::Deactivate(reactivate_opengl);
-			if (reactivate_opengl) voodoo_ogl_state::Activate();
+			bool usevogl = (v->active && (v_perf & V_PERFFLAG_OPENGL));
+			if (vogl_active && !usevogl) voodoo_ogl_state::Deactivate();
+			if (!vogl_active && usevogl) voodoo_ogl_state::Activate();
 			#endif
-			v->resolution_dirty = true; // force call to  RENDER_SetSize
+			v->resolution_dirty = true; // force call to RENDER_SetSize
 			v->clutDirty = v->ogl_clutDirty = true;
 		}
 	}
