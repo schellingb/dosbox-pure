@@ -275,7 +275,7 @@ struct DBP_Run
 		if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
 		section->GetProp("cputype")->OnChangedByConfigProgram();
-		if (dbp_content_year < 1993) DBP_SetCyclesByYear(1993, 1993);
+		if (dbp_content_year < 1993 && (CPU_CycleAutoAdjust || (CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT))))) DBP_SetCyclesByYear(1993, 1993);
 
 		RunBatchFile(new BatchFileBoot(!is_install ? 'C' : 'A'));
 	}
