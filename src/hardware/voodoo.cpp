@@ -2922,7 +2922,7 @@ UINT8 voodoo_ogl_scale;
 static struct voodoo_ogl_state* vogl;
 static bool vogl_palette_changed;
 static bool vogl_ncctexel_changed;
-static bool vogl_active;
+static bool vogl_active, vogl_showing;
 
 #define GLERRORCLEAR {myglGetError();}
 #ifndef NDEBUG
@@ -3171,7 +3171,7 @@ static UINT32* ogl_convertframe(ogl_readback_mode mode, ogl_convertframe_mode co
 struct ogl_drawbuffer
 {
 	unsigned fbo = 0, colortex = 0;
-	UINT8 last_scale = 0;
+	UINT8 last_scale = 0, updated;
 	ogl_pixels color;
 
 	void SetSize(UINT16 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
@@ -3316,29 +3316,28 @@ struct voodoo_ogl_state
 	ogl_drawbuffer drawbuffers[3];
 	ogl_readbackdata readback;
 	UINT8 flushed_buffer = 0, display_buffer = 0;
-	UINT32 renderframe = 0, lastbackframe = (UINT32)-1;
+	UINT32 renderframe, lastbackframe;
 	UINT64 last_texture_clear_op = 0;
 	unsigned vao = 0, vbo = 0, displayprog = 0, displayprog_clut_exp = 0, displayprog_clut_fac = 0;
 	unsigned depthstenciltex = 0, depthstenciltex_width = 0, depthstenciltex_height = 0;
 
 	static void Activate()
 	{
-		// We activate the OpenGL rendering delayed only when updating the screen for the first frame. This is necessary for the 3dfx splash screen which
-		// sends a few draw commands followed by immediate pixel read commands which is something that isn't perfectly emulated with OpenGL (color buffer is read only after rendering a flushed frame).
 		//GFX_ShowMsg("[VOGL] Activate while voodoo_ogl_state %s", (vogl ? "already exists" : "does not exist yet"));
-		DBP_ASSERT(!vogl_active);
+		DBP_ASSERT(v && v->active && !vogl_active && !vogl_showing);
 		if (!vogl) vogl = new voodoo_ogl_state();
 		vogl_palette_changed = true;
 		vogl_ncctexel_changed = true;
 		vogl_active = true;
+		vogl->renderframe = 0; // don't do in Deactivate because WriteBackFrame needs it
+		vogl->lastbackframe = (UINT32)-1;
 	}
 
-	static void Deactivate(bool keep_textures = false)
+	static void Deactivate()
 	{
 		DBP_ASSERT(vogl_active);
-		vogl_active = false;
+		vogl_active = vogl_showing = false;
 		vogl->cmdbuf.Free();
-		if (keep_textures) return;
 		vogl->texbases.Free();
 		vogl->texbase_hashes.Free();
 		vogl->texuploads.Free();
@@ -3353,7 +3352,7 @@ struct voodoo_ogl_state
 
 	void Init()
 	{
-		DBP_ASSERT(vogl_active && !vbo);
+		DBP_ASSERT(vogl_active && !vogl_showing && !vbo);
 		myglGenBuffers(1, &vbo); GLERRORASSERT
 		myglGenVertexArrays(1, &vao); GLERRORASSERT
 		displayprog = DBP_Build_GL_Program(1, &ogl_display_vertex_shader_src, 1, &ogl_display_fragment_shader_src, 2, ogl_display_bind_attrs);
@@ -3471,23 +3470,20 @@ enum KBD_KEYS { KBD_NONE, KBD_1,KBD_2,KBD_3,KBD_4,KBD_5,KBD_6,KBD_7,KBD_8,KBD_9,
 extern bool DBP_IsKeyDown(KBD_KEYS key);
 #endif
 
-bool voodoo_ogl_is_active()
-{
-	return ((v_perf & V_PERFFLAG_OPENGL) && v && vogl && v->active);
-}
+bool voodoo_is_active() { return (v && v->active); }
+
+bool voodoo_ogl_is_showing() { return vogl_showing; }
 
 bool voodoo_ogl_have_new_image()
 {
-	return (vogl->cmdbuf.flushed_commands > 0);
-	//for (UINT32 c = 0, cEnd = vogl->cmdbuf.flushed_commands; c != cEnd; c++)
-	//	if (vogl->cmdbuf.commands.data[c].base.drawbuffer == vogl->flushed_buffer)
-	//		return true;
-	//return false;
+	if (!vogl_showing || !vogl->drawbuffers[vogl->flushed_buffer].updated) return false;
+	vogl->drawbuffers[vogl->flushed_buffer].updated = 0;
+	return true;
 }
 
 bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation thread is running again
 {
-	if (!(v_perf & V_PERFFLAG_OPENGL) || !v || !vogl || !v->active || !vogl->drawbuffers[vogl->display_buffer].fbo) return false;
+	if (!vogl_showing || !vogl->drawbuffers[vogl->display_buffer].fbo) return false;
 
 	myglUseProgram(vogl->displayprog);
 	if (v->ogl_clutDirty)
@@ -3957,11 +3953,11 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		#undef condshdr
 		#undef selectshdr
 
-		static void ApplyClipping(const ogl_clipping& clip)
+		static void ApplyClipping(const ogl_clipping& clip, UINT32 view_height)
 		{
-			if (!clip.active) { myglDisable(MYGL_SCISSOR_TEST); return; }
+			if (!clip.active || clip.ex < clip.sx || clip.ey < clip.sy) { myglDisable(MYGL_SCISSOR_TEST); return; }
 			myglEnable(MYGL_SCISSOR_TEST);
-			myglScissor(clip.sx * voodoo_ogl_scale, clip.sy * voodoo_ogl_scale, (clip.ex - clip.sx) * voodoo_ogl_scale, (clip.ey - clip.sy) * voodoo_ogl_scale); GLERRORASSERT
+			myglScissor(clip.sx * voodoo_ogl_scale, view_height - clip.ey * voodoo_ogl_scale, (clip.ex - clip.sx) * voodoo_ogl_scale, (clip.ey - clip.sy) * voodoo_ogl_scale); GLERRORASSERT
 		}
 	};
 
@@ -4046,7 +4042,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
  		vogl->DepthStencilTexSetSize(view_width, view_height);
 
 	myglViewport(0, 0, view_width, view_height); GLERRORASSERT
-	Local::ApplyClipping(vogl->cmdbuf.live_clipping);
+	Local::ApplyClipping(vogl->cmdbuf.live_clipping, view_height);
 	if (myglDepthRange) { myglDepthRange(0.0f, 1.0f); GLERRORASSERT }
 	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
 	if (voodoo_ogl_scale != 1) myglPointSize(voodoo_ogl_scale);
@@ -4077,6 +4073,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			if (drawbuffer.color.width != view_width || drawbuffer.color.height != view_height)
 				drawbuffer.SetSize(last_drawbuffer, view_width, view_height, vogl->depthstenciltex); // also inits fbo
 			myglBindFramebuffer(MYGL_FRAMEBUFFER, drawbuffer.fbo); GLERRORASSERT
+			drawbuffer.updated = 1;
 		}
 
 		if (cmd.base.type == ogl_cmdbase::FASTFILL)
@@ -4096,7 +4093,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			}
 
 			const int clipchange = memcmp(&vogl->cmdbuf.live_clipping, &cmd.fastfill.clip, sizeof(vogl->cmdbuf.live_clipping));
-			if (clipchange) Local::ApplyClipping(cmd.fastfill.clip);
+			if (clipchange) Local::ApplyClipping(cmd.fastfill.clip, view_height);
 
 			unsigned clear_mask = 0;
 			if (FBZMODE_RGB_BUFFER_MASK(cmd.fastfill.fbz_mode))
@@ -4120,11 +4117,11 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 			if (clear_mask) { myglClear(clear_mask); GLERRORASSERT }
 
-			if (clipchange) Local::ApplyClipping(vogl->cmdbuf.live_clipping);
+			if (clipchange) Local::ApplyClipping(vogl->cmdbuf.live_clipping, view_height);
 		}
 		else if (cmd.base.type == ogl_cmdbase::CLIPPING)
 		{
-			Local::ApplyClipping(cmd.clipping.clip);
+			Local::ApplyClipping(cmd.clipping.clip, view_height);
 			vogl->cmdbuf.live_clipping = cmd.clipping.clip;
 		}
 		else
@@ -4396,7 +4393,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			}
 		}
 	}
-	vogl->renderframe++;
+	vogl_showing = vogl->renderframe++ > 2;
 	vogl->display_buffer = vogl->flushed_buffer;
 	return true;
 }
@@ -4518,31 +4515,31 @@ static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y,
 	vd.fogblend = fogblend;
 }
 
-static UINT32 voodoo_ogl_read_pixel(int x, int y)
+static INLINE UINT32 voodoo_ogl_read_pixel(int x, int y)
 {
 	const ogl_pixels* pixels; UINT32 off; const UINT8* rgba;
 	switch (LFBMODE_READ_BUFFER_SELECT(v->reg[lfbMode].u))
 	{
-		default: invalidread: return 0xffffffff;
-		case 0: pixels = &vogl->drawbuffers[v->fbi.frontbuf].color; break; // front buffer
-		case 1: pixels = &vogl->drawbuffers[v->fbi.backbuf].color; break; // back buffer
+		default: invalidread: return 0xFFFFFFFF;
+		case 0: pixels = &vogl->drawbuffers[v->fbi.frontbuf].color; goto case_color_buffer; // front buffer
+		case 1: pixels = &vogl->drawbuffers[v->fbi.backbuf].color; goto case_color_buffer; // back buffer
+		case_color_buffer:
+			if (voodoo_ogl_scale != 1) // color buffers are scaled
+			{
+				x = x * voodoo_ogl_scale;
+				y = y * voodoo_ogl_scale;
+			}
+			off = (pixels->width * (pixels->height - y) + x);
+			if (off + 1 >= pixels->width * pixels->height) goto invalidread;
+			rgba = (const UINT8*)(pixels->data + off);
+			return ((rgba[0]>>3)<<11) | ((rgba[1]>>2)<<5) | (rgba[2]>>3) | ((rgba[4]>>3)<<27) | ((rgba[5]>>2)<<21) | ((rgba[6]>>3)<<16);
 		case 2: // aux buffer (size matches fbi, only support depth for now)
 			pixels = &vogl->readback.depth;
 			off = (pixels->width * (pixels->height - y) + x);
-			if (off > pixels->width * pixels->height) goto invalidread;
+			if (off + 1 >= pixels->width * pixels->height) goto invalidread;
 			rgba = (const UINT8*)(pixels->data + off);
 			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | (rgba[5] << 16);
 	}
-	if (voodoo_ogl_scale != 1) // color buffers are scaled
-	{
-		x = x * voodoo_ogl_scale;
-		y = y * voodoo_ogl_scale;
-	}
-	off = (pixels->width * (pixels->height - y) + x);
-	if (off > pixels->width * pixels->height) goto invalidread;
-	rgba = (const UINT8*)(pixels->data + off);
-	return ((rgba[0]>>3)<<11) | ((rgba[1]>>2)<<5) | (rgba[2]>>3) |
-			((rgba[4]>>3)<<27) | ((rgba[5]>>2)<<21) | ((rgba[6]>>3)<<16);
 }
 
 static void prepare_tmu(tmu_state *t);
@@ -6115,7 +6112,7 @@ static void triangle(voodoo_state *v)
 	#ifdef C_DBP_ENABLE_VOODOO_OPENGL
 	if (vogl_active) {
 		voodoo_ogl_draw_triangle();
-		return;
+		if (vogl_showing) return;
 	}
 	#endif
 
@@ -6423,7 +6420,7 @@ static void fastfill(voodoo_state *v)
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
 	if (vogl_active) {
 		voodoo_ogl_fastfill();
-		return;
+		if (vogl_showing) return;
 	}
 #endif
 
@@ -7007,6 +7004,7 @@ static void register_w(UINT32 offset, UINT32 data) {
 					if ((v->fbi.width != new_width) || (v->fbi.height != new_height)) {
 						v->fbi.width = new_width;
 						v->fbi.height = new_height;
+						v->resolution_dirty = true;
 					}
 					//v->fbi.xoffs = hbp;
 					//v->fbi.yoffs = vbp;
@@ -7449,7 +7447,8 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 					v->reg[fbiPixelsOut].u++;
 				}
 			}
-		} else
+		}
+		if (!vogl_showing)
 #endif
 		{
 			UINT16 *dest = (UINT16 *)(v->fbi.ram + v->fbi.rgboffs[drawbuffer]);
@@ -7789,7 +7788,8 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 					//	APPLY_DITHER(FBZMODE, XX, DITHER_LOOKUP, r, g, b);
 					//}
 					voodoo_ogl_draw_pixel_blended(drawbuffer, x, scry+1, set_rgb, set_alpha, set_depth, r / (float)0xff, g / (float)0xff, b / (float)0xff, a / (float)0xff, depthval / (float)0xffff, fogblend / (float)0xff);
-				} else
+				}
+				if (!vogl_showing)
 #endif
 				{
 					/* pixel pipeline part 2 handles color combine, fog, alpha, and final output */
@@ -8100,9 +8100,9 @@ static UINT32 lfb_r(UINT32 offset)
 		scry = (v->fbi.yorigin - y) & 0x3ff;
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-	if (vogl_active) {
-		data = voodoo_ogl_read_pixel(x, scry+1);
-	} else
+	if (vogl_showing)
+		data = voodoo_ogl_read_pixel(x, scry);
+	else
 #endif
 	{
 		/* advance pointers to the proper row */

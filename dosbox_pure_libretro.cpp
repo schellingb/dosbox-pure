@@ -1987,7 +1987,7 @@ bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 		w <<= (Bit32u)render.src.dblw;
 		h <<= (Bit32u)render.src.dblh;
 	}
-	if (dbp_overscan && (!dbp_opengl_draw || !voodoo_ogl_is_active()))
+	if (dbp_overscan && !voodoo_is_active())
 	{
 		border = w * dbp_overscan / 160;
 		w += border * 2;
@@ -2053,7 +2053,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	if (dbp_intercept_next)
 	{
-		if (dbp_opengl_draw && voodoo_ogl_is_active()) // zero all including alpha because we'll blend the OSD after displaying voodoo
+		if (dbp_opengl_draw && voodoo_ogl_is_showing()) // zero all including alpha because we'll blend the OSD after displaying voodoo
 			memset(buf.video, 0, buf.width * buf.height * 4);
 		dbp_intercept_next->gfx(buf);
 		buf.border_color = 0xDEADBEEF; // force redraw
@@ -2064,7 +2064,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	#endif
 	{
 		const DBP_Buffer& lbuf = dbp_buffers[buffer_active];
-		bool diff = (!voodoo_ogl_is_active() ? (!lbuf.video || lbuf.width != buf.width || lbuf.height != buf.height || memcmp(buf.video, lbuf.video, buf.width * buf.height * 4)) : voodoo_ogl_have_new_image());
+		bool diff = (!voodoo_ogl_is_showing() ? (!lbuf.video || lbuf.width != buf.width || lbuf.height != buf.height || memcmp(buf.video, lbuf.video, buf.width * buf.height * 4)) : voodoo_ogl_have_new_image());
 		if (diff) { DBP_FPSCOUNT(dbp_fpscount_gfxend) dbp_perf_uniquedraw++; }
 	}
 	buffer_active = (buffer_active + 1) % 3;
