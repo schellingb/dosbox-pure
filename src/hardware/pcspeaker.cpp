@@ -56,6 +56,7 @@ static struct {
 	float volwant,volcur;
 	Bitu last_ticks;
 	float last_index;
+	bool enabled;
 	Bitu min_tr;
 	DelayEntry entries[SPKR_ENTRIES];
 	Bitu used;
@@ -163,7 +164,6 @@ static void ForwardPIT(float newindex) {
 
 void PCSPEAKER_SetCounter(Bitu cntr,Bitu mode) {
 	if (!spkr.last_ticks) {
-		if(spkr.chan) spkr.chan->Enable(true);
 		spkr.last_index=0;
 	}
 	spkr.last_ticks=PIC_Ticks;
@@ -214,11 +214,15 @@ void PCSPEAKER_SetCounter(Bitu cntr,Bitu mode) {
 		return;
 	}
 	spkr.pit_mode=mode;
+	//DBP: Delay sound output until second event to avoid crackling audio when initialized but not used
+	if (!spkr.enabled && spkr.used > 1) {
+		if(spkr.chan) spkr.chan->Enable(true);
+		spkr.enabled=true;
+	}
 }
 
 void PCSPEAKER_SetType(Bitu mode) {
 	if (!spkr.last_ticks) {
-		if(spkr.chan) spkr.chan->Enable(true);
 		spkr.last_index=0;
 	}
 	spkr.last_ticks=PIC_Ticks;
@@ -244,6 +248,11 @@ void PCSPEAKER_SetType(Bitu mode) {
 		spkr.mode=SPKR_PIT_ON;
 		break;
 	};
+	//DBP: Delay sound output until second event to avoid crackling audio when initialized but not used
+	if (!spkr.enabled && (spkr.used > 1 || mode > 1)) {
+		if(spkr.chan) spkr.chan->Enable(true);
+		spkr.enabled=true;
+	}
 }
 
 static void PCSPEAKER_CallBack(Bitu len) {
@@ -340,6 +349,8 @@ public:
 		spkr.pit_index=0;
 		spkr.min_tr=(PIT_TICK_RATE+spkr.rate/2-1)/(spkr.rate/2);
 		spkr.used=0;
+		//DBP: Delay sound output until second event to avoid crackling audio when initialized but not used
+		spkr.enabled=false;
 		/* Register the sound channel */
 		spkr.chan=MixerChan.Install(&PCSPEAKER_CallBack,spkr.rate,"SPKR");
 	}
