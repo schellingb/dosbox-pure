@@ -67,29 +67,29 @@ struct DBP_BufferDrawing : DBP_Buffer
 		if ((col & 0xFF000000) == 0xFF000000)
 			{ for (; ltr != ltrend; py += w, ltr++) for (Bit32u *px = py, bit = 256; bit; px++) if (*ltr & (bit>>=1)) *px = col; }
 		else
-			{ for (; ltr != ltrend; py += w, ltr++) for (Bit32u *px = py, bit = 256; bit; px++) if (*ltr & (bit>>=1)) AlphaBlend(px, col); }
+			{ for (AlphaBlendPrep a(col); ltr != ltrend; py += w, ltr++) for (Bit32u *px = py, bit = 256; bit; px++) if (*ltr & (bit>>=1)) AlphaBlend(px, a); }
 	}
 
 	void DrawBox(int x, int y, int w, int h, Bit32u colfill, Bit32u colline)
 	{
-		DBP_ASSERT((colline >> 24) == 0xFF); // && ((colfill >> 24) == 0xFF || (colfill >> 24) == 0));
 		if (w < 8) { DBP_ASSERT(false); return; }
 		int y1 = y, y2 = y1+4, y4 = y1+h, y3 = y4-4, yBox = y3-y2, yAll = y4-y1;
 		int x1 = x, x2 = x1+4, x4 = x1+w, x3 = x4-4, xBox = x3-x2, xAll = x4-x1;
 		Bit32u *v = video + width * y1 + x1;
 		AlphaBlendFillRect(x1,y1,xAll,yAll, colfill);
 
-		for (Bit32u *p = v+4,       *pEnd = p + xBox, *p2 = p + width * (yAll-1); p != pEnd; p++, p2++) *p = *p2 = colline;
-		for (Bit32u *p = v+4*width, *pEnd = p + yBox*width; p != pEnd; p+=width) *p = p[xAll-1] = colline;
+		AlphaBlendPrep lna(colline);
+		for (Bit32u *p = v+4,       *pEnd = p + xBox, *p2 = p + width * (yAll-1); p != pEnd; p++, p2++) { AlphaBlend(p, lna); AlphaBlend(p2, lna); }
+		for (Bit32u *p = v+4*width, *pEnd = p + yBox*width; p != pEnd; p+=width) { AlphaBlend(p, lna); AlphaBlend(p+xAll-1, lna); }
 
 		for (int i = 0; i != 16; i++)
 		{
 			int a = i % 4, b = i/4, c = a*b<3;
 			if (!c) continue;
-			*(v+a+b*width) = colline;
-			*(v+xAll-1-a+b*width) = colline;
-			*(v+xAll-1-a+(yAll-1-b)*width) = colline;
-			*(v+a+(yAll-1-b)*width) = colline;
+			AlphaBlend(v+a+b*width, lna);
+			AlphaBlend(v+xAll-1-a+b*width, lna);
+			AlphaBlend(v+xAll-1-a+(yAll-1-b)*width, lna);
+			AlphaBlend(v+a+(yAll-1-b)*width, lna);
 		}
 	}
 
@@ -108,54 +108,58 @@ struct DBP_BufferDrawing : DBP_Buffer
 
 	void AlphaBlendFillRect(int x, int y, int w, int h, Bit32u col)
 	{
-		col = (((col & 0xFF000000) ? (col >> 24) : dbp_alphablend_base) << 24) | (col & 0xFFFFFF);
+		AlphaBlendPrep a((((col >> 24) ? (col >> 24) : dbp_alphablend_base) << 24) | (col & 0xFFFFFF));
 		for (Bit32u *py = video + width * y + x; h--; py += width)
 			for (Bit32u *p = py, *pEnd = p + w; p != pEnd; p++)
-				AlphaBlend(p, col);
+				AlphaBlend(p, a);
 	}
 
 	void AlphaBlendDrawRect(int x, int y, int w, int h, Bit32u col)
 	{
 		DBP_ASSERT((col >> 24) == 0xFF || (col >> 24) == 0);
-		Bit32u alpha = ((col >> 24) ? (col >> 24) : dbp_alphablend_base);
-		col = (alpha << 24) | (col & 0xFFFFFF);
-		for (Bit32u *p = video + width * y + x, *pEnd = p + w, *p2 = p + width * (h-1); p != pEnd; p++, p2++) AlphaBlend(p, col), AlphaBlend(p2, col);
-		for (Bit32u *p = video + width * y + x, *pEnd = p + width * h; p != pEnd; p+=width) AlphaBlend(p, col), AlphaBlend(p+w-1, col);
+		AlphaBlendPrep a((((col >> 24) ? (col >> 24) : dbp_alphablend_base) << 24) | (col & 0xFFFFFF));
+		for (Bit32u *p = video + width * y + x, *pEnd = p + w, *p2 = p + width * (h-1); p != pEnd; p++, p2++) AlphaBlend(p, a), AlphaBlend(p2, a);
+		for (Bit32u *p = video + width * y + x, *pEnd = p + width * h; p != pEnd; p+=width) AlphaBlend(p, a), AlphaBlend(p+w-1, a);
 	}
 
 	void AlphaBlendFillCircle(int cx, int cy, int rad, Bit32u col)
 	{
+		AlphaBlendPrep a(col);
 		for (int radsq = rad*rad, w = width, y = (cy - rad < 0 ? 0 : cy - rad), ymax = (cy + rad >= (int)height ? (int)height : cy + rad); y < ymax; y++)
 			for (int x = (cx - rad < 0 ? 0 : cx - rad), xmax = (cx + rad >= (int)width ? (int)width : cx + rad); x < xmax; x++)
 			{
 				int dx = abs(x - cx), dy = abs(y - cy), dsq = (dx*dx)+(dy*dy);
 				if (dsq >= radsq) continue;
-				AlphaBlend(video + y*w + x, col);
+				AlphaBlend(video + y*w + x, a);
 			}
 	}
 
 	void AlphaBlendDrawCircle(int cx, int cy, int rad1, int rad2, Bit32u col)
 	{
+		AlphaBlendPrep a(col);
 		for (int rad1sq = rad1*rad1, rad2sq = rad2*rad2, w = width, y = (cy - rad2 < 0 ? 0 : cy - rad2), ymax = (cy + rad2 >= (int)height ? (int)height : cy + rad2); y < ymax; y++)
 			for (int x = (cx - rad2 < 0 ? 0 : cx - rad2), xmax = (cx + rad2 >= (int)width ? (int)width : cx + rad2); x < xmax; x++)
 			{
 				int dx = abs(x - cx), dy = abs(y - cy), dsq = (dx*dx)+(dy*dy);
 				if (dsq < rad1sq || dsq >= rad2sq) continue;
-				AlphaBlend(video + y*w + x, col);
+				AlphaBlend(video + y*w + x, a);
 			}
 	}
 
-	static void AlphaBlend(Bit32u* p1, Bit32u p2)
+	struct AlphaBlendPrep
 	{
-		Bit32u a = (p2 & 0xFF000000) >> 24, na = 255 - a;
-		Bit32u rb = ((na * (*p1 & 0x00FF00FF)) + (a * (p2 & 0x00FF00FF))) >> 8;
-		Bit32u ag = (na * ((*p1 & 0xFF00FF00) >> 8)) + (a * (0x01000000 | ((p2 & 0x0000FF00) >> 8)));
-		*p1 = ((rb & 0x00FF00FF) | (ag & 0xFF00FF00));
+		Bit32u na, arb, aag;
+		explicit INLINE AlphaBlendPrep(Bit32u col) { Bit32u a = (col & 0xFF000000) >> 24; na = (255 - a); arb = (a * (col & 0x00FF00FF)); aag = (a * (0x01000000 | ((col & 0x0000FF00) >> 8))); }
+	};
+
+	static INLINE void AlphaBlend(Bit32u* p1, const AlphaBlendPrep& a)
+	{
+		*p1 = (((((a.na * (*p1 & 0x00FF00FF)) + a.arb) >> 8) & 0x00FF00FF) | (((a.na * ((*p1 & 0xFF00FF00) >> 8)) + a.aag) & 0xFF00FF00));
 	}
 
-	bool DrawButtonAt(Bit32u blend, int btny, int lh, int padu, int padd, int btnx, int btnr, bool on, const struct DBP_MenuMouse& m, const char* txt);
-	INLINE bool DrawButton(Bit32u blend, int btny, int lh, int i, int n, bool on, const struct DBP_MenuMouse& m, const char* txt)
-		{ int w = width; return DrawButtonAt(blend, btny, lh, 4, 4, (!i ? 8 : (w*i/n + 2)), (i == (n-1) ? w - 8 : (w*(i+1)/n - 2)), on, m, txt); }
+	bool DrawButtonAt(Bit32u blend, int btny, int lh, int padu, int padd, int btnx, int btnr, bool on, const struct DBP_MenuMouse& m, const char* txt, Bit32u blendtxt = 0xFF000000);
+	INLINE bool DrawButton(Bit32u blend, int btny, int lh, int i, int n, int mrgn, bool on, const struct DBP_MenuMouse& m, const char* txt, Bit32u blendtxt = 0xFF000000)
+		{ int w = width-mrgn*2; return DrawButtonAt(blend, btny, lh, 4, 4, (!i ? mrgn : mrgn + (w*i/n + 2)), (i == (n-1) ? mrgn + w : mrgn + (w*(i+1)/n - 2)), on, m, txt, blendtxt); }
 };
 DBP_STATIC_ASSERT(sizeof(DBP_BufferDrawing) == sizeof(DBP_Buffer)); // drawing is just for function expansions, we're just casting one to the other
 
@@ -262,12 +266,12 @@ struct DBP_MenuMouse
 	}
 };
 
-bool DBP_BufferDrawing::DrawButtonAt(Bit32u blend, int btny, int lh, int padu, int padd, int btnx, int btnr, bool on, const DBP_MenuMouse& m, const char* txt)
+bool DBP_BufferDrawing::DrawButtonAt(Bit32u blend, int btny, int lh, int padu, int padd, int btnx, int btnr, bool on, const DBP_MenuMouse& m, const char* txt, Bit32u blendtxt)
 {
 	int btnd = btny+lh+padu+padd, btnw = btnr - btnx;
 	bool hover = (m.y >= btny && m.y < btnd && m.x >= btnx && m.x < btnr && m.realmouse);
-	DrawBox(btnx, btny, btnw, btnd - btny, (on ? BGCOL_BTNON : (hover ? BGCOL_BTNHOVER : BGCOL_BTNOFF)) | blend, (on ? (0xFF000000|BGCOL_BTNOFF) : (0xFF000000|BGCOL_BTNON)));
-	PrintCenteredOutlined(lh, btnx, btnw, btny+padu, txt, COL_BTNTEXT);
+	DrawBox(btnx, btny, btnw, btnd - btny, (on ? BGCOL_BTNON : (hover ? BGCOL_BTNHOVER : BGCOL_BTNOFF)) | blend, (on ? BGCOL_BTNOFF : BGCOL_BTNON) | blendtxt);
+	PrintCenteredOutlined(lh, btnx, btnw, btny+padu, txt, (COL_BTNTEXT & 0xFFFFFF) | blendtxt, blendtxt);
 	return (hover && !on);
 }
 
@@ -869,8 +873,8 @@ struct DBP_MapperMenuState : DBP_MenuState
 		if (edit_mode == NOT_EDITING && !is_presets_menu())
 		{
 			int x_change = 0, x1 = l-(wide?50:0), x2 = r-25+(wide?50:0);
-			if (buf.DrawButtonAt(0x80000000, hdr-lh-6, lh, 3, 2, x1, x1+25, false, m, "\x1B") && m.left_up) x_change = -1;
-			if (buf.DrawButtonAt(0x80000000, hdr-lh-6, lh, 3, 2, x2, x2+25, false, m, "\x1A") && m.left_up) x_change = 1;
+			if (buf.DrawButtonAt(blend, hdr-lh-6, lh, 3, 2, x1, x1+25, false, m, "\x1B") && m.left_up) x_change = -1;
+			if (buf.DrawButtonAt(blend, hdr-lh-6, lh, 3, 2, x2, x2+25, false, m, "\x1A") && m.left_up) x_change = 1;
 			if (x_change) menu_top(x_change);
 
 			if (m.y >= 0 && m.y <= hdr)
@@ -919,7 +923,7 @@ struct DBP_OnScreenKeyboardState
 		int thicknessy = (int)(fy + .95f);
 
 		int oskx = (int)(buf.width / fx / 2) - (KWIDTH / 2);
-		int osky = (mo.y && mo.y < (buf.height / 2) ? 3 : (int)(buf.height / fy) - 3 - 65);
+		int osky = (mo.y && mo.y < (buf.height / 2) ? 3 : (int)(buf.height / fy) - 3 - 85);
 
 		if (pressed_key && (DBP_GetTicks() - pressed_time) > 500 && pressed_key != KBD_LAST)
 		{
@@ -1259,8 +1263,8 @@ struct DBP_PureMenuState : DBP_MenuState
 			buf.PrintCenteredOutlined(lh, 0, w, h/2-lh*2, (w < 320 ? "Reset DOS to" : "Are you sure you want to reset DOS"), buf.COL_BTNTEXT);
 			buf.PrintCenteredOutlined(lh, 0, w, h/2-lh+2, (w < 320 ? "start this?" : "to start the selected application?"), buf.COL_BTNTEXT);
 			if (m.realmouse) popupsel = 0;
-			if (buf.DrawButton(0x80000000, h/2+lh*1, lh, 1, 4, !m.realmouse && popupsel == 1, m, "OK"))     popupsel = 1;
-			if (buf.DrawButton(0x80000000, h/2+lh*1, lh, 2, 4, !m.realmouse && popupsel == 2, m, "CANCEL")) popupsel = 2;
+			if (buf.DrawButton(0x80000000, h/2+lh*1, lh, 1, 4, 0, !m.realmouse && popupsel == 1, m, "OK"))     popupsel = 1;
+			if (buf.DrawButton(0x80000000, h/2+lh*1, lh, 2, 4, 0, !m.realmouse && popupsel == 2, m, "CANCEL")) popupsel = 2;
 		}
 	}
 
@@ -1565,22 +1569,30 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 		bool isOSK = (mode == DBPOSD_OSK);
 		bool mouseMoved = mouse.Update(buf, isOSK);
 
-		Bit32u blend = (DBP_FullscreenOSD ? 0xFF000000 : 0x00000000);
-		if (DBP_FullscreenOSD || !isOSK)
+		if (1) // now always show button bar, was (DBP_FullscreenOSD || !isOSK) before
 		{
-			int btny = buf.height - 13 - lh;
+			int btny = h - 13 - lh, btnmrgn = (w >= 296 ? 34 : 8), ydist = (isOSK ? (int)(127 - (btny - mouse.y) / (h*0.0005f)) : 0xFF);
+			Bit32u btnblend = (DBP_FullscreenOSD ? 0xFF000000 : ((ydist > dbp_alphablend_base ? dbp_alphablend_base : (ydist < 20 ? 20 : ydist)) << 24));
+			Bit32u txtblend = (DBP_FullscreenOSD ? 0xFF000000 : ((ydist*2 > 0xFF ? 0xFF : (ydist < 20 ? 20 : ydist*2)) << 24));
 			int osk = (int)!DBP_FullscreenOSD, n = (int)_DBPOSD_COUNT - (osk ? 0 : 1), m = 0;
 			if (DBP_FullscreenOSD) buf.FillRect(0, 0, w, h, buf.BGCOL_STARTMENU);
-			if (       buf.DrawButton(blend, btny, lh, m++, n, mode == DBPOSD_MAIN,     mouse, (w < 500 ? "START"    : "START MENU"))         && mouse.left_up) SetMode(DBPOSD_MAIN);
-			if (osk && buf.DrawButton(blend, btny, lh, m++, n, mode == DBPOSD_OSK,      mouse, (w < 500 ? "KEYBOARD" : "ON-SCREEN KEYBOARD")) && mouse.left_up) SetMode(DBPOSD_OSK);
-			if (       buf.DrawButton(blend, btny, lh, m++, n, mode == DBPOSD_MAPPER,   mouse, (w < 500 ? "CONTROLS" : "CONTROLLER MAPPER"))  && mouse.left_up) SetMode(DBPOSD_MAPPER);
+			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, 8, 30, false,       mouse, "L",                                                    txtblend) && mouse.left_up) evnt(DBPET_KEYUP, KBD_grave, 0);
+			if (       buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_MAIN,     mouse, (w < 500 ? "START"    : "START MENU"),         txtblend) && mouse.left_up) SetMode(DBPOSD_MAIN);
+			if (osk && buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_OSK,      mouse, (w < 500 ? "KEYBOARD" : "ON-SCREEN KEYBOARD"), txtblend) && mouse.left_up) SetMode(DBPOSD_OSK);
+			if (       buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_MAPPER,   mouse, (w < 500 ? "CONTROLS" : "CONTROLLER MAPPER"),  txtblend) && mouse.left_up) SetMode(DBPOSD_MAPPER);
+			#ifdef DBP_STANDALONE
+			if (       buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_SETTINGS, mouse, (w < 500 ? "SETTINGS" : "SETTINGS"),           txtblend) && mouse.left_up) SetMode(DBPOSD_SETTINGS);
+			#endif
+			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, w-30, w-8, false,   mouse, "R",                                                    txtblend) && mouse.left_up) evnt(DBPET_KEYUP, KBD_tab, 0);
+			if (mouse.y >= btny && (mouse.wheel_up || mouse.wheel_down)) evnt(DBPET_KEYUP, (mouse.wheel_down ? KBD_grave : KBD_tab), 0);
 		}
 
+		Bit32u menublend = (DBP_FullscreenOSD ? 0xFF000000 : 0x00000000);
 		switch (mode)
 		{
-			case DBPOSD_MAIN:     ptr.main->DrawMenu(buf, blend, lh, w, h, ftr, mouseMoved, mouse); break;
+			case DBPOSD_MAIN:     ptr.main->DrawMenu(buf, menublend, lh, w, h, ftr, mouseMoved, mouse); break;
 			case DBPOSD_OSK:      ptr.osk->GFX(buf, mouse); break;
-			case DBPOSD_MAPPER:   ptr.mapper->DrawMenu(buf, blend, lh, w, h, ftr, mouseMoved, mouse); break;
+			case DBPOSD_MAPPER:   ptr.mapper->DrawMenu(buf, menublend, lh, w, h, ftr, mouseMoved, mouse); break;
 		}
 
 		mouse.Draw(buf, isOSK);
@@ -1769,18 +1781,18 @@ static void DBP_WheelOSD(Bit8u _port)
 
 			Bit32u* video = drw.video;
 			const int sqrOut = rad*rad, sqrIn = sqrOut/4, sqrOut1 = (rad+1)*(rad+1), sqrOut3 = (rad+3)*(rad+3), sqrOut4 = (rad4)*(rad4);
+			DBP_BufferDrawing::AlphaBlendPrep white80a(white80), white20a(white20), whiteHighlighta(whiteHighlight), white30a(white30), white50a(white50);
 			for (int w = drw.width, y = (cy - rad4 < 0 ? 0 : cy - rad4), ymax = (cy + rad4 >= (int)drw.height ? (int)drw.height : cy + rad4); y < ymax; y++)
-				for (int col, x = (cx - rad4 < 0 ? 0 : cx - rad4), xmax = (cx + rad4 >= (int)w ? (int)w : cx + rad4); x < xmax; x++)
+				for (int x = (cx - rad4 < 0 ? 0 : cx - rad4), xmax = (cx + rad4 >= (int)w ? (int)w : cx + rad4); x < xmax; x++)
 				{
 					int dx = (x - cx), dy = (y - cy), dsq = (dx*dx)+(dy*dy);
-					if      (dsq < (2*2))   col = white80;
-					else if (dsq < sqrIn)   col = white20;
-					else if (dsq < sqrOut)  col = (InAngleRange((float)atan2(dy, dx), sela, astephalf) ? whiteHighlight : white30);
-					else if (dsq < sqrOut1) col = white50;
-					else if (dsq < sqrOut3) col = white80;
-					else if (dsq < sqrOut4) col = white50;
-					else continue;
-					drw.AlphaBlend(video + y*w + x, col);
+					if (dsq >= sqrOut4) continue;
+					drw.AlphaBlend(video + y*w + x,
+						dsq < (2*2)   ? white80a :
+						dsq < sqrIn   ? white20a :
+						dsq < sqrOut  ? (InAngleRange((float)atan2(dy, dx), sela, astephalf) ? whiteHighlighta : white30a) :
+						dsq < sqrOut1 ? white50a :
+						dsq < sqrOut3 ? white80a : white50a);
 				}
 
 			drw.AlphaBlendDrawCircle(cx+wx, cy+wy, srad+2, srad+3, black);
