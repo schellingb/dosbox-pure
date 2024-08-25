@@ -1687,4 +1687,7 @@ void DBPSerialize_VGA_Draw(DBPArchive& ar)
 		vga.draw.font_tables[0] = (font_tables_idx_0 ? &vga.draw.font[(font_tables_idx_0 - 1) * 1024] : NULL);
 		vga.draw.font_tables[1] = (font_tables_idx_1 ? &vga.draw.font[(font_tables_idx_1 - 1) * 1024] : NULL);
 	}
+	
+	if (ar.mode == DBPArchive::MODE_ZERO)
+		vga.draw.linear_base = NULL;
 }
