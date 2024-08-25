@@ -83,6 +83,16 @@ static void convToDirFile(char *filename, char *filearray) {
 	}
 }
 
+//DBP: Added updating of creation/modification time stamp
+static void fatSetTimeNow(direntry& e, bool isCreate)
+{
+	time_t curtime = ::time(NULL);
+	tm* t = localtime(&curtime);
+	e.modTime = (t ? DOS_PackTime((Bit16u)t->tm_hour,(Bit16u)t->tm_min,(Bit16u)t->tm_sec) : 0);
+	e.modDate = (t ? DOS_PackDate((Bit16u)(t->tm_year+1900),(Bit16u)(t->tm_mon+1),(Bit16u)t->tm_mday) : 0);
+	if (isCreate) { e.crtTime = e.modTime; e.crtDate = e.modDate; }
+}
+
 fatFile::fatFile(const char* name, Bit32u startCluster, Bit32u fileLen, fatDrive *useDrive) {
 	Bit32u seekto = 0;
 	firstCluster = startCluster;
@@ -242,10 +252,7 @@ finalizeWrite:
 	tmpentry.entrysize = filelength;
 	tmpentry.loFirstClust = (Bit16u)firstCluster;
 	//DBP: Added updating of modification time stamp
-	time_t curtime = ::time(NULL);
-	tm* t = localtime(&curtime);
-	tmpentry.modTime = (t ? DOS_PackTime((Bit16u)t->tm_hour,(Bit16u)t->tm_min,(Bit16u)t->tm_sec) : 0);
-	tmpentry.modDate = (t ? DOS_PackDate((Bit16u)(t->tm_year+1900),(Bit16u)(t->tm_mon+1),(Bit16u)t->tm_mday) : 0);
+	fatSetTimeNow(tmpentry, false);
 	myDrive->directoryChange(dirCluster, &tmpentry, dirIndex);
 
 	*size =sizecount;
@@ -991,6 +998,7 @@ bool fatDrive::FileCreate(DOS_File **file, char *name, Bit16u attributes) {
 			fileEntry.loFirstClust = 0;
 		}
 		fileEntry.entrysize = 0;
+		fatSetTimeNow(fileEntry, true); //DBP: Added
 		directoryChange(dirClust, &fileEntry, subEntry);
 	} else {
 		/* Can we even get the name of the file itself? */
@@ -1365,6 +1373,11 @@ bool fatDrive::addDirectoryEntry(Bit32u dirClustNumber, direntry useEntry) {
 
 		/* Deleted file entry or end of directory list */
 		if ((sectbuf[entryoffset].entryname[0] == 0xe5) || (sectbuf[entryoffset].entryname[0] == 0x00)) {
+
+			//DBP: Added setting of creation/modification time stamp
+			if (useEntry.modTime == 0 && useEntry.modDate == 0)
+				fatSetTimeNow(useEntry, true);
+
 			copyDirEntry(&useEntry, &sectbuf[entryoffset]);
 			writeSector(tmpsector,sectbuf);
 			break;
