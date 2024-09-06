@@ -3021,45 +3021,8 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}
 
-	// Check if a patch variant should be loaded right away
-	if (firsttime && !reinit && DBP_Run::PostInitFirstTime())
-		return init_dosbox(firsttime, forcemenu, true);
-
-	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
-	const bool force_puremenu = (dbp_biosreboot || forcemenu);
-	if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
-	{
-		const char* confpath = NULL; std::string strconfpath, confcontent;
-		if (dbp_conf_loading == 'i') // load confs 'i'nside content
-		{
-			if (drive_c->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
-			else if (drive_c->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
-		}
-		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
-		{
-			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
-		}
-		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
-			return init_dosbox(firsttime, forcemenu, true, &confcontent);
-	}
-
-	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
-	const char* mountedMidi;
-	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists("$C:\\MT32_PCM.ROM"+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
-	{
-		Section* sec = control->GetSection("midi");
-		Property* prop = sec->GetProp("midiconfig");
-		sec->ExecuteDestroy(false);
-		prop->SetValue(mountedMidi);
-		prop->OnChangedByConfigProgram();
-		sec->ExecuteInit(false);
-	}
-
-	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
-	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
-
 	// Detect content year and auto mapping
-	if (firsttime)
+	if (firsttime && !reinit)
 	{
 		DBP_PadMapping::Load(); // if loaded don't show auto map notification
 
@@ -3166,7 +3129,44 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 				if (year > 1970 && year < 2100) { dbp_content_year = (Bit16s)year; break; }
 			}
 		}
+
+		// Check if a patch variant should be loaded right away (after evaluating dbp_images)
+		if (DBP_Run::PostInitFirstTime())
+			return init_dosbox(firsttime, forcemenu, true);
 	}
+
+	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
+	const bool force_puremenu = (dbp_biosreboot || forcemenu);
+	if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
+	{
+		const char* confpath = NULL; std::string strconfpath, confcontent;
+		if (dbp_conf_loading == 'i') // load confs 'i'nside content
+		{
+			if (drive_c->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
+			else if (drive_c->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+		}
+		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
+		{
+			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
+		}
+		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
+			return init_dosbox(firsttime, forcemenu, true, &confcontent);
+	}
+
+	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
+	const char* mountedMidi;
+	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists("$C:\\MT32_PCM.ROM"+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
+	{
+		Section* sec = control->GetSection("midi");
+		Property* prop = sec->GetProp("midiconfig");
+		sec->ExecuteDestroy(false);
+		prop->SetValue(mountedMidi);
+		prop->OnChangedByConfigProgram();
+		sec->ExecuteInit(false);
+	}
+
+	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
+	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
 
 	// Joysticks are refreshed after control modifications but needs to be done here also to happen on core restart
 	DBP_PadMapping::RefreshDosJoysticks();

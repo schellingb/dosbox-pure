@@ -556,18 +556,20 @@ struct DBP_Run
 		}
 	};
 
+	static bool PostInitFirstTime()
+	{
+		ReadAutoBoot();
+		int switchVariant = (patchDrive::Variants.size() ? autoboot.var : -1);
+		if (switchVariant != -1 && patchDrive::SwitchVariant(switchVariant)) return true; // reset and re-run PreInit to load variant
+		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
+		return false;
+	}
+
 	static void PreInit()
 	{
 		if (!dbp_biosreboot) startup.mode = RUN_NONE;
 		if (patchDrive::DOSYMLContent.size()) DOSYML::Load((!dbp_biosreboot && (patchDrive::Variants.size() == 1 || autoboot.startup.mode == RUN_VARIANT)), true); // ignore run keys on bios reboot
 		if (!dbp_biosreboot && autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
-	}
-
-	static bool PostInitFirstTime()
-	{
-		ReadAutoBoot();
-		int switchVariant = (patchDrive::Variants.size() ? autoboot.var : -1);
-		return (switchVariant != -1 && patchDrive::SwitchVariant(switchVariant));
 	}
 
 	static void ReadAutoBoot()
