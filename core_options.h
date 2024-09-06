@@ -76,33 +76,6 @@ static retro_core_option_v2_definition option_defs[] =
 		"on"
 	},
 	{
-		"dosbox_pure_dosc_snd",
-		"DOSZ Music Configuration Loading", NULL,
-		"When loading a DOSZ/DOSC pair, prefer loading a special music configuration variant if it exists.", NULL,
-		"Emulation",
-		{
-			{ "0", "Only load base DOSC (default)" },
-			{ "1", "Prefer MT-32 Music" },
-			{ "2", "Prefer MIDI Music" },
-			{ "3", "Prefer MT-32 over MIDI Music" },
-			{ "6", "Prefer MIDI over MT32 Music" },
-		},
-		"0"
-	},
-	{
-		"dosbox_pure_dosc_gfx",
-		"DOSZ Graphics Configuration Loading", NULL,
-		"When loading a DOSZ/DOSC pair, prefer loading a special graphics configuration variant if it exists." "\n\n", NULL, //end of Emulation section
-		"Emulation",
-		{
-			{ "0", "Only load base DOSC (default)" },
-			{ "256", "Prefer 3dfx Graphics" },
-			{ "512", "Prefer CGA Graphics" },
-			{ "768", "Prefer 3dfx or CGA" },
-		},
-		"0"
-	},
-	{
 		"dosbox_pure_strict_mode",
 		"Advanced > Use Strict Mode", NULL,
 		"Disable the command line, running installed operating systems and using .BAT/.COM/.EXE/DOS.YML files from the save game.", NULL,
