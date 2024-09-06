@@ -2813,7 +2813,6 @@ static bool check_variables(bool is_startup = false)
 		default: dbp_serializemode = DBPSERIALIZE_STATES; break;
 	}
 	DBPArchive::accomodate_delta_encoding = (dbp_serializemode == DBPSERIALIZE_REWIND);
-	zipDrive::doscLookup = atoi(retro_get_variable("dosbox_pure_dosc_snd", "0")) | atoi(retro_get_variable("dosbox_pure_dosc_gfx", "0"));
 	dbp_conf_loading = retro_get_variable("dosbox_pure_conf", "false")[0];
 	dbp_menu_time = (char)atoi(retro_get_variable("dosbox_pure_menu_time", "99"));
 
@@ -2941,7 +2940,7 @@ static bool check_variables(bool is_startup = false)
 	return visibility_changed;
 }
 
-static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_autoexec)
+static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_autoexec)
 {
 	std::string line; Section* section = NULL; std::string::size_type loc;
 	for (std::istringstream in(cfg); std::getline(in, line);)
@@ -2956,7 +2955,7 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_au
 				continue;
 			default:
 				if (!section || !section->HandleInputline(line)) continue;
-				if (section == *ref_autoexec) *ref_autoexec = NULL; // skip our default autoexec
+				if (section == ref_autoexec) ref_autoexec = NULL; // skip our default autoexec
 				if ((loc = line.find('=')) == std::string::npos) continue;
 				trim(line.erase(loc));
 				if (Property* p = section->GetProp(line.c_str())) p->OnChangedByConfigProgram();
@@ -2964,188 +2963,9 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section** ref_au
 	}
 }
 
-static void init_dosbox_load_dos_yml(const std::string& yml, Section** ref_autoexec)
+static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = false, const std::string* dbconf = NULL)
 {
-	struct Local
-	{
-		const char *Key, *End, *Next, *KeyX, *Val, *ValX;
-		int cpu_cycles = 0, cpu_hz = 0, cpu_year = 0, cpu_set_max = 0;
-		bool Parse(const char *yml_key, const char* db_section, const char* db_key, ...)
-		{
-			if (yml_key && (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key])) return false;
-			va_list ap; va_start(ap, db_key); std::string val;
-			for (;;)
-			{
-				const char* mapFrom = va_arg(ap, const char*);
-				if (!*mapFrom) { va_end(ap); return false; }
-				if (*mapFrom == '~')
-				{
-					val.append(Val, (size_t)(ValX - Val));
-				}
-				else if (*mapFrom == '/')
-				{
-					char buf[32];
-					sprintf(buf, "%d", (atoi(Val) / 1024));
-					val = buf;
-				}
-				else if (*mapFrom == '^')
-				{
-					const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
-					(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
-					Property* prop = control->GetSection("midi")->GetProp("midiconfig");
-					prop->SetValue(val);
-					prop->OnChangedByConfigProgram();
-					val.assign("intelligent");
-				}
-				else
-				{
-					const char* mapTo = va_arg(ap, const char*);
-					if (strncmp(mapFrom, Val, (size_t)(ValX - Val))) continue;
-					val.append(mapTo);
-				}
-				Property* prop = control->GetSection(db_section)->GetProp(db_key);
-				bool res = (prop->SetValue(val) && !strcasecmp(prop->GetValue().ToString().c_str(), val.c_str()));
-				if (res) prop->OnChangedByConfigProgram();
-				va_end(ap);
-				return res;
-			}
-		}
-		bool ParseCPU(const char *yml_key)
-		{
-			if (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key]) return false;
-			again: switch (yml_key[4])
-			{
-				case 'm': cpu_set_max = 1; yml_key += 4; goto again; // cpu_max_*
-				case 'c': return ((cpu_cycles = atoi(Val)) >=  100); // cpu_cycles
-				case 'h': return ((cpu_hz     = atoi(Val)) >=  500); // cpu_hz
-				case 'y': return ((cpu_year   = atoi(Val)) >= 1970); // cpu_year
-			}
-			return false;
-		}
-		bool ParseRun(const char *yml_key, Section* autoexec)
-		{
-			if (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key]) return false;
-			if (dbp_biosreboot) return true; // ignore run keys on bios reboot
-			DBP_Run::ResetAutoboot();
-			switch (yml_key[4])
-			{
-				case 'i': // run_input
-					DBP_Run::autoinput.ptr = NULL;
-					DBP_Run::autoinput.str.clear();
-					DBP_Run::autoinput.str.append(Val, (size_t)(ValX - Val));
-					break;
-				case 'p': // run_path
-					DBP_Run::startup.str = std::string(Val, (size_t)(ValX - Val));
-					if (DBP_Run::startup.ymlmode == DBP_Run::RUN_BOOTIMG) goto exec2bootimg;
-					DBP_Run::startup.ymlmode = DBP_Run::RUN_EXEC;
-					break;
-				case 'b': // run_boot
-				case 'm': // run_mount
-					{
-						int imgidx = -1;
-						for (DBP_Image& i : dbp_images)
-							if ((i.path.size() == 4+(ValX - Val) && i.path[0] == '$' && !strncasecmp(&i.path[4], Val, (ValX - Val)))
-								|| (i.longpath.size() == (ValX - Val) &&  !strncasecmp(&i.longpath[0], Val, (ValX - Val))))
-								{ imgidx = (int)(&i - &dbp_images[0]); break; }
-						if (imgidx == -1) return false;
-						dbp_images[imgidx].remount = true;
-					}
-					if (yml_key[4] == 'm') break; // run_mount
-					if (DBP_Run::startup.ymlmode == DBP_Run::RUN_EXEC)
-					{
-						exec2bootimg:
-						((static_cast<Section_line*>(autoexec)->data += '@') += DBP_Run::startup.str) += '\n';
-					}
-					DBP_Run::startup.ymlmode = DBP_Run::RUN_BOOTIMG;
-					DBP_Run::startup.info = 0;
-					break;
-			}
-			return true;
-		}
-	} l;
-	for (l.Key = yml.c_str(), l.End = l.Key+yml.size(); l.Key < l.End; l.Key = l.Next + 1)
-	{
-		for (l.Next = l.Key; *l.Next != '\n' && *l.Next != '\r' && *l.Next; l.Next++) {}
-		if (l.Next == l.Key || *l.Key == '#') continue;
-		for (l.KeyX = l.Key; *l.KeyX && *l.KeyX != ':' && *l.KeyX > ' '; l.KeyX++) {}
-		if (*l.KeyX != ':' || l.KeyX == l.Key || l.KeyX[1] != ' ' ) goto syntaxerror;
-		for (l.Val = l.KeyX + 2; *l.Val == ' '; l.Val++) {}
-		for (l.ValX = l.Val; *l.ValX && *l.ValX != '\r' && *l.ValX != '\n' && (*l.ValX != '#' || l.ValX[-1] != ' '); l.ValX++) {}
-		while (l.ValX[-1] == ' ') l.ValX--;
-		if (l.ValX <= l.Val) goto syntaxerror;
-		switch (*l.Key)
-		{
-			case 'c':
-				if (0
-						||l.Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
-						||l.ParseCPU("cpu_cycles")||l.ParseCPU("cpu_hz")||l.ParseCPU("cpu_year")||l.ParseCPU("cpu_max_cycles")||l.ParseCPU("cpu_max_hz")||l.ParseCPU("cpu_max_year")
-					) break; else goto syntaxerror;
-			case 'm':
-				if (0
-						||l.Parse("mem_size", "dosbox", "memsize", "/")
-						||l.Parse("mem_xms", "dos", "xms" , "true","true" , "false","false" , "")
-						||l.Parse("mem_ems", "dos", "ems" , "true","true" , "false","false" , "")
-						||l.Parse("mem_umb", "dos", "umb" , "true","true" , "false","false" , "")
-						||l.Parse("mem_doslimit", "dos", "memlimit", "~")
-					) break; else goto syntaxerror;
-			case 'v':
-				if (0
-						||l.Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "generic_ega","ega" , "generic_vga","vgaonly" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
-						||l.Parse("video_memory", "dosbox", "vmemsize", "/")
-						||l.Parse("video_voodoo", "pci", "voodoo" , "true","12mb" , "false","false" , "")
-					) break; else goto syntaxerror;
-			case 's':
-				if (0
-						||l.Parse("sound_card", "sblaster", "sbtype" , "sb16","sb16" , "sb1","sb1" , "sb2","sb2" , "sbpro1","sbpro1" , "sbpro2","sbpro2" , "gameblaster","gb" , "none","none" , "")
-						||l.Parse("sound_port", "sblaster", "sbbase" , "~")
-						||l.Parse("sound_irq", "sblaster", "irq", "~")
-						||l.Parse("sound_dma", "sblaster", "dma", "~")
-						||l.Parse("sound_hdma", "sblaster", "hdma", "~")
-						||l.Parse("sound_midi", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
-						||l.Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
-						||l.Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
-						||l.Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
-					) break; else goto syntaxerror;
-			case 'r':
-				if (0
-					||l.ParseRun("run_path", *ref_autoexec)
-					||l.ParseRun("run_boot", *ref_autoexec)
-					||l.ParseRun("run_mount", *ref_autoexec)
-					||l.ParseRun("run_input", *ref_autoexec)
-				) break; else goto syntaxerror;
-		}
-		continue;
-		syntaxerror:
-		retro_notify(0, RETRO_LOG_ERROR, "Error in DOS.YML: %.*s", (int)(l.Next-l.Key), l.Key);
-		continue;
-	}
-	if (l.cpu_cycles || l.cpu_year || l.cpu_hz)
-	{
-		if (l.cpu_cycles) {}
-		else if (l.cpu_year) l.cpu_cycles = (int)DBP_CyclesForYear(l.cpu_year);
-		else
-		{
-			float cycle_per_hz = .3f; // default with auto (just a bad guess)
-			switch (*(const char*)control->GetSection("cpu")->GetProp("cputype")->GetValue())
-			{
-				case 'p': cycle_per_hz = .55700f; break; // Pentium (586):  Mhz * 557.00
-				case '4': cycle_per_hz = .38000f; break; // 486:            Mhz * 380.00
-				case '3': cycle_per_hz = .18800f; break; // 386:            Mhz * 188.00
-				case '2': cycle_per_hz = .09400f; break; // AT (286):       Mhz *  94.00
-				case '8': cycle_per_hz = .05828f; break; // XT (8088/8086): Mhz *  58.28
-			}
-			l.cpu_cycles = (int)(l.cpu_hz * cycle_per_hz + .4999f);
-		}
-		char buf[32];
-		l.ValX = (l.Val = buf) + sprintf(buf, "%s%d", (l.cpu_set_max ? "max limit " : ""), (int)l.cpu_cycles);
-		if (l.Parse(NULL, "cpu", "cycles", "~") && l.cpu_cycles >= 8192) // Switch to dynamic core for newer real mode games
-			{ l.ValX = (l.Val = "dynamic") + 7; l.Parse(NULL, "cpu", "core", "~"); }
-	}
-}
-
-static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(const std::string&, Section**) = NULL, const std::string* cfg = NULL)
-{
-	if (loadcfg)
+	if (reinit)
 	{
 		DBP_ASSERT(dbp_state == DBPSTATE_BOOT && control != NULL && !first_shell);
 		delete control;
@@ -3168,12 +2988,12 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		DBP_SetIntercept(NULL);
 		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
 	}
-	if (!dbp_biosreboot) DBP_Run::ResetStartup();
 	control = new Config();
 	DOSBOX_Init();
 	check_variables(true);
 	Section* autoexec = control->GetSection("autoexec");
-	if (loadcfg) loadcfg(*cfg, &autoexec);
+	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec);
+	DBP_Run::PreInit();
 	dbp_boot_time = time_cb();
 	control->Init();
 	PROGRAMS_MakeFile("PUREMENU.COM", DBP_PureMenuProgram);
@@ -3181,12 +3001,9 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
 	PROGRAMS_MakeFile("XCOPY.COM", DBP_PureXCopyProgram);
 
-	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str());
-	const char *path_file, *path_ext; size_t path_namelen;
-	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext))
-	{
+	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str()), *path_file, *path_ext; size_t path_namelen;
+	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext) && dbp_content_name.empty())
 		dbp_content_name = std::string(path_file, path_namelen);
-	}
 
 	dbp_legacy_save = false;
 	std::string save_file = DBP_GetSaveFile(SFT_GAMESAVE); // this can set dbp_legacy_save to true, needed by DBP_Mount
@@ -3204,8 +3021,45 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}
 
+	// Check if a patch variant should be loaded right away
+	if (firsttime && !reinit && DBP_Run::PostInitFirstTime())
+		return init_dosbox(firsttime, forcemenu, true);
+
+	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
+	const bool force_puremenu = (dbp_biosreboot || forcemenu);
+	if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
+	{
+		const char* confpath = NULL; std::string strconfpath, confcontent;
+		if (dbp_conf_loading == 'i') // load confs 'i'nside content
+		{
+			if (drive_c->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
+			else if (drive_c->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+		}
+		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
+		{
+			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
+		}
+		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
+			return init_dosbox(firsttime, forcemenu, true, &confcontent);
+	}
+
+	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
+	const char* mountedMidi;
+	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists("$C:\\MT32_PCM.ROM"+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
+	{
+		Section* sec = control->GetSection("midi");
+		Property* prop = sec->GetProp("midiconfig");
+		sec->ExecuteDestroy(false);
+		prop->SetValue(mountedMidi);
+		prop->OnChangedByConfigProgram();
+		sec->ExecuteInit(false);
+	}
+
+	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
+	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
+
 	// Detect content year and auto mapping
-	if (firsttime && !loadcfg)
+	if (firsttime)
 	{
 		DBP_PadMapping::Load(); // if loaded don't show auto map notification
 
@@ -3314,62 +3168,12 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 		}
 	}
 
-	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
-	if (!loadcfg && drive_c->FileExists("DOS.YML"))
-	{
-		struct Local { static void LoadYML(DOS_Drive *drv, std::string& ymlcontent)
-		{
-			DOS_Drive *a, *b;
-			if (drv->GetShadows(a, b)) { LoadYML(a, ymlcontent); if (a != b) LoadYML(b, ymlcontent); return; }
-			DOS_File *df;
-			if (drv->FileOpen(&df, (char*)"DOS.YML", OPEN_READ)) { df->AddRef(); if (ymlcontent.length()) ymlcontent += '\n'; ReadAndClose(df, ymlcontent); }
-		}};
-		std::string ymlcontent;
-		Local::LoadYML(drive_c, ymlcontent);
-		if (ymlcontent.length()) return init_dosbox(firsttime, forcemenu, init_dosbox_load_dos_yml, &ymlcontent);
-	}
-
-	const bool force_puremenu = (dbp_biosreboot || forcemenu);
-	if (!loadcfg && dbp_conf_loading != 'f' && !force_puremenu)
-	{
-		const char* confpath = NULL; std::string strconfpath, confcontent;
-		if (dbp_conf_loading == 'i') // load confs 'i'nside content
-		{
-			if (drive_c->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
-			else if (drive_c->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
-		}
-		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
-		{
-			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
-		}
-		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
-			return init_dosbox(firsttime, forcemenu, init_dosbox_load_dosboxconf, &confcontent);
-	}
-
-	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
-	const char* mountedMidi;
-	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists("$C:\\MT32_PCM.ROM"+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
-	{
-		Section* sec = control->GetSection("midi");
-		Property* prop = sec->GetProp("midiconfig");
-		sec->ExecuteDestroy(false);
-		prop->SetValue(mountedMidi);
-		prop->OnChangedByConfigProgram();
-		sec->ExecuteInit(false);
-	}
-
-	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
-	if (dbp_use_network) { dbp_use_network = false; DBP_EnableNetwork(); }
-
 	// Joysticks are refreshed after control modifications but needs to be done here also to happen on core restart
 	DBP_PadMapping::RefreshDosJoysticks();
 
-	// If mounted, always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
+	// Always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
 	// For DBP we modified init_line to always run Z:\AUTOEXEC.BAT and not just any AUTOEXEC.BAT of the current drive/directory
 	DOS_SetDrive('C'-'A');
-
-	// Clear any dos errors that could have been set by drive file access until now
-	dos.errorcode = DOSERR_NONE;
 
 	if (autoexec)
 	{
@@ -3402,6 +3206,9 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, void(*loadcfg)(c
 	}
 	dbp_biosreboot = false;
 	DBP_ReportCoreMemoryMaps();
+
+	// Clear any dos errors that could have been set by drive file access until now
+	dos.errorcode = DOSERR_NONE;
 
 	struct Local { static Thread::RET_t THREAD_CC ThreadDOSBox(void*)
 	{

@@ -387,7 +387,7 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 	Bit32u baseLeft = (baseLen > 8 ? 4 : baseLen), baseRight = (baseLen > 8 ? 4 : 0);
 	Func::AppendFiltered(target, target_end, source, baseLeft);
 	Func::AppendFiltered(target, target_end, source + baseLen - baseRight, baseRight);
-	if (!baseLen && target < target_end) *(target++) = '-';
+	if (!baseLen && target < target_end) *(target++) = DBP_8DOT3_INVALID_CHAR;
 	if (extLen && target < target_end) *(target++) = '.';
 	Func::AppendFiltered(target, target_end, sDot + 1, (extLen > 3 ? 3 : extLen));
 	return (Bit32u)(target - target_start);

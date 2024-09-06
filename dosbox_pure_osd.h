@@ -311,7 +311,7 @@ struct DBP_MenuState
 				switch ((KBD_KEYS)val)
 				{
 					case KBD_enter: case KBD_kpenter: res = RES_OK; break;
-					case KBD_esc: res = RES_CANCEL; break;
+					case KBD_esc: case KBD_backspace: res = RES_CANCEL; break;
 				}
 				if (held_event == DBPET_KEYDOWN) held_event = _DBPET_MAX;
 				break;
@@ -387,10 +387,11 @@ struct DBP_MenuState
 
 	virtual void DoInput(Result res, Bit8u ok_type, int x_change) = 0;
 
-	void DrawMenuBase(DBP_BufferDrawing& buf, Bit32u blend, int lh, int rows, const DBP_MenuMouse& m, bool mouseMoved, int menul, int menur, int menuu)
+	int DrawMenuBase(DBP_BufferDrawing& buf, Bit32u blend, int lh, int rows, const DBP_MenuMouse& m, bool mouseMoved, int menul, int menur, int menuu, bool centerv = false)
 	{
 		int count = (int)list.size(), xtra = (lh == 8 ? 0 : 1), scrx = menur - 11, menuh = rows * lh + xtra;
 		bool scrollbar = (count > rows);
+		int listu = menuu + ((centerv && rows > count) ? ((rows - count) * lh) / 3 : 0);
 
 		if (!show_popup)
 		{
@@ -436,11 +437,11 @@ struct DBP_MenuState
 			if (mouseMoved)
 			{
 				int my = (int)(m.y+0.499f), mx = (int)(m.x+0.499f);
-				sel = scroll + (((int)my - menuu) / lh);
-				if (my < menuu) { sel = scroll; hide_sel = true; }
+				sel = scroll + (((int)my - listu) / lh);
+				if (my < listu) { sel = scroll; hide_sel = true; }
 				else if (sel >= count) { sel = count - 1; hide_sel = true; }
 				else if (mx >= scrx && scrollbar) { hide_sel = true; }
-				else if (my >= menuu+rows*lh) { sel = scroll+rows-1; hide_sel = true; }
+				else if (my >= listu+rows*lh) { sel = scroll+rows-1; hide_sel = true; }
 				else { hide_sel = false; }
 				scroll_unlocked = true;
 			}
@@ -449,7 +450,7 @@ struct DBP_MenuState
 		buf.DrawBox(menul, menuu - 3, menur - menul, menuh + 6, buf.BGCOL_MENU | blend, buf.COL_LINEBOX);
 
 		if (list[sel].type != IT_NONE && !hide_sel)
-			buf.AlphaBlendFillRect(menul+3, menuu + (sel - scroll)*lh, menur - menul - 6 - (scrollbar ? 10 : 0), lh + xtra, buf.BGCOL_SELECTION | blend);
+			buf.AlphaBlendFillRect(menul+3, listu + (sel - scroll)*lh, menur - menul - 6 - (scrollbar ? 10 : 0), lh + xtra, buf.BGCOL_SELECTION | blend);
 
 		if (scrollbar)
 		{
@@ -457,6 +458,7 @@ struct DBP_MenuState
 			buf.AlphaBlendFillRect(scrx, menuu, 8, menuh, buf.BGCOL_SCROLL | blend);
 			buf.AlphaBlendFillRect(scrx, menuu + scrollu, 8, scrolld - scrollu, buf.BGCOL_SELECTION | blend);
 		}
+		return listu;
 	}
 
 	void UpdateHeld()
@@ -1053,25 +1055,29 @@ struct DBP_OnScreenKeyboardState
 
 struct DBP_PureMenuState : DBP_MenuState
 {
-	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD, IT_SYSTEMREFRESH };
-	enum { INFO_HEADER = 0x0B, INFO_WARN = 0x0A };
+	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, IT_VARIANTLIST, IT_RUNVARIANT, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD, IT_SYSTEMREFRESH };
+	enum { INFO_HEADER = 0x0A, INFO_WARN = 0x0B, INFO_DIM = 0xC };
 
 	int exe_count, fs_count;
 	bool multidrive;
 	Bit8u popupsel;
 
-	DBP_PureMenuState() : exe_count(0), fs_count(0), multidrive(false), popupsel(0)
+	DBP_PureMenuState(bool isBoot = false) : exe_count(0), fs_count(0), multidrive(false), popupsel(0)
 	{
 		if (dbp_game_running) INT10_SetCursorShape(0x1e, 0); // hide blinking cursor
 		RefreshFileList(true);
 		if (DBP_Run::autoboot.use)
 		{
-			if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTOS) GoToSubMenu(IT_BOOTOSLIST);
-			if (DBP_Run::startup.mode == DBP_Run::RUN_SHELL) GoToSubMenu(IT_SHELLLIST);
-			if (DBP_Run::startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG);
-			int idx = MenuIndexByString(DBP_Run::startup.str.c_str());
-			if (idx != -1) ResetSel(idx);
+			if      (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_EXEC)    GoToSubMenu(IT_RUN, IT_RUN, 0, &DBP_Run::autoboot.startup.exec);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTOS)  GoToSubMenu(IT_BOOTOSLIST,  IT_BOOTOS,     DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_SHELL)   GoToSubMenu(IT_SHELLLIST,   IT_RUNSHELL,   DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT, DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG,     IT_BOOTIMG,    DBP_Run::autoboot.startup.info);
+			else { DBP_ASSERT(false); }
+			if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) DBP_Run::autoboot.use = false; // DBP_Run::WriteAutoBoot force enables auto boot for RUN_VARIANT
 		}
+		else if (isBoot && patchDrive::Variants.size())
+			GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT, patchDrive::ActiveVariantIndex);
 	}
 
 	~DBP_PureMenuState()
@@ -1110,6 +1116,13 @@ struct DBP_PureMenuState : DBP_MenuState
 		{
 			list.emplace_back(IT_INSTALLOSSIZE, 0, "[ Boot and Install New Operating System ]");
 			fs_count++;
+		}
+		if (patchDrive::Variants.size() > 1)
+		{
+			if (fs_count) list.emplace_back(IT_NONE);
+			list.emplace_back(IT_NONE, INFO_WARN, "Active Configuration: "); list.back().str.append(patchDrive::Variants[patchDrive::ActiveVariantIndex < 0 ? 0 : patchDrive::ActiveVariantIndex]);
+			list.emplace_back(IT_VARIANTLIST, 0, "[ Select Game Configuration ]");
+			fs_count += 2;
 		}
 		if (fs_count) list.emplace_back(IT_NONE);
 
@@ -1156,22 +1169,20 @@ struct DBP_PureMenuState : DBP_MenuState
 		m->list[insert_index].str.swap(entry);
 	}
 
-	int MenuIndexByString(const char* findit)
-	{
-		for (Item& it : list)
-			if ((it.type == IT_RUN || it.type == IT_BOOTOS || it.type == IT_BOOTIMG_MACHINE || it.type == IT_RUNSHELL) && it.str == findit)
-				return (int)(&it - &list[0]);
-		return -1;
-	}
-
-	void GoToSubMenu(ItemType type)
+	void GoToSubMenu(ItemType type, ItemType subtype, int find_info = -1, std::string* find_string = nullptr)
 	{
 		for (const Item& it : list)
 		{
 			if (it.type != type) continue;
-			sel = (int)(&it - &list[0]);
-			open_ticks -= 1000;
-			DoInput(RES_NONE, type, 0);
+			if (type != subtype)
+			{
+				sel = (int)(&it - &list[0]);
+				open_ticks -= 1000;
+				DoInput(RES_NONE, type, 0);
+			}
+			for (const Item& it2 : list)
+				if (it2.type == subtype && (find_string ? (it2.str == *find_string) : (it2.info == find_info)))
+					{ ResetSel((int)(&it2 - &list[0])); return; }
 			return;
 		}
 		DBP_ASSERT(false);
@@ -1188,12 +1199,13 @@ struct DBP_PureMenuState : DBP_MenuState
 		buf.PrintCenteredOutlined(lh, 0, w, 7+lh+2, (!dbp_content_name.empty() ? dbp_content_name.c_str() : "no content loaded!"), buf.COL_CONTENT);
 
 		int inforow = (w > 319), hdr = lh*2+12, rows = (h - hdr - ftr) / lh - inforow, count = (int)list.size(), bot = hdr + rows * lh + 3 - (lh == 8 ? 1 : 0);
-		DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, 8, w - 8, hdr);
+		int listu = DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, 8, w - 8, hdr, (list[0].type == IT_NONE));
+		bool autoboot_use = (list[sel].type != IT_RUNVARIANT && DBP_Run::autoboot.use);
 
 		for (int i = scroll, se = (hide_sel ? -1 : sel); i != count && i != (scroll + rows); i++)
 		{
 			const DBP_MenuState::Item& item = list[i];
-			int y = hdr + (i - scroll)*lh, strlen = (int)item.str.length();
+			int y = listu + (i - scroll)*lh, strlen = (int)item.str.length();
 			if (item.type == IT_MOUNT) // mountable file system
 			{
 				bool mounted = dbp_images[item.info].mounted;
@@ -1202,25 +1214,22 @@ struct DBP_PureMenuState : DBP_MenuState
 				buf.Print(lh, lblx, y, (mounted ? "UNMOUNT " : "MOUNT "), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 				buf.Print(lh, lblx + buf.CW*lbllen, y, item.str.c_str(), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 			}
-			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE || item.type == IT_RUNSHELL)
+			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE || item.type == IT_RUNSHELL || item.type == IT_RUNVARIANT)
 			{
 				int off = ((item.type != IT_RUN || multidrive) ? 0 : 3), len = strlen - off, lblx = (w - buf.CW*len) / 2;
 				buf.Print(lh, lblx,       y, item.str.c_str() + off, (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 				if (i != se) continue;
 				buf.Print(lh, lblx - buf.CW*(2      ), y, "*", buf.COL_WHITE);
 				buf.Print(lh, lblx + buf.CW*(len + 1), y, "*", buf.COL_WHITE);
-				if (DBP_Run::autoboot.use)
-				{
-					buf.Print(lh, lblx + buf.CW*(len + 1), y, "* [SET AUTO START]", buf.COL_WHITE);
-				}
+				if (autoboot_use) buf.Print(lh, lblx + buf.CW*(len + 1), y, "* [SET AUTO START]", buf.COL_WHITE);
 			}
-			else buf.Print(lh, (w - buf.CW*strlen) / 2, y, item.str.c_str(), (item.type != IT_NONE ? (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL) : (item.info == INFO_HEADER ? buf.COL_HEADER : (item.info == INFO_WARN ? buf.COL_WARN : buf.COL_NORMAL))));
+			else buf.Print(lh, (w - buf.CW*strlen) / 2, y, item.str.c_str(), (item.type != IT_NONE ? (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL) : (item.info == INFO_HEADER ? buf.COL_HEADER : (item.info == INFO_WARN ? buf.COL_WARN : (item.info == INFO_DIM ? buf.COL_DIM : buf.COL_NORMAL)))));
 		}
 
 		if (inforow)
 		{
 			char skiptext[38];
-			if (!DBP_Run::autoboot.use) skiptext[0] = '\0';
+			if (!autoboot_use) skiptext[0] = '\0';
 			else if (DBP_Run::autoboot.skip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", DBP_Run::autoboot.skip);
 			else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/R2 + Restart to come back");
 
@@ -1234,7 +1243,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				buf.DrawBox(8, bot, w-319, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 			}
 			
-			if (w < 640 && DBP_Run::autoboot.use)
+			if (w < 640 && autoboot_use)
 			{
 				buf.DrawBox(8, bot, w-16, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 				buf.PrintCenteredOutlined(lh, 0, w, bot+2, skiptext, buf.COL_BTNTEXT);
@@ -1278,11 +1287,13 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (popupsel != 1) { show_popup = false; return; }
 		}
 		Item& item = list[sel];
-		//if (item.type != IT_RUN && item.type != IT_BOOTOS && item.type != IT_BOOTIMG_MACHINE) auto_change = 0;
-		if (DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.skip += (DBP_Run::autoboot.skip < 50 ? 10 : (DBP_Run::autoboot.skip < 150 ? 25 : (DBP_Run::autoboot.skip < 300 ? 50 : 100)));
-		if (!DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.use = true;
-		if (auto_change < 0) DBP_Run::autoboot.skip -= (DBP_Run::autoboot.skip <= 50 ? 10 : (DBP_Run::autoboot.skip <= 150 ? 25 : (DBP_Run::autoboot.skip <= 300 ? 50 : 100)));
-		if (DBP_Run::autoboot.skip < 0) { DBP_Run::autoboot.use = false; DBP_Run::autoboot.skip = 0; }
+		if (item.type != IT_RUNVARIANT)
+		{
+			if (DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.skip += (DBP_Run::autoboot.skip < 50 ? 10 : (DBP_Run::autoboot.skip < 150 ? 25 : (DBP_Run::autoboot.skip < 300 ? 50 : 100)));
+			if (!DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.use = true;
+			if (auto_change < 0) DBP_Run::autoboot.skip -= (DBP_Run::autoboot.skip <= 50 ? 10 : (DBP_Run::autoboot.skip <= 150 ? 25 : (DBP_Run::autoboot.skip <= 300 ? 50 : 100)));
+			if (DBP_Run::autoboot.skip < 0) { DBP_Run::autoboot.use = false; DBP_Run::autoboot.skip = 0; }
+		}
 
 		if (ok_type == IT_MOUNT)
 		{
@@ -1389,6 +1400,25 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_SYSTEMREFRESH, 0, "[ Refresh List ]"); }
 			ResetSel(2, true);
 		}
+		else if (ok_type == IT_VARIANTLIST)
+		{
+			list.clear();
+			list.emplace_back(IT_NONE, INFO_HEADER, "Select Game Configuration");
+			list.emplace_back(IT_NONE);
+			if (patchDrive::ActiveVariantIndex > 0 || dbp_game_running)
+			{
+				list.emplace_back(IT_NONE, INFO_WARN, "Active Configuration: "); list.back().str.append(patchDrive::Variants[patchDrive::ActiveVariantIndex]);
+				list.emplace_back(IT_NONE);
+			}
+			for (const std::string& it : patchDrive::Variants)
+				{ list.emplace_back(IT_RUNVARIANT, (Bit16s)(&it - &patchDrive::Variants[0])); list.back().str.assign(it.c_str(), it.size()); }
+			list.emplace_back(IT_NONE);
+			list.emplace_back(IT_CANCEL, 0, "Run Other Program");
+			list.emplace_back(IT_NONE);
+			list.emplace_back(IT_NONE, INFO_DIM, "The configuration can be switched with the On-Screen Keyboard");
+			list.emplace_back(IT_NONE, INFO_DIM, "or by holding shift or L2/R2 when restarting the core");
+			ResetSel((patchDrive::ActiveVariantIndex > 0 || dbp_game_running) ? 4 : 2, true);
+		}
 		else if (((res == RES_CANCEL && list.back().type == IT_CLOSEOSD) || res == RES_CLOSESCREENKEYBOARD) && !DBP_FullscreenOSD)
 		{
 			ok_type = IT_CLOSEOSD;
@@ -1406,7 +1436,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (dbp_strict_mode && (ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || (ok_type == IT_CLOSEOSD && DBP_FullscreenOSD))) return;
 			if (ok_type != IT_CLOSEOSD)
 			{
-				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE));
+				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_RUNVARIANT || ok_type == IT_COMMANDLINE));
 				if (!show_popup && dbp_game_running)
 				{
 					popupsel = 0;
@@ -1414,15 +1444,16 @@ struct DBP_PureMenuState : DBP_MenuState
 					return;
 				}
 
-				DBP_Run::Run(
-					(ok_type == IT_RUN ? DBP_Run::RUN_EXEC :
-					(ok_type == IT_BOOTIMG ? DBP_Run::RUN_BOOTIMG:
-					(ok_type == IT_BOOTIMG_MACHINE ? DBP_Run::RUN_BOOTIMG :
-					(ok_type == IT_BOOTOS ? DBP_Run::RUN_BOOTOS :
-					(ok_type == IT_INSTALLOS ? DBP_Run::RUN_INSTALLOS :
-					(ok_type == IT_RUNSHELL ? DBP_Run::RUN_SHELL :
-					(ok_type == IT_COMMANDLINE ? DBP_Run::RUN_COMMANDLINE : DBP_Run::RUN_NONE))))))),
-					item.info, item.str, true);
+				if (!DBP_Run::Run(
+					ok_type == IT_RUN             ? DBP_Run::RUN_EXEC :
+					ok_type == IT_BOOTIMG         ? DBP_Run::RUN_BOOTIMG:
+					ok_type == IT_BOOTIMG_MACHINE ? DBP_Run::RUN_BOOTIMG :
+					ok_type == IT_BOOTOS          ? DBP_Run::RUN_BOOTOS :
+					ok_type == IT_INSTALLOS       ? DBP_Run::RUN_INSTALLOS :
+					ok_type == IT_RUNSHELL        ? DBP_Run::RUN_SHELL :
+					ok_type == IT_RUNVARIANT      ? DBP_Run::RUN_VARIANT :
+					ok_type == IT_COMMANDLINE     ? DBP_Run::RUN_COMMANDLINE :
+						DBP_Run::RUN_NONE, item.info, item.str, true)) { show_popup = false; return RefreshFileList(false); }
 
 				// Show menu again on image boot when machine needs to change but there are EXE files (some games need to run a FIX.EXE before booting)
 				if (ok_type == IT_BOOTIMG_MACHINE && dbp_reboot_machine && exe_count && !DBP_Run::autoboot.use)
@@ -1580,9 +1611,6 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			if (       buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_MAIN,     mouse, (w < 500 ? "START"    : "START MENU"),         txtblend) && mouse.left_up) SetMode(DBPOSD_MAIN);
 			if (osk && buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_OSK,      mouse, (w < 500 ? "KEYBOARD" : "ON-SCREEN KEYBOARD"), txtblend) && mouse.left_up) SetMode(DBPOSD_OSK);
 			if (       buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_MAPPER,   mouse, (w < 500 ? "CONTROLS" : "CONTROLLER MAPPER"),  txtblend) && mouse.left_up) SetMode(DBPOSD_MAPPER);
-			#ifdef DBP_STANDALONE
-			if (       buf.DrawButton(btnblend, btny, lh, m++, n, btnmrgn, mode == DBPOSD_SETTINGS, mouse, (w < 500 ? "SETTINGS" : "SETTINGS"),           txtblend) && mouse.left_up) SetMode(DBPOSD_SETTINGS);
-			#endif
 			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, w-30, w-8, false,   mouse, "R",                                                    txtblend) && mouse.left_up) evnt(DBPET_KEYUP, KBD_tab, 0);
 			if (mouse.y >= btny && (mouse.wheel_up || mouse.wheel_down)) evnt(DBPET_KEYUP, (mouse.wheel_down ? KBD_grave : KBD_tab), 0);
 		}
@@ -1685,11 +1713,11 @@ static void DBP_PureMenuProgram(Program** make)
 		{
 			enum { M_NORMAL, M_BOOT, M_FINISH } m = (cmd->FindExist("-BOOT") ? M_BOOT : cmd->FindExist("-FINISH") ? M_FINISH : M_NORMAL);
 
-			if (DBP_Run::HandleStartup(m == M_BOOT && dbp_menu_time >= 0))
+			if (m == M_BOOT && dbp_menu_time >= 0 && DBP_Run::startup.mode != DBP_Run::RUN_NONE && DBP_Run::Run(DBP_Run::startup.mode, DBP_Run::startup.info, DBP_Run::startup.exec))
 				return;
 
 			DBP_FullscreenOSD = true;
-			DBP_PureMenuState* ms = new DBP_PureMenuState();
+			DBP_PureMenuState* ms = new DBP_PureMenuState(m == M_BOOT);
 			bool runsoloexe = (ms->exe_count == 1 && ms->fs_count <= 1);
 
 			#ifndef STATIC_LINKING

@@ -410,15 +410,13 @@ struct unionDriveImpl
 		s.failed = false;
 		DriveFileIterator(s.drv, Saver::WriteFiles, (Bitu)&s);
 
-		for (StringToPointerHashMap<Union_Modification>::Iterator it = impl->modifications.begin(), end = impl->modifications.end(); it != end; ++it)
-			(*it)->Serialize(s.mods);
+		for (Union_Modification* m : impl->modifications)
+			m->Serialize(s.mods);
 		if (s.mods.size())
 			Saver::WriteFiles("FILEMODS.DBP", false, (Bit32u)s.mods.size(), 0, 0, 0, (Bitu)&s);
 
 		if (s.file_count)
-		{
 			s.failed |= !fwrite(&s.central_dir[0], s.central_dir.size(), 1, s.f);
-		}
 
 		Bit8u eocd[22];
 		ZIP_WRITE_LE32(eocd+ 0, 0x06054b50);                   // End of central directory signature

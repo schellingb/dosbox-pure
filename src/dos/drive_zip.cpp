@@ -1900,7 +1900,6 @@ struct zipDriveImpl
 	}
 };
 
-int zipDrive::doscLookup;
 DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check, bool enter_solo_root_dir, const char* dosc_path)
 {
 	struct Local
@@ -1954,24 +1953,9 @@ DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error
 					c_file_h = fopen_wrap(dosc_path, "rb");
 				else
 				{
-					static const char* snd_strs[] = { "MT-32", "MIDI", "MT-32", "" }, *gfx_strs[] = { "3dfx", "CGA", "" };
-					char doscc = (path[len - 1] == 'Z' ? 'C' : 'c');
-					std::string tmppath;
-					tmppath.reserve(len + 10);
-					tmppath.assign(path, len - 5);
-					int dosc_lookup = doscLookup | (_C_NO_SND|_C_NO_GFX);
-					for (int snd = C_MT32_BEFORE, isnd = 0; snd <= _C_NO_SND; snd *= 2, isnd++)
-						if (dosc_lookup & snd)
-							for (int gfx = C_3DFX, igfx = 0; gfx <= _C_NO_GFX; gfx *= 2, igfx++)
-								if (dosc_lookup & gfx)
-								{
-									tmppath.erase(len - 5);
-									if ((snd|gfx) != (_C_NO_SND|_C_NO_GFX))
-										tmppath.append(" [", 2).append(snd_strs[isnd]).append((((snd|gfx) & (_C_NO_SND|_C_NO_GFX)) ? 0 : 1), '+').append(gfx_strs[igfx]).append(1, ']');
-									tmppath.append(&path[len - 5], 4).append(1, doscc);
-									if ((c_file_h = fopen_wrap(tmppath.c_str(), "rb")) != NULL) goto dosc_done;
-								}
-					dosc_done:;
+					std::string doscpath(path);
+					doscpath.back() = (path[len - 1] == 'Z' ? 'C' : 'c');
+					c_file_h = fopen_wrap(doscpath.c_str(), "rb");
 				}
 				if (c_file_h)
 					drive = new patchDrive(*drive, true, new rawFile(c_file_h, false), enable_crc_check);

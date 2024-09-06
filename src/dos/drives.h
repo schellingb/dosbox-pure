@@ -488,6 +488,7 @@ private:
 #define FALSE_SET_DOSERR(ERRNAME) (dos.errorcode = (DOSERR_##ERRNAME), false)
 #define DOSPATH_REMOVE_ENDINGDOTS(VAR) char VAR##_buf[DOS_PATHLENGTH]; DrivePathRemoveEndingDots((const char**)&VAR, VAR##_buf)
 #define DOSPATH_REMOVE_ENDINGDOTS_KEEP(VAR) const char* VAR##_org = VAR; DOSPATH_REMOVE_ENDINGDOTS(VAR)
+#define DBP_8DOT3_INVALID_CHAR '-'
 void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH]);
 Bit8u DriveGetIndex(DOS_Drive* drv); // index in Drives array, returns DOS_DRIVES if not found (includes shadows)
 bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
@@ -506,31 +507,25 @@ template <typename TVal> struct BaseHashMap
 	INLINE ~BaseHashMap() { free(keys); free(vals); }
 
 	INLINE void Free() { this->~BaseHashMap(); memset(this, 0, sizeof(*this)); }
-	INLINE void Clear() { memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
+	INLINE void Clear() { if (maxlen) memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
 
 	INLINE Bit32u Len() const { return len; }
 	INLINE Bit32u Capacity() const { return (maxlen ? maxlen + 1 : 0); }
 	INLINE TVal GetAtIndex(Bit32u idx) const { return (keys[idx] ? vals[idx] : NULL); }
 
-	struct Iterator
+	template <typename TCast> struct Iterator
 	{
-		Iterator(BaseHashMap<TVal>& _map, Bit32u _index) : map(_map), index(_index - 1) { this->operator++(); }
-		BaseHashMap<TVal>& map;
+		BaseHashMap& map;
 		Bit32u index;
-		TVal operator *() const { return map.vals[index]; }
-		bool operator ==(const Iterator &other) const { return index == other.index; }
-		bool operator !=(const Iterator &other) const { return index != other.index; }
-		Iterator& operator ++()
-		{
-			if (!map.maxlen) { index = 0; return *this; }
-			if (++index > map.maxlen) index = map.maxlen + 1;
-			while (index <= map.maxlen && !map.keys[index]) index++;
-			return *this;
-		}
+		INLINE Iterator(BaseHashMap& _map, Bit32u _index) : map(_map), index(_map.NextIndex(_index - 1)) { }
+		INLINE TCast operator *() const { return (TCast)map.vals[index]; }
+		INLINE bool operator ==(const Iterator &other) const { return index == other.index; }
+		INLINE bool operator !=(const Iterator &other) const { return index != other.index; }
+		INLINE Iterator& operator ++() { index = map.NextIndex(index); return *this; }
 	};
 
-	INLINE Iterator begin() { return Iterator(*this, 0); }
-	INLINE Iterator end() { return Iterator(*this, (maxlen ? maxlen + 1 : 0)); }
+	INLINE Iterator<TVal> begin() { return Iterator<TVal>(*this, 0); }
+	INLINE Iterator<TVal> end() { return Iterator<TVal>(*this, (maxlen ? maxlen + 1 : 0)); }
 
 protected:
 	TVal* BaseGet(Bit32u key) const
@@ -598,12 +593,19 @@ protected:
 		free(oldVals);
 	}
 
+	Bit32u NextIndex(Bit32u idx)
+	{
+		if (!maxlen) return 0;
+		if (++idx > maxlen) return maxlen + 1;
+		for (;;) if (keys[idx] || ++idx > maxlen) return idx;
+	}
+
 	// not copyable
 	BaseHashMap(const BaseHashMap&);
 	BaseHashMap& operator=(const BaseHashMap&);
 };
 
-template <typename TVal> struct StringToPointerHashMap : public BaseHashMap<TVal*>
+struct BaseStringToPointerHashMap : public BaseHashMap<void*>
 {
 	static Bit32u Hash(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
 	{
@@ -611,18 +613,24 @@ template <typename TVal> struct StringToPointerHashMap : public BaseHashMap<TVal
 			hash_init = ((hash_init * (Bit32u)0x01000193) ^ (Bit32u)*(str++));
 		return hash_init;
 	}
+	INLINE bool Remove(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BaseRemove(Hash(str, str_limit, hash_init)); }
+};
+
+template <typename TVal> struct StringToPointerHashMap : public BaseStringToPointerHashMap
+{
 	TVal* Get(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) const
 	{
-		if (BHM::len == 0) return NULL;
+		if (len == 0) return NULL;
 		for (Bit32u key = Hash(str, str_limit, hash_init), key1 = (key ? key : 1), i = key1;; i++)
 		{
-			if (BHM::keys[i &= BHM::maxlen] == key1) return BHM::vals[i];
-			if (!BHM::keys[i]) return NULL;
+			if (keys[i &= maxlen] == key1) return (TVal*)vals[i];
+			if (!keys[i]) return NULL;
 		}
 	}
-	INLINE bool Put(const char* str, TVal* val, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BHM::BasePut(Hash(str, str_limit, hash_init), val); }
-	INLINE bool Remove(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BHM::BaseRemove(Hash(str, str_limit, hash_init)); }
-	private: typedef BaseHashMap<TVal*> BHM;
+	INLINE TVal* GetAtIndex(Bit32u idx) const { return (keys[idx] ? (TVal*)vals[idx] : NULL); }
+	INLINE bool Put(const char* str, TVal* val, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BasePut(Hash(str, str_limit, hash_init), val); }
+	INLINE Iterator<TVal*> begin() { return Iterator<TVal*>(*this, 0); }
+	INLINE Iterator<TVal*> end() { return Iterator<TVal*>(*this, (maxlen ? maxlen + 1 : 0)); }
 };
 
 template <typename TVal> struct ValueHashMap : public BaseHashMap<TVal>
@@ -723,8 +731,6 @@ private:
 
 class zipDrive : public DOS_Drive {
 public:
-	enum DOSC_Lookup { _C_NONE = 0, C_MT32_BEFORE = 0x1, C_MIDI = 0x2, C_MT32_AFTER = 0x4, _C_NO_SND = 0x8, C_3DFX = 0x100, C_CGA = 0x200, _C_NO_GFX = 0x400 };
-	static int doscLookup;
 	static DOS_Drive* MountWithDependencies(const char* path, std::string*& error_msg, bool enable_crc_check = false, bool enter_solo_root_dir = false, const char* dosc_path = NULL);
 	zipDrive(DOS_File* zip, bool enable_crc_check = false);
 	virtual ~zipDrive();
@@ -804,6 +810,11 @@ public:
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);
 	virtual Bits UnMount(void);
+
+	static std::string DOSYMLContent;
+	static std::vector<std::string> Variants;
+	static Bit16s ActiveVariantIndex;
+	static bool SwitchVariant(int index);
 private:
 	struct patchDriveImpl* impl;
 };

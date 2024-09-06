@@ -1368,8 +1368,8 @@ bool PAGING_ForcePageInit(Bitu lin_addr) {
 #if defined(USE_FULL_TLB)
 void PAGING_InitTLB(void) {
 	//DBP: Performance improvement
-	memset(paging.tlb.read, 0, sizeof(paging.tlb.read));
-	memset(paging.tlb.write, 0, sizeof(paging.tlb.write));
+	DBP_STATIC_ASSERT(offsetof(PagingBlock, tlb.write) == offsetof(PagingBlock, tlb.read) + sizeof(paging.tlb.read));
+	memset(paging.tlb.read, 0, sizeof(paging.tlb.read) + sizeof(paging.tlb.write));
 	for (Bitu i=0;i<TLB_SIZE;i++) paging.tlb.readhandler[i]=init_page_handler;
 	for (Bitu i=0;i<TLB_SIZE;i++) paging.tlb.writehandler[i]=init_page_handler;
 	paging.ur_links.used=0;
