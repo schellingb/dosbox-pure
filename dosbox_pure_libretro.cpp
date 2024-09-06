@@ -613,10 +613,11 @@ static void DBP_SetCyclesByYear(int year, int year_max)
 void DBP_SetRealModeCycles()
 {
 	if (cpu.pmode || CPU_CycleAutoAdjust || !(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CYCLES) || !dbp_game_running || dbp_content_year <= 1970) return;
-	DBP_SetCyclesByYear(dbp_content_year, 1996);
+	const int year = (machine != MCH_PCJR ? dbp_content_year : 1981);
+	DBP_SetCyclesByYear(year, 1996);
 
 	// When auto switching to a high-speed CPU, enable auto adjust so low spec hardware is allowed to throttle down
-	if (dbp_content_year >= 1995)
+	if (year >= 1995)
 		CPU_CycleAutoAdjust = true;
 }
 
