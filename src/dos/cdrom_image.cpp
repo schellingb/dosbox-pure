@@ -1129,11 +1129,10 @@ bool CDROM_Interface_Image::LoadChdFile(char* filename)
 
 	struct ChdFile : public BinaryFile
 	{
-		ChdFile(const char *filename, bool &error) : BinaryFile(filename, error), memory(NULL), cooked_sector_shift(0) { }
-		virtual ~ChdFile() { free(memory); }
-		Bit8u *memory, *sector_to_track;
-		Bit32u *hunkmap, *paddings;
-		int hunkbytes, cooked_sector_shift;
+		ChdFile(const char *filename, bool &error) : BinaryFile(filename, error), hunkmap(NULL), cooked_sector_shift(0) { }
+		virtual ~ChdFile() { free(hunkmap); }
+		Bit32u *hunkmap;
+		int hunkbytes, cooked_sector_shift, audio_start;
 
 		static Bit32u get_bigendian_uint32(const Bit8u *base) { return (base[0] << 24) | (base[1] << 16) | (base[2] << 8) | base[3]; }
 		static Bit64u get_bigendian_uint64(const Bit8u *base) { return ((Bit64u)base[0] << 56) | ((Bit64u)base[1] << 48) | ((Bit64u)base[2] << 40) | ((Bit64u)base[3] << 32) | ((Bit64u)base[4] << 24) | ((Bit64u)base[5] << 16) | ((Bit64u)base[6] << 8) | (Bit64u)base[7]; }
@@ -1141,12 +1140,10 @@ bool CDROM_Interface_Image::LoadChdFile(char* filename)
 		virtual bool read(Bit8u *buffer, int seek, int count)
 		{
 			DBP_ASSERT((seek / CD_FRAME_SIZE) == ((seek + count) / CD_FRAME_SIZE)); // read only inside one sector
-			int track = sector_to_track[seek / CD_FRAME_SIZE];
-			seek += paddings[track];
 			const int hunk = (seek / hunkbytes), hunk_ofs = (seek % hunkbytes), hunk_pos = (int)hunkmap[hunk];
 			if (!hunk_pos) { memset(buffer, 0, count); return true; }
 			if (!BinaryFile::read(buffer, hunk_pos + hunk_ofs + (count == COOKED_SECTOR_SIZE ? cooked_sector_shift : 0), count)) return false;
-			if (track) // CHD audio endian swap
+			if (seek >= audio_start) // CHD audio endian swap
 				for (Bit8u *p = buffer + (seek & 1), *pEnd = buffer + count, tmp; p < pEnd; p += 2)
 					{ tmp = p[0]; p[0] = p[1]; p[1] = tmp; }
 			return true;
@@ -1232,11 +1229,7 @@ bool CDROM_Interface_Image::LoadChdFile(char* filename)
 
 	DBP_STATIC_ASSERT(CHD_V5_UNCOMPMAPENTRYBYTES == sizeof(Bit32u));
 	Bit32u hunkcount = ((logicalbytes + chd->hunkbytes - 1) / chd->hunkbytes), sectorcount = (logicalbytes / CD_FRAME_SIZE);
-	Bit32u allocate_bytes = (hunkcount * CHD_V5_UNCOMPMAPENTRYBYTES) + (trackcount * sizeof(Bit32u)) + (sectorcount);
-	chd->memory = (Bit8u*)malloc(allocate_bytes);
-	chd->hunkmap = (Bit32u*)chd->memory;
-	chd->paddings = (Bit32u*)(chd->hunkmap + hunkcount);
-	chd->sector_to_track = (Bit8u*)(chd->paddings + trackcount);
+	chd->hunkmap = (Bit32u*)malloc(hunkcount * CHD_V5_UNCOMPMAPENTRYBYTES);
 
 	// Read hunk mapping and convert to file offsets
 	if (!chd->BinaryFile::read((Bit8u*)chd->hunkmap, (int)mapoffset, hunkcount * CHD_V5_UNCOMPMAPENTRYBYTES)) goto err;
@@ -1244,19 +1237,14 @@ bool CDROM_Interface_Image::LoadChdFile(char* filename)
 
 	// Now set physical start offsets for tracks and calculate CHD paddings. In CHD files tracks are padded to a to a 4-sector boundary.
 	// Thus we need to give ChdFile::read a means to figure out the padding that applies to the physical sector number it is reading.
-	for (Bit32u sector = 0, total_chd_padding = 0, i = 0;; i++)
+	for (Bit32u total_chd_padding = 0, i = 0; i <= trackcount; i++)
 	{
 		int physical_sector = (i ? tracks[i - 1].start + tracks[i - 1].length : 0); // without CHD padding
 		tracks[i].start += physical_sector; // += to add to mt_pregap
-		if (i == trackcount) break; // leadout only needs start
-		tracks[i].skip = tracks[i].start * CD_FRAME_SIZE; // physical address
-
-		Bit32u sector_end = (tracks[i].start + tracks[i].length);
-		memset(chd->sector_to_track + sector, (int)i, (sector_end - sector));
-		sector = sector_end;
 		total_chd_padding += ((CD_TRACK_PADDING - ((physical_sector + total_chd_padding) % CD_TRACK_PADDING)) % CD_TRACK_PADDING);
-		chd->paddings[i] = (total_chd_padding * CD_FRAME_SIZE);
+		tracks[i].skip = ((tracks[i].start + total_chd_padding) * CD_FRAME_SIZE); // physical address
 	}
+	chd->audio_start = tracks[1].skip;
 	return true;
 }
 #endif
