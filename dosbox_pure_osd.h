@@ -1076,7 +1076,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			else { DBP_ASSERT(false); }
 			if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) DBP_Run::autoboot.use = false; // DBP_Run::WriteAutoBoot force enables auto boot for RUN_VARIANT
 		}
-		else if (isBoot && patchDrive::Variants.size())
+		else if (isBoot && patchDrive::Variants.size() > 1)
 			GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT, patchDrive::ActiveVariantIndex);
 	}
 
