@@ -1066,7 +1066,7 @@ struct DBP_PureMenuState : DBP_MenuState
 	{
 		if (dbp_game_running) INT10_SetCursorShape(0x1e, 0); // hide blinking cursor
 		RefreshFileList(true);
-		if (DBP_Run::autoboot.use)
+		if (DBP_Run::autoboot.startup.mode != DBP_Run::RUN_NONE)
 		{
 			if      (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_EXEC)    GoToSubMenu(IT_RUN, IT_RUN, 0, &DBP_Run::autoboot.startup.exec);
 			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTOS)  GoToSubMenu(IT_BOOTOSLIST,  IT_BOOTOS,     DBP_Run::autoboot.startup.info);
