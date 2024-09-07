@@ -2643,7 +2643,7 @@ static bool check_variables(bool is_startup = false)
 			DBP_ASSERT(prop);
 			std::string tmpval;
 			const char* old_val = (prop->Get_type() == Value::V_STRING ? (const char*)prop->GetValue() : (tmpval = prop->GetValue().ToString()).c_str());
-			if (!section || !strcmp(new_value, old_val) || prop->getChange() == Property::Changeable::Fixed) return false;
+			if (!section || !strcmp(new_value, old_val) || prop->IsFixed()) return false;
 
 			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
 			if (disallow_in_game && dbp_game_running)

@@ -336,7 +336,7 @@ struct DBP_Run
 		}
 
 		Property* bootImgMachine = (mode == RUN_BOOTIMG && info ? control->GetProp("dosbox", "machine") : NULL);
-		if (startup.reboot || dbp_game_running || (bootImgMachine && info != *(const char*)bootImgMachine->GetValue() && bootImgMachine->getChange() != Property::Changeable::Fixed))
+		if (startup.reboot || dbp_game_running || (bootImgMachine && info != *(const char*)bootImgMachine->GetValue() && !bootImgMachine->IsFixed()))
 		{
 			startup.reboot = false;
 			if (mode == RUN_BOOTIMG) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());

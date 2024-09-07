@@ -150,7 +150,8 @@ public:
 	Value::Etype Get_type(){return default_value.type;}
 	Changeable::Value getChange() {return change;}
 #ifdef C_DBP_LIBRETRO
-	void MarkFixed(){const_cast<Changeable::Value&>(change)=Changeable::Fixed;}
+	inline void MarkFixed(){const_cast<Changeable::Value&>(change)=Changeable::Fixed;}
+	inline bool IsFixed(){return change==Changeable::Fixed;}
 #endif
 
 protected:
