@@ -335,10 +335,11 @@ struct DBP_Run
 			if (mode == RUN_EXEC) startup.exec.swap(str); // remember to set cursor again and for rebooting a different IT_RUN
 		}
 
-		if (startup.reboot || dbp_game_running || (mode == RUN_BOOTIMG && info && info != GetDosBoxMachineChar()))
+		Property* bootImgMachine = (mode == RUN_BOOTIMG && info ? control->GetProp("dosbox", "machine") : NULL);
+		if (startup.reboot || dbp_game_running || (bootImgMachine && info != *(const char*)bootImgMachine->GetValue() && bootImgMachine->getChange() != Property::Changeable::OnlyByConfigProgram))
 		{
 			startup.reboot = false;
-			if (mode == RUN_BOOTIMG) dbp_reboot_machine = (info ? (char)info : GetDosBoxMachineChar());
+			if (mode == RUN_BOOTIMG) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());
 			DBP_OnBIOSReboot();
 			return true;
 		}
@@ -355,7 +356,7 @@ struct DBP_Run
 		{
 			// enforce cycle rate during auto input (but limited to 1994 CPU speed, above will likely just waste time waiting for rendering out the skipped frames)
 			autoinput.oldcycles = CPU_CycleMax;
-			autoinput.oldchange = (Bit8u)control->GetSection("cpu")->GetProp("cycles")->getChange();
+			autoinput.oldchange = (Bit8u)control->GetProp("cpu", "cycles")->getChange();
 			autoinput.oldyear = dbp_content_year;
 			if (dbp_content_year > 1994) dbp_content_year = 1994;
 			DBP_SetCyclesByYear(dbp_content_year, 1994);
@@ -375,8 +376,6 @@ struct DBP_Run
 			RunShell(startup.info);
 		return true;
 	}
-
-	static char GetDosBoxMachineChar() { return *((const char*)control->GetSection("dosbox")->GetProp("machine")->GetValue()); }
 
 	struct DOSYML
 	{
@@ -404,7 +403,7 @@ struct DBP_Run
 				{
 					const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
 					(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
-					Property* prop = control->GetSection("midi")->GetProp("midiconfig");
+					Property* prop = control->GetProp("midi", "midiconfig");
 					prop->SetValue(val);
 					prop->OnChangedByConfigProgram();
 					val.assign("intelligent");
@@ -415,7 +414,7 @@ struct DBP_Run
 					if (strncmp(mapFrom, Val, (size_t)(ValX - Val))) continue;
 					val.append(mapTo);
 				}
-				Property* prop = control->GetSection(db_section)->GetProp(db_key);
+				Property* prop = control->GetProp(db_section, db_key);
 				bool res = (prop->SetValue(val) && !strcasecmp(prop->GetValue().ToString().c_str(), val.c_str()));
 				if (res) prop->OnChangedByConfigProgram();
 				va_end(ap);
@@ -504,7 +503,7 @@ struct DBP_Run
 						if (!parseOthers
 							||l.Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "generic_ega","ega" , "generic_vga","vgaonly" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
 							||l.Parse("video_memory", "dosbox", "vmemsize", "/")
-							||l.Parse("video_voodoo", "pci", "voodoo" , "true","12mb" , "false","false" , "")
+							||l.Parse("video_voodoo", "pci", "voodoo" , "true","8mb" , "false","false" , "")
 						) break; else goto syntaxerror;
 					case 's':
 						if (!parseOthers
@@ -538,7 +537,7 @@ struct DBP_Run
 				else
 				{
 					float cycle_per_hz = .3f; // default with auto (just a bad guess)
-					switch (*(const char*)control->GetSection("cpu")->GetProp("cputype")->GetValue())
+					switch (*(const char*)control->GetProp("cpu", "cputype")->GetValue())
 					{
 						case 'p': cycle_per_hz = .55700f; break; // Pentium (586):  Mhz * 557.00
 						case '4': cycle_per_hz = .38000f; break; // 486:            Mhz * 380.00
@@ -559,6 +558,8 @@ struct DBP_Run
 	static bool PostInitFirstTime()
 	{
 		ReadAutoBoot();
+		if (!patchDrive::Variants.size() && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOS.YML"))
+			patchDrive::Variants.push_back("Default Configuration");
 		int switchVariant = (patchDrive::Variants.size() ? autoboot.var : -1);
 		if (switchVariant != -1 && patchDrive::SwitchVariant(switchVariant)) return true; // reset and re-run PreInit to load variant
 		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
@@ -797,7 +798,7 @@ struct DBP_Run
 			DBP_KEYBOARD_ReleaseKeys();
 			if (autoinput.oldcycles)
 			{
-				if (!CPU_CycleAutoAdjust && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year, 1994) && control->GetSection("cpu")->GetProp("cycles")->getChange() == autoinput.oldchange)
+				if (!CPU_CycleAutoAdjust && CPU_CycleMax == DBP_CyclesForYear(dbp_content_year, 1994) && control->GetProp("cpu", "cycles")->getChange() == autoinput.oldchange)
 					CPU_CycleMax = autoinput.oldcycles; // revert from Run()
 				else if (CPU_CycleAutoAdjust && cpu.pmode && (CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CORE<<CPU_AUTODETERMINE_SHIFT)))
 					CPU_OldCycleMax = autoinput.oldcycles; // we switched to protected mode since auto input, fix up old cycles

@@ -85,6 +85,7 @@ public:
 	Section* GetSection(int index);
 #ifdef C_DBP_LIBRETRO
 	Section* GetSection(char const * const _sectionname) const;
+	Property* GetProp(char const * const _sectionname, char const * const _property) const;
 #endif
 	Section* GetSection(std::string const&_sectionname) const;
 	Section* GetSectionFromProperty(char const * const prop) const;

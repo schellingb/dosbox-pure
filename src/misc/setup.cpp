@@ -917,6 +917,13 @@ Section* Config::GetSection(char const * const _sectionname) const {
 	}
 	return NULL;
 }
+
+Property* Config::GetProp(char const * const _sectionname, char const * const _property) const {
+	for (const_it tel = sectionlist.begin(); tel != sectionlist.end(); ++tel){
+		if (!strcasecmp((*tel)->GetName(),_sectionname)) return (*tel)->GetProp(_property);
+	}
+	return NULL;
+}
 #endif
 
 Section* Config::GetSection(string const& _sectionname) const {

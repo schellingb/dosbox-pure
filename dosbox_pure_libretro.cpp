@@ -2759,9 +2759,8 @@ static bool check_variables(bool is_startup = false)
 		case 'p': dbmachine = "pcjr"; break;
 	}
 	visibility_changed |= Variables::DosBoxSet("dosbox", "machine", dbmachine, false, true);
+	if (dbp_reboot_machine) dbp_reboot_machine = 0;
 	Variables::DosBoxSet("dosbox", "vmemsize", retro_get_variable("dosbox_pure_svgamem", "2"), false, true);
-	if (dbp_reboot_machine)
-		control->GetSection("dosbox")->GetProp("machine")->OnChangedByConfigProgram(), dbp_reboot_machine = 0;
 
 	const char* mem = retro_get_variable("dosbox_pure_memory_size", "16");
 	if (dbp_reboot_set64mem) mem = "64";
@@ -2773,7 +2772,7 @@ static bool check_variables(bool is_startup = false)
 	const char* audiorate = retro_get_variable("dosbox_pure_audiorate", DBP_DEFAULT_SAMPLERATE_STRING);
 	Variables::DosBoxSet("mixer", "rate", audiorate, false, true);
 	Variables::DosBoxSet("mixer", "swapstereo", retro_get_variable("dosbox_pure_swapstereo", "false"));
-	dbp_swapstereo = (bool)control->GetSection("mixer")->GetProp("swapstereo")->GetValue(); // to also get dosbox.conf override
+	dbp_swapstereo = (bool)control->GetProp("mixer", "swapstereo")->GetValue(); // to also get dosbox.conf override
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{

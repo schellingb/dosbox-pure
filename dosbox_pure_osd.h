@@ -1069,10 +1069,10 @@ struct DBP_PureMenuState : DBP_MenuState
 		if (DBP_Run::autoboot.startup.mode != DBP_Run::RUN_NONE)
 		{
 			if      (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_EXEC)    GoToSubMenu(IT_RUN, IT_RUN, 0, &DBP_Run::autoboot.startup.exec);
-			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTOS)  GoToSubMenu(IT_BOOTOSLIST,  IT_BOOTOS,     DBP_Run::autoboot.startup.info);
-			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_SHELL)   GoToSubMenu(IT_SHELLLIST,   IT_RUNSHELL,   DBP_Run::autoboot.startup.info);
-			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT, DBP_Run::autoboot.startup.info);
-			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG,     IT_BOOTIMG,    DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTOS)  GoToSubMenu(IT_BOOTOSLIST,  IT_BOOTOS,          DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_SHELL)   GoToSubMenu(IT_SHELLLIST,   IT_RUNSHELL,        DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT,      DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG,     IT_BOOTIMG_MACHINE, DBP_Run::autoboot.startup.info);
 			else { DBP_ASSERT(false); }
 			if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) DBP_Run::autoboot.use = false; // DBP_Run::WriteAutoBoot force enables auto boot for RUN_VARIANT
 		}
@@ -1306,8 +1306,8 @@ struct DBP_PureMenuState : DBP_MenuState
 		else if (ok_type == IT_BOOTIMG)
 		{
 			// Machine property was fixed by dbp_reboot_machine or DOSBOX.CONF and cannot be modified here, so automatically boot the image as is (RES_NONE check is for GoToSubMenu)
-			if (res != RES_NONE && DBP_FullscreenOSD && control->GetSection("dosbox")->GetProp("machine")->getChange() == Property::Changeable::OnlyByConfigProgram)
-				goto handle_result;
+			if (control->GetProp("dosbox", "machine")->getChange() == Property::Changeable::OnlyByConfigProgram)
+				{ if (res != RES_NONE) goto handle_result; else goto top_menu; }
 			list.clear();
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Boot System Mode");
 			list.emplace_back(IT_NONE);
@@ -1316,7 +1316,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_CANCEL, 0, "Cancel");
 			const std::string& img = (!dbp_images.empty() ? dbp_images[dbp_image_index].path : list[1].str);
 			bool isPCjrCart = (img.size() > 3 && (img[img.size()-3] == 'J' || img[img.size()-2] == 'T'));
-			char wantmchar = (isPCjrCart ? 'p' : DBP_Run::GetDosBoxMachineChar());
+			char wantmchar = (isPCjrCart ? 'p' : *(const char*)control->GetProp("dosbox", "machine")->GetValue());
 			for (const Item& it : list)
 				if (it.info == wantmchar)
 					{ ResetSel((int)(&it - &list[0])); break; }
@@ -1427,6 +1427,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		else if (ok_type == IT_CANCEL || (res == RES_CANCEL && list.back().type != IT_CLOSEOSD))
 		{
 			// Go to top menu (if in submenu) or refresh list
+			top_menu:
 			ResetSel(0, true);
 			RefreshFileList(false);
 		}
