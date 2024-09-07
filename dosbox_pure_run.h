@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2023 Bernhard Schelling
+ *  Copyright (C) 2020-2024 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -274,7 +274,7 @@ struct DBP_Run
 		section->HandleInputline("cputype=pentium_slow");
 		if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
-		section->GetProp("cputype")->OnChangedByConfigProgram();
+		section->GetProp("cputype")->MarkFixed();
 		if (dbp_content_year < 1993 && (CPU_CycleAutoAdjust || (CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT))))) DBP_SetCyclesByYear(1993, 1993);
 
 		RunBatchFile(new BatchFileBoot(!is_install ? 'C' : 'A'));
@@ -336,7 +336,7 @@ struct DBP_Run
 		}
 
 		Property* bootImgMachine = (mode == RUN_BOOTIMG && info ? control->GetProp("dosbox", "machine") : NULL);
-		if (startup.reboot || dbp_game_running || (bootImgMachine && info != *(const char*)bootImgMachine->GetValue() && bootImgMachine->getChange() != Property::Changeable::OnlyByConfigProgram))
+		if (startup.reboot || dbp_game_running || (bootImgMachine && info != *(const char*)bootImgMachine->GetValue() && bootImgMachine->getChange() != Property::Changeable::Fixed))
 		{
 			startup.reboot = false;
 			if (mode == RUN_BOOTIMG) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());
@@ -405,7 +405,7 @@ struct DBP_Run
 					(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
 					Property* prop = control->GetProp("midi", "midiconfig");
 					prop->SetValue(val);
-					prop->OnChangedByConfigProgram();
+					prop->MarkFixed();
 					val.assign("intelligent");
 				}
 				else
@@ -416,7 +416,7 @@ struct DBP_Run
 				}
 				Property* prop = control->GetProp(db_section, db_key);
 				bool res = (prop->SetValue(val) && !strcasecmp(prop->GetValue().ToString().c_str(), val.c_str()));
-				if (res) prop->OnChangedByConfigProgram();
+				if (res) prop->MarkFixed();
 				va_end(ap);
 				return res;
 			}

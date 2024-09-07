@@ -710,9 +710,9 @@ private:
 		strcpy(test,"ems=false");
 		dos_sec->HandleInputline(test);
 #ifdef C_DBP_LIBRETRO
-		dos_sec->GetProp("umb")->OnChangedByConfigProgram();
-		dos_sec->GetProp("xms")->OnChangedByConfigProgram();
-		dos_sec->GetProp("ems")->OnChangedByConfigProgram();
+		dos_sec->GetProp("umb")->MarkFixed();
+		dos_sec->GetProp("xms")->MarkFixed();
+		dos_sec->GetProp("ems")->MarkFixed();
 #endif
 		dos_sec->ExecuteInit(false);
      }

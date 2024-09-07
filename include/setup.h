@@ -129,7 +129,7 @@ public:
 #ifndef C_DBP_LIBRETRO
 	struct Changeable { enum Value {Always, WhenIdle,OnlyAtStart};};
 #else
-	struct Changeable { enum Value {Always, WhenIdle, OnlyAtStart, OnlyByConfigProgram};};
+	struct Changeable { enum Value {Always, WhenIdle, OnlyAtStart, Fixed};};
 #endif
 	const std::string propname;
 
@@ -150,7 +150,7 @@ public:
 	Value::Etype Get_type(){return default_value.type;}
 	Changeable::Value getChange() {return change;}
 #ifdef C_DBP_LIBRETRO
-	void OnChangedByConfigProgram(){const_cast<Changeable::Value&>(change)=Changeable::OnlyByConfigProgram;}
+	void MarkFixed(){const_cast<Changeable::Value&>(change)=Changeable::Fixed;}
 #endif
 
 protected:

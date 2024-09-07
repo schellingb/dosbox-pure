@@ -2643,7 +2643,7 @@ static bool check_variables(bool is_startup = false)
 			DBP_ASSERT(prop);
 			std::string tmpval;
 			const char* old_val = (prop->Get_type() == Value::V_STRING ? (const char*)prop->GetValue() : (tmpval = prop->GetValue().ToString()).c_str());
-			if (!section || !strcmp(new_value, old_val) || prop->getChange() == Property::Changeable::OnlyByConfigProgram) return false;
+			if (!section || !strcmp(new_value, old_val) || prop->getChange() == Property::Changeable::Fixed) return false;
 
 			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
 			if (disallow_in_game && dbp_game_running)
@@ -2958,7 +2958,7 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_au
 				if (section == ref_autoexec) ref_autoexec = NULL; // skip our default autoexec
 				if ((loc = line.find('=')) == std::string::npos) continue;
 				trim(line.erase(loc));
-				if (Property* p = section->GetProp(line.c_str())) p->OnChangedByConfigProgram();
+				if (Property* p = section->GetProp(line.c_str())) p->MarkFixed();
 		}
 	}
 }
@@ -3161,7 +3161,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		Property* prop = sec->GetProp("midiconfig");
 		sec->ExecuteDestroy(false);
 		prop->SetValue(mountedMidi);
-		prop->OnChangedByConfigProgram();
+		prop->MarkFixed();
 		sec->ExecuteInit(false);
 	}
 

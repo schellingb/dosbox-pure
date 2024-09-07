@@ -1306,7 +1306,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		else if (ok_type == IT_BOOTIMG)
 		{
 			// Machine property was fixed by dbp_reboot_machine or DOSBOX.CONF and cannot be modified here, so automatically boot the image as is (RES_NONE check is for GoToSubMenu)
-			if (control->GetProp("dosbox", "machine")->getChange() == Property::Changeable::OnlyByConfigProgram)
+			if (control->GetProp("dosbox", "machine")->getChange() == Property::Changeable::Fixed)
 				{ if (res != RES_NONE) goto handle_result; else goto top_menu; }
 			list.clear();
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Boot System Mode");

@@ -777,7 +777,7 @@ void CONFIG::Run(void) {
 #ifdef C_DBP_LIBRETRO
 			else {
 				Property* p = tsec->GetProp(pvars[1].c_str());
-				if (p) p->OnChangedByConfigProgram();
+				if (p) p->MarkFixed();
 			}
 #endif
 			tsec->ExecuteInit(false);
