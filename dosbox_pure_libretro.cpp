@@ -2643,7 +2643,7 @@ static bool check_variables(bool is_startup = false)
 			DBP_ASSERT(prop);
 			std::string tmpval;
 			const char* old_val = (prop->Get_type() == Value::V_STRING ? (const char*)prop->GetValue() : (tmpval = prop->GetValue().ToString()).c_str());
-			if (!section || !strcmp(new_value, old_val) || prop->IsFixed()) return false;
+			if (!strcmp(new_value, old_val) || prop->IsFixed()) return false;
 
 			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
 			if (disallow_in_game && dbp_game_running)
@@ -2854,7 +2854,7 @@ static bool check_variables(bool is_startup = false)
 	retro_set_visibility("dosbox_pure_voodoo_scale", machine_is_svga);
 	if (machine_is_svga)
 	{
-		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "12mb"), true, true);
+		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "8mb"), true, true);
 		const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "1");
 		Variables::DosBoxSet("pci", "voodoo_perf", voodoo_perf);
 		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE && (atoi(voodoo_perf) & 0x4))

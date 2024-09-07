@@ -475,7 +475,6 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			{ "8mb", "Enabled - 8MB memory (default)" },
 			{ "12mb", "Enabled - 12MB memory, Dual Texture" },
-			{ "16mb", "Enabled - 16MB memory (Experimental)" },
 			{ "4mb", "Enabled - 4MB memory, Low Resolution Only" },
 			{ "off", "Disabled" },
 		},

@@ -277,7 +277,6 @@ enum
 {
 	VOODOO_1_4MB,
 	VOODOO_1_DTMU,
-	VOODOO_1_16MB,
 	VOODOO_1_8MB,
 	VOODOO_2, // must be after all Voodoo 1 types
 	_VOODOO_TYPE_MAX,
@@ -8270,13 +8269,6 @@ static void voodoo_init(UINT8 type) {
 			tmumem1 = 0;
 			break;
 
-		case VOODOO_1_16MB:
-			v->regaccess = voodoo_register_access;
-			fbmemsize = 8;
-			tmumem0 = 8;
-			tmumem1 = 0;
-			break;
-
 		case VOODOO_1_DTMU:
 			v->regaccess = voodoo_register_access;
 			fbmemsize = 4;
@@ -8843,7 +8835,7 @@ void VOODOO_Init(Section* sec) {
 	const char* typestr = section->Get_string("voodoo");
 	switch (typestr[0])
 	{
-		case '1': type = (typestr[1] == '6' ? VOODOO_1_16MB : VOODOO_1_DTMU); break; //16mb / 12mb
+		case '1': type = VOODOO_1_DTMU; break; //12mb
 		case '8': type = VOODOO_1_8MB; break; //8mb
 		case '4': type = VOODOO_1_4MB; break; //4mb
 		default: return; // disabled

@@ -689,7 +689,7 @@ void DOSBOX_Init(void) {
 #ifdef C_DBP_ENABLE_VOODOO
 	void VOODOO_Init(Section*);
 	secprop->AddInitFunction(&VOODOO_Init,true);
-	secprop->Add_string("voodoo",Property::Changeable::OnlyAtStart,"12mb");
+	secprop->Add_string("voodoo",Property::Changeable::OnlyAtStart,"8mb");
 	secprop->Add_int("voodoo_perf",Property::Changeable::Always,1);
 	secprop->Add_int("voodoo_gamma",Property::Changeable::Always,1);
 	secprop->Add_int("voodoo_scale",Property::Changeable::Always,1);
