@@ -526,7 +526,6 @@ struct patchDriveImpl
 	{
 		for (Patch_Entry* e : root.entries) Patch_Directory::DeleteEntry(e);
 		root.entries.Clear();
-		for (Patch_Directory* it : directories) delete it;
 		directories.Clear();
 		*variant_dir = '\0';
 		DriveFileIterator(patchzip, LoadFiles, (Bitu)this);
