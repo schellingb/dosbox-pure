@@ -591,10 +591,14 @@ struct DBP_Run
 			*p = '\0'; // for strcmp/atoi/DOS_FileExists/assign
 			if (line_no == 1)
 			{
-				const char linetype = (line[1] == '*' ? line[0] : 0), *str = line + (linetype ? 2 : 0);
+				char linetype = (line[1] == '*' ? line[0] : 0), *str = line + (linetype ? 2 : 0);
 				if (linetype == 0)
 				{
-					if (DOS_FileExists(str)) { autoboot.startup.mode = RUN_EXEC; autoboot.startup.exec.assign(str); }
+					char *param = strchr(str, ' ');
+					if (param) *param = '\0';
+					bool exists = DOS_FileExists(str);
+					if (param) *param = ' ';
+					if (exists) { autoboot.startup.mode = RUN_EXEC; autoboot.startup.exec.assign(str); }
 				}
 				else if (linetype == 'O' || linetype == 'S' || linetype == 'V')
 				{
