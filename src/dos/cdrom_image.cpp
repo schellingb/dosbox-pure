@@ -621,13 +621,17 @@ bool CDROM_Interface_Image::ReadSector(Bit8u *buffer, bool raw, unsigned long se
 	if (tracks[track].sectorSize < RAW_SECTOR_SIZE) { if (raw) return false; }
 	else { if (!tracks[track].mode2 && !raw) seek += 16; }
 	if (tracks[track].mode2 && !raw) seek += (tracks[track].sectorSize >= RAW_SECTOR_SIZE ? 24 : 8);
+	if (tracks[track].file->read(buffer, seek, length)) return true;
+	// Pre-gap areas between tracks stored in separate files can be beyond the file size, suceeed and return a zeroed buffer instead of failing the read
+	memset(buffer, 0, length);
+	return true;
 #else
 	if (tracks[track].sectorSize != RAW_SECTOR_SIZE && raw) return false;
 	if (tracks[track].sectorSize == RAW_SECTOR_SIZE && !tracks[track].mode2 && !raw) seek += 16;
 	if (tracks[track].mode2 && !raw) seek += 24;
-#endif
 
 	return tracks[track].file->read(buffer, seek, length);
+#endif
 }
 
 //DBP: for restart
@@ -760,6 +764,7 @@ bool CDROM_Interface_Image::CanReadPVD(TrackFile *file, int sectorSize, bool mod
 			(pvd[8] == 1 && !strncmp((char*)(&pvd[9]), "CDROM", 5) && pvd[14] == 1));
 }
 
+#ifndef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 #if defined(WIN32) || defined(HAVE_LIBNX) || defined(WIIU) || defined (GEKKO) || defined (_CTR) || defined(_3DS) || defined(VITA) || defined(PSP)
 static string FAKEdirname(char * file) {
 	char * sep = strrchr(file, '\\');
@@ -776,6 +781,7 @@ static string FAKEdirname(char * file) {
 }
 #define dirname FAKEdirname
 #endif
+#endif
 
 bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 {
@@ -785,7 +791,7 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	int shift = 0;
 	int currPregap = 0;
 	int totalPregap = 0;
-	int prestart = 0;
+	int prestart = -1; //DBP: Fixed multi-file BIN with pregaps (TODO: allow sector access of pregap areas)
 	bool success;
 	bool canAddTrack = false;
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
@@ -819,7 +825,7 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 			track.start = 0;
 			track.skip = 0;
 			currPregap = 0;
-			prestart = 0;
+			prestart = -1; //DBP: Fixed multi-file BIN with pregaps
 	
 			line >> track.number;
 			string type;
@@ -889,14 +895,18 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 			}
 			//The next if has been surpassed by the else, but leaving it in as not 
 			//to break existing cue sheets that depend on this.(mine with OGG tracks specifying MP3 as type)
+#if defined(C_SDL_SOUND)
 			else if (type == "WAVE" || type == "AIFF" || type == "MP3") {
+#else
+			else {
+#endif
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
 				track.file = new AudioFile(filename.c_str(), error, cuefile);
 #else
 				track.file = new AudioFile(filename.c_str(), error);
 #endif
-			} else { 
 #if defined(C_SDL_SOUND)
+			} else { 
 				const Sound_DecoderInfo **i;
 				for (i = Sound_AvailableDecoders(); *i != NULL; i++) {
 					if (*(*i)->extensions == type) {
@@ -932,7 +942,7 @@ bool CDROM_Interface_Image::LoadCueSheet(char *cuefile)
 	track.start = 0;
 	track.length = 0;
 	track.file = NULL;
-	if(!AddTrack(track, shift, 0, totalPregap, 0)) return false;
+	if(!AddTrack(track, shift, -1, totalPregap, 0)) return false;
 
 	return true;
 }
@@ -941,7 +951,8 @@ bool CDROM_Interface_Image::AddTrack(Track &curr, int &shift, int prestart, int 
 {
 	// frames between index 0(prestart) and 1(curr.start) must be skipped
 	int skip;
-	if (prestart > 0) {
+	 //DBP: Fixed multi-file BIN with pregaps
+	if (prestart >= 0) {
 		if (prestart > curr.start) return false;
 		skip = curr.start - prestart;
 	} else skip = 0;
