@@ -86,7 +86,7 @@ static struct retro_hw_render_callback dbp_hw_render;
 static void (*dbp_opengl_draw)(const DBP_Buffer& buf);
 
 // DOSBOX DISC MANAGEMENT
-struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false; char drive; int dirlen; };
+struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false; char drive; int dirlen, dd; };
 static std::vector<DBP_Image> dbp_images;
 static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
@@ -648,17 +648,26 @@ const char* DBP_Image_Label(const DBP_Image& image)
 
 static unsigned DBP_AppendImage(const char* in_path, bool sorted)
 {
-	// insert into image list ordered alphabetically, ignore already known images
-	unsigned insert_index;
-	for (insert_index = 0; insert_index != (unsigned)dbp_images.size(); insert_index++)
+	for (DBP_Image& i : dbp_images) if (i.path == in_path) return (unsigned)(&i - &dbp_images[0]); // known
+
+	struct Local { static int GetDriveDepth(DOS_Drive* drv, const char* p, int dep = 0, int lvl = 0x40000000)
 	{
-		if (dbp_images[insert_index].path == in_path) return insert_index;
-		if (sorted && dbp_images[insert_index].path > in_path) { break; }
-	}
+		DOS_Drive *a, *b; int res;
+		if (!drv->GetShadows(a, b)) return (drv->FileExists(p) ? (dep | 1) : 0);
+		return ((res = GetDriveDepth(b, p, dep, lvl >> 2)) != 0 ? res : GetDriveDepth(a, p, dep + lvl, lvl >> 2));
+	}};
+	int dd = ((in_path[0] == '$' && Drives[in_path[1]-'A']) ? Local::GetDriveDepth(Drives[in_path[1]-'A'], in_path + 4) : 0);
+
+	// insert into image list ordered by drive depth and alphabetically
+	unsigned insert_index = (unsigned)dbp_images.size();
+	if (sorted)
+		for (DBP_Image& i : dbp_images)
+			if (dd < i.dd || (dd == i.dd && i.path > in_path)) {insert_index = (unsigned)(&i - &dbp_images[0]); break; }
 
 	dbp_images.insert(dbp_images.begin() + insert_index, DBP_Image());
 	DBP_Image& i = dbp_images[insert_index];
 	i.path = in_path;
+	i.dd = dd;
 
 	for (char longname[256], *path = &i.path[0], *pRoot = (path[0] == '$' && i.path.length() > 4 && Drives[path[1]-'A'] ? path + 4 : NULL), *p = pRoot, *pNext; p; p = pNext)
 	{
@@ -3661,10 +3670,10 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	if (dbp_biosreboot || dbp_state == DBPSTATE_EXITED)
 	{
 		// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config
-		DBP_ASSERT(dbp_biosreboot && dbp_state == DBPSTATE_EXITED);
+		DBP_ASSERT(dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size()));
 		DBP_ForceReset();
 		DBP_ThreadControl(TCM_FINISH_FRAME);
-		DBP_ASSERT(!dbp_biosreboot && dbp_state == DBPSTATE_FIRST_FRAME);
+		DBP_ASSERT((!dbp_biosreboot && dbp_state == DBPSTATE_FIRST_FRAME) || dbp_crash_message.size());
 	}
 	DBP_ASSERT(render.src.fps > 10.0); // validate initialized video mode after first frame
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];
@@ -3796,7 +3805,7 @@ void retro_run(void)
 
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME);
 		DBP_ThreadControl(TCM_FINISH_FRAME);
-		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && dbp_biosreboot));
+		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size())));
 		const char* midiarg, *midierr = DBP_MIDI_StartupError(control->GetSection("midi"), midiarg);
 		if (midierr) retro_notify(0, RETRO_LOG_WARN, midierr, midiarg);
 		if (dbp_state == DBPSTATE_FIRST_FRAME)
