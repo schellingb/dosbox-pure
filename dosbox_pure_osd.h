@@ -1209,10 +1209,9 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (item.type == IT_MOUNT) // mountable file system
 			{
 				bool mounted = dbp_images[item.info].mounted;
-				int lbllen = (mounted ? sizeof("UNMOUNT") : sizeof("MOUNT")), len = strlen + lbllen;
-				int lblx = (w - buf.CW*(lbllen + strlen)) / 2;
-				buf.Print(lh, lblx, y, (mounted ? "UNMOUNT " : "MOUNT "), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
-				buf.Print(lh, lblx + buf.CW*lbllen, y, item.str.c_str(), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
+				int xdiff = (w - buf.CW*(strlen + 7)), mntx = (xdiff >= 0 ? xdiff / 2 : w - (buf.CW*9)), strx = (xdiff >= 0 ? mntx + (buf.CW*7) : xdiff - (buf.CW*3));
+				buf.Print(lh, mntx + ((mounted && xdiff >= 0) ? buf.CW : 0), y, (mounted ? "EJECT" : "INSERT"), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
+				buf.Print(lh, strx, y, item.str.c_str(), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 			}
 			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE || item.type == IT_RUNSHELL || item.type == IT_RUNVARIANT)
 			{
