@@ -35,6 +35,10 @@ bool WildFileCmp(const char * file, const char * wild)
 	const char * find_ext;
 	Bitu r;
 
+	//DBP: Optimize the most common case (comparing against *.*)
+	if (wild[0] == '*' && strstr(wild, ".*"))
+		return true;
+
 	strcpy(file_name,"        ");
 	strcpy(file_ext,"   ");
 	strcpy(wild_name,"        ");
@@ -414,24 +418,24 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	if (force_mounted) filename++;
 
 	DOS_File *dos_file;
-	Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : (control ? DOS_GetDefaultDrive() : DOS_DRIVES));
-	if (drive < DOS_DRIVES && Drives[drive])
+	const Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : (control ? DOS_GetDefaultDrive() : DOS_DRIVES));
+	if (DOS_Drive* drv = (drive < DOS_DRIVES ? Drives[drive] : NULL))
 	{
 		char dos_path[DOS_PATHLENGTH + 2], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
 		const char* n = filename + (filename[1] == ':' ? 2 : 0);
 		if (*n == '\\' || *n == '/') n++; // absolute path
-		else if (*Drives[drive]->curdir) // relative path
+		else if (*drv->curdir) // relative path
 		{
-			strcpy(p_dos, Drives[drive]->curdir);
+			strcpy(p_dos, drv->curdir);
 			p_dos += strlen(p_dos);
 		}
 		bool transformed = (p_dos != dos_path);
 		if (!transformed)
 		{
 			// try open path untransformed (works on localDrive and with paths without long file names)
-			if (writable && Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READWRITE))
+			if (writable && drv->FileOpen(&dos_file, (char*)n, OPEN_READWRITE))
 				goto get_file_size;
-			if (Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READ))
+			if (drv->FileOpen(&dos_file, (char*)n, OPEN_READ))
 				goto get_file_size_write_protected;
 		}
 		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos < p_dos_end; nDir = ++n)
@@ -449,15 +453,50 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
 			if (p_dos != dos_path) *(p_dos++) = '\\';
 			Bit32u nLen = (Bit32u)(n - nDir), tLen = DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen);
-			transformed = transformed || (tLen != nLen) || memcmp(p_dos, nDir, nLen) || *n == '/';
+			bool diff8dot3 = ((tLen != nLen) || memcmp(p_dos, nDir, nLen));
+			if (diff8dot3)
+			{
+				// Confirm if the 8.3 filename matches the long filename
+				*(p_dos + tLen) = '\0';
+				char fullname[256];
+				if (drv->GetLongFileName(dos_path, fullname) && (nLen != strlen(fullname) || memcmp(nDir, fullname, nLen)))
+				{
+					// If it doesn't match, iterate through the directory items and find a long filename match
+					RealPt save_dta = dos.dta();
+					dos.dta(dos.tables.tempdta);
+					DOS_DTA dta(dos.dta());
+					dta.SetupSearch(255, (Bit8u)(0xffff & ~DOS_ATTR_VOLUME), (char*)"*.*");
+					if (p_dos > dos_path) p_dos[-1] = '\0';
+					bool more = drv->FindFirst(p_dos > dos_path ? dos_path : (char*)"", dta);
+					if (p_dos > dos_path) p_dos[-1] = '\\';
+					for (; more; more = drv->FindNext(dta))
+					{
+						char dta_name[DOS_NAMELENGTH_ASCII]; Bit32u dta_size; Bit16u dta_date, dta_time; Bit8u dta_attr;
+						dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
+						if (dta_name[0] == '.' && !dta_name[dta_name[1] == '.' ? 2 : 1]) continue;
+						strcpy(p_dos, dta_name);
+						if (!drv->GetLongFileName(dos_path, fullname) || nLen != strlen(fullname) || memcmp(nDir, fullname, nLen)) continue;
+						tLen = strlen(dta_name);
+						break; // found match (leave more true)
+					}
+					dos.dta(save_dta);
+					if (!more)
+					{
+						// Was not able to find a match, still try to open the file with the initial 8.3 guess, the drive might not support querying long file names
+						DBP_ASSERT(false); // really shouldn't happen, maybe we should return file not found at this point
+						DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen);
+					}
+				}
+			}
+			transformed = transformed || diff8dot3 || *n == '/';
 			p_dos += tLen;
 		}
 		if (transformed)
 		{
 			*p_dos = '\0';
-			if (writable && Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
+			if (writable && drv->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
 				goto get_file_size;
-			if (Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READ))
+			if (drv->FileOpen(&dos_file, dos_path, OPEN_READ))
 				goto get_file_size_write_protected;
 		}
 	}
