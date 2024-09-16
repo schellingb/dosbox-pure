@@ -940,13 +940,13 @@ void DBPSerialize_OPL(DBPArchive& ar_outer)
 		.SerializeArray(module->chip)
 		.SerializeArray(Adlib::cache);
 
-	if (ar.mode == DBPArchive::MODE_LOAD)
+	if (ar.mode == DBPArchive::MODE_LOAD && module)
 	{
 		// Reset registers to their latest values
 		for (Bit32u i = 0; i != 512; i++)
 			module->handler->WriteReg(i, Adlib::cache[i]);
 	}
-	if (ar.IsReset())
+	if (ar.IsReset() && module)
 	{
 		// Reset values back to their initial state
 		module->ctrl.lvol = 0xff;
