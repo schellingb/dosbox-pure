@@ -3278,6 +3278,7 @@ void retro_init(void) //#3
 		static void RETRO_CALLCONV keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers)
 		{
 			// This can be called from another thread. Hopefully we can get away without a mutex in DBP_QueueEvent.
+			if (keycode >= RETROK_LAST) return;
 			int val = dbp_keymap_retro2dos[keycode];
 			if (!val) return;
 			if (down && !dbp_keys_down[val])
