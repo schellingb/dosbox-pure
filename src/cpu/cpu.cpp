@@ -2612,6 +2612,7 @@ void DBP_CPU_ModifyCycles(const char* val, const char* params)
 		CPU_CycleLimit = atoi(limit + 6);
 		if (CPU_CycleLimit < CPU_CYCLES_LOWER_LIMIT) CPU_CycleLimit = -1;
 	}
+	else CPU_CycleLimit = -1;
 }
 
 #include <dbp_serialize.h>
