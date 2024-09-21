@@ -576,7 +576,7 @@ protected:
 
 	void Grow()
 	{
-		Bit32u oldMax = maxlen, oldCap = (maxlen ? oldMax + 1 : 0), *oldKeys = keys;
+		Bit32u oldMax = maxlen, oldCap = (oldMax ? oldMax + 1 : 0), *oldKeys = keys;
 		TVal* oldVals = vals;
 		maxlen  = (maxlen ? maxlen * 2 + 1 : 15);
 		keys = (Bit32u*)calloc(maxlen + 1, sizeof(Bit32u));
@@ -631,6 +631,23 @@ template <typename TVal> struct StringToPointerHashMap : public BaseStringToPoin
 	INLINE bool Put(const char* str, TVal* val, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5) { return BasePut(Hash(str, str_limit, hash_init), val); }
 	INLINE Iterator<TVal*> begin() { return Iterator<TVal*>(*this, 0); }
 	INLINE Iterator<TVal*> end() { return Iterator<TVal*>(*this, (maxlen ? maxlen + 1 : 0)); }
+};
+
+template <typename TVal> struct StringToObjectHashMap : public StringToPointerHashMap<TVal>
+{
+	TVal& Add(const char* str, Bit32u str_limit = 0xFFFF, Bit32u hash_init = (Bit32u)0x811c9dc5)
+	{
+		char* oldPtr = (storage.size() ? (char*)&storage[0] : NULL);
+		storage.emplace_back();
+		char* newPtr = (char*)&storage[0];
+		if (oldPtr != newPtr) for (Bit32u i = 0, j = (BaseHashMap<void*>::maxlen ? BaseHashMap<void*>::maxlen + 1 : 0); i != j; i++) if (BaseHashMap<void*>::keys[i]) BaseHashMap<void*>::vals[i] = (TVal*)((char*)BaseHashMap<void*>::vals[i] + (newPtr - oldPtr));
+		TVal& res = storage.back();
+		StringToPointerHashMap<TVal>::Put(str, &res, str_limit, hash_init);
+		return res;
+	}
+	INLINE const std::vector<TVal>& GetStorage() { return storage; }
+	INLINE int GetStorageIndex(const TVal* v) { return (int)(v - &storage[0]); }
+	private: std::vector<TVal> storage; bool Put(const char*, TVal*, Bit32u, Bit32u);
 };
 
 template <typename TVal> struct ValueHashMap : public BaseHashMap<TVal>
@@ -811,10 +828,8 @@ public:
 	virtual bool isRemovable(void);
 	virtual Bits UnMount(void);
 
-	static std::string DOSYMLContent;
-	static std::vector<std::string> Variants;
-	static Bit16s ActiveVariantIndex;
-	static bool SwitchVariant(int index);
+	static StringToObjectHashMap<std::string> variants;
+	static bool ApplyVariant(std::string& yml, int enable_variant_number);
 private:
 	struct patchDriveImpl* impl;
 };

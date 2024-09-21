@@ -310,7 +310,7 @@ struct DBP_MenuState
 			case DBPET_KEYUP:
 				switch ((KBD_KEYS)val)
 				{
-					case KBD_enter: case KBD_kpenter: res = RES_OK; break;
+					case KBD_enter: case KBD_kpenter: case KBD_space: res = RES_OK; break;
 					case KBD_esc: case KBD_backspace: res = RES_CANCEL; break;
 				}
 				if (held_event == DBPET_KEYDOWN) held_event = _DBPET_MAX;
@@ -1055,137 +1055,34 @@ struct DBP_OnScreenKeyboardState
 
 struct DBP_PureMenuState : DBP_MenuState
 {
-	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, IT_VARIANTLIST, IT_RUNVARIANT, IT_CANCEL, IT_COMMANDLINE, IT_CLOSEOSD, IT_SYSTEMREFRESH };
+	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, _IT_NO_AUTOBOOT, IT_MAINMENU, IT_COMMANDLINE, IT_CLOSEOSD, IT_VARIANTLIST, IT_VARIANTTOGGLE, IT_VARIANTRUN, IT_SYSTEMREFRESH };
 	enum { INFO_HEADER = 0x0A, INFO_WARN = 0x0B, INFO_DIM = 0xC };
 
-	int exe_count, fs_count;
+	int exe_count, fs_rows;
 	bool multidrive;
 	Bit8u popupsel;
+	ItemType listmode;
 
-	DBP_PureMenuState(bool isBoot = false) : exe_count(0), fs_count(0), multidrive(false), popupsel(0)
+	DBP_PureMenuState(bool isBoot = false) : exe_count(0), fs_rows(0), multidrive(false), popupsel(0)
 	{
 		if (dbp_game_running) INT10_SetCursorShape(0x1e, 0); // hide blinking cursor
-		RefreshFileList(true);
+		RefreshList(IT_MAINMENU); // always read exe_count and fs_rows, even if switching menu below
 		if (DBP_Run::autoboot.startup.mode != DBP_Run::RUN_NONE)
 		{
-			if      (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_EXEC)    GoToSubMenu(IT_RUN, IT_RUN, 0, &DBP_Run::autoboot.startup.exec);
+			if      (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_EXEC)    GoToSubMenu(IT_MAINMENU,    IT_RUN, 0, &DBP_Run::autoboot.startup.exec);
 			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTOS)  GoToSubMenu(IT_BOOTOSLIST,  IT_BOOTOS,          DBP_Run::autoboot.startup.info);
 			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_SHELL)   GoToSubMenu(IT_SHELLLIST,   IT_RUNSHELL,        DBP_Run::autoboot.startup.info);
-			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT,      DBP_Run::autoboot.startup.info);
 			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_BOOTIMG) GoToSubMenu(IT_BOOTIMG,     IT_BOOTIMG_MACHINE, DBP_Run::autoboot.startup.info);
+			else if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) RefreshList(IT_VARIANTLIST);
 			else { DBP_ASSERT(false); }
 			if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) DBP_Run::autoboot.use = false; // DBP_Run::WriteAutoBoot force enables auto boot for RUN_VARIANT
 		}
-		else if (isBoot && patchDrive::Variants.size() > 1)
-			GoToSubMenu(IT_VARIANTLIST, IT_RUNVARIANT, patchDrive::ActiveVariantIndex);
+		else if (patchDrive::variants.Len()) RefreshList(IT_VARIANTLIST);
 	}
 
 	~DBP_PureMenuState()
 	{
 		if (dbp_game_running) INT10_SetCursorShape((Bit8u)(CurMode->cheight - (CurMode->cheight>=14 ? 3 : 2)), (Bit8u)(CurMode->cheight - (CurMode->cheight>=14 ? 2 : 1))); // reset blinking cursor
-	}
-
-	void RefreshFileList(bool initial_scan)
-	{
-		list.clear();
-		exe_count = fs_count = 0; int cd_count = 0, hd_count = 0; bool bootimg = false;
-
-		for (DBP_Image& image : dbp_images)
-		{
-			list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]), DBP_Image_Label(image));
-			(DBP_Image_IsCD(image) ? cd_count : hd_count)++;
-			fs_count++;
-			if (image.image_disk) bootimg = true;
-		}
-		if (bootimg)
-		{
-			list.emplace_back(IT_BOOTIMG, 0, "[ Boot from Disk Image ]");
-			fs_count++;
-		}
-		if (!dbp_strict_mode && dbp_osimages.size())
-		{
-			list.emplace_back(IT_BOOTOSLIST, 0, "[ Run Installed Operating System ]");
-			fs_count++;
-		}
-		if (!dbp_strict_mode && dbp_shellzips.size())
-		{
-			list.emplace_back(IT_SHELLLIST, 0, "[ Run System Shell ]");
-			fs_count++;
-		}
-		if (!dbp_strict_mode && ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (hd_count == 1 && cd_count == 1)))
-		{
-			list.emplace_back(IT_INSTALLOSSIZE, 0, "[ Boot and Install New Operating System ]");
-			fs_count++;
-		}
-		if (patchDrive::Variants.size() > 1)
-		{
-			if (fs_count) list.emplace_back(IT_NONE);
-			list.emplace_back(IT_NONE, INFO_WARN, "Active Configuration: "); list.back().str.append(patchDrive::Variants[patchDrive::ActiveVariantIndex < 0 ? 0 : patchDrive::ActiveVariantIndex]);
-			list.emplace_back(IT_VARIANTLIST, 0, "[ Select Game Configuration ]");
-			fs_count += 2;
-		}
-		if (fs_count) list.emplace_back(IT_NONE);
-
-		// Scan drive C first, any others after
-		int old_sel = sel;
-		sel = ('C'-'A'); // use sel to have access to it in FileIter
-		DriveFileIterator(Drives[sel], FileIter, (Bitu)this);
-		for (sel = 0; sel != ('Z'-'A'); sel++)
-		{
-			if (sel == ('C'-'A') || !Drives[sel]) continue;
-			DriveFileIterator(Drives[sel], FileIter, (Bitu)this);
-			multidrive = true;
-		}
-		if (exe_count) list.emplace_back(IT_NONE);
-
-		sel = (fs_count && exe_count ? fs_count + 1 : 0);
-
-		if (list.empty()) { list.emplace_back(IT_NONE, 0, "No executable file found"); list.emplace_back(IT_NONE); sel = 2; }
-		if (DBP_FullscreenOSD && !dbp_strict_mode) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
-		else if (dbp_game_running && !dbp_strict_mode) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
-		if (!DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
-		if (list.back().type == IT_NONE) list.pop_back();
-		if (!initial_scan) { if (old_sel < (int)list.size()) sel = old_sel; return; }
-	}
-
-	static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
-	{
-		if (is_dir) return;
-		DBP_PureMenuState* m = (DBP_PureMenuState*)data;
-		const char* fext = strrchr(path, '.');
-		if (!fext++ || (strcmp(fext, "EXE") && strcmp(fext, "COM") && strcmp(fext, "BAT"))) return;
-		m->exe_count++;
-
-		std::string entry;
-		entry.reserve(3 + (fext - path) + 3 + 1);
-		(((entry += ('A' + m->sel)) += ':') += '\\') += path;
-
-		// insert into menu list ordered alphabetically
-		Item item = { IT_RUN };
-		int insert_index = (m->fs_count ? m->fs_count + 1 : 0);
-		for (; insert_index != (int)m->list.size(); insert_index++)
-			if (m->list[insert_index].str > entry) break;
-		m->list.insert(m->list.begin() + insert_index, item);
-		m->list[insert_index].str.swap(entry);
-	}
-
-	void GoToSubMenu(ItemType type, ItemType subtype, int find_info = -1, std::string* find_string = nullptr)
-	{
-		for (const Item& it : list)
-		{
-			if (it.type != type) continue;
-			if (type != subtype)
-			{
-				sel = (int)(&it - &list[0]);
-				open_ticks -= 1000;
-				DoInput(RES_NONE, type, 0);
-			}
-			for (const Item& it2 : list)
-				if (it2.type == subtype && (find_string ? (it2.str == *find_string) : (it2.info == find_info)))
-					{ ResetSel((int)(&it2 - &list[0])); return; }
-			return;
-		}
-		DBP_ASSERT(false);
 	}
 
 	void DrawMenu(DBP_BufferDrawing& buf, Bit32u blend, int lh, int w, int h, int ftr, bool mouseMoved, const DBP_MenuMouse& m)
@@ -1200,7 +1097,7 @@ struct DBP_PureMenuState : DBP_MenuState
 
 		int inforow = (w > 319), hdr = lh*2+12, rows = (h - hdr - ftr) / lh - inforow, count = (int)list.size(), bot = hdr + rows * lh + 3 - (lh == 8 ? 1 : 0);
 		int listu = DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, 8, w - 8, hdr, (list[0].type == IT_NONE));
-		bool autoboot_use = (list[sel].type != IT_RUNVARIANT && DBP_Run::autoboot.use);
+		bool autoboot_use = (list[sel].type < _IT_NO_AUTOBOOT && DBP_Run::autoboot.use);
 
 		for (int i = scroll, se = (hide_sel ? -1 : sel); i != count && i != (scroll + rows); i++)
 		{
@@ -1213,7 +1110,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				buf.Print(lh, mntx + ((mounted && xdiff >= 0) ? buf.CW : 0), y, (mounted ? "EJECT" : "INSERT"), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 				buf.Print(lh, strx, y, item.str.c_str(), (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
 			}
-			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE || item.type == IT_RUNSHELL || item.type == IT_RUNVARIANT)
+			else if (item.type == IT_RUN || item.type == IT_BOOTOS || item.type == IT_BOOTIMG_MACHINE || item.type == IT_RUNSHELL)
 			{
 				int off = ((item.type != IT_RUN || multidrive) ? 0 : 3), len = strlen - off, lblx = (w - buf.CW*len) / 2;
 				buf.Print(lh, lblx,       y, item.str.c_str() + off, (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL));
@@ -1276,54 +1173,100 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 	}
 
-	virtual void DoInput(Result res, Bit8u ok_type, int auto_change)
+	void GoToSubMenu(ItemType mode, ItemType subtype, int find_info = -1, std::string* find_string = nullptr)
 	{
-		if (show_popup)
-		{
-			if (auto_change) popupsel = (Bit8u)(auto_change < 0 ? 1 : 2);
-			if (res == DBP_MenuState::RES_CANCEL) show_popup = false;
-			if (!ok_type) return;
-			if (popupsel != 1) { show_popup = false; return; }
-		}
-		Item& item = list[sel];
-		if (item.type != IT_RUNVARIANT)
-		{
-			if (DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.skip += (DBP_Run::autoboot.skip < 50 ? 10 : (DBP_Run::autoboot.skip < 150 ? 25 : (DBP_Run::autoboot.skip < 300 ? 50 : 100)));
-			if (!DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.use = true;
-			if (auto_change < 0) DBP_Run::autoboot.skip -= (DBP_Run::autoboot.skip <= 50 ? 10 : (DBP_Run::autoboot.skip <= 150 ? 25 : (DBP_Run::autoboot.skip <= 300 ? 50 : 100)));
-			if (DBP_Run::autoboot.skip < 0) { DBP_Run::autoboot.use = false; DBP_Run::autoboot.skip = 0; }
-		}
+		if (mode != listmode) RefreshList(mode);
+		for (const Item& it : list)
+			if (it.type == subtype && (find_string ? (it.str == *find_string) : (it.info == find_info)))
+				{ ResetSel((int)(&it - &list[0])); return; }
+	}
 
-		if (ok_type == IT_MOUNT)
+	static const char* GetVariantSection(const std::string& v, int get_sec, int& out_len, int& out_total_secs)
+	{
+		int sec = 1; for (const char *p = v.c_str(), *l, *n, *res = NULL;; p = n, sec++)
 		{
-			if (dbp_images[item.info].mounted)
-				DBP_Unmount(dbp_images[item.info].drive);
-			else
-				DBP_Mount((unsigned)item.info, true);
-			RefreshFileList(false);
+			for (; *p != '\0' && (*p <= ' ' || *p == '+'); p++) {}
+			for (n = p, l = n; *n != '\0' && *n != '+'; n++) { if (*n != ' ') l = n; }
+			if (get_sec-- == 0) { res = p; out_len = (int)(l + 1 - p); }
+			if (*n == '\0') { out_total_secs = sec - (int)(n == p); return res; }
 		}
-		else if (ok_type == IT_BOOTIMG)
+	}
+
+	void AddFSRow(Bit8u type, Bit16s info, const char* str, bool add_spacer = false)
+	{
+		if (add_spacer && fs_rows) { list.emplace_back(IT_NONE); fs_rows++; }
+		list.emplace_back(type, info, str);
+		fs_rows++;
+	}
+
+	void RefreshList(ItemType mode, bool keep_sel_pos = false)
+	{
+		int old_sel = sel, setsel = 0;
+		listmode = mode;
+		list.clear();
+		if (mode == IT_MAINMENU)
 		{
-			// Machine property was fixed by dbp_reboot_machine or DOSBOX.CONF and cannot be modified here, so automatically boot the image as is (RES_NONE check is for GoToSubMenu)
-			if (control->GetProp("dosbox", "machine")->IsFixed()) { if (res != RES_NONE) goto handle_result; else goto top_menu; }
-			list.clear();
+			int cd_count = 0, hd_count = 0, boot_rows = 0; bool bootimg = false;
+
+			fs_rows = 0;
+			for (DBP_Image& image : dbp_images)
+			{
+				AddFSRow(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]), DBP_Image_Label(image));
+				(DBP_Image_IsCD(image) ? cd_count : hd_count)++;
+				if (image.image_disk) bootimg = true;
+			}
+
+			bool bootinstall = ((Drives['D'-'A'] && dynamic_cast<isoDrive*>(Drives['D'-'A']) && ((isoDrive*)(Drives['D'-'A']))->CheckBootDiskImage()) || (hd_count == 1 && cd_count == 1));
+			if (bootimg)                                  AddFSRow(IT_BOOTIMG,       0, "[ Boot from Disk Image ]",                  (!boot_rows++));
+			if (!dbp_strict_mode && dbp_osimages.size())  AddFSRow(IT_BOOTOSLIST,    0, "[ Run Installed Operating System ]",        (!boot_rows++));
+			if (!dbp_strict_mode && dbp_shellzips.size()) AddFSRow(IT_SHELLLIST,     0, "[ Run System Shell ]",                      (!boot_rows++));
+			if (!dbp_strict_mode && bootinstall)          AddFSRow(IT_INSTALLOSSIZE, 0, "[ Boot and Install New Operating System ]", (!boot_rows++));
+
+			if (patchDrive::variants.Len())
+			{
+				AddFSRow(IT_NONE, INFO_WARN, "Active Configuration: ", true);
+				list.back().str.append(!DBP_Run::patch.enabled_variant ? "Default" : patchDrive::variants.GetStorage()[DBP_Run::patch.enabled_variant - 1].c_str());
+				AddFSRow(IT_VARIANTLIST, 0, "[ Select Game Configuration ]");
+			}
+
+			if (fs_rows) { list.emplace_back(IT_NONE); fs_rows++; }
+
+			// Scan drive C first, any others after
+			sel = ('C'-'A'); // use sel to have access to it in FileIter
+			exe_count = 0;
+			DriveFileIterator(Drives[sel], FileIter, (Bitu)this);
+			for (sel = ('A'-'A'); sel != ('Z'-'A'); sel++)
+			{
+				if (sel == ('C'-'A') || !Drives[sel]) continue;
+				DriveFileIterator(Drives[sel], FileIter, (Bitu)this);
+				multidrive = true;
+			}
+			if (exe_count) list.emplace_back(IT_NONE);
+
+			if (DBP_FullscreenOSD || (cd_count + hd_count) <= 1) setsel = (patchDrive::variants.Len() ? (fs_rows - 2) : (exe_count ? fs_rows : (int)dbp_images.size()));
+			if (!exe_count) { list.emplace_back(IT_NONE, INFO_DIM, "No executable file found"); list.emplace_back(IT_NONE); }
+
+			if (DBP_FullscreenOSD && !dbp_strict_mode) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
+			else if (dbp_game_running && !dbp_strict_mode) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
+			if (!DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
+			if (list.back().type == IT_NONE) list.pop_back();
+		}
+		else if (mode == IT_BOOTIMG)
+		{
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Boot System Mode");
 			list.emplace_back(IT_NONE);
 			for (const char* it : DBP_MachineNames) list.emplace_back(IT_BOOTIMG_MACHINE, (Bit16s)(it[0]|0x20), it);
 			list.emplace_back(IT_NONE);
-			list.emplace_back(IT_CANCEL, 0, "Cancel");
+			list.emplace_back(IT_MAINMENU, 0, "Cancel");
 			const std::string& img = (!dbp_images.empty() ? dbp_images[dbp_image_index].path : list[1].str);
 			bool isPCjrCart = (img.size() > 3 && (img[img.size()-3] == 'J' || img[img.size()-2] == 'T'));
 			char wantmchar = (isPCjrCart ? 'p' : *(const char*)control->GetProp("dosbox", "machine")->GetValue());
-			for (const Item& it : list)
-				if (it.info == wantmchar)
-					{ ResetSel((int)(&it - &list[0])); break; }
+			for (const Item& it : list) { if (it.info == wantmchar) { setsel = (int)(&it - &list[0]); break; } }
 		}
-		else if (ok_type == IT_INSTALLOSSIZE)
+		else if (mode == IT_INSTALLOSSIZE)
 		{
 			const char* filename;
 			std::string osimg = DBP_GetSaveFile(SFT_NEWOSIMAGE, &filename);
-			list.clear();
 			list.emplace_back(IT_NONE, INFO_HEADER, "Hard Disk Size For Install");
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_NONE, INFO_WARN, "Create a new hard disk image in the following location:");
@@ -1344,19 +1287,10 @@ struct DBP_PureMenuState : DBP_MenuState
 			}
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_INSTALLOS, 0, "[ Boot Only Without Creating Hard Disk Image ]");
-			ResetSel(filename > &osimg[0] ? 11 : 10);
+			setsel = (filename > &osimg[0] ? 11 : 10);
 		}
-		else if (ok_type == IT_SYSTEMREFRESH)
+		else if (mode == IT_BOOTOSLIST)
 		{
-			DBP_MenuInterceptorRefreshSystem = true;
-		}
-		else if (res == RES_REFRESHSYSTEM)
-		{
-			DoInput(RES_NONE, ((list.size() > 1 && list[2].type == IT_BOOTOS) ? IT_BOOTOSLIST : IT_SHELLLIST), 0);
-		}
-		else if (ok_type == IT_BOOTOSLIST)
-		{
-			list.clear();
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Operating System Disk Image");
 			list.emplace_back(IT_NONE);
 			for (const std::string& im : dbp_osimages)
@@ -1386,48 +1320,196 @@ struct DBP_PureMenuState : DBP_MenuState
 			}
 			else
 				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be discarded");
-			ResetSel(2, true);
 		}
-		else if (ok_type == IT_SHELLLIST)
+		else if (mode == IT_SHELLLIST)
 		{
-			list.clear();
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select System Shell");
 			list.emplace_back(IT_NONE);
 			for (const std::string& im : dbp_shellzips)
 				{ list.emplace_back(IT_RUNSHELL, (Bit16s)(&im - &dbp_shellzips[0])); list.back().str.assign(im.c_str(), im.size()-5); }
 			if (dbp_system_cached) { list.emplace_back(IT_NONE); list.emplace_back(IT_SYSTEMREFRESH, 0, "[ Refresh List ]"); }
-			ResetSel(2, true);
 		}
-		else if (ok_type == IT_VARIANTLIST)
+		else if (mode == IT_VARIANTLIST)
 		{
-			list.clear();
-			list.emplace_back(IT_NONE, INFO_HEADER, "Select Game Configuration");
-			list.emplace_back(IT_NONE);
-			if (patchDrive::ActiveVariantIndex > 0 || dbp_game_running)
+			const std::vector<std::string>& vars = patchDrive::variants.GetStorage();
+			int max_secs = 1, sec, secbegin, secend, i, enabled_var = DBP_Run::patch.enabled_variant, expect_vars = 1;
+			if (0) { sections_are_imbalanced: max_secs = 0; list.clear(); }
+			if (!DBP_FullscreenOSD && dbp_images.size())
 			{
-				list.emplace_back(IT_NONE, INFO_WARN, "Active Configuration: "); list.back().str.append(patchDrive::Variants[patchDrive::ActiveVariantIndex]);
+				for (DBP_Image& image : dbp_images) list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]), DBP_Image_Label(image));
 				list.emplace_back(IT_NONE);
 			}
-			for (const std::string& it : patchDrive::Variants)
-				{ list.emplace_back(IT_RUNVARIANT, (Bit16s)(&it - &patchDrive::Variants[0])); list.back().str.assign(it.c_str(), it.size()); }
+			list.emplace_back(IT_NONE, INFO_HEADER, "Select Game Configuration");
 			list.emplace_back(IT_NONE);
-			list.emplace_back(IT_CANCEL, 0, "Run Other Program");
+			for (sec = 0, secbegin = secend = (int)list.size();; secbegin = secend, sec++)
+			{
+				int sec_len, total_secs, max_sec_len = 0, have_enabled_toggle = 0;
+				for (const std::string& v : vars)
+				{
+					const int var_num = patchDrive::variants.GetStorageIndex(&v) + 1;
+					const char* sec_name = GetVariantSection(v, sec, sec_len, total_secs);
+					if (total_secs <= 1 || max_secs == 0)
+					{
+						if (!total_secs || !sec_name) continue;
+						for (i = secend; i != (int)list.size(); i++)
+						{
+							int str_len = (int)list[i].str.length(), vlen = (int)v.length(), c = memcmp(list[i].str.c_str(), v.c_str(), (vlen < str_len ? vlen : str_len));
+							if (c > 0 || (!c && str_len > vlen)) break; // found sorted insert index i
+						}
+						list.emplace(list.begin() + i, IT_VARIANTRUN, (Bit16s)var_num, v.c_str());
+					}
+					else
+					{
+						if (total_secs != max_secs) { if (max_secs != 1) goto sections_are_imbalanced; max_secs = total_secs; }
+						for (i = secbegin; i != secend; i++)
+						{
+							int str_len = (int)list[i].str.length() - 4, c = memcmp(list[i].str.c_str() + 4, sec_name, (sec_len < str_len ? sec_len : str_len));
+							if (!c && sec_len == str_len) { list[i].info++; goto skipadd; } // count uses
+							if (c > 0 || (!c && str_len > sec_len)) break; // found sorted insert index i
+						}
+						if (sec_len > max_sec_len) max_sec_len = sec_len;
+						list.emplace(list.begin() + i, IT_VARIANTTOGGLE, 1, "( ) "); list[i].str.append(sec_name, sec_len);
+						secend++;
+						skipadd:
+						if (var_num == enabled_var) { list[i].str[1] = '\x7'; have_enabled_toggle = 1; }
+					}
+				}
+				if (max_secs > 1)
+				{
+					if (secend - secbegin < 2) goto sections_are_imbalanced;
+					int defaultpos = secbegin, minuse = 0xFFFF, have_vars = 1; // have var starts at 1 due to Default config
+					for (i = secbegin; i != secend; i++) { int use = list[i].info; if (use < minuse) { minuse = use; defaultpos = i; } have_vars += use; }
+					std::swap(list[defaultpos], list[secbegin]);
+					if (!have_enabled_toggle) list[secbegin].str[1] = '\x7';
+					for (i = secbegin; i != secend; i++) { Item& it = list[i]; it.info = (Bit16s)sec; it.str.append(max_sec_len + 4 - it.str.length(), ' '); }
+					if ((expect_vars *= (secend - secbegin)) != have_vars && sec == max_secs - 1) goto sections_are_imbalanced;
+					list.emplace(list.begin() + secend++, IT_NONE);
+				}
+				if (sec >= max_secs - 1) break;
+			}
+			int list_size = (int)list.size();
+			for (setsel = 0, i = secend; i != list_size; i++) { if (list[i].info == enabled_var) { setsel = i; break; } }
+			if (sec)
+			{
+				list.emplace(list.begin() + secend, IT_VARIANTRUN, (setsel ? 0 : DBP_Run::patch.enabled_variant), "Run Game");
+				if (secend != list_size) list.emplace(list.begin() + (secend + 1), IT_NONE); // mix of sections and other options, add divider
+				setsel = (setsel ? (setsel + 2) : secend); // fix for added rows
+			}
+			else
+			{
+				list.emplace(list.begin() + secbegin, IT_VARIANTRUN, 0, "Default"); // no sections, add default start
+				setsel = (setsel ? (setsel + 1) : secbegin); // fix for added row
+			}
+			list.emplace_back(IT_NONE);
+			list.emplace_back(IT_MAINMENU, 0, "Run Other Program");
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_NONE, INFO_DIM, "The configuration can be switched with the On-Screen Keyboard");
 			list.emplace_back(IT_NONE, INFO_DIM, "or by holding shift or L2/R2 when restarting the core");
-			ResetSel((patchDrive::ActiveVariantIndex > 0 || dbp_game_running) ? 4 : 2, true);
+		}
+		else { DBP_ASSERT(false); }
+
+		if (keep_sel_pos && old_sel < (int)list.size()) sel = old_sel;
+		else { while (setsel < (int)list.size() - 1 && list[setsel].type == IT_NONE) setsel++; ResetSel(setsel); }
+	}
+
+	static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
+	{
+		if (is_dir) return;
+		DBP_PureMenuState* m = (DBP_PureMenuState*)data;
+		const char* fext = strrchr(path, '.');
+		if (!fext++ || (strcmp(fext, "EXE") && strcmp(fext, "COM") && strcmp(fext, "BAT"))) return;
+		m->exe_count++;
+
+		std::string entry;
+		entry.reserve(3 + (fext - path) + 3 + 1);
+		(((entry += ('A' + m->sel)) += ':') += '\\') += path;
+
+		// insert into menu list ordered alphabetically
+		Item item = { IT_RUN };
+		int insert_index = m->fs_rows;
+		for (; insert_index != (int)m->list.size(); insert_index++)
+			if (m->list[insert_index].str > entry) break;
+		m->list.insert(m->list.begin() + insert_index, item);
+		m->list[insert_index].str.swap(entry);
+	}
+
+	virtual void DoInput(Result res, Bit8u ok_type, int auto_change)
+	{
+		if (show_popup)
+		{
+			if (auto_change) popupsel = (Bit8u)(auto_change < 0 ? 1 : 2);
+			if (res == DBP_MenuState::RES_CANCEL) show_popup = false;
+			if (!ok_type) return;
+			if (popupsel != 1) { show_popup = false; return; }
+		}
+		Item& item = list[sel];
+		if (item.type < _IT_NO_AUTOBOOT)
+		{
+			if (DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.skip += (DBP_Run::autoboot.skip < 50 ? 10 : (DBP_Run::autoboot.skip < 150 ? 25 : (DBP_Run::autoboot.skip < 300 ? 50 : 100)));
+			if (!DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.use = true;
+			if (auto_change < 0) DBP_Run::autoboot.skip -= (DBP_Run::autoboot.skip <= 50 ? 10 : (DBP_Run::autoboot.skip <= 150 ? 25 : (DBP_Run::autoboot.skip <= 300 ? 50 : 100)));
+			if (DBP_Run::autoboot.skip < 0) { DBP_Run::autoboot.use = false; DBP_Run::autoboot.skip = 0; }
+		}
+
+		if (ok_type == IT_MOUNT)
+		{
+			if (dbp_images[item.info].mounted)
+				DBP_Unmount(dbp_images[item.info].drive);
+			else
+				DBP_Mount((unsigned)item.info, true);
+			RefreshList(listmode, true);
+		}
+		else if (ok_type == IT_INSTALLOSSIZE || ok_type == IT_BOOTOSLIST || ok_type == IT_SHELLLIST || ok_type == IT_VARIANTLIST)
+		{
+			RefreshList((ItemType)ok_type);
+		}
+		else if (ok_type == IT_BOOTIMG)
+		{
+			// Machine property was fixed by dbp_reboot_machine or DOSBOX.CONF and cannot be modified here, so automatically boot the image as is
+			if (control->GetProp("dosbox", "machine")->IsFixed()) goto handle_result;
+			RefreshList(IT_BOOTIMG);
+		}
+		else if (ok_type == IT_VARIANTTOGGLE)
+		{
+			for (Item& it : list) if (it.info == item.info && it.type == IT_VARIANTTOGGLE) it.str[1] = ' ';
+			item.str[1] = '\x7';
+			DBP_Run::patch.enabled_variant = 0; // default config
+			for (const std::string& v : patchDrive::variants.GetStorage())
+			{
+				const char* sec_name;
+				for (int sec = 0, sec_len, total_secs; (sec_name = GetVariantSection(v, sec, sec_len, total_secs)) != NULL && total_secs > 1; sec++)
+				{
+					for (Item& it : list)
+					{
+						if (it.type != IT_VARIANTTOGGLE || it.info != sec || it.str[1] != '\x7') continue;
+						if (!sec_len || memcmp(&it.str[4], sec_name, sec_len)) goto next_variant;
+						for (const char* p = &it.str[4 + sec_len]; *p; p++) if (*p != ' ') goto next_variant;
+						break;
+					}
+					if (sec == total_secs - 1) { DBP_Run::patch.enabled_variant = (Bit16s)(patchDrive::variants.GetStorageIndex(&v) + 1); goto matched_variant; }
+				}
+				next_variant:;
+			}
+			matched_variant:;
+			for (Item& it : list) { if (it.type == IT_VARIANTRUN) { it.info = DBP_Run::patch.enabled_variant; break; } }
+		}
+		else if (ok_type == IT_SYSTEMREFRESH)
+		{
+			DBP_MenuInterceptorRefreshSystem = true;
+		}
+		else if (res == RES_REFRESHSYSTEM)
+		{
+			RefreshList(listmode);
 		}
 		else if (((res == RES_CANCEL && list.back().type == IT_CLOSEOSD) || res == RES_CLOSESCREENKEYBOARD) && !DBP_FullscreenOSD)
 		{
 			ok_type = IT_CLOSEOSD;
 			goto handle_result;
 		}
-		else if (ok_type == IT_CANCEL || (res == RES_CANCEL && list.back().type != IT_CLOSEOSD))
+		else if (ok_type == IT_MAINMENU || (res == RES_CANCEL && list.back().type != IT_CLOSEOSD))
 		{
 			// Go to top menu (if in submenu) or refresh list
-			top_menu:
-			ResetSel(0, true);
-			RefreshFileList(false);
+			RefreshList(IT_MAINMENU);
 		}
 		else if (ok_type)
 		{
@@ -1435,7 +1517,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (dbp_strict_mode && (ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || (ok_type == IT_CLOSEOSD && DBP_FullscreenOSD))) return;
 			if (ok_type != IT_CLOSEOSD)
 			{
-				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_RUNVARIANT || ok_type == IT_COMMANDLINE));
+				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || ok_type == IT_VARIANTRUN));
 				if (!show_popup && dbp_game_running)
 				{
 					popupsel = 0;
@@ -1450,9 +1532,9 @@ struct DBP_PureMenuState : DBP_MenuState
 					ok_type == IT_BOOTOS          ? DBP_Run::RUN_BOOTOS :
 					ok_type == IT_INSTALLOS       ? DBP_Run::RUN_INSTALLOS :
 					ok_type == IT_RUNSHELL        ? DBP_Run::RUN_SHELL :
-					ok_type == IT_RUNVARIANT      ? DBP_Run::RUN_VARIANT :
+					ok_type == IT_VARIANTRUN      ? DBP_Run::RUN_VARIANT :
 					ok_type == IT_COMMANDLINE     ? DBP_Run::RUN_COMMANDLINE :
-						DBP_Run::RUN_NONE, item.info, item.str, true)) { show_popup = false; return RefreshFileList(false); }
+						DBP_Run::RUN_NONE, item.info, item.str, true)) { show_popup = false; return RefreshList(listmode, true); }
 
 				// Show menu again on image boot when machine needs to change but there are EXE files (some games need to run a FIX.EXE before booting)
 				if (ok_type == IT_BOOTIMG_MACHINE && dbp_reboot_machine && exe_count && !DBP_Run::autoboot.use)
@@ -1462,7 +1544,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 		else if (res == RES_CHANGEMOUNTS)
 		{
-			RefreshFileList(false);
+			RefreshList(listmode, true);
 		}
 	}
 };
@@ -1717,7 +1799,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 			DBP_FullscreenOSD = true;
 			DBP_PureMenuState* ms = new DBP_PureMenuState(m == M_BOOT);
-			bool runsoloexe = (ms->exe_count == 1 && ms->fs_count <= 1);
+			bool runsoloexe = (ms->exe_count == 1 && ms->fs_rows <= 2 && !patchDrive::variants.Len());
 
 			#ifndef STATIC_LINKING
 			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (DBP_GetTicks() - dbp_lastmenuticks) >= 500)
@@ -1737,7 +1819,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 			if (m == M_BOOT && runsoloexe && dbp_menu_time != (char)-1)
 				ms->DoInput(DBP_MenuState::RES_OK, ms->list[ms->sel].type, 0);
-			else if (m != M_BOOT || ms->exe_count != 0 || ms->fs_count != 0 || Drives['C'-'A'] || Drives['A'-'A'] || Drives['D'-'A'])
+			else if (m != M_BOOT || ms->exe_count != 0 || ms->fs_rows != 0 || patchDrive::variants.Len() || Drives['C'-'A'] || Drives['A'-'A'] || Drives['D'-'A'])
 				DBP_StartOSD(DBPOSD_MAIN, ms);
 		}
 	};

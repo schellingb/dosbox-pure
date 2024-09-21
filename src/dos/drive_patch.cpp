@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2023 Bernhard Schelling
+ *  Copyright (C) 2024 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -23,10 +23,9 @@
 #include <time.h>
 #include <vector>
 
-std::string patchDrive::DOSYMLContent;
-std::vector<std::string> patchDrive::Variants;
-Bit16s patchDrive::ActiveVariantIndex = -1;
-static ValueHashMap<Bit16s> PatchVariantIndices;
+static bool haveDOSYML, reportedDOSYML;
+static Bit16s ActiveVariantIndex = -1;
+StringToObjectHashMap<std::string> patchDrive::variants;
 
 struct Patch_Entry
 {
@@ -517,8 +516,6 @@ struct patchDriveImpl
 	patchDriveImpl(DOS_Drive& _under, bool _autodelete_under, DOS_File* _patchzip, bool enable_crc_check) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0, 0), under(_under), patchzip(_patchzip ? new zipDrive(_patchzip, enable_crc_check) : NULL), autodelete_under(_autodelete_under)
 	{
 		*variant_dir = '\0';
-		if (!patchDrive::Variants.size())
-			patchDrive::Variants.push_back("Default Configuration");
 		DriveFileIterator(patchzip, LoadFiles, (Bitu)this);
 	}
 
@@ -541,31 +538,26 @@ struct patchDriveImpl
 	{
 		patchDriveImpl& self = *(patchDriveImpl*)data;
 
-		const char* orgpath = path;
+		const char* orgpath = path, *slash, *dirEnd;
 		bool inVariant = false;
-		if (path[0] == DBP_8DOT3_INVALID_CHAR) // check for [VARIANT]
+		if (path[0] == DBP_8DOT3_INVALID_CHAR && (dirEnd = ((slash = strchr(path, '\\')) == NULL ? path + strlen(path) : slash))[-1] == DBP_8DOT3_INVALID_CHAR) // check for [VARIANT]
 		{
-			for (const char* p = path+1; *p && *p != '\\' && *p != '.'; p++)
+			if (!slash) { DBP_ASSERT(is_dir); return; } // ignore root directory of variant, only care for files in it
+			char base[DOS_NAMELENGTH_ASCII], full[256], *fullEnd;
+			if (slash) sprintf(base, "%.*s", (int)(slash - path), path); // zero terminate the directory name
+			if (self.patchzip->GetLongFileName((slash ? base : path), full) && full[0] == '[' && (fullEnd = (full+strlen(full)))[-1] == ']') // is it a [VARIANT] after all
 			{
-				if (p[0] != DBP_8DOT3_INVALID_CHAR || (p[1] && p[1] != '\\') || p == path + 1) continue; // see if we found the end
-				if (!p[1]) { DBP_ASSERT(is_dir); return; } // ignore root directory of variant, only care for files in it
-				char base[DOS_NAMELENGTH_ASCII], full[256], *fullEnd;
-				sprintf(base, "%.*s", (int)(p + 1 - path), path); // zero terminate the directory name
-				if (!self.patchzip->GetLongFileName(base, full) || full[0] != '[' || (fullEnd = (full+strlen(full)))[-1] != ']') break; // not a [VARIANT] after all
-
-				const Bit32u vkey = BaseStringToPointerHashMap::Hash(full + 1, (Bit32u)(fullEnd - 2 - full));
-				const Bit16s* v = PatchVariantIndices.Get(vkey);
+				const std::string* v = patchDrive::variants.Get(full + 1, (Bit32u)(fullEnd - 2 - full));
 				if (!v)
 				{
-					PatchVariantIndices.Put(vkey, (Bit16s)patchDrive::Variants.size());
-					patchDrive::Variants.emplace_back(full + 1, (size_t)(fullEnd - 2 - full));
+					std::string& vnew = patchDrive::variants.Add(full + 1, (Bit32u)(fullEnd - 2 - full));
+					vnew.assign(full + 1, (size_t)(fullEnd - 2 - full));
 					return; // variant not yet active
 				}
-				if (*v != patchDrive::ActiveVariantIndex) return; // variant not active
+				if (patchDrive::variants.GetStorageIndex(v) != ActiveVariantIndex) return; // variant not active
 				if (!*self.variant_dir) strcpy(self.variant_dir, base);
 				inVariant = true;
-				path = p + 2; // cut off variant
-				break;
+				path = slash + 1; // cut off variant
 			}
 		}
 
@@ -600,7 +592,7 @@ struct patchDriveImpl
 		}
 		else
 		{
-			if (ext && !strcmp(ext, "YML") && !strcmp(path, "DOS.YML")) return; // DOS.YML of patch drives is not exposed to the DOS file system
+			if (ext && !strcmp(ext, "YML") && !strcmp(path, "DOS.YML")) { haveDOSYML = true; return; } // DOS.YML of patch drives is not exposed to the DOS file system
 			e = (on_under ? new Patch_File(Patch_File::TYPE_RAW, stat.attr, name, stat.date, stat.time) : new Patch_File(Patch_File::TYPE_RAW, attr, name, date, time));
 		}
 
@@ -825,45 +817,42 @@ bool patchDrive::isRemote(void) { return false; }
 bool patchDrive::isRemovable(void) { return false; }
 Bits patchDrive::UnMount(void) { delete this; return 0;  }
 
-bool patchDrive::SwitchVariant(int index)
+bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number)
 {
-	if (ActiveVariantIndex == index) return false;
-	DBP_ASSERT(index >= 0 && index < (int)Variants.size());
-
-	bool needReload = (index > 0 || ActiveVariantIndex > 0);
-	ActiveVariantIndex = (Bit16s)index;
-	Bit32u oldLen = (Bit32u)DOSYMLContent.size(), oldHash = (oldLen ? DriveCalculateCRC32((Bit8u*)&DOSYMLContent[0], oldLen) : 0);
-	DOSYMLContent.clear();
+	int enabledVariantIndex = enable_variant_number - 1;
+	if ((ActiveVariantIndex == enabledVariantIndex)  && (!haveDOSYML || reportedDOSYML)) return false;
+	ActiveVariantIndex = enabledVariantIndex;
+	reportedDOSYML = haveDOSYML;
 
 	struct Local
 	{
-		static void ReloadAll(DOS_Drive *drv, bool needReload)
+		static void ReloadAll(DOS_Drive *drv, std::string& yml)
 		{
 			if (patchDrive* pd = dynamic_cast<patchDrive*>(drv))
 			{
-				if (needReload) pd->impl->Reload();
-				AppendYML(pd->impl->patchzip, "DOS.YML");
+				pd->impl->Reload();
+				AppendYML(&pd->impl->under, "DOS.YML", yml);
+				AppendYML(pd->impl->patchzip, "DOS.YML", yml);
 				if (*pd->impl->variant_dir)
-					AppendYML(pd->impl->patchzip, (std::string(pd->impl->variant_dir) += '\\').append("DOS.YML").c_str());
+					AppendYML(pd->impl->patchzip, (std::string(pd->impl->variant_dir) += '\\').append("DOS.YML").c_str(), yml);
 				return;
 			}
 			DOS_Drive *a, *b;
-			if (!drv->GetShadows(a, b)) AppendYML(drv, "DOS.YML");
-			else { ReloadAll(a, needReload); if (a != b) ReloadAll(b, needReload); }
+			if (!drv->GetShadows(a, b)) AppendYML(drv, "DOS.YML", yml);
+			else { ReloadAll(a, yml); if (a != b) ReloadAll(b, yml); }
 		}
-		static void AppendYML(DOS_Drive* drv, const char* path)
+		static void AppendYML(DOS_Drive* drv, const char* path, std::string& yml)
 		{
 			DOS_File *df;
 			if (!drv->FileOpen(&df, (char*)path, OPEN_READ)) return;
 			df->AddRef();
-			if (DOSYMLContent.length()) DOSYMLContent += '\n';
-			ReadAndClose(df, DOSYMLContent);
+			if (yml.length()) yml += '\n';
+			ReadAndClose(df, yml);
 		}
 	};
-	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A'], needReload);
-
-	Bit32u newLen = (Bit32u)DOSYMLContent.size();
-	return (oldLen != newLen || oldHash != (newLen ? DriveCalculateCRC32((Bit8u*)&DOSYMLContent[0], newLen) : 0));
+	yml.clear();
+	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A'], yml);
+	return true;
 }
 
 /*

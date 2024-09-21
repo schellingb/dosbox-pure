@@ -309,27 +309,29 @@ struct DBP_Run
 
 	enum EMode : Bit8u { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_VARIANT, RUN_COMMANDLINE };
 	static struct Startup { EMode mode; bool reboot; int info; std::string exec; } startup;
-	static struct Autoboot { Startup startup; bool have, use; Bit16s var; int skip; Bit32u hash; } autoboot;
+	static struct Autoboot { Startup startup; bool have, use; int skip; Bit32u hash; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; Bit16s oldyear; } autoinput;
+	static struct Patch { std::string yml; int enabled_variant; } patch;
 
 	static bool Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
+		DBP_ASSERT(from_osd || mode != RUN_VARIANT); // only the OSD can switch the variant
 		if (from_osd)
 		{
+			if (mode == RUN_VARIANT) { autoboot.use = true; autoboot.skip = 0; patch.enabled_variant = info; }  // force enable auto start when switching variant
 			WriteAutoBoot(mode, info, str);
 			autoinput.str.clear();
 		}
 
 		if (mode == RUN_VARIANT)
 		{
-			startup.reboot |= patchDrive::SwitchVariant(info);
+			startup.reboot |= patchDrive::ApplyVariant(patch.yml, patch.enabled_variant);
 			startup.mode = RUN_NONE;
 			DOSYML::Load(true, false); // read startup and autoinput from YML
 			if ((mode = startup.mode) == RUN_NONE) return false; // YML had no startup
 		}
 		else
 		{
-			startup.reboot |= ((patchDrive::ActiveVariantIndex == -1 && patchDrive::Variants.size() && patchDrive::SwitchVariant(autoboot.var)) || startup.reboot);
 			startup.mode = mode;
 			startup.info = info;
 			if (mode == RUN_EXEC) startup.exec.swap(str); // remember to set cursor again and for rebooting a different IT_RUN
@@ -471,10 +473,55 @@ struct DBP_Run
 			}
 			return true;
 		}
+		bool ProcessKey()
+		{
+			switch (*Key)
+			{
+				case 'c':
+					return (0
+						||Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
+						||ParseCPU("cpu_cycles")||ParseCPU("cpu_hz")||ParseCPU("cpu_year")||ParseCPU("cpu_max_cycles")||ParseCPU("cpu_max_hz")||ParseCPU("cpu_max_year")
+					);
+				case 'm':
+					return (0
+						||Parse("mem_size", "dosbox", "memsize", "/")
+						||Parse("mem_xms", "dos", "xms" , "true","true" , "false","false" , "")
+						||Parse("mem_ems", "dos", "ems" , "true","true" , "false","false" , "")
+						||Parse("mem_umb", "dos", "umb" , "true","true" , "false","false" , "")
+						||Parse("mem_doslimit", "dos", "memlimit", "~")
+					);
+				case 'v':
+					return (0
+						||Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "generic_ega","ega" , "generic_vga","vgaonly" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
+						||Parse("video_memory", "dosbox", "vmemsize", "/")
+						||Parse("video_voodoo", "pci", "voodoo" , "true","8mb" , "false","false" , "")
+					);
+				case 's':
+					return (0
+						||Parse("sound_card", "sblaster", "sbtype" , "sb16","sb16" , "sb1","sb1" , "sb2","sb2" , "sbpro1","sbpro1" , "sbpro2","sbpro2" , "gameblaster","gb" , "none","none" , "")
+						||Parse("sound_port", "sblaster", "sbbase" , "~")
+						||Parse("sound_irq", "sblaster", "irq", "~")
+						||Parse("sound_dma", "sblaster", "dma", "~")
+						||Parse("sound_hdma", "sblaster", "hdma", "~")
+						||Parse("sound_midi", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
+						||Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
+						||Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
+						||Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
+					);
+				case 'r':
+					return (0
+						||ParseRun("run_path")
+						||ParseRun("run_boot")
+						||ParseRun("run_mount")
+						||ParseRun("run_input")
+					);
+			}
+			return false;
+		}
 		static void Load(bool parseRun, bool parseOthers)
 		{
-			const std::string& yml = patchDrive::DOSYMLContent; DOSYML l;
-			for (l.Key = yml.c_str(), l.End = l.Key+yml.size(); l.Key < l.End; l.Key = l.Next + 1)
+			DOSYML l;
+			for (l.Key = patch.yml.c_str(), l.End = l.Key+patch.yml.size(); l.Key < l.End; l.Key = l.Next + 1)
 			{
 				for (l.Next = l.Key; *l.Next != '\n' && *l.Next != '\r' && *l.Next; l.Next++) {}
 				if (l.Next == l.Key || *l.Key == '#') continue;
@@ -484,48 +531,7 @@ struct DBP_Run
 				for (l.ValX = l.Val; *l.ValX && *l.ValX != '\r' && *l.ValX != '\n' && (*l.ValX != '#' || l.ValX[-1] != ' '); l.ValX++) {}
 				while (l.ValX[-1] == ' ') l.ValX--;
 				if (l.ValX <= l.Val) goto syntaxerror;
-				switch (*l.Key)
-				{
-					case 'c':
-						if (!parseOthers
-							||l.Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
-							||l.ParseCPU("cpu_cycles")||l.ParseCPU("cpu_hz")||l.ParseCPU("cpu_year")||l.ParseCPU("cpu_max_cycles")||l.ParseCPU("cpu_max_hz")||l.ParseCPU("cpu_max_year")
-						) break; else goto syntaxerror;
-					case 'm':
-						if (!parseOthers
-							||l.Parse("mem_size", "dosbox", "memsize", "/")
-							||l.Parse("mem_xms", "dos", "xms" , "true","true" , "false","false" , "")
-							||l.Parse("mem_ems", "dos", "ems" , "true","true" , "false","false" , "")
-							||l.Parse("mem_umb", "dos", "umb" , "true","true" , "false","false" , "")
-							||l.Parse("mem_doslimit", "dos", "memlimit", "~")
-						) break; else goto syntaxerror;
-					case 'v':
-						if (!parseOthers
-							||l.Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "generic_ega","ega" , "generic_vga","vgaonly" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
-							||l.Parse("video_memory", "dosbox", "vmemsize", "/")
-							||l.Parse("video_voodoo", "pci", "voodoo" , "true","8mb" , "false","false" , "")
-						) break; else goto syntaxerror;
-					case 's':
-						if (!parseOthers
-							||l.Parse("sound_card", "sblaster", "sbtype" , "sb16","sb16" , "sb1","sb1" , "sb2","sb2" , "sbpro1","sbpro1" , "sbpro2","sbpro2" , "gameblaster","gb" , "none","none" , "")
-							||l.Parse("sound_port", "sblaster", "sbbase" , "~")
-							||l.Parse("sound_irq", "sblaster", "irq", "~")
-							||l.Parse("sound_dma", "sblaster", "dma", "~")
-							||l.Parse("sound_hdma", "sblaster", "hdma", "~")
-							||l.Parse("sound_midi", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
-							||l.Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
-							||l.Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
-							||l.Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
-						) break; else goto syntaxerror;
-					case 'r':
-						if (!parseRun
-							||l.ParseRun("run_path")
-							||l.ParseRun("run_boot")
-							||l.ParseRun("run_mount")
-							||l.ParseRun("run_input")
-						) break; else goto syntaxerror;
-				}
-				continue;
+				if (!((*l.Key == 'r') ? parseRun : parseOthers) || l.ProcessKey()) continue;
 				syntaxerror:
 				retro_notify(0, RETRO_LOG_ERROR, "Error in DOS.YML: %.*s", (int)(l.Next-l.Key), l.Key);
 				continue;
@@ -558,10 +564,7 @@ struct DBP_Run
 	static bool PostInitFirstTime()
 	{
 		ReadAutoBoot();
-		if (!patchDrive::Variants.size() && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOS.YML"))
-			patchDrive::Variants.push_back("Default Configuration");
-		int switchVariant = (patchDrive::Variants.size() ? autoboot.var : -1);
-		if (switchVariant != -1 && patchDrive::SwitchVariant(switchVariant)) return true; // reset and re-run PreInit to load variant
+		if (patchDrive::ApplyVariant(patch.yml, patch.enabled_variant)) return true; // reset and re-run PreInit to load variant
 		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
 		return false;
 	}
@@ -569,7 +572,7 @@ struct DBP_Run
 	static void PreInit()
 	{
 		if (!dbp_biosreboot) startup.mode = RUN_NONE;
-		if (patchDrive::DOSYMLContent.size()) DOSYML::Load((!dbp_biosreboot && (patchDrive::Variants.size() == 1 || autoboot.startup.mode == RUN_VARIANT)), true); // ignore run keys on bios reboot
+		if (patch.yml.length()) DOSYML::Load((!dbp_biosreboot && (patchDrive::variants.Len() == 0 || autoboot.startup.mode == RUN_VARIANT)), true); // ignore run keys on bios reboot
 		if (!dbp_biosreboot && autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
 	}
 
@@ -600,15 +603,15 @@ struct DBP_Run
 					if (param) *param = ' ';
 					if (exists) { autoboot.startup.mode = RUN_EXEC; autoboot.startup.exec.assign(str); }
 				}
-				else if (linetype == 'O' || linetype == 'S' || linetype == 'V')
+				else if (linetype == 'O' || linetype == 'S')
 				{
-					EMode mode                     = (linetype == 'O' ?   RUN_BOOTOS : (linetype == 'O' ?     RUN_SHELL :          RUN_VARIANT));
-					size_t suffix_len              = (linetype == 'O' ?             4: (linetype == 'O' ?             5 :                    0));
-					std::vector<std::string>& strs = (linetype == 'O' ? dbp_osimages : (linetype == 'O' ? dbp_shellzips : patchDrive::Variants));
+					const size_t suffix_len              = (linetype == 'O' ?             4:             5);
+					const std::vector<std::string>& strs = (linetype == 'O' ? dbp_osimages : dbp_shellzips);
 					for (const std::string& it : strs)
 						if (it.size() == (p - str) + suffix_len && !memcmp(str, it.c_str(), it.size() - suffix_len))
-							{ autoboot.startup.mode = mode; autoboot.startup.info = (int)(&it - &strs[0]); break; }
+							{ autoboot.startup.mode = (linetype == 'O' ? RUN_BOOTOS : RUN_SHELL); autoboot.startup.info = (int)(&it - &strs[0]); break; }
 				}
+				else if (linetype == 'V') { autoboot.startup.mode = RUN_VARIANT; autoboot.skip = 0; line += 2; goto parseVariant; }
 				else if (linetype == 'I')
 				{
 					for (const char* it : DBP_MachineNames)
@@ -628,19 +631,18 @@ struct DBP_Run
 			}
 			else if (line_no == 4)
 			{
-				for (const std::string& it : patchDrive::Variants)
-					if (it.size() == (p - line) && !memcmp(line, it.c_str(), it.size()))
-						{ autoboot.var = (Bit16s)(&it - &patchDrive::Variants[0]); break; }
+				parseVariant:
+				if (const std::string* v = patchDrive::variants.Get(line))
+					patch.enabled_variant = patchDrive::variants.GetStorageIndex(v) + 1;
 			}
 		}
-		if (autoboot.startup.mode == RUN_VARIANT) { autoboot.skip = 0; autoboot.var = (Bit16s)autoboot.startup.info; }
 		autoboot.use = (autoboot.startup.mode != RUN_NONE);
 		autoboot.hash = HashAutoBoot();
 	}
 
 	static void WriteAutoBoot(EMode mode, int info, const std::string& str)
 	{
-		if ((!autoboot.use || mode == RUN_NONE || mode == RUN_INSTALLOS || mode == RUN_COMMANDLINE) && mode != RUN_VARIANT) // force enable auto start when switching variant
+		if (!autoboot.use || mode == RUN_NONE || mode == RUN_INSTALLOS || mode == RUN_COMMANDLINE)
 		{
 			if (autoboot.have) Drives['C'-'A']->FileUnlink((char*)"AUTOBOOT.DBP");
 			autoboot.startup.mode = RUN_NONE; autoboot.have = autoboot.use = false;
@@ -650,17 +652,15 @@ struct DBP_Run
 		autoboot.startup.mode = mode;
 		autoboot.startup.info = info;
 		autoboot.startup.exec.assign(mode == RUN_EXEC ? str.c_str() : "");
-		autoboot.var = patchDrive::ActiveVariantIndex;
-		if (mode == RUN_VARIANT) { autoboot.use = true; autoboot.skip = 0; autoboot.var = (Bit16s)info; }
 		if (HashAutoBoot() == autoboot.hash) return;
-		autoboot.hash = HashAutoBoot();
 		autoboot.have = true;
-		const char *img = NULL, *var = NULL;
+		autoboot.hash = HashAutoBoot();
+		const char* varname = (patch.enabled_variant ? patchDrive::variants.GetStorage()[patch.enabled_variant - 1].c_str() : NULL), *img = NULL;
+		const char *var = ((varname && mode != RUN_VARIANT) ? varname : NULL), *line1 = (mode != RUN_VARIANT ? str.c_str() : (varname ? varname : ""));
 		for (const DBP_Image& i : dbp_images) { if (i.mounted) { if (&i != &dbp_images[0]) img = DBP_Image_Label(i); break; } }
-		if (patchDrive::ActiveVariantIndex > 0 && mode != RUN_VARIANT) var = patchDrive::Variants[patchDrive::ActiveVariantIndex].c_str();
 		char buf[DOS_PATHLENGTH + 32 + 256 + 256], *p = buf;
 		if (mode != RUN_EXEC) { *(p++) = (mode == RUN_BOOTOS ? 'O' : mode == RUN_SHELL ? 'S' : mode == RUN_VARIANT ? 'V' : 'I'); *(p++) = '*'; }
-		if (1)                           p += snprintf(p, (&buf[sizeof(buf)] - p), "%s", str.c_str());          // line 1
+		if (1)                           p += snprintf(p, (&buf[sizeof(buf)] - p), "%s", line1);                // line 1
 		if (var || img || autoboot.skip) p += snprintf(p, (&buf[sizeof(buf)] - p), "\r\n%d", autoboot.skip);    // line 2
 		if (var || img)                  p += snprintf(p, (&buf[sizeof(buf)] - p), "\r\n%s", (img ? img : "")); // line 3
 		if (var)                         p += snprintf(p, (&buf[sizeof(buf)] - p), "\r\n%s", var);              // line 4
@@ -816,3 +816,4 @@ struct DBP_Run
 DBP_Run::Startup DBP_Run::startup;
 DBP_Run::Autoinput DBP_Run::autoinput;
 DBP_Run::Autoboot DBP_Run::autoboot;
+DBP_Run::Patch DBP_Run::patch;
