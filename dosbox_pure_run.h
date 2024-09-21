@@ -349,7 +349,7 @@ struct DBP_Run
 		if (autoboot.use && autoboot.skip)
 		{
 			autoinput.str.assign(31, ' ');
-			autoinput.str.resize(sprintf(&autoinput.str[0], "(WAIT:%d)", autoboot.skip * 15));
+			autoinput.str.resize(sprintf(&autoinput.str[0], (autoboot.skip == -1 ? "(WAITMODECHANGE)" : "(WAIT:%d)"), autoboot.skip * 15));
 		}
 
 		autoinput.ptr = ((mode != RUN_COMMANDLINE && autoinput.str.size()) ? autoinput.str.c_str() : NULL);

@@ -1097,7 +1097,7 @@ struct DBP_PureMenuState : DBP_MenuState
 
 		int inforow = (w > 319), hdr = lh*2+12, rows = (h - hdr - ftr) / lh - inforow, count = (int)list.size(), bot = hdr + rows * lh + 3 - (lh == 8 ? 1 : 0);
 		int listu = DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, 8, w - 8, hdr, (list[0].type == IT_NONE));
-		bool autoboot_use = (list[sel].type < _IT_NO_AUTOBOOT && DBP_Run::autoboot.use);
+		bool autoboot_show = (DBP_Run::autoboot.use && listmode != IT_VARIANTLIST && (list[sel].type < _IT_NO_AUTOBOOT || hide_sel));
 
 		for (int i = scroll, se = (hide_sel ? -1 : sel); i != count && i != (scroll + rows); i++)
 		{
@@ -1117,7 +1117,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				if (i != se) continue;
 				buf.Print(lh, lblx - buf.CW*(2      ), y, "*", buf.COL_WHITE);
 				buf.Print(lh, lblx + buf.CW*(len + 1), y, "*", buf.COL_WHITE);
-				if (autoboot_use) buf.Print(lh, lblx + buf.CW*(len + 1), y, "* [SET AUTO START]", buf.COL_WHITE);
+				if (autoboot_show) buf.Print(lh, lblx + buf.CW*(len + 1), y, "* [SET AUTO START]", buf.COL_WHITE);
 			}
 			else buf.Print(lh, (w - buf.CW*strlen) / 2, y, item.str.c_str(), (item.type != IT_NONE ? (i == se ? buf.COL_HIGHLIGHT : buf.COL_NORMAL) : (item.info == INFO_HEADER ? buf.COL_HEADER : (item.info == INFO_WARN ? buf.COL_WARN : (item.info == INFO_DIM ? buf.COL_DIM : buf.COL_NORMAL)))));
 		}
@@ -1125,7 +1125,8 @@ struct DBP_PureMenuState : DBP_MenuState
 		if (inforow)
 		{
 			char skiptext[38];
-			if (!autoboot_use) skiptext[0] = '\0';
+			if (!autoboot_show) skiptext[0] = '\0';
+			else if (DBP_Run::autoboot.skip == -1) snprintf(skiptext, sizeof(skiptext), "Skip showing the text console");
 			else if (DBP_Run::autoboot.skip) snprintf(skiptext, sizeof(skiptext), "Skip showing first %d frames", DBP_Run::autoboot.skip);
 			else snprintf(skiptext, sizeof(skiptext), "SHIFT/L2/R2 + Restart to come back");
 
@@ -1139,7 +1140,7 @@ struct DBP_PureMenuState : DBP_MenuState
 				buf.DrawBox(8, bot, w-319, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 			}
 			
-			if (w < 640 && autoboot_use)
+			if (w < 640 && autoboot_show)
 			{
 				buf.DrawBox(8, bot, w-16, lh+3, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
 				buf.PrintCenteredOutlined(lh, 0, w, bot+2, skiptext, buf.COL_BTNTEXT);
@@ -1443,12 +1444,13 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (popupsel != 1) { show_popup = false; return; }
 		}
 		Item& item = list[sel];
-		if (item.type < _IT_NO_AUTOBOOT)
+		if (auto_change && listmode != IT_VARIANTLIST && (item.type < _IT_NO_AUTOBOOT|| hide_sel))
 		{
-			if (DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.skip += (DBP_Run::autoboot.skip < 50 ? 10 : (DBP_Run::autoboot.skip < 150 ? 25 : (DBP_Run::autoboot.skip < 300 ? 50 : 100)));
+			int& skip = DBP_Run::autoboot.skip; // skip steps 0, -1, 10, 20, 30, ...
+			if (DBP_Run::autoboot.use && auto_change > 0) skip += (!skip ? -1 : skip == -1 ? 11 : skip < 50 ? 10 : skip < 150 ? 25 : skip < 300 ? 50 : 100);
 			if (!DBP_Run::autoboot.use && auto_change > 0) DBP_Run::autoboot.use = true;
-			if (auto_change < 0) DBP_Run::autoboot.skip -= (DBP_Run::autoboot.skip <= 50 ? 10 : (DBP_Run::autoboot.skip <= 150 ? 25 : (DBP_Run::autoboot.skip <= 300 ? 50 : 100)));
-			if (DBP_Run::autoboot.skip < 0) { DBP_Run::autoboot.use = false; DBP_Run::autoboot.skip = 0; }
+			if (auto_change < 0) skip -= (!skip ? 2 : skip == -1 ? -1 : skip == 10 ? 11 : skip <= 50 ? 10 : skip <= 150 ? 25 : skip <= 300 ? 50 : 100);
+			if (skip < -1) { DBP_Run::autoboot.use = false; skip = 0; }
 		}
 
 		if (ok_type == IT_MOUNT)
