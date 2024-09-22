@@ -820,9 +820,14 @@ Bits patchDrive::UnMount(void) { delete this; return 0;  }
 bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number)
 {
 	int enabledVariantIndex = enable_variant_number - 1;
-	if ((ActiveVariantIndex == enabledVariantIndex)  && (!haveDOSYML || reportedDOSYML)) return false;
+	if (!reportedDOSYML)
+	{
+		if (!haveDOSYML && Drives['C'-'A'] && Drives['C'-'A']->FileExists("DOS.YML")) haveDOSYML = true;
+		if (haveDOSYML) ActiveVariantIndex = -2; // force reload
+		reportedDOSYML = true;
+	}
+	if (ActiveVariantIndex == enabledVariantIndex) return false;
 	ActiveVariantIndex = enabledVariantIndex;
-	reportedDOSYML = haveDOSYML;
 
 	struct Local
 	{
