@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2002-2011  The DOSBox Team
+ *  Copyright (C) 2022-2024  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -71,7 +72,6 @@
 #include "mem.h"
 #include "vga.h"
 #include "pic.h"
-#include "paging.h"
 #include "render.h"
 #include "pci_bus.h"
 #include "control.h"
@@ -2906,7 +2906,7 @@ static const char *const voodoo_reg_name[] =
 
 static voodoo_state *v;
 
-enum : UINT8
+enum VoodoPerf : UINT8
 {
 	V_PERFFLAG_MULTITHREAD = 0x1,
 	V_PERFFLAG_LOWQUALITY = 0x2,
@@ -2961,7 +2961,7 @@ static const char* ogl_drawdepth_fragment_shader_src = // encode 0.0 to 1.0 with
 		"fragColor = vec4((d - m) * 0.000015318627450980392156862745098039, m * 0.003921568627450980392156862745098, 0.0, 0.0);"
 	"}";
 
-enum ogl_readback_mode : UINT8 { OGL_READBACK_MODE_COLOR0, OGL_READBACK_MODE_COLOR1, OGL_READBACK_MODE_COLOR2, OGL_READBACK_MODE_DEPTH, _OGL_READBACK_MODE_COUNT };
+enum ogl_readback_mode : UINT8 { OGL_READBACK_MODE_NONE, OGL_READBACK_MODE_COLOR0, OGL_READBACK_MODE_COLOR1, OGL_READBACK_MODE_COLOR2, OGL_READBACK_MODE_DEPTH };
 
 template <typename TVal> struct GrowArray
 {
@@ -3170,7 +3170,7 @@ static UINT32* ogl_convertframe(ogl_readback_mode mode, ogl_convertframe_mode co
 struct ogl_drawbuffer
 {
 	unsigned fbo = 0, colortex = 0;
-	UINT8 last_scale = 0, updated;
+	UINT8 last_scale = 0, new_image = 0, unfinished_depth = 0;
 	ogl_pixels color;
 
 	void SetSize(UINT16 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
@@ -3229,11 +3229,16 @@ struct ogl_readbackdata
 {
 	unsigned pbo = 0, pbosize = 0, depth_fbo = 0, depth_color = 0, depth_prog = 0, depth_vao = 0, depth_vbo = 0;
 	ogl_pixels depth;
-	ogl_readback_mode mode = (ogl_readback_mode)0;
+	ogl_readback_mode ready = OGL_READBACK_MODE_NONE;
+	bool depth_was_prepared = false, read_depth_next = false;
 	void DisablePBO() { GFX_ShowMsg("[VOGL] Disabling unsupoorted PBO Readback"); DBP_ASSERT(0); if (pbo) { myglDeleteBuffers(1, &pbo); pbo = 0; } }
-	INLINE void NextMode() { mode = (ogl_readback_mode)(((int)mode + 1) % _OGL_READBACK_MODE_COUNT); }
-	INLINE ogl_pixels& GetCurrentModePixels(ogl_drawbuffer* dbs) { return (mode == OGL_READBACK_MODE_DEPTH ? depth : dbs[(int)mode].color); }
-	INLINE unsigned GetCurrentModeFBO(ogl_drawbuffer* dbs) { return (mode == OGL_READBACK_MODE_DEPTH ? depth_fbo : dbs[(int)mode].fbo); }
+	INLINE ogl_pixels* GetReadyPixels(ogl_drawbuffer* dbs) { return (ready == OGL_READBACK_MODE_NONE ? NULL : ready == OGL_READBACK_MODE_DEPTH ? &depth : &dbs[(int)ready-1].color); }
+	INLINE bool SetReady(ogl_drawbuffer* dbs, UINT8 flushed_buffer, unsigned& ready_fbo)
+	{
+		if      ( read_depth_next && depth_was_prepared)      { read_depth_next = false; ready = OGL_READBACK_MODE_DEPTH; depth_was_prepared = false; ready_fbo = depth_fbo; return true; }
+		else if (!read_depth_next && dbs[flushed_buffer].fbo) { read_depth_next =  true; ready = (ogl_readback_mode)(flushed_buffer + 1); ready_fbo = dbs[flushed_buffer].fbo; return true; }
+		else { ready = OGL_READBACK_MODE_NONE; return false; }
+	}
 
 	void SetSize(UINT32 w, UINT32 h)
 	{
@@ -3475,8 +3480,8 @@ bool voodoo_ogl_is_showing() { return vogl_showing; }
 
 bool voodoo_ogl_have_new_image()
 {
-	if (!vogl_showing || !vogl->drawbuffers[vogl->flushed_buffer].updated) return false;
-	vogl->drawbuffers[vogl->flushed_buffer].updated = 0;
+	if (!vogl_showing || !vogl->drawbuffers[vogl->flushed_buffer].new_image) return false;
+	vogl->drawbuffers[vogl->flushed_buffer].new_image = 0;
 	return true;
 }
 
@@ -3505,7 +3510,7 @@ void voodoo_ogl_cleanup() { if (vogl) vogl->Cleanup(); }
 void voodoo_ogl_contextlost() { if (vogl) vogl->ContextLost(); }
 void voodoo_ogl_resetcontext() { voodoo_ogl_contextlost(); if (v && v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate(); }
 
-enum : UINT32
+enum Voodoo_OGL_UsedBits : UINT32
 {
 	VOODOO_OGL_FBZMODE_USEDBITS = 0
 		|FBZMODE_RGB_BUFFER_MASK_BIT
@@ -3597,7 +3602,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			return !memcmp(&programs_data[test_idx].eff, &test_eff, sizeof(test_eff));
 		}
 
-		enum : UINT32
+		enum Shader_OGL_Usedbits : UINT32
 		{
 			SHADER_FBZMODE_USEDBITS = 0
 				|FBZMODE_ENABLE_CHROMAKEY_BIT
@@ -3881,15 +3886,6 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			myglUseProgram(prog->id);
 			myglUniform1i(u_tex0, 0);
 			myglUniform1i(u_tex1, 1);
-
-			//#ifndef NDEBUG
-			//std::string dbg_source;
-			//dbg_source += "VERTEX:\n----------------------------------------------\n";
-			//for (int i = 0; i != vshadernum; i++) dbg_source += vshadersrcs[i];
-			//dbg_source += "----------------------------------------------\nFRAGMENT:\n----------------------------------------------\n";
-			//for (int i = 0; i != fshadernum; i++) dbg_source += fshadersrcs[i];
-			//#endif
-
 			return prog;
 		}
 
@@ -3988,27 +3984,26 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", fbi_width, fbi_height, ready_command_num, ready_vertex_num/3);
 
 	// Peform readback prepared the previous frame
-	ogl_pixels& lastreadpixels = vogl->readback.GetCurrentModePixels(vogl->drawbuffers);
-	if (lastreadpixels.width)
+	ogl_readbackdata& readback = vogl->readback;
+	if (ogl_pixels* lastreadpixels = readback.GetReadyPixels(vogl->drawbuffers))
 	{
-		if (vogl->readback.pbo)
+		if (readback.pbo)
 		{
-			myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, vogl->readback.pbo);
-			const UINT8* mappedPtr = (const UINT8*)myglMapBufferRange(MYGL_PIXEL_PACK_BUFFER, 0, lastreadpixels.width * lastreadpixels.height * 4, MYGL_MAP_READ_BIT);
+			myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, readback.pbo);
+			const UINT8* mappedPtr = (const UINT8*)myglMapBufferRange(MYGL_PIXEL_PACK_BUFFER, 0, lastreadpixels->width * lastreadpixels->height * 4, MYGL_MAP_READ_BIT);
 			if (mappedPtr)
 			{
-				memcpy(lastreadpixels.data, mappedPtr, lastreadpixels.width * lastreadpixels.height * 4);
+				memcpy(lastreadpixels->data, mappedPtr, lastreadpixels->width * lastreadpixels->height * 4);
 				myglUnmapBuffer(MYGL_PIXEL_PACK_BUFFER);
 			}
 			myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, 0);
-			if (!mappedPtr || myglGetError()) vogl->readback.DisablePBO(); // No PBO support
+			if (!mappedPtr || myglGetError()) readback.DisablePBO(); // No PBO support
 		}
-		if (!vogl->readback.pbo)
+		if (!readback.pbo)
 		{
 			// Read color data from output or draw depth frame buffer
-			ogl_drawbuffer& lastdrawbuffer = vogl->drawbuffers[vogl->display_buffer];
-			myglBindFramebuffer(MYGL_FRAMEBUFFER, (vogl->readback.mode == OGL_READBACK_MODE_DEPTH ? vogl->readback.depth_fbo : lastdrawbuffer.fbo)); GLERRORASSERT
-			myglReadPixels(0, 0, lastreadpixels.width, lastreadpixels.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, lastreadpixels.data); GLERRORASSERT
+			myglBindFramebuffer(MYGL_FRAMEBUFFER, (readback.ready == OGL_READBACK_MODE_DEPTH ? readback.depth_fbo : vogl->drawbuffers[vogl->display_buffer].fbo)); GLERRORASSERT
+			myglReadPixels(0, 0, lastreadpixels->width, lastreadpixels->height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, lastreadpixels->data); GLERRORASSERT
 			// Read depth from output frame buffer (not supported on GLES)
 			//static float readbackdepth[SCALER_MAXWIDTH * SCALER_MAXHEIGHT];
 			//myglReadPixels(0, 0, view_width, view_height, /*MYGL_DEPTH_STENCIL*/ MYGL_DEPTH_COMPONENT,  /*MYGL_UNSIGNED_INT_24_8*/ MYGL_FLOAT, readbackdepth); GLERRORASSERT
@@ -4040,18 +4035,6 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
  	if (vogl->depthstenciltex_width != view_width || vogl->depthstenciltex_height != view_height)
  		vogl->DepthStencilTexSetSize(view_width, view_height);
 
-	myglViewport(0, 0, view_width, view_height); GLERRORASSERT
-	Local::ApplyClipping(vogl->cmdbuf.live_clipping, view_height);
-	if (myglDepthRange) { myglDepthRange(0.0f, 1.0f); GLERRORASSERT }
-	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
-	if (voodoo_ogl_scale != 1) myglPointSize(voodoo_ogl_scale);
-
-	UINT16 last_drawbuffer = 255;
-	UINT8 last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
-	UINT32 last_blend_mode = 0xFFFFFFFF;
-	ogl_program* prog = NULL;
-	float view[3];
-
 	//#define VOGL_DRAW_STATS
 	#ifdef VOGL_DRAW_STATS
 	#define VOGL_STAT_ADD(VAR, AMOUNT) VAR += (AMOUNT);
@@ -4062,17 +4045,38 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	#define VOGL_STAT_ADD(VAR, AMOUNT) (void)0
 	#endif
 
-	for (UINT32 c = 0, cLast = flush_commands - 1; c != flush_commands; c++)
+	myglViewport(0, 0, view_width, view_height); GLERRORASSERT
+	if (myglDepthRange) { myglDepthRange(0.0f, 1.0f); GLERRORASSERT }
+	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
+	if (voodoo_ogl_scale != 1) myglPointSize(voodoo_ogl_scale);
+
+	ogl_drawbuffer &flushed_buffer = vogl->drawbuffers[vogl->flushed_buffer];
+	UINT32 cmdIdx = 0, cmdLast = flush_commands - 1;
+	continue_commands:
+	Local::ApplyClipping(vogl->cmdbuf.live_clipping, view_height);
+
+	UINT16 last_drawbuffer = 255;
+	UINT8 last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
+	UINT32 last_blend_mode = 0xFFFFFFFF;
+	ogl_program* prog = NULL;
+	float view[3];
+
+	for (; cmdIdx != flush_commands; cmdIdx++)
 	{
-		ogl_command cmd = vogl->cmdbuf.commands.data[c];
+		ogl_command cmd = vogl->cmdbuf.commands.data[cmdIdx];
 		if (cmd.base.drawbuffer != last_drawbuffer)
 		{
 			last_drawbuffer = cmd.base.drawbuffer;
 			ogl_drawbuffer& drawbuffer = vogl->drawbuffers[last_drawbuffer];
+			if (&drawbuffer != &flushed_buffer && flushed_buffer.unfinished_depth)
+			{
+				if (!readback.depth_was_prepared) break; // read depth then continue processing commands
+				flushed_buffer.unfinished_depth = 0;
+			}
 			if (drawbuffer.color.width != view_width || drawbuffer.color.height != view_height)
 				drawbuffer.SetSize(last_drawbuffer, view_width, view_height, vogl->depthstenciltex); // also inits fbo
+			drawbuffer.new_image = drawbuffer.unfinished_depth = 1;
 			myglBindFramebuffer(MYGL_FRAMEBUFFER, drawbuffer.fbo); GLERRORASSERT
-			drawbuffer.updated = 1;
 		}
 
 		if (cmd.base.type == ogl_cmdbase::FASTFILL)
@@ -4125,9 +4129,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		}
 		else
 		{
-			UINT32 idx = cmd.vertex_index, idxNext = (c != cLast ? vogl->cmdbuf.commands.data[c+1].vertex_index : flush_vertices);
+			UINT32 idx = cmd.vertex_index, idxNext = (cmdIdx != cmdLast ? vogl->cmdbuf.commands.data[cmdIdx+1].vertex_index : flush_vertices);
 			DBP_ASSERT(idx < idxNext);
-			if (cmd.base.type != ogl_cmdbase::TRIANGLE) { VOGL_STAT_ADD(stat_num_pixels, idxNext - idx); } else { VOGL_STAT_ADD(stat_num_triangles, (idxNext - idx) / 3); }
 
 			const UINT32 FBZMODE = cmd.geometry.eff.fbz_mode;
 			const UINT32 ALPHAMODE = cmd.geometry.eff.alpha_mode;
@@ -4241,6 +4244,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			blend_mode.rgb.b = (ALPHAMODE_SRCALPHABLEND(ALPHAMODE) == 4);
 			blend_mode.rgb.a = (ALPHAMODE_DSTALPHABLEND(ALPHAMODE) == 4);
 
+			#ifdef VOGL_DRAW_STATS
+			if (cmd.base.type != ogl_cmdbase::TRIANGLE) { VOGL_STAT_ADD(stat_num_pixels, idxNext - idx); } else { VOGL_STAT_ADD(stat_num_triangles, (idxNext - idx) / 3); }
 			VOGL_STAT_ADD(stat_num_stencil_ops,    use_stencil_op);
 			VOGL_STAT_ADD(stat_num_depth_tested,   use_depth_test);
 			VOGL_STAT_ADD(stat_num_blended,        use_blend);
@@ -4250,6 +4255,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			VOGL_STAT_ADD(stat_switches_colormask, (color_masked != last_color_masked));
 			VOGL_STAT_ADD(stat_switches_alphamask, (alpha_masked != last_alpha_masked));
 			VOGL_STAT_ADD(stat_switches_blending,  (use_blend != last_use_blend || blend_mode.u != last_blend_mode));
+			#endif
 
 			if (use_depth_test != last_use_depth_test || depth_func != last_depth_func)
 			{
@@ -4297,8 +4303,6 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			if (use_stencil_op)
 				myglDisable(MYGL_STENCIL_TEST);
 			#endif
-
-			GLERRORASSERT
 		}
 	}
 
@@ -4308,40 +4312,48 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	if (last_depth_masked == 0) { myglDepthMask(MYGL_TRUE); GLERRORASSERT }
 	if (!last_color_masked || !last_alpha_masked) { myglColorMask(MYGL_TRUE, MYGL_TRUE, MYGL_TRUE, MYGL_TRUE); GLERRORASSERT }
 	if (vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
-	if (voodoo_ogl_scale != 1) myglPointSize(1.0f);
+
+	// Convert depth texture to readable color texture if available
+	if (readback.depth.width != fbi_width || readback.depth.height != fbi_height) readback.SetSize(fbi_width, fbi_height); // also inits PBO
+	if (flushed_buffer.unfinished_depth && !readback.depth_was_prepared)
+	{
+		flushed_buffer.unfinished_depth = 0;
+		readback.depth_was_prepared = true;
+		bool reViewPort = (view_width != fbi_width || view_height != fbi_height);
+		if (reViewPort) myglViewport(0, 0, fbi_width, fbi_height);
+		myglBindVertexArray(readback.depth_vao);
+		myglUseProgram(readback.depth_prog);
+		myglActiveTexture(MYGL_TEXTURE0);
+		myglBindTexture(MYGL_TEXTURE_2D, vogl->depthstenciltex);
+		myglBindFramebuffer(MYGL_FRAMEBUFFER, readback.depth_fbo);
+		myglDrawArrays(MYGL_TRIANGLE_STRIP, 0, 4); GLERRORASSERT
+		if (cmdIdx != flush_commands) // continue processing commands
+		{
+			myglBindVertexArray(vogl->vao); GLERRORASSERT
+			if (reViewPort) myglViewport(0, 0, view_width, view_height);
+			goto continue_commands;
+		}
+	}
+
+	// Initiate readback for next frame
+	unsigned readback_fbo;
+	if (readback.SetReady(vogl->drawbuffers, vogl->flushed_buffer, readback_fbo) && readback.pbo)
+	{
+		const ogl_pixels& readpixels = *readback.GetReadyPixels(vogl->drawbuffers);
+		myglBindFramebuffer(MYGL_READ_FRAMEBUFFER, readback_fbo);
+		myglReadBuffer(MYGL_COLOR_ATTACHMENT0);
+		myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, readback.pbo);
+		if (readback.pbosize < readpixels.width * readpixels.height * 4)
+			myglBufferData(MYGL_PIXEL_PACK_BUFFER, (readback.pbosize = readpixels.width * readpixels.height * 4), NULL, MYGL_STREAM_READ);
+		myglReadPixels(0, 0, readpixels.width, readpixels.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, 0);
+		myglBindFramebuffer(MYGL_READ_FRAMEBUFFER, 0);
+		myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, 0);
+		if (myglGetError()) readback.DisablePBO(); // No PBO support
+	}
 
 	#ifdef VOGL_DRAW_STATS
 	GFX_ShowMsg("[VOGL] stats - drawcalls: %u - vertices: %u - stencil_ops: %u - depth_tested: %u - blended: %u - textured: %u - tris: %u - pixls: %u - fastfill: %u (c:%u,d:%u) - chg_depth: %u - chg_depthmask: %u - chg_colormask: %u - chg_alphamask: %u - chg_blending: %u", flush_commands, flush_vertices, stat_num_stencil_ops, stat_num_depth_tested, stat_num_blended, stat_num_textured, stat_num_triangles, stat_num_pixels, stat_num_fastfill, stat_num_fastfill_color, stat_num_fastfill_depth, stat_switches_depth, stat_switches_depthmask, stat_switches_colormask, stat_switches_alphamask, stat_switches_blending);
 	#endif
-
-	// Initiate readback for next frame
-	vogl->readback.NextMode();
-	if (vogl->readback.depth.width != fbi_width || vogl->readback.depth.height != fbi_height) vogl->readback.SetSize(fbi_width, fbi_height); // also inits PBO
-	while (!vogl->readback.GetCurrentModeFBO(vogl->drawbuffers)) vogl->readback.NextMode();
-	if (vogl->readback.mode == OGL_READBACK_MODE_DEPTH)
-	{
-		// Convert depth texture to readable color texture
-		if (view_width != fbi_width || view_height != fbi_height) { myglViewport(0, 0, fbi_width, fbi_height); GLERRORASSERT }
-		myglBindVertexArray(vogl->readback.depth_vao);
-		myglUseProgram(vogl->readback.depth_prog);
-		myglActiveTexture(MYGL_TEXTURE0);
-		myglBindTexture(MYGL_TEXTURE_2D, vogl->depthstenciltex);
-		myglBindFramebuffer(MYGL_FRAMEBUFFER, vogl->readback.depth_fbo);
-		myglDrawArrays(MYGL_TRIANGLE_STRIP, 0, 4); GLERRORASSERT
-	}
-	if (vogl->readback.pbo)
-	{
-		const ogl_pixels& readpixels = vogl->readback.GetCurrentModePixels(vogl->drawbuffers);
-		myglBindFramebuffer(MYGL_READ_FRAMEBUFFER, vogl->readback.GetCurrentModeFBO(vogl->drawbuffers));
-		myglReadBuffer(MYGL_COLOR_ATTACHMENT0);
-		myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, vogl->readback.pbo);
-		if (vogl->readback.pbosize < readpixels.width * readpixels.height * 4)
-			myglBufferData(MYGL_PIXEL_PACK_BUFFER, (vogl->readback.pbosize = readpixels.width * readpixels.height * 4), NULL, MYGL_STREAM_READ);
-		myglReadPixels(0, 0, readpixels.width, readpixels.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, 0);
-		myglBindFramebuffer(MYGL_READ_FRAMEBUFFER, 0);
-		myglBindBuffer(MYGL_PIXEL_PACK_BUFFER, 0);
-		if (myglGetError()) vogl->readback.DisablePBO(); // No PBO support
-	}
 
 	// Remove flushed commands and vertices
 	if (UINT32 late_commands = (vogl->cmdbuf.commands.num - flush_commands))
@@ -4354,6 +4366,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		memmove(vogl->cmdbuf.vertices.data, vogl->cmdbuf.vertices.data + flush_vertices, late_vertices * sizeof(*vogl->cmdbuf.vertices.data));
 	vogl->cmdbuf.vertices.num -= flush_vertices;
 	vogl->cmdbuf.flushed_vertices = 0;
+	if (voodoo_ogl_scale != 1) myglPointSize(1.0f);
 
 	// Mark textures not used for a while as available for other data
 	if (vogl->textures.num >= 32)
@@ -4529,11 +4542,7 @@ static INLINE UINT32 voodoo_ogl_read_pixel(int x, int y)
 		case 0: pixels = &vogl->drawbuffers[v->fbi.frontbuf].color; goto case_color_buffer; // front buffer
 		case 1: pixels = &vogl->drawbuffers[v->fbi.backbuf].color; goto case_color_buffer; // back buffer
 		case_color_buffer:
-			if (voodoo_ogl_scale != 1) // color buffers are scaled
-			{
-				x = x * voodoo_ogl_scale;
-				y = y * voodoo_ogl_scale;
-			}
+			if (voodoo_ogl_scale != 1) { x *= voodoo_ogl_scale; y *= voodoo_ogl_scale; } // color buffers are scaled
 			off = (pixels->width * (pixels->height - y) + x);
 			if (off + 1 >= pixels->width * pixels->height) goto invalidread;
 			rgba = (const UINT8*)(pixels->data + off);
@@ -4543,7 +4552,7 @@ static INLINE UINT32 voodoo_ogl_read_pixel(int x, int y)
 			off = (pixels->width * (pixels->height - y) + x);
 			if (off + 1 >= pixels->width * pixels->height) goto invalidread;
 			rgba = (const UINT8*)(pixels->data + off);
-			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | (rgba[5] << 16);
+			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | rgba[5];
 	}
 }
 
@@ -8813,6 +8822,7 @@ void VOODOO_Init(Section* sec) {
 	voodoo_pci_sstdevice.gammafix = section->Get_int("voodoo_gamma")*.1f;
 	voodoo_ogl_scale = ((v_perf & V_PERFFLAG_OPENGL) ? section->Get_int("voodoo_scale") : 1);
 	if (voodoo_ogl_scale < 1 || voodoo_ogl_scale > 16) voodoo_ogl_scale = 1;
+	if (v_perf == V_PERFFLAG_OPENGL) v_perf |= V_PERFFLAG_MULTITHREAD; // keep multithread as fallback
 
 	if (voodoo_pagehandler)
 	{

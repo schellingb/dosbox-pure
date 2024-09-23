@@ -35,17 +35,12 @@
 #define MYGL_STENCIL_ATTACHMENT             0x8D20
 #define MYGL_RGBA                           0x1908
 #define MYGL_DEPTH_COMPONENT                0x1902
-#define MYGL_UNSIGNED_BYTE                  0x1401
 #define MYGL_DEPTH24_STENCIL8               0x88F0
 #define MYGL_DEPTH_STENCIL                  0x84F9
 #define MYGL_UNSIGNED_INT_24_8              0x84FA
 #define MYGL_DEPTH_TEST                     0x0B71
 #define MYGL_SCISSOR_TEST                   0x0C11
-#define MYGL_LESS                           0x0201
-#define MYGL_EQUAL                          0x0202
 #define MYGL_KEEP                           0x1E00
-#define MYGL_ALWAYS                         0x0207
-#define MYGL_NEVER                          0x0200
 #define MYGL_PIXEL_PACK_BUFFER              0x88EB
 #define MYGL_READ_FRAMEBUFFER               0x8CA8
 #define MYGL_STREAM_READ                    0x88E1
@@ -73,10 +68,7 @@
 #define MYGL_BLEND                          0x0BE2
 #define MYGL_STENCIL_TEST                   0x0B90
 
-//	M(1, const char*,   GetString,               (int name))
-//	M(1, int,           GetFloatv,               (int pname, float* data))
-
-#define MYGL_FOR_EACH_PROC(M) \
+#define MYGL_FOR_EACH_PROC1(M) \
 	M(1, int,           GetError,                (void)) \
 	M(1, void,          Enable,                  (int cap)) \
 	M(1, void,          Disable,                 (int cap)) \
@@ -126,14 +118,15 @@
 	M(1, void,          UseProgram,              (unsigned program)) \
 	M(1, void,          Uniform4f,               (int location, float v0, float v1, float v2, float v3)) \
 	M(1, void,          Uniform3f,               (int location, float v0, float v1, float v2)) \
-	M(1, void,          Uniform1f,               (int location, float v0)) \
 	M(1, void,          Uniform1i,               (int location, int v0)) \
 	M(1, void,          DrawArrays,              (unsigned mode, int first, int count)) \
 	M(1, void,          VertexAttribPointer,     (unsigned index, int size, int type, unsigned char normalized, int stride, const void *pointer)) \
 	M(1, void,          EnableVertexAttribArray, (unsigned index)) \
-	M(1, void,          UniformMatrix4fv,        (int location, int count, unsigned char transpose, const float* value)) \
 	M(1, void,          PointSize,               (float size)) \
 	M(1, void,          ReadPixels,              (int x, int y, int width, int height, int format, int type, void* pixels)) \
+	//------------------------------------------------------------------------------------
+
+#define MYGL_FOR_EACH_PROC2(M) \
 	M(0, void,          ClearDepth,              (double depth)) /* not available on OpenGL ES */ \
 	M(0, void,          ClearDepthf,             (float depth)) /* only on OpenGL ES */ \
 	M(0, void,          DepthRange,              (double nearVal, double farVal)) /* not available on OpenGL ES */ \
@@ -145,12 +138,22 @@
 	M(0, void,          GenerateMipmap,          (int target)) /* optional auto mipmapping */ \
 	//------------------------------------------------------------------------------------
 
+// Currently unused functions:
+	//M(1, void,          Uniform1f,               (int location, float v0))
+	//M(1, void,          UniformMatrix4fv,        (int location, int count, unsigned char transpose, const float* value))
+	//M(0, void,          PolygonOffset,           (float factor, float units)) /* avoid Z fighting */
+
+#define MYGL_FOR_EACH_PROC(M) \
+	MYGL_FOR_EACH_PROC1(M) \
+	MYGL_FOR_EACH_PROC2(M) \
+	//------------------------------------------------------------------------------------
+
 #include "../libretro-common/include/libretro.h"
-#define MYGL_MAKEFUNCEXT(REQUIRE, RET, NAME, ARGS) extern RET (RETRO_CALLCONV* mygl##NAME)ARGS;
+#define MYGL_MAKEFUNCEXT(REQUIRE, RET, NAME, ARGS) extern RET (RETRO_CALLCONV* mygl ## NAME)ARGS;
 MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCEXT)
 
-#define MYGL_MAKEFUNCPTR(REQUIRE, RET, NAME, ARGS) RET (RETRO_CALLCONV* mygl##NAME)ARGS;
-#define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t&)mygl##NAME , "gl" #NAME, REQUIRE },
+#define MYGL_MAKEFUNCPTR(REQUIRE, RET, NAME, ARGS) RET (RETRO_CALLCONV* mygl ## NAME)ARGS;
+#define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t&)mygl ## NAME , "gl" #NAME, REQUIRE },
 
 unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs);
 
