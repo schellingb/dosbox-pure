@@ -1644,6 +1644,17 @@ struct Zip_Directory: Zip_Entry
 			else delete e->AsFile();
 		}
 	}
+
+	bool IncrementName(char* p_dos)
+	{
+		const char* p_dos_dot = strchr(p_dos, '.');
+		Bit32u baseLen = (p_dos_dot ? (Bit32u)(p_dos_dot - p_dos) : (Bit32u)strlen(p_dos)), j = (baseLen > 8 ? 4 : baseLen / 2);
+		if      (baseLen >= 1 && p_dos[j  ] && p_dos[j  ] < '~') p_dos[j  ]++;
+		else if (baseLen >= 3 && p_dos[j+1] && p_dos[j+1] < '~') p_dos[j+1]++;
+		else if (baseLen >= 5 && p_dos[j+2] && p_dos[j+2] < '~') p_dos[j+2]++;
+		else { DBP_ASSERT(false); return false; }
+		return true;
+	}
 };
 
 struct Zip_Search
@@ -1761,6 +1772,7 @@ struct zipDriveImpl
 
 		// Now create an index into the central directory file records, do some basic sanity checking on each record, and check for zip64 entries (which are not yet supported).
 		p = cdir_start;
+		ValueHashMap<void*> lfnDirs;
 		for (Bit32u i = 0, total_header_size; i < total_files && p >= cdir_start && p < cdir_end && MZ_READ_LE32(p) == MZ_ZIP_CENTRAL_DIR_HEADER_SIG; i++, p += total_header_size)
 		{
 			Bit32u bit_flag         = MZ_READ_LE16(p + MZ_ZIP_CDH_BIT_FLAG_OFS);
@@ -1836,42 +1848,38 @@ struct zipDriveImpl
 				}
 
 				// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
-				Bit32u dos_len = DBP_Make8dot3FileName(p_dos, (Bit32u)(dos_path + DOS_PATHLENGTH - p_dos), nDir, (Bit32u)(n - nDir));
+				bool diff8dot3;
+				Bit32u dos_len = DBP_Make8dot3FileName(p_dos, (Bit32u)(dos_path + DOS_PATHLENGTH - p_dos), nDir, (Bit32u)(n - nDir), diff8dot3);
 				p_dos[dos_len] = '\0';
+
+				// If we are the parent of a child zip, make sure that overwriting only happens when the long file names match
+				for (Zip_Entry* child_entry; child_impl && (child_entry = child_impl->Get(dos_path)) != NULL && (n - name) < CROSS_LEN * 2;)
+				{
+					Bit32u nlen = (Bit32u)(n - name), readlen = MZ_ZIP_LOCAL_DIR_HEADER_SIZE + nlen + 1; char ldh[MZ_ZIP_LOCAL_DIR_HEADER_SIZE + CROSS_LEN * 2], *ldhn = ldh + MZ_ZIP_LOCAL_DIR_HEADER_SIZE;
+					bool diff_long_name = child_impl->archive.Read((child_entry->IsFile() ? child_entry->AsFile()->data_ofs : child_entry->AsDirectory()->ofs), ldh, readlen) != readlen
+						|| memcmp(name, ldhn, nlen) || (Bit32u)MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) < nlen || (ldhn[nlen] != '/' && ldhn[nlen] != '\\');
+					if (!diff_long_name) break;
+					if (!parent->IncrementName(p_dos)) goto skip_zip_entry;
+				}
 
 				if (n == nEnd && !is_dir)
 				{
-					Zip_Entry* child_entry;
-					while (parent->entries.Get(p_dos))
-					{
-						// A file or directory already exists with the same name try changing some characters until it's unique
-						make_new_name:
-						const char* p_dos_dot = strchr(p_dos, '.');
-						Bit32u baseLen = (p_dos_dot ? (Bit32u)(p_dos_dot - p_dos) : dos_len), j = (baseLen > 8 ? 4 : baseLen / 2);
-						if      (baseLen >= 1 && p_dos[j  ] && p_dos[j  ] < '~') p_dos[j  ]++;
-						else if (baseLen >= 3 && p_dos[j+1] && p_dos[j+1] < '~') p_dos[j+1]++;
-						else if (baseLen >= 5 && p_dos[j+2] && p_dos[j+2] < '~') p_dos[j+2]++;
-						else goto skip_zip_entry;
-					}
-					if (child_impl && (child_entry = child_impl->Get(dos_path)) != NULL && child_entry->IsFile())
-					{
-						Bit32u readlen = MZ_ZIP_LOCAL_DIR_HEADER_SIZE + filename_len; char *test1 = (char*)malloc(readlen * 2), *test2 = test1 + readlen;
-						bool diff_long_name = archive.Read(local_header_ofs, test1, readlen) == readlen && child_impl->archive.Read(child_entry->AsFile()->data_ofs, test2, readlen) == readlen
-							&& (filename_len != MZ_READ_LE16(test2 + MZ_ZIP_LDH_FILENAME_LEN_OFS) || memcmp(test1 + MZ_ZIP_LOCAL_DIR_HEADER_SIZE, test2 + MZ_ZIP_LOCAL_DIR_HEADER_SIZE, filename_len));
-						free(test1);
-						if (diff_long_name) goto make_new_name;
-					}
+					while (parent->entries.Get(p_dos)) { if (!parent->IncrementName(p_dos)) goto skip_zip_entry; }
 					parent->entries.Put(p_dos, new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, local_header_ofs, (Bit32u)decomp_size, (Bit32u)comp_size, crc, (Bit8u)bit_flag, (Bit8u)method));
-					skip_zip_entry:
 					break;
 				}
-				Zip_Directory* zdir = directories.Get(dos_path);
+
+				// When 8dot3 was shortened, use the full (long) name as key for directory lookup (not needed for files because a file only exists once in a ZIP)
+				Bit32u lfnHash          = (!diff8dot3 ? 0 : BaseStringToPointerHashMap::Hash(name, (Bit32u)(n - name)));
+				Zip_Directory **lfnzdir = (!diff8dot3 ? NULL : (Zip_Directory**)lfnDirs.Get(lfnHash));
+				Zip_Directory *zdir     = (!diff8dot3 ? directories.Get(dos_path) : (lfnzdir ? *lfnzdir : NULL));
 				if (!zdir)
 				{
-					if (parent->entries.Get(p_dos)) break; // Skip if directory (or a file) already exists with the same name
+					while (parent->entries.Get(p_dos)) { if (!parent->IncrementName(p_dos)) goto skip_zip_entry; }
 					zdir = new Zip_Directory(DOS_ATTR_DIRECTORY, p_dos, file_date, file_time, local_header_ofs);
 					parent->entries.Put(p_dos, zdir);
 					directories.Put(dos_path, zdir);
+					if (diff8dot3) lfnDirs.Put(lfnHash, zdir);
 				}
 				if (n + 1 >= nEnd) break;
 				parent = zdir;
@@ -1879,6 +1887,7 @@ struct zipDriveImpl
 				*(p_dos++) = '\\';
 				nDir = n + 1;
 			}
+			skip_zip_entry:;
 		}
 		free(m_central_dir);
 		if (root.time == 0xFFFF) root.time = root.date = 0;

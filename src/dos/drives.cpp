@@ -363,7 +363,7 @@ bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fc
 	return true;
 }
 
-Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len)
+Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len, bool& was_changed)
 {
 	struct Func
 	{
@@ -385,6 +385,7 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 			if (!(DOS_ValidCharBits[((Bit8u)*p)/8] & (1<<(((Bit8u)*p)%8))) && p != sDot)
 				goto need_filter;
 		memcpy(target, source, source_len);
+		was_changed = false;
 		return source_len;
 		need_filter:;
 	}
@@ -394,6 +395,7 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 	if (!baseLen && target < target_end) *(target++) = DBP_8DOT3_INVALID_CHAR;
 	if (extLen && target < target_end) *(target++) = '.';
 	Func::AppendFiltered(target, target_end, sDot + 1, (extLen > 3 ? 3 : extLen));
+	was_changed = true;
 	return (Bit32u)(target - target_start);
 }
 
@@ -452,8 +454,8 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 
 			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
 			if (p_dos != dos_path) *(p_dos++) = '\\';
-			Bit32u nLen = (Bit32u)(n - nDir), tLen = DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen);
-			bool diff8dot3 = ((tLen != nLen) || memcmp(p_dos, nDir, nLen));
+			bool diff8dot3;
+			Bit32u nLen = (Bit32u)(n - nDir), tLen = DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen, diff8dot3);
 			if (diff8dot3)
 			{
 				// Confirm if the 8.3 filename matches the long filename
@@ -484,7 +486,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 					{
 						// Was not able to find a match, still try to open the file with the initial 8.3 guess, the drive might not support querying long file names
 						DBP_ASSERT(false); // really shouldn't happen, maybe we should return file not found at this point
-						DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen);
+						DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen, diff8dot3);
 					}
 				}
 			}
