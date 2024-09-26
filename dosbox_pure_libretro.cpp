@@ -3151,8 +3151,8 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		const char* confpath = NULL; std::string strconfpath, confcontent;
 		if (dbp_conf_loading == 'i') // load confs 'i'nside content
 		{
-			if (drive_c->FileExists("$C:\\DOSBOX.CON"+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
-			else if (drive_c->FileExists("$C:\\DOSBOX~1.CON"+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+			if (drive_c->FileExists(("$C:\\DOSBOX.CON")+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
+			else if (drive_c->FileExists(("$C:\\DOSBOX~1.CON")+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
 		}
 		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
 		{
@@ -3164,7 +3164,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
 	const char* mountedMidi;
-	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists("$C:\\MT32_PCM.ROM"+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
+	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists(("$C:\\MT32_PCM.ROM")+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
 	{
 		Section* sec = control->GetSection("midi");
 		Property* prop = sec->GetProp("midiconfig");
