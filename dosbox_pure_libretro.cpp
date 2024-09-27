@@ -2035,7 +2035,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 			else if (!dblh) for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = *(--src);
 			else            for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = trg[pitch] = trg[pitch+1] = *(--src);
 		}
-		buf.ratio = 4.f/3.f;
+		buf.ratio = ((float)render.src.width * (render.src.dblw+1)) / ((float)render.src.height * (render.src.dblh+1) * render.src.ratio);
 	}
 	else
 	{
