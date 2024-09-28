@@ -1857,7 +1857,7 @@ struct zipDriveImpl
 				{
 					Bit32u nlen = (Bit32u)(n - name), readlen = MZ_ZIP_LOCAL_DIR_HEADER_SIZE + nlen + 1; char ldh[MZ_ZIP_LOCAL_DIR_HEADER_SIZE + CROSS_LEN * 2], *ldhn = ldh + MZ_ZIP_LOCAL_DIR_HEADER_SIZE;
 					bool diff_long_name = child_impl->archive.Read((child_entry->IsFile() ? child_entry->AsFile()->data_ofs : child_entry->AsDirectory()->ofs), ldh, readlen) != readlen
-						|| memcmp(name, ldhn, nlen) || (Bit32u)MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) < nlen || (ldhn[nlen] != '/' && ldhn[nlen] != '\\');
+						|| memcmp(name, ldhn, nlen) || (Bit32u)MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) < nlen || (MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) != nlen && ldhn[nlen] != '/' && ldhn[nlen] != '\\');
 					if (!diff_long_name) break;
 					if (!parent->IncrementName(p_dos)) goto skip_zip_entry;
 				}
