@@ -214,11 +214,10 @@ void PCSPEAKER_SetCounter(Bitu cntr,Bitu mode) {
 		return;
 	}
 	spkr.pit_mode=mode;
+
 	//DBP: Delay sound output until second event to avoid crackling audio when initialized but not used
-	if (!spkr.enabled && spkr.used > 1) {
-		if(spkr.chan) spkr.chan->Enable(true);
-		spkr.enabled=true;
-	}
+	if (!spkr.enabled && spkr.used > 1) spkr.enabled=true;
+	if (spkr.chan) spkr.chan->Enable(spkr.enabled);
 }
 
 void PCSPEAKER_SetType(Bitu mode) {
@@ -248,11 +247,10 @@ void PCSPEAKER_SetType(Bitu mode) {
 		spkr.mode=SPKR_PIT_ON;
 		break;
 	};
+
 	//DBP: Delay sound output until second event to avoid crackling audio when initialized but not used
-	if (!spkr.enabled && (spkr.used > 1 || mode > 1)) {
-		if(spkr.chan) spkr.chan->Enable(true);
-		spkr.enabled=true;
-	}
+	if (!spkr.enabled && (spkr.used > 1 || mode > 1)) spkr.enabled=true;
+	if (spkr.chan) spkr.chan->Enable(spkr.enabled);
 }
 
 static void PCSPEAKER_CallBack(Bitu len) {
