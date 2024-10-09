@@ -3014,8 +3014,8 @@ struct ogl_effective
 
 struct ogl_cmdbase
 {
-	enum EType : UINT16 { TRIANGLE, PIXEL_RAW, PIXEL_BLENDED, _LAST_GEOMETRY, FASTFILL, CLIPPING } type;
-	UINT16 drawbuffer;
+	enum EType : UINT8 { TRIANGLE, PIXEL_RAW, PIXEL_BLENDED, _LAST_GEOMETRY, FASTFILL, CLIPPING } type;
+	UINT8 drawbuffer;
 };
 
 struct ogl_geometrycmd : ogl_cmdbase
@@ -3173,7 +3173,7 @@ struct ogl_drawbuffer
 	UINT8 last_scale = 0, new_image = 0, unfinished_depth = 0;
 	ogl_pixels color;
 
-	void SetSize(UINT16 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
+	void SetSize(UINT8 bufnum, UINT32 w, UINT32 h, unsigned depthstenciltex)
 	{
 		if (!fbo)
 		{
@@ -3480,8 +3480,13 @@ bool voodoo_ogl_is_showing() { return vogl_showing; }
 
 bool voodoo_ogl_have_new_image()
 {
-	if (!vogl_showing || !vogl->drawbuffers[vogl->flushed_buffer].new_image) return false;
-	vogl->drawbuffers[vogl->flushed_buffer].new_image = 0;
+	if (!vogl_showing) return false;
+	UINT8 last_drawbuffer = 255, flushed_buffer = vogl->flushed_buffer;
+	for (const ogl_command *pcmd = vogl->cmdbuf.commands.data, *pcend = pcmd + vogl->cmdbuf.flushed_commands; pcmd != pcend; pcmd++)
+		if (pcmd->base.drawbuffer != last_drawbuffer && pcmd->base.type < ogl_cmdbase::_LAST_GEOMETRY)
+			vogl->drawbuffers[last_drawbuffer = pcmd->base.drawbuffer].new_image = 1;
+	if (!vogl->drawbuffers[flushed_buffer].new_image) return false;
+	vogl->drawbuffers[flushed_buffer].new_image = 0;
 	return true;
 }
 
@@ -3981,7 +3986,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	bool dbgDel = DBP_IsKeyDown(KBD_delete); static bool lastDbgDel; if (dbgDel) { lastDbgDel = true; return true; } else if (lastDbgDel) { TriggerRenderDocCapture(); lastDbgDel = false; return true; }
 	#endif
 
-	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", fbi_width, fbi_height, ready_command_num, ready_vertex_num/3);
+	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", v->fbi.width, v->fbi.height, vogl->cmdbuf.flushed_commands, vogl->cmdbuf.flushed_vertices/3);
 
 	// Peform readback prepared the previous frame
 	ogl_readbackdata& readback = vogl->readback;
@@ -4055,8 +4060,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	continue_commands:
 	Local::ApplyClipping(vogl->cmdbuf.live_clipping, view_height);
 
-	UINT16 last_drawbuffer = 255;
-	UINT8 last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
+	UINT8 last_drawbuffer = 255, last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
 	UINT32 last_blend_mode = 0xFFFFFFFF;
 	ogl_program* prog = NULL;
 	float view[3];
@@ -4075,7 +4079,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			}
 			if (drawbuffer.color.width != view_width || drawbuffer.color.height != view_height)
 				drawbuffer.SetSize(last_drawbuffer, view_width, view_height, vogl->depthstenciltex); // also inits fbo
-			drawbuffer.new_image = drawbuffer.unfinished_depth = 1;
+			drawbuffer.unfinished_depth = 1;
 			myglBindFramebuffer(MYGL_FRAMEBUFFER, drawbuffer.fbo); GLERRORASSERT
 		}
 
