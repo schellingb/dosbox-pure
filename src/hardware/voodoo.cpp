@@ -3670,13 +3670,14 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			condshdr(v, uset[1], "out vec3 v_texcoord1;");
 			condshdr(v, usefoglodblend, "out vec3 v_foglodblend;");
 			addshdr(v,
-				"uniform vec3 view;" nl
+				"uniform vec4 view;" nl
 				"void main()" nl
 				"{");
 			condshdr(v, usevcolor, "v_color = a_color;");
 			condshdr(v, uset[0], "v_texcoord0 = a_texcoord0;");
 			condshdr(v, uset[1], "v_texcoord1 = a_texcoord1;");
 			condshdr(v, usefoglodblend, "v_foglodblend = a_foglodblend;");
+			condshdr(v, !uset[0] && !uset[1], "gl_PointSize = view.w;");
 			addshdr(v, 
 					//"gl_Position = mvp * vec4(a_position, 1.0);" nl
 					"gl_Position = vec4("
@@ -4053,7 +4054,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	myglViewport(0, 0, view_width, view_height); GLERRORASSERT
 	if (myglDepthRange) { myglDepthRange(0.0f, 1.0f); GLERRORASSERT }
 	else if (myglDepthRangef) { myglDepthRangef(0.0f, 1.0f); GLERRORASSERT }
-	if (voodoo_ogl_scale != 1) myglPointSize(voodoo_ogl_scale);
+	if (voodoo_ogl_scale != 1) { myglEnable(MYGL_PROGRAM_POINT_SIZE); GLERRORASSERT }
 
 	ogl_drawbuffer &flushed_buffer = vogl->drawbuffers[vogl->flushed_buffer];
 	UINT32 cmdIdx = 0, cmdLast = flush_commands - 1;
@@ -4063,7 +4064,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	UINT8 last_drawbuffer = 255, last_yorigin = 255, last_use_depth_test = 255, last_depth_func = 255, last_color_masked = 255, last_alpha_masked = 255, last_depth_masked = 255, last_use_blend = 255;
 	UINT32 last_blend_mode = 0xFFFFFFFF;
 	ogl_program* prog = NULL;
-	float view[3];
+	float view[4] = { 2.0f / (float)fbi_width, 0, 0, (float)voodoo_ogl_scale };
 
 	for (; cmdIdx != flush_commands; cmdIdx++)
 	{
@@ -4184,13 +4185,12 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			UINT8 yorigin = FBZMODE_Y_ORIGIN(FBZMODE);
 			if (yorigin != last_yorigin)
 			{
-				view[0] = 2.0f / (float)fbi_width;
 				view[1] = (yorigin ? 2.0f : -2.0f) / (float)fbi_height;
 				view[2] = (yorigin ? -1.0f : 1.0f);
 				last_yorigin = yorigin;
 			}
 
-			myglUniform3f(prog->u_view, view[0], view[1], view[2]);
+			myglUniform4f(prog->u_view, view[0], view[1], view[2], view[3]);
 			if (prog->u_color0 != -1) myglUniform4f(prog->u_color0, cmd.geometry.uni.col0.rgb.r/255.0f, cmd.geometry.uni.col0.rgb.g/255.0f, cmd.geometry.uni.col0.rgb.b/255.0f, cmd.geometry.uni.col0.rgb.a/255.0f);
 			if (prog->u_color1 != -1) myglUniform4f(prog->u_color1, cmd.geometry.uni.col1.rgb.r/255.0f, cmd.geometry.uni.col1.rgb.g/255.0f, cmd.geometry.uni.col1.rgb.b/255.0f, cmd.geometry.uni.col1.rgb.a/255.0f);
 			if (prog->u_chromaKey != -1) myglUniform4f(prog->u_chromaKey, cmd.geometry.uni.chromakey.rgb.r/255.0f, cmd.geometry.uni.chromakey.rgb.g/255.0f, cmd.geometry.uni.chromakey.rgb.b/255.0f, cmd.geometry.uni.chromakey.rgb.a/255.0f);
@@ -4370,7 +4370,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		memmove(vogl->cmdbuf.vertices.data, vogl->cmdbuf.vertices.data + flush_vertices, late_vertices * sizeof(*vogl->cmdbuf.vertices.data));
 	vogl->cmdbuf.vertices.num -= flush_vertices;
 	vogl->cmdbuf.flushed_vertices = 0;
-	if (voodoo_ogl_scale != 1) myglPointSize(1.0f);
+	if (voodoo_ogl_scale != 1) myglDisable(MYGL_PROGRAM_POINT_SIZE);
 
 	// Mark textures not used for a while as available for other data
 	if (vogl->textures.num >= 32)

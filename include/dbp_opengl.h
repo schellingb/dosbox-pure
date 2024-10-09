@@ -67,6 +67,7 @@
 #define MYGL_SRC_ALPHA_SATURATE             0x0308
 #define MYGL_BLEND                          0x0BE2
 #define MYGL_STENCIL_TEST                   0x0B90
+#define MYGL_PROGRAM_POINT_SIZE             0x8642
 
 #define MYGL_FOR_EACH_PROC1(M) \
 	M(1, int,           GetError,                (void)) \
@@ -122,7 +123,6 @@
 	M(1, void,          DrawArrays,              (unsigned mode, int first, int count)) \
 	M(1, void,          VertexAttribPointer,     (unsigned index, int size, int type, unsigned char normalized, int stride, const void *pointer)) \
 	M(1, void,          EnableVertexAttribArray, (unsigned index)) \
-	M(1, void,          PointSize,               (float size)) \
 	M(1, void,          ReadPixels,              (int x, int y, int width, int height, int format, int type, void* pixels)) \
 	//------------------------------------------------------------------------------------
 
