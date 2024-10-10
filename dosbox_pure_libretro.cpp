@@ -41,7 +41,6 @@
 #include "libretro-common/include/retro_timers.h"
 #include <string>
 #include <sstream>
-#include <chrono>
 
 // RETROARCH AUDIO/VIDEO
 #ifdef GEKKO // From RetroArch/config.def.h
@@ -220,12 +219,9 @@ static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
 extern "C" int __android_log_write(int prio, const char *tag, const char *text);
 static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...) { static char buf[8192]; va_list va; va_start(va, fmt); vsprintf(buf, fmt, va); va_end(va); __android_log_write(2, "DBP", buf); }
 #endif
-static retro_time_t time_in_microseconds()
-{
-	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-}
+extern retro_time_t cpu_features_get_time_usec(void);
+static retro_perf_get_time_usec_t time_cb = cpu_features_get_time_usec;
 static retro_log_printf_t         log_cb = retro_fallback_log;
-static retro_perf_get_time_usec_t time_cb = time_in_microseconds;
 static retro_environment_t        environ_cb;
 static retro_video_refresh_t      video_cb;
 static retro_audio_sample_batch_t audio_batch_cb;
@@ -2241,7 +2237,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 
 		Bit32s ratio = 0;
 		Bit64s recentCyclesMaxSum = (Bit64s)CPU_CycleMax * recentCount;
-		if (recentCount > HISTORY_STEP/2 && St.HistoryEmulator[HISTORY_SIZE-1] && recentCyclesMaxSum >= recentCyclesSum)
+		if (recentCount > HISTORY_STEP/2 && St.HistoryEmulator[HISTORY_SIZE-1] && recentCyclesMaxSum >= recentCyclesSum && recentEmulator)
 		{
 			// ignore the cycles added due to the IO delay code in order to have smoother auto cycle adjustments
 			double ratio_not_removed = 1.0 - ((double)(recentCyclesMaxSum - recentCyclesSum) / recentCyclesMaxSum);
