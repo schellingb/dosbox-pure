@@ -1295,7 +1295,7 @@ void VGA_SetupDrawing(Bitu /*val*/) {
 	//Different sync values gives different scaling of the whole vertical range
 	//VGA monitor just seems to thighten or widen the whole vertical range
 	double pheight;
-	double target_total = (machine==MCH_EGA) ? 262.0 : 449.0;
+	double target_total = (machine==MCH_EGA && vga.draw.double_scan) ? vtotal : 449.0;
 	Bitu sync = vga.misc_output >> 6;
 	switch ( sync ) {
 	case 0:		// This is not defined in vga specs,
