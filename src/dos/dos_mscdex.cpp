@@ -1352,12 +1352,13 @@ void MSCDEX_SetCDInterface(int intNr, int numCD) {
 	forceCD	= numCD;
 }
 
-void MSCDEX_ShutDown(Section* /*sec*/) {
+void MSCDEX_ShutDown(Section* sec) {
 	delete mscdex;
 	mscdex = 0;
 	curReqheaderPtr = 0;
 	//DBP: for restart
-	CDROM_Interface_Image::ShutDown();
+	if (sec) // only on actual shutdown
+		CDROM_Interface_Image::ShutDown();
 }
 
 void MSCDEX_Init(Section* sec) {

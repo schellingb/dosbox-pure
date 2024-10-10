@@ -277,6 +277,14 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
 		if (Drives[i] && (dynamic_cast<fatDrive*>(Drives[i]) || dynamic_cast<isoDrive*>(Drives[i])) && DriveManager::UnmountDrive(i) == 0)
 			Drives[i] = NULL;
+	// unmount mirror drives next (they are based from other mounted drives)
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i] && (dynamic_cast<mirrorDrive*>(Drives[i])) && DriveManager::UnmountDrive(i) == 0)
+			Drives[i] = NULL;
+	// force shutdown mscdex now because it could have a drive mounted without an isoDrive backed ISO file system
+	void MSCDEX_ShutDown(Section*);
+	MSCDEX_ShutDown(NULL);
+	// unmount remaining drives last
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
 		if (Drives[i] && DriveManager::UnmountDrive(i) == 0)
 			Drives[i] = NULL;
