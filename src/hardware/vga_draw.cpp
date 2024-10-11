@@ -1295,7 +1295,14 @@ void VGA_SetupDrawing(Bitu /*val*/) {
 	//Different sync values gives different scaling of the whole vertical range
 	//VGA monitor just seems to thighten or widen the whole vertical range
 	double pheight;
-	double target_total = (machine==MCH_EGA) ? 262.0 : 449.0;
+	//DBP: Previously, the target total lines used to be forced to 262 visible lines for all EGA modes, which
+	//     resulted in the wrong pixel ratio for (at least) EGA 640x350 text mode (should be ~1.37, was ~0.8).
+	//     However, we can't just always use 449 visible lines (like the pixel height calculations below seem
+	//     to want) as that then breaks the pixel ratio for EGA's 320x200@60Hz mode (marked as double-scanned).
+	//     The underlying issue seems to be some conflation of EGA and VGA behavior prior to this point, which
+	//     might require a larger refactor to sort out. For now, at least prevent the target total lines from
+	//     ending up less than the mode's vertical resolution (which clearly wouldn't make practical sense).
+	double target_total = (machine==MCH_EGA && vga.draw.double_scan) ? vtotal : 449.0;
 	Bitu sync = vga.misc_output >> 6;
 	switch ( sync ) {
 	case 0:		// This is not defined in vga specs,
