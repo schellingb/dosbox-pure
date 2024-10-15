@@ -1067,6 +1067,12 @@ static void FitGammaCurve(const UINT8* crv, float& pow_exponent, float& multiply
 
 static void FitGammaCurves(const voodoo_state *v, float& clutExpR, float& clutExpG, float& clutExpB, float& clutFacR, float& clutFacG, float& clutFacB, float range = 1.0f)
 {
+	if (v->gammafix > 99.0f)
+	{
+		clutExpR = clutExpG = clutExpB = 1.0f;
+		clutFacR = clutFacG = clutFacB = range;
+		return;
+	}
 	FitGammaCurve(v->clutRaw.r, clutExpR, clutFacR, range, v->gammafix);
 	if (!memcmp(v->clutRaw.r, v->clutRaw.g, sizeof(v->clutRaw.r)) && !memcmp(v->clutRaw.r, v->clutRaw.g, sizeof(v->clutRaw.r)))
 		{ clutExpG = clutExpB = clutExpR; clutFacG = clutFacB = clutFacR; return;}
