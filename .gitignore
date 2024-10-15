@@ -1,5 +1,6 @@
 build/
 obj/
+libs/
 .vs/
 *.ncb
 *.opt
@@ -14,3 +15,4 @@ obj/
 *.dll
 *.so
 *.dylib
+jni/*.bat
