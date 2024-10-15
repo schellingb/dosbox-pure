@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2022-2023  Bernhard Schelling
+ *  Copyright (C) 2022-2024  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -345,7 +345,7 @@ struct fatFromDOSDrive
 					dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
 					const char *fend = dta_name + strlen(dta_name);
 					const bool dot = (dta_name[0] == '.' && dta_name[1] == '\0'), dotdot = (dta_name[0] == '.' && dta_name[1] == '.' && dta_name[2] == '\0');
-					if (!dirlen && (dot || dotdot)) continue; // root shouldn't have dot entries (yet localDrive does...)
+					if (!dirlen && (dot || dotdot)) continue; // root shouldn't have dot entries (yet unpatched localDrive can)
 
 					ffddFile f;
 					memcpy(f.path, dir, dirlen);

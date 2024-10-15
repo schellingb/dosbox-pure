@@ -851,6 +851,21 @@ bool DOS_Drive_Cache::ReadDir(Bit16u id, char* &result) {
 			sprintf(buffer,"DIR: Caching in %s (%d Files)",dirPath,dirSearch[srchNr]->fileList.size());
 			LOG_DEBUG(buffer);
 		};*/
+
+		//DBP: Make sure "." and ".." exist in directories (some Linux filesystems don't report them)
+		//DBP: Make sure "." and ".." doesn't exist in the drive root
+		const bool isroot = (strlen(dirPath) == strlen(basePath));
+		std::vector<CFileInfo*>& filelist = dirSearch[id]->fileList;
+		for (std::vector<CFileInfo*>::iterator it = filelist.begin(), itend = filelist.end(); it != itend; ++it)
+			if ((*it)->shortname[0] == '.' && (*it)->shortname[1] != '\0')
+				{ if (isroot) filelist.erase(it); goto founddot; } // remove superfluous entry
+		if (!isroot) CreateEntry(dirSearch[id], ".",  true); // add missing entry
+		founddot:
+		for (std::vector<CFileInfo*>::iterator it = filelist.begin(), itend = filelist.end(); it != itend; ++it)
+			if ((*it)->shortname[0] == '.' && (*it)->shortname[1] == '.' && (*it)->shortname[2] == '\0')
+				{ if (isroot) filelist.erase(it); goto founddotdot; } // remove superfluous entry
+		if (!isroot) CreateEntry(dirSearch[id], "..",  true); // add missing entry
+		founddotdot:;
 	};
 	if (SetResult(dirSearch[id], result, dirSearch[id]->nextEntry)) return true;
 	if (dirSearch[id]) {
