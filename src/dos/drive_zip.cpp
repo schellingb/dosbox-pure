@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2023 Bernhard Schelling
+ *  Copyright (C) 2020-2024 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1377,9 +1377,8 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 	Bit32u Read(const Zip_File& f, Bit32u seek_ofs, void *res_buf, Bit32u res_n)
 	{
 		if (crc_failed) return 0;
-		Bit32u want_from = seek_ofs, want_to = seek_ofs + res_n;
+		Bit32u want_from = seek_ofs, want_to = seek_ofs + res_n, last_idx = (Bit32u)-1, slowload_num, slowload_tick;
 		DBP_ASSERT(want_to <= f.decomp_size);
-		Bit8u* p_res = (Bit8u*)res_buf;
 
 		Bit32u have_from = ((out_buf_ofs ? out_buf_ofs - 1 : 0) & ~(WRITE_BLOCK-1));
 		if (want_from < have_from || want_from > out_buf_ofs)
@@ -1411,6 +1410,7 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 			}
 		}
 
+		Bit8u* p_res = (Bit8u*)res_buf;
 		for (miniz::tinfl_status status = miniz::TINFL_STATUS_NEEDS_MORE_INPUT; status == miniz::TINFL_STATUS_NEEDS_MORE_INPUT || status == miniz::TINFL_STATUS_HAS_MORE_OUTPUT || status == miniz::TINFL_STATUS_DONE;)
 		{
 			if (out_buf_ofs > want_from)
@@ -1462,7 +1462,7 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 
 			if (inflator.m_state == miniz::TINFL_STATE_INDEX_BLOCK_BOUNDRY)
 			{
-				// Gear cursors toward the middle of the block to accomodate forward and backward seeking as well as possible
+				// Gear cursors toward the middle of the block to accommodate forward and backward seeking as well as possible
 				Bit32u idx = (out_buf_ofs / cursor_block);
 				if (!cursors[idx].cursor_out || (out_buf_ofs > cursors[idx].cursor_out + 120*1024 && out_buf_ofs < idx*cursor_block + cursor_block/2 + 70*1024))
 				{
@@ -1513,6 +1513,23 @@ struct Zip_DeflateUnpacker : ZIP_Unpacker
 							}
 							seek_cache->cache_count = cursor_got;
 						}
+					}
+
+					if (last_idx != idx && seek_cache && idx > 50)
+					{
+						extern Bit32u DBP_GetTicks();
+						Bit32u tick = DBP_GetTicks();
+						if (last_idx == (Bit32u)-1) { slowload_num = 0; slowload_tick = tick + 77; }
+						else if (slowload_num++ >= SEEK_CACHE_CURSOR_STEPS*2 && (Bit32s)(tick - slowload_tick) >= 33)
+						{
+							slowload_tick = tick;
+							extern void DBP_ShowSlowLoading();
+							DBP_ShowSlowLoading();
+							extern bool DBP_IsShuttingDown();
+							if (DBP_IsShuttingDown())
+								return (Bit32u)(p_res - (Bit8u*)res_buf);
+						}
+						last_idx = idx;
 					}
 				}
 			}

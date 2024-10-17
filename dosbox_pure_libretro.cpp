@@ -2417,6 +2417,31 @@ void GFX_ShowMsg(char const* format,...)
 
 void GFX_SetPalette(Bitu start,Bitu count,GFX_PalEntry * entries) { }
 
+void DBP_ShowSlowLoading()
+{
+	if (!render.src.fps || !render.src.width) return;
+
+	// Force screen refresh without advancing the emulation (call GFX_StartUpdate to make sure buf is allocated)
+	dbp_framecount++;
+	buffer_active = (buffer_active + (3-1)) % 3; // go back
+	Bit8u* pixels; Bitu pitch; GFX_StartUpdate(pixels, pitch);
+	buffer_active = (buffer_active + 1) % 3; // advance again
+	DBP_BufferDrawing& buf = (DBP_BufferDrawing&)dbp_buffers[buffer_active];
+
+	// Show loading message
+	if (DBP_Run::autoinput.ptr) memset(buf.video, 0, buf.width * buf.height * 4); // keep black during auto input
+	buf.DrawBox(20, buf.height - 40, buf.width - 40, 20, buf.BGCOL_MENU | 0x80000000, buf.COL_LINEBOX);
+	char msg[24];
+	strcpy(msg, "Caching ZIP Structure  ");
+	static const char charanim[] = { '|', '/', '-', '\\' };
+	msg[22] = charanim[dbp_framecount % 4];
+	buf.PrintCenteredOutlined(14, 0, buf.width, buf.height - 37, msg, buf.COL_MENUTITLE, 0x80404020);
+
+	// Prevent main thread from mixing audio because we could be called while inside MixerChannel::Mix
+	dbp_audio_remain = -1; 
+	GFX_Events_AdvanceFrame(false);
+}
+
 static void DBP_PureLabelProgram(Program** make)
 {
 	struct LabelProgram : Program
