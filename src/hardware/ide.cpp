@@ -326,9 +326,8 @@ IDEController::~IDEController()
 struct IDEATAPICDROMDevice : public IDEDevice {
 	enum LoadingMode : uint8_t {
 		LOAD_NO_DISC,
-#ifdef C_DBP_ENABLE_IDE_CDINSERTION_DELAY
+		LOAD_EJECTING,
 		LOAD_INSERT_CD,    /* user is "inserting" the CD */
-#endif
 		LOAD_IDLE,         /* disc is stationary, not spinning */
 		LOAD_DISC_LOADING, /* disc is "spinning up" */
 		LOAD_DISC_READIED, /* disc just "became ready" */
@@ -826,8 +825,13 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 		switch (loading_mode) {
 			case LOAD_NO_DISC:
-#ifdef C_DBP_ENABLE_IDE_CDINSERTION_DELAY
+			case LOAD_EJECTING:
+				set_sense(/*SK=*/0x02,/*ASC=*/0x3A); /* Medium Not Present */
+				return false;
 			case LOAD_INSERT_CD:
+#ifndef C_DBP_ENABLE_IDE_CDINSERTION_DELAY
+				loading_mode = LOAD_DISC_LOADING;
+				atapi_add_pic_event(IDE_ATAPI_SpinUpComplete, atapi_spinup_time/*ms*/);
 #endif
 				set_sense(/*SK=*/0x02,/*ASC=*/0x3A); /* Medium Not Present */
 				return false;
@@ -1473,6 +1477,8 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 					break;
 			}
 		}
+		else if (loading_mode == LOAD_EJECTING)
+			loading_mode = LOAD_NO_DISC;
 
 		switch (atapi_cmd[0]) {
 			case 0x03: /* REQUEST SENSE */
@@ -2933,7 +2939,7 @@ void IDE_RefreshCDROMs()
 		if (!cdrom)
 		{
 			// Set drive to ejected state
-			d->loading_mode = IDEATAPICDROMDevice::LOAD_NO_DISC;
+			d->loading_mode = IDEATAPICDROMDevice::LOAD_EJECTING;
 			d->atapi_add_pic_event(NULL, 0);
 		}
 		else
@@ -2944,7 +2950,7 @@ void IDE_RefreshCDROMs()
 			d->loading_mode = IDEATAPICDROMDevice::LOAD_INSERT_CD;
 			PIC_AddEvent(IDEATAPICDROMDevice::IDE_ATAPI_CDInsertion, atapi_cd_insertion_time/*ms*/, d->device_index);
 #else
-			d->loading_mode = IDEATAPICDROMDevice::LOAD_DISC_LOADING;
+			d->loading_mode = (d->loading_mode = IDEATAPICDROMDevice::LOAD_EJECTING ? IDEATAPICDROMDevice::LOAD_INSERT_CD : IDEATAPICDROMDevice::LOAD_DISC_LOADING);
 			d->atapi_add_pic_event(IDEATAPICDROMDevice::IDE_ATAPI_SpinUpComplete, atapi_spinup_time/*ms*/);
 #endif
 		}
