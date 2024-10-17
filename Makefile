@@ -45,7 +45,7 @@ else ifneq (,$(findstring ios,$(platform)))
   endif
   OUTNAME := dosbox_pure_libretro_ios.dylib
   MINVERSION :=
-  COMMONFLAGS += -DDISABLE_DYNAREC=1
+  COMMONFLAGS += -DDISABLE_DYNAREC=1 -DDBP_IOS
   ifeq ($(platform),ios-arm64)
     CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
   else
