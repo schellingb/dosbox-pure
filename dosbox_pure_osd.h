@@ -1205,6 +1205,11 @@ struct DBP_PureMenuState : DBP_MenuState
 		int old_sel = sel, setsel = 0;
 		listmode = mode;
 		list.clear();
+		if (!DBP_FullscreenOSD && mode != IT_MAINMENU && dbp_images.size())
+		{
+			for (DBP_Image& image : dbp_images) list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]), DBP_Image_Label(image));
+			list.emplace_back(IT_NONE);
+		}
 		if (mode == IT_MAINMENU)
 		{
 			int cd_count = 0, hd_count = 0, boot_rows = 0; bool bootimg = false;
@@ -1332,16 +1337,11 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 		else if (mode == IT_VARIANTLIST)
 		{
-			const std::vector<std::string>& vars = patchDrive::variants.GetStorage();
-			int max_secs = 1, sec, secbegin, secend, i, enabled_var = DBP_Run::patch.enabled_variant, expect_vars = 1;
-			if (0) { sections_are_imbalanced: max_secs = 0; list.clear(); }
-			if (!DBP_FullscreenOSD && dbp_images.size())
-			{
-				for (DBP_Image& image : dbp_images) list.emplace_back(IT_MOUNT, (Bit16s)(&image - &dbp_images[0]), DBP_Image_Label(image));
-				list.emplace_back(IT_NONE);
-			}
 			list.emplace_back(IT_NONE, INFO_HEADER, "Select Game Configuration");
 			list.emplace_back(IT_NONE);
+			const std::vector<std::string>& vars = patchDrive::variants.GetStorage();
+			int list_base = (int)list.size(), max_secs = 1, sec, secbegin, secend, i, enabled_var = DBP_Run::patch.enabled_variant, expect_vars = 1;
+			if (0) { sections_are_imbalanced: max_secs = 0; list.resize((unsigned)list_base); }
 			for (sec = 0, secbegin = secend = (int)list.size();; secbegin = secend, sec++)
 			{
 				int sec_len, total_secs, max_sec_len = 0, have_enabled_toggle = 0;
