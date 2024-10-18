@@ -3952,7 +3952,9 @@ void retro_run(void)
 
 	// mix audio
 	Bit32u haveSamples = DBP_MIXER_DoneSamplesCount(), mixSamples = 0; double numSamples;
-	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
+	if (dbp_audio_remain < 0)
+		{ dbp_audio_remain = numSamples = 0; } // skip audio for this frame
+	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
 		numSamples = haveSamples;
 	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.rate < 1)
 		numSamples = (av_info.timing.sample_rate / av_info.timing.fps) + dbp_audio_remain;
