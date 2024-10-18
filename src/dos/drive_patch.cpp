@@ -850,7 +850,6 @@ bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number)
 		{
 			DOS_File *df;
 			if (!drv->FileOpen(&df, (char*)path, OPEN_READ)) return;
-			df->AddRef();
 			if (yml.length()) yml += '\n';
 			ReadAndClose(df, yml);
 		}

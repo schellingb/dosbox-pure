@@ -547,6 +547,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
 {
 	if (!df) return false;
+	if (!df->refCtr) df->AddRef();
 	Bit32u curlen = (Bit32u)out.size(), filesize = 0, seekzero = 0;
 	df->Seek(&filesize, DOS_SEEK_END);
 	df->Seek(&seekzero, DOS_SEEK_SET);

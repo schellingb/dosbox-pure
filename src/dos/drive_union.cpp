@@ -311,84 +311,89 @@ struct unionDriveImpl
 		struct Saver
 		{
 			FILE* f;
-			DOS_Drive* drv;
+			DOS_Drive *over, *under;
 			Bit32u local_file_offset, save_size;
 			Bit16u file_count;
-			bool failed;
+			bool failed, write_mods;
 			std::vector<Bit8u> central_dir;
-			std::string mods;
+			std::string buf;
 
 			static void WriteFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
 			{
 				Saver& s = *(Saver*)data;
-				Bit8u buf[4096];
-				Bit16u pathLen = (Bit16u)(strlen(path) + (is_dir ? 1 : 0));
-				Bit32u crc32 = 0, extAttr = (is_dir ? 0x10 : 0);
 
-				if (!is_dir && size)
+				// Read file data in both over and under drive to compare
+				bool under_match_size = false;
+				Bit32u under_crc32 = 0;
+				if (!is_dir && !s.write_mods)
 				{
-					fseek_wrap(s.f, 30 + pathLen, SEEK_CUR);
-					if (s.mods.size())
+					DOS_File* df;
+					if (s.under->FileOpen(&df, (char*)path, 0))
 					{
-						crc32 = DriveCalculateCRC32((Bit8u*)&s.mods[0], size, crc32);
-						s.failed |= !fwrite(&s.mods[0], size, 1, s.f);
-					}
-					else
-					{
-						// Write file and calculate CRC32 along the way
-						DOS_File* df = nullptr;
-						bool opened = s.drv->FileOpen(&df, (char*)path, 0);
-						DBP_ASSERT(opened);
+						Bit32u under_size = 0;
 						df->AddRef();
-						Bit32u remain = size;
-						for (Bit16u read; remain && df->Read(buf, &(read = sizeof(buf))) && read; remain -= read)
-						{
-							crc32 = DriveCalculateCRC32(buf, read, crc32);
-							s.failed |= !fwrite(buf, read, 1, s.f);
-						}
-						DBP_ASSERT(remain == 0);
-						df->Close();
-						delete df;
-						s.save_size += size;
+						df->Seek(&under_size, DOS_SEEK_END);
+						under_match_size = (under_size == size);
+						s.buf.clear();
+						ReadAndClose(df, s.buf, (under_match_size ? 0xFFFFFFFF : 0));
+						if (under_match_size && size) under_crc32 = DriveCalculateCRC32((Bit8u*)&s.buf[0], size);
 					}
-					fseek_wrap(s.f, s.local_file_offset, SEEK_SET);
+
+					bool opened = s.over->FileOpen(&df, (char*)path, 0);
+					DBP_ASSERT(opened);
+					s.buf.clear();
+					ReadAndClose(df, s.buf, 0xFFFFFFFF);
 				}
 
-				ZIP_WRITE_LE32(buf+ 0, 0x04034b50); // Local file header signature
-				ZIP_WRITE_LE16(buf+ 4, 0);          // Version needed to extract (minimum)
-				ZIP_WRITE_LE16(buf+ 6, 0);          // General purpose bit flag 
-				ZIP_WRITE_LE16(buf+ 8, 0);          // Compression method
-				ZIP_WRITE_LE16(buf+10, time);       // File last modification time
-				ZIP_WRITE_LE16(buf+12, date);       // File last modification date
-				ZIP_WRITE_LE32(buf+14, crc32);      // CRC-32 of uncompressed data
-				ZIP_WRITE_LE32(buf+18, size);       // Compressed size
-				ZIP_WRITE_LE32(buf+22, size);       // Uncompressed size
-				ZIP_WRITE_LE16(buf+26, pathLen);    // File name length
-				ZIP_WRITE_LE16(buf+28, 0);          // Extra field length
+				// If content matches, don't store in save file
+				Bit32u crc32 = (size ? DriveCalculateCRC32((Bit8u*)&s.buf[0], size) : 0);
+				if (under_match_size && under_crc32 == crc32) return;
 
-				//File name (with \ changed to /)
-				for (char* pIn = (char*)path, *pOut = (char*)(buf+30); *pIn; pIn++, pOut++)
+				// Don't write 0 sized files with .SWP ending (temporary swap files)
+				Bit16u pathLen = (Bit16u)(strlen(path) + (is_dir ? 1 : 0));
+				if (!size && !is_dir && pathLen > 4 && !memcmp(path + pathLen - 4, ".SWP", 4)) return;
+
+				// Generate local file header
+				Bit8u lfh[30 + DOS_PATHLENGTH + 8];
+				ZIP_WRITE_LE32(lfh+ 0, 0x04034b50); // Local file header signature
+				ZIP_WRITE_LE16(lfh+ 4, 0);          // Version needed to extract (minimum)
+				ZIP_WRITE_LE16(lfh+ 6, 0);          // General purpose bit flag 
+				ZIP_WRITE_LE16(lfh+ 8, 0);          // Compression method
+				ZIP_WRITE_LE16(lfh+10, time);       // File last modification time
+				ZIP_WRITE_LE16(lfh+12, date);       // File last modification date
+				ZIP_WRITE_LE32(lfh+14, crc32);      // CRC-32 of uncompressed data
+				ZIP_WRITE_LE32(lfh+18, size);       // Compressed size
+				ZIP_WRITE_LE32(lfh+22, size);       // Uncompressed size
+				ZIP_WRITE_LE16(lfh+26, pathLen);    // File name length
+				ZIP_WRITE_LE16(lfh+28, 0);          // Extra field length
+
+				// File name (with \ changed to /)
+				for (char* pIn = (char*)path, *pOut = (char*)(lfh+30); *pIn; pIn++, pOut++)
 					*pOut = (*pIn == '\\' ? '/' : *pIn);
 				if (is_dir)
-					buf[30 + pathLen - 1] = '/';
+					lfh[30 + pathLen - 1] = '/';
 
-				s.failed |= !fwrite(buf, 30 + pathLen, 1, s.f);
-				if (size) { fseek_wrap(s.f, size, SEEK_CUR); }
+				// Write local file header followed by file data
+				s.failed |= !fwrite(lfh, 30 + pathLen, 1, s.f);
+				if (size)
+				{
+					s.failed |= !fwrite(&s.buf[0], size, 1, s.f);
+					s.save_size += size;
+				}
 
+				// Generate central directory file header
 				size_t centralDirPos = s.central_dir.size();
 				s.central_dir.resize(centralDirPos + 46 + pathLen);
 				Bit8u* cd = &s.central_dir[0] + centralDirPos;
-
-				ZIP_WRITE_LE32(cd+0, 0x02014b50);         // Central directory file header signature 
-				ZIP_WRITE_LE16(cd+4, 0);                  // Version made by (0 = DOS)
-				memcpy(cd+6, buf+4, 26);                  // copy middle section shared with local file header
-				ZIP_WRITE_LE16(cd+32, 0);                 // File comment length
-				ZIP_WRITE_LE16(cd+34, 0);                 // Disk number where file starts
-				ZIP_WRITE_LE16(cd+36, 0);                 // Internal file attributes
-				ZIP_WRITE_LE32(cd+38, extAttr);           // External file attributes
+				ZIP_WRITE_LE32(cd+0, 0x02014b50);           // Central directory file header signature 
+				ZIP_WRITE_LE16(cd+4, 0);                    // Version made by (0 = DOS)
+				memcpy(cd+6, lfh+4, 26);                    // Copy middle section shared with local file header
+				ZIP_WRITE_LE16(cd+32, 0);                   // File comment length
+				ZIP_WRITE_LE16(cd+34, 0);                   // Disk number where file starts
+				ZIP_WRITE_LE16(cd+36, 0);                   // Internal file attributes
+				ZIP_WRITE_LE32(cd+38, (is_dir ? 0x10 : 0)); // External file attributes
 				ZIP_WRITE_LE32(cd+42, s.local_file_offset); // Relative offset of local file header
-				memcpy(cd + 46, buf + 30, pathLen);       // File name
-
+				memcpy(cd + 46, lfh + 30, pathLen);         // File name
 				s.local_file_offset += 30 + pathLen + size;
 				s.file_count++;
 			}
@@ -404,16 +409,22 @@ struct unionDriveImpl
 			impl->ScheduleSave(5000.f);
 			return;
 		}
-		s.drv = impl->over;
+		s.over = impl->over;
+		s.under = impl->under;
 		s.local_file_offset = s.save_size = 0;
 		s.file_count = 0;
-		s.failed = false;
-		DriveFileIterator(s.drv, Saver::WriteFiles, (Bitu)&s);
+		s.failed = s.write_mods = false;
+		DriveFileIterator(s.over, Saver::WriteFiles, (Bitu)&s);
 
-		for (Union_Modification* m : impl->modifications)
-			m->Serialize(s.mods);
-		if (s.mods.size())
-			Saver::WriteFiles("FILEMODS.DBP", false, (Bit32u)s.mods.size(), 0, 0, 0, (Bitu)&s);
+		if (impl->modifications.Len())
+		{
+			s.write_mods = true;
+			s.buf.clear();
+			for (Union_Modification* m : impl->modifications)
+				m->Serialize(s.buf);
+			if (s.buf.size())
+				Saver::WriteFiles("FILEMODS.DBP", false, (Bit32u)s.buf.size(), 0, 0, 0, (Bitu)&s);
+		}
 
 		if (s.file_count)
 			s.failed |= !fwrite(&s.central_dir[0], s.central_dir.size(), 1, s.f);
