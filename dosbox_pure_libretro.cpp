@@ -96,10 +96,10 @@ struct DBP_InputBind
 {
 	Bit8u port, device, index, id;
 	Bit16s evt, meta; union { Bit16s lastval; Bit32u _32bitalign; };
-	void Update(Bit16s val, bool is_analog_button = false);
+	void Update(Bit16s val);
 	#define PORT_DEVICE_INDEX_ID(b) (*(Bit32u*)&static_cast<const DBP_InputBind&>(b))
 };
-enum { DBP_MAX_PORTS = 8, DBP_JOY_ANALOG_RANGE = 0x8000 }; // analog stick range is -0x8000 to 0x8000
+enum { DBP_MAX_PORTS = 8, DBP_KEYBOARD_PORT, DBP_PORT_MASK = 0x7, DBP_SHIFT_PORT_BIT = 0x80, DBP_NO_PORT = 255, DBP_JOY_ANALOG_RANGE = 0x8000 }; // analog stick range is -0x8000 to 0x8000
 static const char* DBP_KBDNAMES[] =
 {
 	"None","1","2","3","4","5","6","7","8","9","0","Q","W","E","R","T","Y","U","I","O","P","A","S","D","F","G","H","J","K","L","Z","X","C","V","B","N","M",
@@ -137,6 +137,7 @@ enum DBP_Event_Type : Bit8u
 	DBPET_KEYDOWN, DBPET_KEYUP,
 	DBPET_ONSCREENKEYBOARD, DBPET_ONSCREENKEYBOARDUP,
 	DBPET_ACTIONWHEEL, DBPET_ACTIONWHEELUP,
+	DBPET_SHIFTPORT, DBPET_SHIFTPORTUP,
 
 	DBPET_AXISMAPPAIR,
 	DBPET_CHANGEMOUNTS,
@@ -150,7 +151,7 @@ enum DBP_Event_Type : Bit8u
 
 	_DBPET_MAX
 };
-//static const char* DBP_Event_Type_Names[] = { "JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "MOUSEMOVE", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "ONSCREENKEYBOARDUP", "ACTIONWHEEL", "ACTIONWHEELUP", "AXIS_TO_KEY", "CHANGEMOUNTS", "REFRESHSYSTEM", "MAX" };
+//static const char* DBP_Event_Type_Names[] = { "JOY1X", "JOY1Y", "JOY2X", "JOY2Y", "JOYMX", "JOYMY", "MOUSEMOVE", "MOUSEDOWN", "MOUSEUP", "MOUSESETSPEED", "MOUSERESETSPEED", "JOYHATSETBIT", "JOYHATUNSETBIT", "JOY1DOWN", "JOY1UP", "JOY2DOWN", "JOY2UP", "KEYDOWN", "KEYUP", "ONSCREENKEYBOARD", "ONSCREENKEYBOARDUP", "ACTIONWHEEL", "ACTIONWHEELUP", "SHIFTPORT", "SHIFTPORTUP", "AXIS_TO_KEY", "CHANGEMOUNTS", "REFRESHSYSTEM", "MAX" };
 static const char *DBPDEV_Keyboard = "Keyboard", *DBPDEV_Mouse = "Mouse", *DBPDEV_Joystick = "Joystick";
 static const struct DBP_SpecialMapping { int16_t evt, meta; const char *dev, *name; } DBP_SpecialMappings[] =
 {
@@ -181,16 +182,20 @@ static const struct DBP_SpecialMapping { int16_t evt, meta; const char *dev, *na
 	{ DBPET_JOY2X,          1, DBPDEV_Joystick, "Joy 2 Right"  }, // 224
 	{ DBPET_ONSCREENKEYBOARD, 0, NULL, "On Screen Keyboard"    }, // 225
 	{ DBPET_ACTIONWHEEL,      0, NULL, "Action Wheel"          }, // 226
+	{ DBPET_SHIFTPORT,        0, NULL, "Port #1 while holding" }, // 227
+	{ DBPET_SHIFTPORT,        1, NULL, "Port #2 while holding" }, // 228
+	{ DBPET_SHIFTPORT,        2, NULL, "Port #3 while holding" }, // 229
+	{ DBPET_SHIFTPORT,        3, NULL, "Port #4 while holding" }, // 230
 };
 #define DBP_SPECIALMAPPING(key) DBP_SpecialMappings[(key)-DBP_SPECIALMAPPINGS_KEY]
 enum { DBP_SPECIALMAPPINGS_KEY = 200, DBP_SPECIALMAPPINGS_MAX = 200+(sizeof(DBP_SpecialMappings)/sizeof(DBP_SpecialMappings[0])) };
 enum { DBP_SPECIALMAPPINGS_OSK = 225, DBP_SPECIALMAPPINGS_ACTIONWHEEL = 226 };
 enum { DBP_EVENT_QUEUE_SIZE = 256, DBP_DOWN_COUNT_MASK = 127, DBP_DOWN_BY_KEYBOARD = 128 };
-static struct DBP_Event { DBP_Event_Type type; int val, val2; } dbp_event_queue[DBP_EVENT_QUEUE_SIZE];
+static struct DBP_Event { DBP_Event_Type type; Bit8u port; int val, val2; } dbp_event_queue[DBP_EVENT_QUEUE_SIZE];
 static int dbp_event_queue_write_cursor;
 static int dbp_event_queue_read_cursor;
 static int dbp_keys_down_count;
-static unsigned char dbp_keys_down[KBD_LAST+17];
+static unsigned char dbp_keys_down[KBD_LAST + 21];
 static unsigned short dbp_keymap_dos2retro[KBD_LAST];
 static unsigned char dbp_keymap_retro2dos[RETROK_LAST];
 
@@ -201,6 +206,7 @@ struct DBP_Interceptor
 	virtual void input() = 0;
 	virtual void close() = 0;
 	virtual bool evnt(DBP_Event_Type type, int val, int val2) { return false; }
+	virtual bool usegfx() { return true; }
 };
 static DBP_Interceptor *dbp_intercept, *dbp_intercept_next;
 static void DBP_SetIntercept(DBP_Interceptor* intercept) { if (!dbp_intercept) dbp_intercept = intercept; dbp_intercept_next = intercept; }
@@ -294,25 +300,27 @@ void NET_SetupEthernet();
 bool MIDI_TSF_SwitchSF(const char*);
 const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg);
 
-static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
+static void DBP_QueueEvent(DBP_Event_Type type, Bit8u port, int val = 0, int val2 = 0)
 {
 	unsigned char* downs = dbp_keys_down;
 	switch (type)
 	{
 		case DBPET_KEYDOWN: DBP_ASSERT(val > KBD_NONE && val < KBD_LAST); goto check_down;
 		case DBPET_KEYUP:   DBP_ASSERT(val > KBD_NONE && val < KBD_LAST); goto check_up;
-		case DBPET_MOUSEDOWN:          downs += KBD_LAST +  0; goto check_down;
-		case DBPET_MOUSEUP:            downs += KBD_LAST +  0; goto check_up;
-		case DBPET_JOY1DOWN:           downs += KBD_LAST +  3; goto check_down;
-		case DBPET_JOY1UP:             downs += KBD_LAST +  3; goto check_up;
-		case DBPET_JOY2DOWN:           downs += KBD_LAST +  5; goto check_down;
-		case DBPET_JOY2UP:             downs += KBD_LAST +  5; goto check_up;
-		case DBPET_JOYHATSETBIT:       downs += KBD_LAST +  7; goto check_down;
-		case DBPET_JOYHATUNSETBIT:     downs += KBD_LAST +  7; goto check_up;
-		case DBPET_ONSCREENKEYBOARD:   downs += KBD_LAST + 15; goto check_down;
-		case DBPET_ONSCREENKEYBOARDUP: downs += KBD_LAST + 15; goto check_up;
-		case DBPET_ACTIONWHEEL:        downs += KBD_LAST + 16; goto check_down;
-		case DBPET_ACTIONWHEELUP:      downs += KBD_LAST + 16; goto check_up;
+		case DBPET_MOUSEDOWN:          DBP_ASSERT(val >= 0 && val < 3); downs += KBD_LAST +  0; goto check_down;
+		case DBPET_MOUSEUP:            DBP_ASSERT(val >= 0 && val < 3); downs += KBD_LAST +  0; goto check_up;
+		case DBPET_JOY1DOWN:           DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  3; goto check_down;
+		case DBPET_JOY1UP:             DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  3; goto check_up;
+		case DBPET_JOY2DOWN:           DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  5; goto check_down;
+		case DBPET_JOY2UP:             DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  5; goto check_up;
+		case DBPET_JOYHATSETBIT:       DBP_ASSERT(val >= 0 && val < 8); downs += KBD_LAST +  7; goto check_down;
+		case DBPET_JOYHATUNSETBIT:     DBP_ASSERT(val >= 0 && val < 8); downs += KBD_LAST +  7; goto check_up;
+		case DBPET_ONSCREENKEYBOARD:   DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 15; goto check_down;
+		case DBPET_ONSCREENKEYBOARDUP: DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 15; goto check_up;
+		case DBPET_ACTIONWHEEL:        DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 16; goto check_down;
+		case DBPET_ACTIONWHEELUP:      DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 16; goto check_up;
+		case DBPET_SHIFTPORT:          DBP_ASSERT(val >= 0 && val < 4); downs += KBD_LAST + 17; goto check_down;
+		case DBPET_SHIFTPORTUP:        DBP_ASSERT(val >= 0 && val < 4); downs += KBD_LAST + 17; goto check_up;
 
 		check_down:
 			if (((++downs[val]) & DBP_DOWN_COUNT_MASK) > 1) return;
@@ -346,7 +354,7 @@ static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
 			found_axis_value:break;
 		default:;
 	}
-	DBP_Event evt = { type, val, val2 };
+	DBP_Event evt = { type, port, val, val2 };
 	DBP_ASSERT(evt.type != DBPET_AXISMAPPAIR);
 	int cur = dbp_event_queue_write_cursor, next = ((cur + 1) % DBP_EVENT_QUEUE_SIZE);
 	if (next == dbp_event_queue_read_cursor)
@@ -387,7 +395,7 @@ static void DBP_QueueEvent(DBP_Event_Type type, int val = 0, int val2 = 0)
 
 static void DBP_ReleaseKeyEvents(bool onlyPhysicalKeys)
 {
-	for (Bit8u i = KBD_NONE + 1, iEnd = (onlyPhysicalKeys ? KBD_LAST : KBD_LAST + 17); i != iEnd; i++)
+	for (Bit8u i = KBD_NONE + 1, iEnd = (onlyPhysicalKeys ? KBD_LAST : KBD_LAST + 21); i != iEnd; i++)
 	{
 		if (!dbp_keys_down[i] || (onlyPhysicalKeys && (!(dbp_keys_down[i] & DBP_DOWN_BY_KEYBOARD) || input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, dbp_keymap_dos2retro[i])))) continue;
 		dbp_keys_down[i] = 1;
@@ -398,27 +406,28 @@ static void DBP_ReleaseKeyEvents(bool onlyPhysicalKeys)
 		else if (i < KBD_LAST +  7) { val -=  KBD_LAST +  5; type = DBPET_JOY2UP; }
 		else if (i < KBD_LAST + 15) { val -=  KBD_LAST +  7; type = DBPET_JOYHATUNSETBIT; }
 		else if (i < KBD_LAST + 16) { val -=  KBD_LAST + 15; type = DBPET_ONSCREENKEYBOARDUP; }
-		else                        { val -=  KBD_LAST + 16; type = DBPET_ACTIONWHEELUP; }
-		DBP_QueueEvent(type, val);
+		else if (i < KBD_LAST + 17) { val -=  KBD_LAST + 16; type = DBPET_ACTIONWHEELUP; }
+		else                        { val -=  KBD_LAST + 17; type = DBPET_SHIFTPORTUP; }
+		DBP_QueueEvent(type, DBP_NO_PORT, val);
 	}
 }
 
-void DBP_InputBind::Update(Bit16s val, bool is_analog_button)
+void DBP_InputBind::Update(Bit16s val)
 {
 	Bit16s prevval = lastval;
 	lastval = val; // set before calling DBP_QueueEvent
 	if (evt <= _DBPET_JOY_AXIS_MAX)
 	{
 		// handle analog axis mapped to analog functions
-		if (device == RETRO_DEVICE_JOYPAD && !is_analog_button) { lastval = prevval; return; } // handled by dbp_analog_buttons
+		if (device == RETRO_DEVICE_JOYPAD && (!dbp_analog_buttons || device != RETRO_DEVICE_JOYPAD || evt > _DBPET_JOY_AXIS_MAX)) { lastval = prevval; return; } // handled by dbp_analog_buttons
 		DBP_ASSERT(device == RETRO_DEVICE_JOYPAD || meta == 0); // analog axis mapped to analog functions should always have 0 in meta
 		DBP_ASSERT(device != RETRO_DEVICE_JOYPAD || meta == 1 || meta == -1); // buttons mapped to analog functions should always have 1 or -1 in meta
-		DBP_QueueEvent((DBP_Event_Type)evt, (meta ? val * meta : val), 0);
+		DBP_QueueEvent((DBP_Event_Type)evt, port, (meta ? val * meta : val), 0);
 	}
 	else if (device != RETRO_DEVICE_ANALOG)
 	{
 		// if button is pressed, send the _DOWN, otherwise send _UP
-		DBP_QueueEvent((DBP_Event_Type)(val ? evt : evt + 1), meta, port);
+		DBP_QueueEvent((DBP_Event_Type)(val ? evt : evt + 1), port, meta);
 	}
 	else for (Bit16s dir = 1; dir >= -1; dir -= 2)
 	{
@@ -427,16 +436,16 @@ void DBP_InputBind::Update(Bit16s val, bool is_analog_button)
 		if (map == KBD_NONE) continue;
 		if (map < KBD_LAST)
 		{
-			if (dirval >= 12000 && dirprevval <  12000) DBP_QueueEvent(DBPET_KEYDOWN, map, port);
-			if (dirval <  12000 && dirprevval >= 12000) DBP_QueueEvent(DBPET_KEYUP,   map, port);
+			if (dirval >= 12000 && dirprevval <  12000) DBP_QueueEvent(DBPET_KEYDOWN, port, map);
+			if (dirval <  12000 && dirprevval >= 12000) DBP_QueueEvent(DBPET_KEYUP,   port, map);
 			continue;
 		}
 		if (map < DBP_SPECIALMAPPINGS_KEY) { DBP_ASSERT(false); continue; }
 		if (dirval <= 0 && dirprevval <= 0) continue;
 		const DBP_SpecialMapping& sm = DBP_SPECIALMAPPING(map);
-		if (sm.evt <= _DBPET_JOY_AXIS_MAX) DBP_QueueEvent((DBP_Event_Type)sm.evt, (dirval < 0 ? 0 : dirval) * sm.meta, 0);
-		else if (dirval >= 12000 && dirprevval <  12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt    ), sm.meta, port);
-		else if (dirval <  12000 && dirprevval >= 12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt + 1), sm.meta, port);
+		if (sm.evt <= _DBPET_JOY_AXIS_MAX) DBP_QueueEvent((DBP_Event_Type)sm.evt, port, (dirval < 0 ? 0 : dirval) * sm.meta);
+		else if (dirval >= 12000 && dirprevval <  12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt    ), port, sm.meta);
+		else if (dirval <  12000 && dirprevval >= 12000) DBP_QueueEvent((DBP_Event_Type)(sm.evt + 1), port, sm.meta);
 	}
 }
 
@@ -1114,12 +1123,19 @@ struct DBP_PadMapping
 	enum EPortMode : Bit8u { MODE_DISABLED, MODE_MAPPER, MODE_PRESET_AUTOMAPPED, MODE_PRESET_GENERICKEYBOARD, MODE_PRESET_LAST = MODE_PRESET_AUTOMAPPED + (PRESET_CUSTOM - PRESET_AUTOMAPPED) - 1, MODE_KEYBOARD, MODE_KEYBOARD_MOUSE1, MODE_KEYBOARD_MOUSE2 };
 
 	INLINE static EPreset DefaultPreset(Bit8u port) { return ((port || !dbp_auto_mapping) ? PRESET_GENERICKEYBOARD : PRESET_AUTOMAPPED); }
-	INLINE static bool IsCustomized(Bit8u port) { return (dbp_port_mode[port] == MODE_MAPPER && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
+	INLINE static bool IsCustomized(Bit8u port) { return (CalcPortMode(port) == MODE_MAPPER && GetPreset(port, DefaultPreset(port)) == PRESET_CUSTOM); }
 	INLINE static const char* GetPortPresetName(Bit8u port) { return GetPresetName(GetPreset(port)); }
 	INLINE static void FillGenericKeys(Bit8u port) { Apply(port, PresetBinds(PRESET_GENERICKEYBOARD, port), true, true); }
 	INLINE static void SetPreset(Bit8u port, EPreset preset) { ClearBinds(port); Apply(port, PresetBinds(preset, port), true); }
 	INLINE static const char* GetKeyAutoMapButtonLabel(Bit8u key) { return FindAutoMapButtonLabel(1, &key); }
 	INLINE static const char* GetWheelAutoMapButtonLabel(const DBP_WheelItem& wheel_item) { return FindAutoMapButtonLabel(wheel_item.key_count, wheel_item.k); }
+
+	static Bit8u CalcPortMode(Bit8u port)
+	{
+		if (Bit8u m = dbp_port_mode[port]) return m;
+		for (DBP_InputBind& b : dbp_input_binds) if (b.evt == DBPET_SHIFTPORT && b.meta == port) return MODE_MAPPER;
+		return MODE_DISABLED;
+	}
 
 	static void Load()
 	{
@@ -1288,7 +1304,8 @@ struct DBP_PadMapping
 		if (port >= DBP_MAX_PORTS || dbp_port_mode[port] == mode) return;
 		dbp_port_mode[port] = mode;
 		if (dbp_state <= DBPSTATE_SHUTDOWN) return;
-		if (mode != MODE_DISABLED) SetInputDescriptors(true); else ClearBinds((Bit8u)port);
+		if (mode) SetInputDescriptors(true);
+		else if (!CalcPortMode(port)) ClearBinds((Bit8u)port);
 	}
 
 	static void SetInputDescriptors(bool regenerate_bindings = false)
@@ -1312,9 +1329,9 @@ struct DBP_PadMapping
 				}
 			}
 			const Bit8u* mapping = (!dbp_custom_mapping.empty() ? &dbp_custom_mapping[0] : NULL), *mapping_end = mapping + dbp_custom_mapping.size();
-			for (Bit8u port = 0; port != DBP_MAX_PORTS; port++)
+			for (Bit8u port = 0, mode; port != DBP_MAX_PORTS; port++)
 			{
-				if (dbp_port_mode[port] == MODE_MAPPER)
+				if ((mode = CalcPortMode(port)) == MODE_MAPPER)
 				{
 					if (mapping && mapping < mapping_end) mapping = Apply(port, mapping, false);
 					else if (port == 0 && dbp_auto_mapping) Apply(port, dbp_auto_mapping, true);
@@ -1323,10 +1340,10 @@ struct DBP_PadMapping
 				else
 				{
 					if (mapping && mapping < mapping_end) mapping = SkipMapping(mapping);
-					bool preset_mode = (dbp_port_mode[port] >= MODE_PRESET_AUTOMAPPED && dbp_port_mode[port] <= MODE_PRESET_LAST), bind_osd = (dbp_port_mode[port] != MODE_DISABLED);
-					EPreset preset = (preset_mode) ? (EPreset)(PRESET_AUTOMAPPED + (dbp_port_mode[port] - MODE_PRESET_AUTOMAPPED))
-					               : (dbp_port_mode[port] == MODE_KEYBOARD_MOUSE1) ? PRESET_MOUSE_LEFT_ANALOG
-					               : (dbp_port_mode[port] == MODE_KEYBOARD_MOUSE2) ? PRESET_MOUSE_RIGHT_ANALOG
+					bool preset_mode = (mode >= MODE_PRESET_AUTOMAPPED && mode <= MODE_PRESET_LAST), bind_osd = (mode != MODE_DISABLED);
+					EPreset preset = (preset_mode) ? (EPreset)(PRESET_AUTOMAPPED + (mode - MODE_PRESET_AUTOMAPPED))
+					               : (mode == MODE_KEYBOARD_MOUSE1) ? PRESET_MOUSE_LEFT_ANALOG
+					               : (mode == MODE_KEYBOARD_MOUSE2) ? PRESET_MOUSE_RIGHT_ANALOG
 					               : PRESET_NONE;
 					if (bind_osd) Apply(port, PresetBinds(preset, port), true);
 					if (preset_mode) FillGenericKeys(port);
@@ -1342,7 +1359,7 @@ struct DBP_PadMapping
 		input_names.clear();
 		std::vector<retro_input_descriptor> input_descriptor;
 		for (DBP_InputBind *b = (dbp_input_binds.empty() ? NULL : &dbp_input_binds[0]), *bEnd = b + dbp_input_binds.size(), *prev = NULL; b != bEnd; prev = b++)
-			if (b->device != RETRO_DEVICE_MOUSE && (!prev || PORT_DEVICE_INDEX_ID(*prev) != PORT_DEVICE_INDEX_ID(*b)))
+			if (b->device != RETRO_DEVICE_MOUSE && b->port < DBP_MAX_PORTS && (!prev || PORT_DEVICE_INDEX_ID(*prev) != PORT_DEVICE_INDEX_ID(*b)))
 				if (const char* desc = GenerateDesc(input_names, PORT_DEVICE_INDEX_ID(*b), b->device == RETRO_DEVICE_ANALOG))
 					input_descriptor.push_back( { b->port, b->device, b->index, b->id, desc } );
 		input_descriptor.push_back( { 0 } );
@@ -1943,7 +1960,7 @@ static std::vector<std::string>& DBP_ScanSystem(bool force_midi_scan)
 			for (const std::string& s : dbp_shellzips) { fwrite(s.c_str(), s.length(), 1, f); fwrite("\n", 1, 1, f); }
 			fclose(f);
 		}
-		if (force_midi_scan) DBP_QueueEvent(DBPET_REFRESHSYSTEM);
+		if (force_midi_scan) DBP_QueueEvent(DBPET_REFRESHSYSTEM, DBP_NO_PORT);
 	}
 	return dynstr;
 }
@@ -2057,7 +2074,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		}
 	}
 
-	if (dbp_intercept_next)
+	if (dbp_intercept_next && dbp_intercept_next->usegfx())
 	{
 		if (dbp_opengl_draw && voodoo_ogl_is_showing()) // zero all including alpha because we'll blend the OSD after displaying voodoo
 			memset(buf.video, 0, buf.width * buf.height * 4);
@@ -2292,7 +2309,7 @@ void GFX_Events()
 {
 	// Some configuration modifications (like keyboard layout) can cause this to be called recursively
 	static bool GFX_EVENTS_RECURSIVE;
-	if (GFX_EVENTS_RECURSIVE) return;
+	if (GFX_EVENTS_RECURSIVE) { DBP_ASSERT(false); return; } // it probably isn't recursive anymore since config variable changing was moved to the main thread
 	GFX_EVENTS_RECURSIVE = true;
 
 	DBP_FPSCOUNT(dbp_fpscount_event)
@@ -2320,16 +2337,19 @@ void GFX_Events()
 		switch (e.type)
 		{
 			case DBPET_KEYDOWN:
-				BIOS_SetKeyboardLEDOverwrite((KBD_KEYS)e.val, (KBD_LEDS)e.val2);
+				if (e.port == DBP_KEYBOARD_PORT) BIOS_SetKeyboardLEDOverwrite((KBD_KEYS)e.val, (KBD_LEDS)e.val2);
 				KEYBOARD_AddKey((KBD_KEYS)e.val, true);
 				break;
-			case DBPET_KEYUP:   KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
+			case DBPET_KEYUP: KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
 
 			case DBPET_ONSCREENKEYBOARD: DBP_StartOSD(DBPOSD_OSK); break;
 			case DBPET_ONSCREENKEYBOARDUP: break;
 
-			case DBPET_ACTIONWHEEL: DBP_WheelOSD((Bit8u)e.val2); break;
-			case DBPET_ACTIONWHEELUP: break;
+			case DBPET_ACTIONWHEEL: DBP_WheelShiftOSD(e.port, true); break;
+			case DBPET_ACTIONWHEELUP: DBP_WheelShiftOSD(e.port, false); break;
+
+			case DBPET_SHIFTPORT: DBP_WheelShiftOSD(e.port, true, (Bit8u)e.val); break;
+			case DBPET_SHIFTPORTUP: DBP_WheelShiftOSD(e.port, false, (Bit8u)e.val); break;
 
 			case DBPET_MOUSEMOVE:
 			{
@@ -3306,12 +3326,12 @@ void retro_init(void) //#3
 			{
 				int leds = ((key_modifiers & RETROKMOD_NUMLOCK) ? KLED_NUMLOCK : 0) | ((key_modifiers & RETROKMOD_CAPSLOCK) ? KLED_CAPSLOCK : 0) | ((key_modifiers & RETROKMOD_SCROLLOCK) ? KLED_SCROLLLOCK : 0);
 				dbp_keys_down[val] |= DBP_DOWN_BY_KEYBOARD;
-				DBP_QueueEvent(DBPET_KEYDOWN, val, leds);
+				DBP_QueueEvent(DBPET_KEYDOWN, DBP_KEYBOARD_PORT, val, leds);
 			}
 			else if (!down && (dbp_keys_down[val] & DBP_DOWN_BY_KEYBOARD))
 			{
 				dbp_keys_down[val] = 1;
-				DBP_QueueEvent(DBPET_KEYUP, val);
+				DBP_QueueEvent(DBPET_KEYUP, DBP_KEYBOARD_PORT, val);
 			}
 		}
 
@@ -3326,7 +3346,7 @@ void retro_init(void) //#3
 				DBP_Mount(dbp_image_index, true);
 			DBP_SetMountSwappingRequested(); // set swapping_requested flag for CMscdex::GetMediaStatus
 			DBP_ThreadControl(TCM_RESUME_FRAME);
-			DBP_QueueEvent(DBPET_CHANGEMOUNTS);
+			DBP_QueueEvent(DBPET_CHANGEMOUNTS, DBP_NO_PORT);
 			return true;
 		}
 
@@ -3748,9 +3768,9 @@ void retro_run_touchpad(bool has_press, Bit16s absx, Bit16s absy)
 		if (add_press)
 			press_tick = tick;
 		if (!down_tick && !add_press && press_tick && (!is_move || presses))
-			{ down_tick = tick; is_tap = true; down_btn = presses; DBP_QueueEvent(DBPET_MOUSEDOWN, down_btn); press_tick = 0; }
+			{ down_tick = tick; is_tap = true; down_btn = presses; DBP_QueueEvent(DBPET_MOUSEDOWN, DBP_NO_PORT, down_btn); press_tick = 0; }
 		else if (down_tick && (!presses || add_press))
-			{ DBP_QueueEvent(DBPET_MOUSEUP, down_btn); down_tick = 0; }
+			{ DBP_QueueEvent(DBPET_MOUSEUP, DBP_NO_PORT, down_btn); down_tick = 0; }
 		if (!presses)
 			is_move = false;
 		if (!last_presses || !add_press)
@@ -3764,14 +3784,14 @@ void retro_run_touchpad(bool has_press, Bit16s absx, Bit16s absy)
 		{
 			lastx = absx; int tx = dx + dbp_mouse_x; dbp_mouse_x = (Bit16s)(tx < -32768 ? -32768 : (tx > 32767 ? 32767 : tx)); dx += remx; remx = (Bit16s)(dx % 32);
 			lasty = absy; int ty = dy + dbp_mouse_y; dbp_mouse_y = (Bit16s)(ty < -32768 ? -32768 : (ty > 32767 ? 32767 : ty)); dy += remy; remy = (Bit16s)(dy % 32);
-			DBP_QueueEvent(DBPET_MOUSEMOVE, dx / 32, dy / 32);
+			DBP_QueueEvent(DBPET_MOUSEMOVE, DBP_NO_PORT, dx / 32, dy / 32);
 			is_move = true;
 		}
 	}
 	if (!down_tick && presses && !is_move && press_tick && (tick - press_tick) >= 500)
-		{ down_tick = tick; is_tap = false; down_btn = presses - 1; DBP_QueueEvent(DBPET_MOUSEDOWN, down_btn); }
+		{ down_tick = tick; is_tap = false; down_btn = presses - 1; DBP_QueueEvent(DBPET_MOUSEDOWN, DBP_NO_PORT, down_btn); }
 	else if (down_tick && is_tap && (tick - down_tick) >= 100)
-		{ DBP_QueueEvent(DBPET_MOUSEUP, down_btn); down_tick = 0; }
+		{ DBP_QueueEvent(DBPET_MOUSEUP, DBP_NO_PORT, down_btn); down_tick = 0; }
 }
 
 void retro_run(void)
@@ -3882,7 +3902,7 @@ void retro_run(void)
 		{
 			//log_cb(RETRO_LOG_INFO, "[DOSBOX MOUSE] [%4d@%6d] Rel: %d,%d - Abs: %d,%d - LG: %d,%d - Press: %d - Count: %d\n", dbp_framecount, DBP_GetTicks(), movx, movy, absx, absy, lgx, lgy, prss, input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT));
 			if (absvalid) dbp_mouse_x = absx, dbp_mouse_y = absy;
-			DBP_QueueEvent(DBPET_MOUSEMOVE, movx, movy);
+			DBP_QueueEvent(DBPET_MOUSEMOVE, DBP_NO_PORT, movx, movy);
 		}
 	}
 
@@ -3897,7 +3917,7 @@ void retro_run(void)
 				if (b.evt > _DBPET_JOY_AXIS_MAX || b.device != RETRO_DEVICE_JOYPAD) continue; // handled below
 				Bit16s val = input_state_cb(b.port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b.id);
 				if (!val) val = (input_state_cb(b.port, RETRO_DEVICE_JOYPAD, 0, b.id) ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
-				if (val != b.lastval) b.Update(val, true);
+				if (val != b.lastval) b.Update(val);
 			}
 		}
 
