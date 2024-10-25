@@ -1322,15 +1322,18 @@ struct DBP_PureMenuState : DBP_MenuState
 				list.emplace_back(IT_NONE, INFO_WARN, save_c_name);
 			}
 			list.emplace_back(IT_NONE);
-			if (atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024")))
+			const char* dfreespace = retro_get_variable("dosbox_pure_bootos_dfreespace", "1024"); // can also be "discard" or "hide"
+			if (atoi(dfreespace))
 			{
 				const char *save_d_name; std::string save_d = DBP_GetSaveFile(SFT_VIRTUALDISK, &save_d_name);
 				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be stored in the following location:");
 				if (save_d_name > &save_d[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&save_d[0], save_d_name - &save_d[0]); }
 				list.emplace_back(IT_NONE, INFO_WARN, save_d_name);
 			}
-			else
+			else if (dfreespace && dfreespace[0] != 'h')
 				list.emplace_back(IT_NONE, INFO_WARN, "Changes made to the D: drive will be discarded");
+			else
+				list.emplace_back(IT_NONE, INFO_WARN, "D: hard drive was disabled, use only mounted CDs");
 		}
 		else if (mode == IT_SHELLLIST)
 		{
