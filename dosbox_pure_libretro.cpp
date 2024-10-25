@@ -77,7 +77,8 @@ static Bit16s dbp_content_year;
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
-static struct DBP_Buffer { Bit32u* video, width, height, cap, border, border_color; float ratio; } dbp_buffers[3];
+static char dbp_aspectratio;
+static struct DBP_Buffer { Bit32u* video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static double dbp_audio_remain;
@@ -1989,46 +1990,47 @@ Bitu GFX_SetSize(Bitu width, Bitu height, Bitu flags, double scalex, double scal
 	return GFX_GetBestMode(0);
 }
 
-Bit8u* GFX_GetPixels()
+Bit8u* GFX_GetPixels(Bitu& pitch)
 {
-	Bit8u* pixels = (Bit8u*)dbp_buffers[(buffer_active + 1) % 3].video;
-	if (pixels && dbp_overscan)
-	{
-		Bit32u w = (Bit32u)render.src.width, border = w * dbp_overscan / 160;
-		pixels += ((w + border * 2) * border + border) * 4;
-	}
-	return pixels;
+	DBP_Buffer& buf = dbp_buffers[(buffer_active + 1) % 3];
+	pitch = buf.width * 4;
+	return (Bit8u*)(buf.video + (buf.width * buf.pad_y + buf.pad_x));
 }
 
 bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 {
 	if (dbp_state == DBPSTATE_BOOT) return false;
 	DBP_FPSCOUNT(dbp_fpscount_gfxstart)
-	Bit32u w = (Bit32u)render.src.width, h = (Bit32u)render.src.height, border = 0, overscan_offset = 0;
-	if (render.aspect)
+	Bit32u w = (Bit32u)render.src.width, h = (Bit32u)render.src.height, pad_x = 0, pad_y = 0, pad_offset = 0;
+	if (dbp_aspectratio == 's' || dbp_aspectratio == 'b')
 	{
 		w <<= (Bit32u)render.src.dblw;
 		h <<= (Bit32u)render.src.dblh;
 	}
-	if (dbp_overscan && !voodoo_is_active())
+	if ((dbp_overscan || dbp_aspectratio == '4' || dbp_aspectratio == 'b') && !voodoo_is_active())
 	{
-		border = w * dbp_overscan / 160;
-		w += border * 2;
-		h += border * 2;
-		overscan_offset = (w * border + border) * 4;
+		if (dbp_aspectratio == '4' || dbp_aspectratio == 'b')
+		{
+			float ratio = w / (h * (float)render.src.ratio);
+			pad_x += ((ratio < (4.0f / 3.0f)) ? (Bit32u)((w * ((4.0f / 3.0f) / ratio) - w) / 2.0f + 0.4999f) : (Bit32u)0);
+			pad_y += ((ratio > (4.0f / 3.0f)) ? (Bit32u)((h * (ratio / (4.0f / 3.0f)) - h) / 2.0f + 0.4999f) : (Bit32u)0);
+		}
+		Bit32u overscan = w * dbp_overscan / 160;
+		pad_x += overscan; pad_y += overscan;
+		w += pad_x * 2; h += pad_y * 2;
+		pad_offset = (w * pad_y + pad_x) * 4;
 	}
 
 	DBP_Buffer& buf = dbp_buffers[(buffer_active + 1) % 3];
-	if ((buf.width != w) | (buf.height != h) | (buf.border != border))
+	if ((buf.width != w) | (buf.height != h) | (buf.pad_x != pad_x) | (buf.pad_y != pad_y))
 	{
 		if (buf.cap < w * h * 4) buf.video = (Bit32u*)realloc(buf.video, (buf.cap = w * h * 4));
 		memset(buf.video, 0, w * h * 4); // clear to black
-		buf.width = w;
-		buf.height = h;
-		buf.border = border;
+		buf.width = w; buf.height = h;
+		buf.pad_x = pad_x; buf.pad_y = pad_y;
 		buf.border_color = 0xDEADBEEF; // force refresh
 	}
-	pixels = (Bit8u*)buf.video + overscan_offset;
+	pixels = (Bit8u*)buf.video + pad_offset;
 	pitch = w * 4;
 	return true;
 }
@@ -2040,37 +2042,40 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	DBP_Buffer& buf = dbp_buffers[(buffer_active + 1) % 3];
 	//DBP_ASSERT((Bit8u*)buf.video == render.scale.outWrite - render.scale.outPitch * render.src.height); // this assert can fail after loading a save game
-	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)(buf.video + buf.width * buf.height));
+	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)(buf.video + buf.width * (buf.height + buf.pad_y) + buf.pad_x));
 
-	if (render.aspect)
+	if (dbp_aspectratio == 'f')
 	{
-		const Bit32u dblw = (Bit32u)render.src.dblw, dblh = (Bit32u)render.src.dblh, srcw = (Bit32u)render.src.width, srch = (Bit32u)render.src.height, pitch = buf.width, trgpitch = pitch<<dblh;
-		if (dblw | dblh) for (Bit32u *pVid = buf.video + (pitch * buf.border + buf.border), *pLine = pVid + (pitch * (srch - 1)), *pTrgRight = pVid + (trgpitch * (srch - 1) + ((srcw - 1) << dblw)); pLine >= pVid; pLine -= pitch, pTrgRight -= trgpitch)
-		{
-			Bit32u *src = pLine + srcw, *srcEnd = pLine, *trg = pTrgRight;
-			if      (!dblw) for (; src != srcEnd; trg -= 1) trg[0] = trg[pitch] = *(--src);
-			else if (!dblh) for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = *(--src);
-			else            for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = trg[pitch] = trg[pitch+1] = *(--src);
-		}
-		buf.ratio = (srcw << dblw) / ((srch << dblh) * (float)render.src.ratio);
+		float realratio = (((Bit32u)render.src.width<<(Bit32u)render.src.dblw) / (((Bit32u)render.src.height<<(Bit32u)render.src.dblh) * (float)render.src.ratio));
+		float ratio = (float)buf.width / buf.height, diff = (ratio - realratio), ratioq = ratio * 0.25f;
+		buf.ratio = ((diff < -ratioq) ? (ratio * 2) : ((diff > ratioq) ? (ratio * 0.5f) : ratio));
 	}
 	else
 	{
-		float ratio = (float)buf.width / buf.height;
-		if (ratio < 1) ratio *= 2;
-		if (ratio > 2) ratio /= 2;
-		buf.ratio = ratio;
+		const Bit32u dblw = (Bit32u)render.src.dblw, dblh = (Bit32u)render.src.dblh, srcw = (Bit32u)render.src.width, srch = (Bit32u)render.src.height;
+		if (dbp_aspectratio == 's' || dbp_aspectratio == 'b')
+		{
+			const Bit32u pitch = buf.width, trgpitch = pitch<<dblh, padofs = (pitch * buf.pad_y + buf.pad_x);
+			if (dblw | dblh) for (Bit32u *pVid = buf.video + padofs, *pLine = pVid + (pitch * (srch - 1)), *pTrgRight = pVid + (trgpitch * (srch - 1) + ((srcw - 1) << dblw)); pLine >= pVid; pLine -= pitch, pTrgRight -= trgpitch)
+			{
+				Bit32u *src = pLine + srcw, *srcEnd = pLine, *trg = pTrgRight;
+				if      (!dblw) for (; src != srcEnd; trg -= 1) trg[0] = trg[pitch] = *(--src);
+				else if (!dblh) for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = *(--src);
+				else            for (; src != srcEnd; trg -= 2) trg[0] = trg[1] = trg[pitch] = trg[pitch+1] = *(--src);
+			}
+		}
+		buf.ratio = ((dbp_aspectratio != '4' && dbp_aspectratio != 'b') ? ((srcw<<dblw) / ((srch<<dblh) * (float)render.src.ratio)) : (4.0f / 3.0f));
 	}
 
-	if (Bit32u brd = buf.border)
+	if (buf.pad_x | buf.pad_y)
 	{
 		Bit32u border_color = (Bit32u)GFX_GetRGB(vga.dac.rgb[vga.attr.overscan_color].red<<2, vga.dac.rgb[vga.attr.overscan_color].green<<2, vga.dac.rgb[vga.attr.overscan_color].blue<<2);
 		if (border_color != buf.border_color)
 		{
 			buf.border_color = border_color;
-			Bit32u w = buf.width, wb = (w - brd), *v = buf.video, *topEnd = v + w * brd, *bottomStart = v + w * (buf.height - brd), *vb, *vr, x;
+			Bit32u px = buf.pad_x, py = buf.pad_y, w = buf.width, wb = (w - px), *v = buf.video, *topEnd = v + w * py, *bottomStart = v + w * (buf.height - py), *vb, *vr, x;
 			for (vb = bottomStart; v != topEnd;) *(v++) = *(vb++) = border_color;
-			for (vr = v + wb; v != bottomStart; v += wb, vr += wb) { for (x = 0; x != brd; x++) *(v++) = *(vr++) = border_color; }
+			for (vr = v + wb; v != bottomStart; v += wb, vr += wb) { for (x = 0; x != px; x++) *(v++) = *(vr++) = border_color; }
 		}
 	}
 
@@ -2931,7 +2936,8 @@ static bool check_variables(bool is_startup = false)
 		DBP_Hercules_SetPalette(herc_mode == 'a' ? 1 : (herc_mode == 'g' ? 2 : 0));
 	}
 
-	Variables::DosBoxSet("render", "aspect", retro_get_variable("dosbox_pure_aspect_correction", "false"));
+	dbp_aspectratio = retro_get_variable("dosbox_pure_aspect_correction", "false")[0];
+	Variables::DosBoxSet("render", "aspect", (dbp_aspectratio == 'f' ? "false" : "true"));
 	dbp_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
 
 	const char* sblaster_conf = retro_get_variable("dosbox_pure_sblaster_conf", "A220 I7 D1 H5");
