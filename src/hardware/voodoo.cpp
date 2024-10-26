@@ -6122,7 +6122,7 @@ static void triangle_worker_run(triangle_worker& tworker)
 	tworker.totalpix = pixsum;
 
 	// Don't wake up threads for just a few pixels
-	if (tworker.totalpix <= 200)
+	if (tworker.totalpix <= 350)
 	{
 		triangle_worker_work(tworker, 0, tworker.triangle_threads + 1);
 		return;
