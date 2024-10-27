@@ -1547,6 +1547,12 @@ void VGA_SetupDrawing(Bitu /*val*/) {
 		height/=2;
 	}
 
+	//DBP: Standards prior to VGA (e.g. CGA, EGA) don't do double-scanning
+	if (doubleheight && machine<MCH_VGA) {
+		doubleheight=false;
+		aspect_ratio *= 2.0;
+	}
+
 	vga.draw.lines_total=height;
 	vga.draw.parts_lines=vga.draw.lines_total/vga.draw.parts_total;
 	vga.draw.line_length = width * ((bpp + 1) / 8);
