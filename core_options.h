@@ -528,14 +528,14 @@ static retro_core_option_v2_definition option_defs[] =
 	{
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
-		"When enabled, the core's aspect ratio is set to what a CRT monitor would display.", NULL,
+		"Adjust the core's aspect ratio to approximate what a CRT monitor would display.", NULL,
 		"Video",
 		{
-			{ "false", "Disabled, use square pixels (Default)" },
-			{ "true",  "Enabled, match ratio to emulated monitor" },
-			{ "scan",  "Enabled, match number of scan lines to emulated monitor (for CRT shaders)" },
-			{ "4by3",  "Enabled, add black borders to pad to 4:3" },
-			{ "both",  "Enabled, both match scan lines and pad to 4:3" },
+			{ "false", "Off (default)" },
+			{ "true", "On (single-scan)" },
+			{ "doublescan", "On (double-scan when applicable)" },
+			{ "padded", "Padded to 4:3 (single-scan)" },
+			{ "padded-doublescan", "Padded to 4:3 (double-scan when applicable)" },
 		},
 		"false"
 	},
