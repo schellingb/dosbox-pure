@@ -857,7 +857,7 @@ bool DOS_Drive_Cache::ReadDir(Bit16u id, char* &result) {
 		const bool isroot = (strlen(dirPath) == strlen(basePath));
 		std::vector<CFileInfo*>& filelist = dirSearch[id]->fileList;
 		for (std::vector<CFileInfo*>::iterator it = filelist.begin(), itend = filelist.end(); it != itend; ++it)
-			if ((*it)->shortname[0] == '.' && (*it)->shortname[1] != '\0')
+			if ((*it)->shortname[0] == '.' && (*it)->shortname[1] == '\0')
 				{ if (isroot) filelist.erase(it); goto founddot; } // remove superfluous entry
 		if (!isroot) CreateEntry(dirSearch[id], ".",  true); // add missing entry
 		founddot:
