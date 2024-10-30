@@ -1016,7 +1016,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		DBP_SetDriveLabelFromContentPath(localdrive, path, letter, path_file, ext);
 		if (!isDir && (ext[2]|0x20) == 'n') dbp_conf_loading = 'o'; // conf loading mode set to 'o'utside will load the requested .conf file
 		drive = localdrive;
-		path = NULL; // don't treat as disk image, but always register with Drives even if is_boot
+		if (boot) path = NULL; // don't treat as disk image, but always register with Drives
 	}
 
 	if (DBP_IsMounted(letter))
@@ -2042,7 +2042,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	DBP_Buffer& buf = dbp_buffers[(buffer_active + 1) % 3];
 	//DBP_ASSERT((Bit8u*)buf.video == render.scale.outWrite - render.scale.outPitch * render.src.height); // this assert can fail after loading a save game
-	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)(buf.video + buf.width * (buf.height + buf.pad_y) + buf.pad_x));
+	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)(buf.video + buf.width * buf.height + (buf.width * buf.pad_y + buf.pad_x) * 4));
 
 	if (dbp_aspectratio == 'f')
 	{
@@ -2605,7 +2605,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 	info->library_version  = "0.9.9";
 	info->need_fullpath    = true;
 	info->block_extract    = true;
-	info->valid_extensions = "zip|dosz|dosc|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf";
+	info->valid_extensions = "zip|dosz|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf|/";
 }
 
 void retro_set_environment(retro_environment_t cb) //#2
@@ -3392,7 +3392,11 @@ void retro_init(void) //#3
 			}
 			else
 			{
+				const char *lastSlash = strrchr(info->path, '/'), *lastBackSlash = strrchr(info->path, '\\');
 				dbp_images[index].path = info->path;
+				dbp_images[index].longpath.clear();
+				dbp_images[index].dirlen = (int)((lastSlash && lastSlash > lastBackSlash ? lastSlash + 1 : (lastBackSlash ? lastBackSlash + 1 : info->path)) - info->path);
+				dbp_images[index].dd = 0;
 			}
 			return true;
 		}
@@ -3400,6 +3404,8 @@ void retro_init(void) //#3
 		static bool RETRO_CALLCONV add_image_index()
 		{
 			dbp_images.resize(dbp_images.size() + 1);
+			dbp_images.back().dirlen = 0;
+			dbp_images.back().dd = 0;
 			return true;
 		}
 
