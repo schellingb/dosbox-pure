@@ -1809,7 +1809,7 @@ static void DBP_PureMenuProgram(Program** make)
 
 			DBP_FullscreenOSD = true;
 			DBP_PureMenuState* ms = new DBP_PureMenuState(m == M_BOOT);
-			bool runsoloexe = (ms->exe_count == 1 && ms->fs_rows <= (dbp_images.size() + 1) && !patchDrive::variants.Len());
+			bool runsoloexe = (ms->exe_count == 1 && ms->fs_rows <= (int)(dbp_images.size() + 1) && !patchDrive::variants.Len());
 
 			#ifndef STATIC_LINKING
 			if (m == M_FINISH && dbp_menu_time >= 0 && dbp_menu_time < 99 && (runsoloexe || DBP_Run::autoboot.use) && (DBP_GetTicks() - dbp_lastmenuticks) >= 500)
