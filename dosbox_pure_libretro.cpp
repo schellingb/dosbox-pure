@@ -77,8 +77,7 @@ static Bit16s dbp_content_year;
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
-static bool dbp_doublescan;
-static bool dbp_padding;
+static bool dbp_doublescan, dbp_padding;
 static struct DBP_Buffer { Bit32u* video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
@@ -2012,12 +2011,12 @@ bool GFX_StartUpdate(Bit8u*& pixels, Bitu& pitch)
 	{
 		if (dbp_padding)
 		{
-			const float ratio = (render.src.width << render.src.dblw) / ((render.src.height << render.src.dblh) * (float)render.src.ratio);
+			const float ratio = ((Bit32u)render.src.width << (Bit32u)render.src.dblw) / (((Bit32u)render.src.height << (Bit32u)render.src.dblh) * (float)render.src.ratio);
 			pad_x += ((ratio < (4.0f / 3.0f)) ? (Bit32u)((w * ((4.0f / 3.0f) / ratio) - w) / 2.0f + 0.4999f) : (Bit32u)0);
 			pad_y += ((ratio > (4.0f / 3.0f)) ? (Bit32u)((h * (ratio / (4.0f / 3.0f)) - h) / 2.0f + 0.4999f) : (Bit32u)0);
 		}
 		// Try to keep the overscan with a consistent size whether or not double-scanning is enabled.
-		Bit32u overscan = render.src.width * dbp_overscan / (160 >> (dbp_doublescan & (render.src.dblw | render.src.dblh)));
+		Bit32u overscan = (Bit32u)render.src.width * dbp_overscan / (160 >> (dbp_doublescan & (render.src.dblw || render.src.dblh)));
 		pad_x += overscan; pad_y += overscan;
 		w += pad_x * 2; h += pad_y * 2;
 		pad_offset = (w * pad_y + pad_x) * 4;
@@ -2046,9 +2045,9 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	//DBP_ASSERT((Bit8u*)buf.video == render.scale.outWrite - render.scale.outPitch * render.src.height); // this assert can fail after loading a save game
 	DBP_ASSERT(render.scale.outWrite >= (Bit8u*)buf.video && render.scale.outWrite <= (Bit8u*)(buf.video + buf.width * buf.height + (buf.width * buf.pad_y + buf.pad_x) * 4));
 
+	const Bit32u dblw = (Bit32u)render.src.dblw, dblh = (Bit32u)render.src.dblh, srcw = (Bit32u)render.src.width, srch = (Bit32u)render.src.height;
 	if (render.aspect)
 	{
-		const Bit32u dblw = (Bit32u)render.src.dblw, dblh = (Bit32u)render.src.dblh, srcw = (Bit32u)render.src.width, srch = (Bit32u)render.src.height;
 		if (dbp_doublescan && (dblw | dblh))
 		{
 			const Bit32u pitch = buf.width, trgpitch = pitch<<dblh, padofs = (pitch * buf.pad_y + buf.pad_x);
@@ -2064,7 +2063,9 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	}
 	else
 	{
-		buf.ratio = ((float)render.src.width / (float)render.src.height);
+		// Use square pixels, if the correct aspect ratio is far off, we double or halve the aspect ratio
+		float sqr_ratio = ((float)srcw / srch), sqr_to_corr = (((srcw<<dblw) / ((srch<<dblh) * (float)render.src.ratio)) / sqr_ratio);
+		buf.ratio = sqr_ratio * (sqr_to_corr > 1.66f ? 2.0f : (sqr_to_corr > 0.6f ? 1.0f : 0.5f));
 	}
 
 	if (buf.pad_x | buf.pad_y)
@@ -2939,7 +2940,7 @@ static bool check_variables(bool is_startup = false)
 	const char* dbp_aspectratio = retro_get_variable("dosbox_pure_aspect_correction", "false");
 	Variables::DosBoxSet("render", "aspect", (dbp_aspectratio[0] == 'f' ? "false" : "true"));
 	dbp_padding = (dbp_aspectratio[0] == 'p');
-	dbp_doublescan = (dbp_aspectratio[0] == 'd' || !strcmp(dbp_aspectratio, "padded-doublescan"));
+	dbp_doublescan = (dbp_aspectratio[0] == 'd' || (dbp_padding && !strcmp(dbp_aspectratio, "padded-doublescan")));
 	dbp_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
 
 	const char* sblaster_conf = retro_get_variable("dosbox_pure_sblaster_conf", "A220 I7 D1 H5");
