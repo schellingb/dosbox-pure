@@ -291,6 +291,7 @@ void DBP_Hercules_SetPalette(Bit8u pal);
 void DBP_SetMountSwappingRequested();
 Bit32u DBP_MIXER_GetFrequency();
 Bit32u DBP_MIXER_DoneSamplesCount();
+void DBP_MIXER_ScrapAudio();
 void MIXER_CallBack(void *userdata, uint8_t *stream, int len);
 bool MSCDEX_HasDrive(char driveLetter);
 int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
@@ -2131,7 +2132,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	}
 }
 
-static bool GFX_Events_AdvanceFrame(bool force_skip)
+static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 {
 	enum { HISTORY_STEP = 4, HISTORY_SIZE = HISTORY_STEP * 2 };
 	static struct
@@ -2210,7 +2211,7 @@ static bool GFX_Events_AdvanceFrame(bool force_skip)
 		goto return_true;
 	}
 
-	if (!CPU_CycleAutoAdjust)
+	if (!CPU_CycleAutoAdjust || force_no_auto_adjust)
 	{
 		St.HistoryEmulator[HISTORY_SIZE-1] = 0;
 		St.HistoryCursor = 0;
@@ -2326,7 +2327,12 @@ void GFX_Events()
 		DBP_Run::ProcessAutoInput();
 		force_skip = !!DBP_Run::autoinput.ptr;
 	}
-	bool wasFrameEnd = GFX_Events_AdvanceFrame(force_skip);
+	if (dbp_audio_remain == -1)
+	{
+		DBP_MIXER_ScrapAudio();
+		dbp_audio_remain = 0; // resume audio
+	}
+	bool wasFrameEnd = GFX_AdvanceFrame(force_skip, false);
 
 	static bool mouse_speed_up, mouse_speed_down;
 	static int mouse_joy_x, mouse_joy_y, hatbits;
@@ -2463,9 +2469,8 @@ void DBP_ShowSlowLoading()
 	msg[22] = charanim[dbp_framecount % 4];
 	buf.PrintCenteredOutlined(14, 0, buf.width, buf.height - 37, msg, buf.COL_MENUTITLE, 0x80404020);
 
-	// Prevent main thread from mixing audio because we could be called while inside MixerChannel::Mix
-	dbp_audio_remain = -1; 
-	GFX_Events_AdvanceFrame(false);
+	dbp_audio_remain = -1; // Prevent main thread from mixing audio because we could be called while inside MixerChannel::Mix
+	GFX_AdvanceFrame(false, true); // can't auto adjust CPU_CycleMax because we're not inside GFX_Events
 }
 
 static void DBP_PureLabelProgram(Program** make)
@@ -3044,6 +3049,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		dbp_game_running = dbp_had_game_running = false;
 		dbp_last_fastforward = false;
 		dbp_serializesize = 0;
+		dbp_audio_remain = 0;
 		DBP_SetIntercept(NULL);
 		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
 	}
@@ -3987,15 +3993,13 @@ void retro_run(void)
 
 	// mix audio
 	Bit32u haveSamples = DBP_MIXER_DoneSamplesCount(), mixSamples = 0; double numSamples;
-	if (dbp_audio_remain < 0)
-		{ dbp_audio_remain = numSamples = 0; } // skip audio for this frame
-	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
+	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
 		numSamples = haveSamples;
 	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.rate < 1)
 		numSamples = (av_info.timing.sample_rate / av_info.timing.fps) + dbp_audio_remain;
 	else
 		numSamples = (av_info.timing.sample_rate / dbp_throttle.rate) + dbp_audio_remain;
-	if (numSamples && haveSamples > numSamples * .99) // Allow 1 percent stretch on underrun
+	if (numSamples && haveSamples > numSamples * .99 && dbp_audio_remain != -1) // Allow 1 percent stretch on underrun
 	{
 		mixSamples = (numSamples > haveSamples ? haveSamples : (Bit32u)numSamples);
 		dbp_audio_remain = ((numSamples <= mixSamples || numSamples > haveSamples) ? 0.0 : (numSamples - mixSamples));

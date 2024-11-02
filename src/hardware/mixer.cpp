@@ -834,6 +834,18 @@ Bit32u DBP_MIXER_DoneSamplesCount()
 	return mixer.done;
 }
 
+void DBP_MIXER_ScrapAudio()
+{
+	// Scrap all but 100 samples
+	if (mixer.done < 100) return; 
+	Bitu reduce = mixer.done - 100;
+	mixer.done -= reduce;
+	mixer.needed -= reduce;
+	Bitu pos = mixer.pos;
+	mixer.pos = (mixer.pos + reduce) & MIXER_BUFMASK;
+	for (; reduce--; pos++) { pos &= MIXER_BUFMASK; mixer.work[pos][0]=mixer.work[pos][1]=0; }
+}
+
 #include <dbp_serialize.h>
 
 DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar_outer, MixerChannel* chan) : DBPArchiveOptional(ar_outer, chan, (chan && chan->ever_enabled))

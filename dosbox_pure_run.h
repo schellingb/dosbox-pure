@@ -795,9 +795,7 @@ struct DBP_Run
 			struct Local { static void EmptyLineHandler(const void*) { } };
 			RENDER_DrawLine = Local::EmptyLineHandler;
 			// Scrap mixed audio instead of accumulating it while skipping frames
-			int mixSamples = (int)DBP_MIXER_DoneSamplesCount();
-			if (mixSamples > DBP_MAX_SAMPLES) mixSamples = DBP_MAX_SAMPLES;
-			if (mixSamples > 200) MIXER_CallBack(0, (Bit8u*)dbp_audio, (mixSamples - 100) * 4);
+			DBP_MIXER_ScrapAudio();
 		}
 		else
 		{
