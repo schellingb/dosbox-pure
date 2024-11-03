@@ -531,13 +531,14 @@ static retro_core_option_v2_definition option_defs[] =
 		"Adjust the core's aspect ratio to approximate what a CRT monitor would display.", NULL,
 		"Video",
 		{
-			{ "false", "Off (default)" },
+			{ "square", "Square Pixels (default)"},
+			{ "uncorrected", "Uncorrected" },
 			{ "true", "On (single-scan)" },
 			{ "doublescan", "On (double-scan when applicable)" },
 			{ "padded", "Padded to 4:3 (single-scan)" },
 			{ "padded-doublescan", "Padded to 4:3 (double-scan when applicable)" },
 		},
-		"false"
+		"square"
 	},
 	{
 		"dosbox_pure_overscan",

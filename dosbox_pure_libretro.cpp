@@ -77,7 +77,7 @@ static Bit16s dbp_content_year;
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
-static bool dbp_doublescan, dbp_padding;
+static bool dbp_squarepixels, dbp_doublescan, dbp_padding;
 static struct DBP_Buffer { Bit32u* video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
@@ -2062,11 +2062,15 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		}
 		buf.ratio = (dbp_padding ? (4.0f / 3.0f) : ((srcw<<dblw) / ((srch<<dblh) * (float)render.src.ratio)));
 	}
-	else
+	else if (dbp_squarepixels)
 	{
 		// Use square pixels, if the correct aspect ratio is far off, we double or halve the aspect ratio
 		float sqr_ratio = ((float)srcw / srch), sqr_to_corr = (((srcw<<dblw) / ((srch<<dblh) * (float)render.src.ratio)) / sqr_ratio);
 		buf.ratio = sqr_ratio * (sqr_to_corr > 1.66f ? 2.0f : (sqr_to_corr > 0.6f ? 1.0f : 0.5f));
+	}
+	else
+	{
+		buf.ratio = ((float)render.src.width / (float)render.src.height);
 	}
 
 	if (buf.pad_x | buf.pad_y)
@@ -2942,8 +2946,9 @@ static bool check_variables(bool is_startup = false)
 		DBP_Hercules_SetPalette(herc_mode == 'a' ? 1 : (herc_mode == 'g' ? 2 : 0));
 	}
 
-	const char* dbp_aspectratio = retro_get_variable("dosbox_pure_aspect_correction", "false");
-	Variables::DosBoxSet("render", "aspect", (dbp_aspectratio[0] == 'f' ? "false" : "true"));
+	const char* dbp_aspectratio = retro_get_variable("dosbox_pure_aspect_correction", "auto");
+	dbp_squarepixels = (dbp_aspectratio[0] == 's' || dbp_aspectratio[0] == 'f');  // matches "false" as "square" for 0.9.9 compatibility
+	Variables::DosBoxSet("render", "aspect", ((dbp_aspectratio[0] == 'u' || dbp_squarepixels) ? "false" : "true"));
 	dbp_padding = (dbp_aspectratio[0] == 'p');
 	dbp_doublescan = (dbp_aspectratio[0] == 'd' || (dbp_padding && !strcmp(dbp_aspectratio, "padded-doublescan")));
 	dbp_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
