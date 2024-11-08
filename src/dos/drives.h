@@ -829,7 +829,7 @@ public:
 	virtual Bits UnMount(void);
 
 	static StringToObjectHashMap<std::string> variants;
-	static bool ApplyVariant(std::string& yml, int enable_variant_number);
+	static bool ApplyVariant(std::string& yml, int enable_variant_number, size_t* out_root_yml_len = NULL);
 private:
 	struct patchDriveImpl* impl;
 };

@@ -312,30 +312,31 @@ struct DBP_Run
 	}
 
 	enum EMode : Bit8u { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_VARIANT, RUN_COMMANDLINE };
-	static struct Startup { EMode mode; bool reboot; int info; std::string exec; } startup;
+	static struct Startup { EMode mode; bool reboot, utility; int info; std::string exec; } startup;
 	static struct Autoboot { Startup startup; bool have, use; int skip; Bit32u hash; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; Bit16s oldyear; } autoinput;
-	static struct Patch { std::string yml; int enabled_variant; } patch;
+	static struct Patch { std::string yml; int enabled_variant; bool show_default; } patch;
 
 	static bool Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
 		DBP_ASSERT(from_osd || mode != RUN_VARIANT); // only the OSD can switch the variant
-		if (from_osd)
-		{
-			if (mode == RUN_VARIANT) { autoboot.use = true; autoboot.skip = 0; patch.enabled_variant = info; }  // force enable auto start when switching variant
-			WriteAutoBoot(mode, info, str);
-			autoinput.str.clear();
-		}
+		if (from_osd) autoinput.str.clear();
 
 		if (mode == RUN_VARIANT)
 		{
+			patch.enabled_variant = info;
 			startup.reboot |= patchDrive::ApplyVariant(patch.yml, patch.enabled_variant);
-			startup.mode = RUN_NONE;
 			DOSYML::Load(true, false); // read startup and autoinput from YML
-			if ((mode = startup.mode) == RUN_NONE) return false; // YML had no startup
+			mode = startup.mode;
+			info = startup.info;
+			if (mode == RUN_NONE) return false; // YML had no startup
+			autoboot.use = !startup.utility; // disable autoboot for utility config
+			autoboot.skip = 0; // otherwise force enable auto start when switching variant
+			WriteAutoBoot(RUN_VARIANT, patch.enabled_variant, str);
 		}
 		else
 		{
+			if (from_osd) WriteAutoBoot(mode, info, str);
 			startup.mode = mode;
 			startup.info = info;
 			if (mode == RUN_EXEC) startup.exec.swap(str); // remember to set cursor again and for rebooting a different IT_RUN
@@ -474,6 +475,9 @@ struct DBP_Run
 					startup.mode = RUN_BOOTIMG;
 					startup.info = 0;
 					break;
+				case 'u': // run_utility
+					startup.utility = ((Val[0]|0x20) == 't');
+					break;
 			}
 			return true;
 		}
@@ -518,14 +522,16 @@ struct DBP_Run
 						||ParseRun("run_boot")
 						||ParseRun("run_mount")
 						||ParseRun("run_input")
+						||ParseRun("run_utility")
 					);
 			}
 			return false;
 		}
-		static void Load(bool parseRun, bool parseOthers)
+		static void Load(bool parseRun, bool parseOthers, size_t* parse_limit = NULL)
 		{
+			if (parseRun) { startup.mode = RUN_NONE; startup.utility = false; }
 			DOSYML l;
-			for (l.Key = patch.yml.c_str(), l.End = l.Key+patch.yml.size(); l.Key < l.End; l.Key = l.Next + 1)
+			for (l.Key = patch.yml.c_str(), l.End = l.Key+(parse_limit ? *parse_limit : patch.yml.size()); l.Key < l.End; l.Key = l.Next + 1)
 			{
 				for (l.Next = l.Key; *l.Next != '\n' && *l.Next != '\r' && *l.Next; l.Next++) {}
 				if (l.Next == l.Key || *l.Key == '#') continue;
@@ -568,7 +574,13 @@ struct DBP_Run
 	static bool PostInitFirstTime()
 	{
 		ReadAutoBoot();
-		if (patchDrive::ApplyVariant(patch.yml, patch.enabled_variant)) return true; // reset and re-run PreInit to load variant
+		size_t root_yml_len = 0;
+		if (patchDrive::ApplyVariant(patch.yml, patch.enabled_variant, &root_yml_len))
+		{
+			if (root_yml_len) DOSYML::Load(true, false, &root_yml_len);
+			patch.show_default = (startup.mode != RUN_NONE);
+			return true; // reset and re-run PreInit to load variant
+		}
 		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
 		return false;
 	}

@@ -283,7 +283,7 @@ struct DBP_MenuState
 	int sel, scroll, joyx, joyy, scroll_jump, click_sel;
 	Bit32u open_ticks;
 	DBP_Event_Type held_event; KBD_KEYS held_key; Bit32u held_ticks;
-	struct Item { Bit8u type; Bit16s info; std::string str; INLINE Item() {} INLINE Item(Bit8u t, Bit16s i = 0, const char* s = "") : type(t), info(i), str(s) {} };
+	struct Item { Bit8u type, pad; Bit16s info; std::string str; INLINE Item() {} INLINE Item(Bit8u t, Bit16s i = 0, const char* s = "") : type(t), info(i), str(s) {} };
 	std::vector<Item> list;
 
 	DBP_MenuState() : refresh_mousesel(true), scroll_unlocked(false), hide_sel(false), show_popup(false), sel(0), scroll(-1), joyx(0), joyy(0), scroll_jump(0), click_sel(-1), open_ticks(DBP_GetTicks()), held_event(_DBPET_MAX) { }
@@ -1205,6 +1205,15 @@ struct DBP_PureMenuState : DBP_MenuState
 		fs_rows++;
 	}
 
+	static void ClearSortOrderPrefix(std::string& str)
+	{
+		for (size_t i = str.find('#'), j; i != std::string::npos; i = str.find('#', j))
+		{
+			for (j = i; j && str[j-1] >= '0' && str[j-1] <= '9';) j--;
+			if (j != i) str.erase(j, i-j+1);
+		}
+	}
+
 	void RefreshList(ItemType mode, bool keep_sel_pos = false)
 	{
 		int old_sel = sel, setsel = 0;
@@ -1237,6 +1246,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			{
 				AddFSRow(IT_NONE, INFO_WARN, "Active Configuration: ", true);
 				list.back().str.append(!DBP_Run::patch.enabled_variant ? "Default" : patchDrive::variants.GetStorage()[DBP_Run::patch.enabled_variant - 1].c_str());
+				if (DBP_Run::patch.enabled_variant) ClearSortOrderPrefix(list.back().str);
 				AddFSRow(IT_VARIANTLIST, 0, "[ Select Game Configuration ]");
 			}
 
@@ -1362,10 +1372,10 @@ struct DBP_PureMenuState : DBP_MenuState
 						if (!total_secs || !sec_name) continue;
 						for (i = secend; i != (int)list.size(); i++)
 						{
-							int str_len = (int)list[i].str.length(), vlen = (int)v.length(), c = memcmp(list[i].str.c_str(), v.c_str(), (vlen < str_len ? vlen : str_len));
-							if (c > 0 || (!c && str_len > vlen)) break; // found sorted insert index i
+							int str_len = (int)list[i].str.length(), c = memcmp(list[i].str.c_str(), sec_name, (sec_len < str_len ? sec_len : str_len));
+							if (c > 0 || (!c && str_len > sec_len)) break; // found sorted insert index i
 						}
-						list.emplace(list.begin() + i, IT_VARIANTRUN, (Bit16s)var_num, v.c_str());
+						list.emplace(list.begin() + i, IT_VARIANTRUN, (Bit16s)var_num, sec_name);
 					}
 					else
 					{
@@ -1373,11 +1383,11 @@ struct DBP_PureMenuState : DBP_MenuState
 						for (i = secbegin; i != secend; i++)
 						{
 							int str_len = (int)list[i].str.length() - 4, c = memcmp(list[i].str.c_str() + 4, sec_name, (sec_len < str_len ? sec_len : str_len));
-							if (!c && sec_len == str_len) { list[i].info++; goto skipadd; } // count uses
+							if (!c && sec_len == str_len) { list[i].pad++; goto skipadd; } // count uses
 							if (c > 0 || (!c && str_len > sec_len)) break; // found sorted insert index i
 						}
 						if (sec_len > max_sec_len) max_sec_len = sec_len;
-						list.emplace(list.begin() + i, IT_VARIANTTOGGLE, 1, "( ) "); list[i].str.append(sec_name, sec_len);
+						Item& it = *list.emplace(list.begin() + i, IT_VARIANTTOGGLE, (Bit16s)(var_num - 1), "( ) "); it.pad = 1; it.str.append(sec_name, sec_len);
 						secend++;
 						skipadd:
 						if (var_num == enabled_var) { list[i].str[1] = '\x7'; have_enabled_toggle = 1; }
@@ -1387,10 +1397,10 @@ struct DBP_PureMenuState : DBP_MenuState
 				{
 					if (secend - secbegin < 2) goto sections_are_imbalanced;
 					int defaultpos = secbegin, minuse = 0xFFFF, have_vars = 1; // have var starts at 1 due to Default config
-					for (i = secbegin; i != secend; i++) { int use = list[i].info; if (use < minuse) { minuse = use; defaultpos = i; } have_vars += use; }
+					for (i = secbegin; i != secend; i++) { int use = list[i].pad; if (use < minuse) { minuse = use; defaultpos = i; } have_vars += use; }
 					std::swap(list[defaultpos], list[secbegin]);
 					if (!have_enabled_toggle) list[secbegin].str[1] = '\x7';
-					for (i = secbegin; i != secend; i++) { Item& it = list[i]; it.info = (Bit16s)sec; it.str.append(max_sec_len + 4 - it.str.length(), ' '); }
+					for (i = secbegin; i != secend; i++) { Item& it = list[i]; it.pad = (Bit8u)sec; it.str.append(max_sec_len + 4 - it.str.length(), ' '); }
 					if ((expect_vars *= (secend - secbegin)) != have_vars && sec == max_secs - 1) goto sections_are_imbalanced;
 					list.emplace(list.begin() + secend++, IT_NONE);
 				}
@@ -1398,13 +1408,14 @@ struct DBP_PureMenuState : DBP_MenuState
 			}
 			int list_size = (int)list.size();
 			for (setsel = 0, i = secend; i != list_size; i++) { if (list[i].info == enabled_var) { setsel = i; break; } }
+			for (i = list_base; i != list_size; i++) ClearSortOrderPrefix(list[i].str); // Remove N# or NN# fixed sort order prefixes
 			if (sec)
 			{
 				list.emplace(list.begin() + secend, IT_VARIANTRUN, (setsel ? 0 : DBP_Run::patch.enabled_variant), "Run Game");
 				if (secend != list_size) list.emplace(list.begin() + (secend + 1), IT_NONE); // mix of sections and other options, add divider
 				setsel = (setsel ? (setsel + 2) : secend); // fix for added rows
 			}
-			else
+			else if (DBP_Run::patch.show_default)
 			{
 				list.emplace(list.begin() + secbegin, IT_VARIANTRUN, 0, "Default"); // no sections, add default start
 				setsel = (setsel ? (setsel + 1) : secbegin); // fix for added row
@@ -1481,19 +1492,19 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 		else if (ok_type == IT_VARIANTTOGGLE)
 		{
-			for (Item& it : list) if (it.info == item.info && it.type == IT_VARIANTTOGGLE) it.str[1] = ' ';
+			for (Item& it : list) if (it.pad == item.pad && it.type == IT_VARIANTTOGGLE) it.str[1] = ' ';
 			item.str[1] = '\x7';
 			DBP_Run::patch.enabled_variant = 0; // default config
 			for (const std::string& v : patchDrive::variants.GetStorage())
 			{
 				const char* sec_name;
-				for (int sec = 0, sec_len, total_secs; (sec_name = GetVariantSection(v, sec, sec_len, total_secs)) != NULL && total_secs > 1; sec++)
+				for (int sec = 0, sec_len, it_len, total_secs; (sec_name = GetVariantSection(v, sec, sec_len, total_secs)) != NULL && total_secs > 1; sec++)
 				{
 					for (Item& it : list)
 					{
-						if (it.type != IT_VARIANTTOGGLE || it.info != sec || it.str[1] != '\x7') continue;
-						if (!sec_len || memcmp(&it.str[4], sec_name, sec_len)) goto next_variant;
-						for (const char* p = &it.str[4 + sec_len]; *p; p++) if (*p != ' ') goto next_variant;
+						if (it.type != IT_VARIANTTOGGLE || it.pad != sec || it.str[1] != '\x7') continue;
+						const char* it_name = GetVariantSection(patchDrive::variants.GetStorage()[it.info], sec, it_len, total_secs);
+						if (!it_name || sec_len != it_len || memcmp(it_name, sec_name, sec_len)) goto next_variant;
 						break;
 					}
 					if (sec == total_secs - 1) { DBP_Run::patch.enabled_variant = (Bit16s)(patchDrive::variants.GetStorageIndex(&v) + 1); goto matched_variant; }
@@ -1544,7 +1555,7 @@ struct DBP_PureMenuState : DBP_MenuState
 					ok_type == IT_RUNSHELL        ? DBP_Run::RUN_SHELL :
 					ok_type == IT_VARIANTRUN      ? DBP_Run::RUN_VARIANT :
 					ok_type == IT_COMMANDLINE     ? DBP_Run::RUN_COMMANDLINE :
-						DBP_Run::RUN_NONE, item.info, item.str, true)) { show_popup = false; return RefreshList(listmode, true); }
+						DBP_Run::RUN_NONE, item.info, item.str, true)) { show_popup = false; return RefreshList(IT_MAINMENU); }
 
 				// Show menu again on image boot when machine needs to change but there are EXE files (some games need to run a FIX.EXE before booting)
 				if (ok_type == IT_BOOTIMG_MACHINE && dbp_reboot_machine && exe_count && !DBP_Run::autoboot.use)

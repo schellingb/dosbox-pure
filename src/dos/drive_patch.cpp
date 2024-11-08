@@ -550,8 +550,7 @@ struct patchDriveImpl
 				const std::string* v = patchDrive::variants.Get(full + 1, (Bit32u)(fullEnd - 2 - full));
 				if (!v)
 				{
-					std::string& vnew = patchDrive::variants.Add(full + 1, (Bit32u)(fullEnd - 2 - full));
-					vnew.assign(full + 1, (size_t)(fullEnd - 2 - full));
+					patchDrive::variants.Add(full + 1, (Bit32u)(fullEnd - 2 - full)).assign(full + 1, (size_t)(fullEnd - 2 - full));
 					return; // variant not yet active
 				}
 				if (patchDrive::variants.GetStorageIndex(v) != ActiveVariantIndex) return; // variant not active
@@ -590,11 +589,10 @@ struct patchDriveImpl
 
 			e = new Patch_File(Patch_File::TYPE_PATCH, stat.attr, underpath + dirlen, stat.date, stat.time);
 		}
+		else if (ext && *ext == 'Y' && !strcmp(path, "DOS.YML"))
+			{ haveDOSYML = true; return; } // DOS.YML of patch drives is not exposed to the DOS file system
 		else
-		{
-			if (ext && !strcmp(ext, "YML") && !strcmp(path, "DOS.YML")) { haveDOSYML = true; return; } // DOS.YML of patch drives is not exposed to the DOS file system
 			e = (on_under ? new Patch_File(Patch_File::TYPE_RAW, stat.attr, name, stat.date, stat.time) : new Patch_File(Patch_File::TYPE_RAW, attr, name, date, time));
-		}
 
 		if (Patch_Entry* existing = dir->entries.Get(e->name))
 		{
@@ -817,7 +815,7 @@ bool patchDrive::isRemote(void) { return false; }
 bool patchDrive::isRemovable(void) { return false; }
 Bits patchDrive::UnMount(void) { delete this; return 0;  }
 
-bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number)
+bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number, size_t* out_root_yml_len)
 {
 	int enabledVariantIndex = enable_variant_number - 1;
 	if (!reportedDOSYML)
@@ -831,20 +829,21 @@ bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number)
 
 	struct Local
 	{
-		static void ReloadAll(DOS_Drive *drv, std::string& yml)
+		static void ReloadAll(DOS_Drive *drv, std::string& yml, size_t* rootlen)
 		{
 			if (patchDrive* pd = dynamic_cast<patchDrive*>(drv))
 			{
 				pd->impl->Reload();
 				AppendYML(&pd->impl->under, "DOS.YML", yml);
 				AppendYML(pd->impl->patchzip, "DOS.YML", yml);
+				if (rootlen) *rootlen = yml.length();
 				if (*pd->impl->variant_dir)
 					AppendYML(pd->impl->patchzip, (std::string(pd->impl->variant_dir) += '\\').append("DOS.YML").c_str(), yml);
 				return;
 			}
 			DOS_Drive *a, *b;
 			if (!drv->GetShadows(a, b)) AppendYML(drv, "DOS.YML", yml);
-			else { ReloadAll(a, yml); if (a != b) ReloadAll(b, yml); }
+			else { ReloadAll(a, yml, rootlen); if (a != b) ReloadAll(b, yml, rootlen); }
 		}
 		static void AppendYML(DOS_Drive* drv, const char* path, std::string& yml)
 		{
@@ -855,7 +854,7 @@ bool patchDrive::ApplyVariant(std::string& yml, int enable_variant_number)
 		}
 	};
 	yml.clear();
-	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A'], yml);
+	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A'], yml, out_root_yml_len);
 	return true;
 }
 
