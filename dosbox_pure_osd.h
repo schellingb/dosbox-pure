@@ -1387,7 +1387,7 @@ struct DBP_PureMenuState : DBP_MenuState
 							if (c > 0 || (!c && str_len > sec_len)) break; // found sorted insert index i
 						}
 						if (sec_len > max_sec_len) max_sec_len = sec_len;
-						Item& it = *list.emplace(list.begin() + i, IT_VARIANTTOGGLE, (Bit16s)(var_num - 1), "( ) "); it.pad = 1; it.str.append(sec_name, sec_len);
+						{ Item& it = *list.emplace(list.begin() + i, IT_VARIANTTOGGLE, (Bit16s)(var_num - 1), "( ) "); it.pad = 1; it.str.append(sec_name, sec_len); }
 						secend++;
 						skipadd:
 						if (var_num == enabled_var) { list[i].str[1] = '\x7'; have_enabled_toggle = 1; }
