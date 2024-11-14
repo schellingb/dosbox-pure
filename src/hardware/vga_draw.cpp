@@ -1539,9 +1539,7 @@ void VGA_SetupDrawing(Bitu /*val*/) {
 	}
 	vga.draw.vblank_skip = vblank_skip;
 		
-#ifndef C_DBP_LIBRETRO //DBP: Removed if condition with fix added below
 	if (!(IS_VGA_ARCH && (svgaCard==SVGA_None) && (vga.mode==M_EGA || vga.mode==M_VGA))) {
-#endif
 		//Only check for extra double height in vga modes
 		//(line multiplying by address_line_total)
 		if (!doubleheight && (vga.mode<M_TEXT) && !(vga.draw.address_line_total & 1)) {
@@ -1549,9 +1547,7 @@ void VGA_SetupDrawing(Bitu /*val*/) {
 			doubleheight=true;
 			height/=2;
 		}
-#ifndef C_DBP_LIBRETRO
 	}
-#endif
 
 #ifdef C_DBP_LIBRETRO
 	//DBP: Standards prior to VGA (e.g. CGA, EGA) don't do double-scanning
