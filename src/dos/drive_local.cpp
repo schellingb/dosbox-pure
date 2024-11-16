@@ -454,8 +454,13 @@ Bits localDrive::UnMount(void) {
 }
 
 localDrive::localDrive(const char * startdir,Bit16u _bytes_sector,Bit8u _sectors_cluster,Bit16u _total_clusters,Bit16u _free_clusters,Bit8u _mediaid) {
+	#ifdef C_DBP_LIBRETRO // safety
+	snprintf(basedir, sizeof(basedir), "%s", startdir);
+	snprintf(info, sizeof(info), "local directory %s", startdir);
+	#else
 	strcpy(basedir,startdir);
 	sprintf(info,"local directory %s",startdir);
+	#endif
 	allocation.bytes_sector=_bytes_sector;
 	allocation.sectors_cluster=_sectors_cluster;
 	allocation.total_clusters=_total_clusters;
@@ -598,8 +603,12 @@ cdromDrive::cdromDrive(const char driveLetter, const char * startdir,Bit16u _byt
 {
 	// Init mscdex
 	error = MSCDEX_AddDrive(driveLetter,startdir,subUnit);
+	#ifdef C_DBP_LIBRETRO // safety
+	snprintf(info, sizeof(info), "CDRom %s", startdir);
+	#else
 	strcpy(info, "CDRom ");
 	strcat(info, startdir);
+	#endif
 	this->driveLetter = driveLetter;
 	// Get Volume Label
 	char name[32];
