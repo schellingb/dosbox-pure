@@ -312,10 +312,10 @@ struct DBP_Run
 	}
 
 	enum EMode : Bit8u { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_VARIANT, RUN_COMMANDLINE };
-	static struct Startup { EMode mode; bool reboot, utility; int info; std::string exec; } startup;
+	static struct Startup { EMode mode; bool reboot; int info; std::string exec; } startup;
 	static struct Autoboot { Startup startup; bool have, use; int skip; Bit32u hash; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; Bit16s oldyear; } autoinput;
-	static struct Patch { std::string yml; int enabled_variant; bool show_default; } patch;
+	static struct Patch { int enabled_variant; bool show_default; } patch;
 
 	static bool Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
@@ -325,12 +325,13 @@ struct DBP_Run
 		if (mode == RUN_VARIANT)
 		{
 			patch.enabled_variant = info;
-			startup.reboot |= patchDrive::ApplyVariant(patch.yml, patch.enabled_variant);
-			DOSYML::Load(true, false); // read startup and autoinput from YML
+			patchDrive::ActivateVariant(patch.enabled_variant);
+			DOSYMLLoader ymlload(true);
+			startup.reboot |= ymlload.reboot; // read startup and autoinput from YML
 			mode = startup.mode;
 			info = startup.info;
 			if (mode == RUN_NONE) return false; // YML had no startup
-			autoboot.use = !startup.utility; // disable autoboot for utility config
+			autoboot.use = !ymlload.is_utility; // disable autoboot for utility config
 			autoboot.skip = 0; // otherwise force enable auto start when switching variant
 			WriteAutoBoot(RUN_VARIANT, patch.enabled_variant, str);
 		}
@@ -342,11 +343,11 @@ struct DBP_Run
 			if (mode == RUN_EXEC) startup.exec.swap(str); // remember to set cursor again and for rebooting a different IT_RUN
 		}
 
-		Property* bootImgMachine = (mode == RUN_BOOTIMG && info ? control->GetProp("dosbox", "machine") : NULL);
-		if (startup.reboot || dbp_game_running || (bootImgMachine && info != *(const char*)bootImgMachine->GetValue() && !bootImgMachine->IsFixed()))
+		const Property* bootImgMachine = ((mode == RUN_BOOTIMG) ? control->GetProp("dosbox", "machine") : NULL);
+		if (startup.reboot || dbp_game_running || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue() && !bootImgMachine->IsFixed()))
 		{
 			startup.reboot = false;
-			if (mode == RUN_BOOTIMG) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());
+			if (bootImgMachine) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());
 			DBP_OnBIOSReboot();
 			return true;
 		}
@@ -384,10 +385,11 @@ struct DBP_Run
 		return true;
 	}
 
-	struct DOSYML
+	struct DOSYMLLoader
 	{
-		const char *Key, *End, *Next, *KeyX, *Val, *ValX;
+		const char *Key, *End, *Next, *KeyX, *Val, *ValX, *first_startup_mode_key = NULL;
 		int cpu_cycles = 0, cpu_hz = 0, cpu_year = 0, cpu_set_max = 0;
+		bool reboot, is_utility = false;
 		bool Parse(const char *yml_key, const char* db_section, const char* db_key, ...)
 		{
 			if (yml_key && (strncmp(yml_key, Key, (size_t)(KeyX - Key)) || yml_key[KeyX - Key])) return false;
@@ -421,11 +423,22 @@ struct DBP_Run
 					if (strncmp(mapFrom, Val, (size_t)(ValX - Val))) continue;
 					val.append(mapTo);
 				}
-				Property* prop = control->GetProp(db_section, db_key);
-				bool res = (prop->SetValue(val) && !strcasecmp(prop->GetValue().ToString().c_str(), val.c_str()));
-				if (res) prop->MarkFixed();
 				va_end(ap);
-				return res;
+				Section* section = control->GetSection(db_section);
+				Property* prop = section->GetProp(db_key);
+				const Value& propVal = prop->GetValue();
+				const char* set_val = val.c_str();
+				bool set = !strcmp(set_val, (propVal.type == Value::V_STRING ? (const char*)propVal : propVal.ToString().c_str()));
+				if (!set)
+				{
+					bool will_reboot = (reboot || (prop->getChange() > Property::Changeable::WhenIdle));
+					if (!will_reboot) section->ExecuteDestroy(false);
+					set = (!set && prop->SetValue(val) && !strcmp(set_val, (propVal.type == Value::V_STRING ? (const char*)propVal : propVal.ToString().c_str())));
+					if (!will_reboot) section->ExecuteInit(false);
+					if (set) reboot = will_reboot;
+				}
+				if (set) prop->MarkFixed();
+				return set;
 			}
 		}
 		bool ParseCPU(const char *yml_key)
@@ -453,6 +466,7 @@ struct DBP_Run
 				case 'p': // run_path
 					startup.exec = std::string(Val, (size_t)(ValX - Val));
 					if (startup.mode == RUN_BOOTIMG) goto exec2bootimg;
+					if (!first_startup_mode_key) first_startup_mode_key = Key;
 					startup.mode = RUN_EXEC;
 					break;
 				case 'b': // run_boot
@@ -472,11 +486,12 @@ struct DBP_Run
 						exec2bootimg:
 						((static_cast<Section_line*>(control->GetSection("autoexec"))->data += '@') += startup.exec) += '\n';
 					}
+					if (!first_startup_mode_key) first_startup_mode_key = Key;
 					startup.mode = RUN_BOOTIMG;
 					startup.info = 0;
 					break;
 				case 'u': // run_utility
-					startup.utility = ((Val[0]|0x20) == 't');
+					is_utility = ((Val[0]|0x20) == 't');
 					break;
 			}
 			return true;
@@ -527,29 +542,28 @@ struct DBP_Run
 			}
 			return false;
 		}
-		static void Load(bool parseRun, bool parseOthers, size_t* parse_limit = NULL)
+		DOSYMLLoader(bool parseRun, bool isPreInit = false) : reboot(isPreInit)
 		{
-			if (parseRun) { startup.mode = RUN_NONE; startup.utility = false; }
-			DOSYML l;
-			for (l.Key = patch.yml.c_str(), l.End = l.Key+(parse_limit ? *parse_limit : patch.yml.size()); l.Key < l.End; l.Key = l.Next + 1)
+			if (parseRun) startup.mode = RUN_NONE;
+			for (Key = patchDrive::dos_yml.c_str(), End = Key+patchDrive::dos_yml.size(); Key < End; Key = Next + 1)
 			{
-				for (l.Next = l.Key; *l.Next != '\n' && *l.Next != '\r' && *l.Next; l.Next++) {}
-				if (l.Next == l.Key || *l.Key == '#') continue;
-				for (l.KeyX = l.Key; *l.KeyX && *l.KeyX != ':' && *l.KeyX > ' '; l.KeyX++) {}
-				if (*l.KeyX != ':' || l.KeyX == l.Key || l.KeyX[1] != ' ' ) goto syntaxerror;
-				for (l.Val = l.KeyX + 2; *l.Val == ' '; l.Val++) {}
-				for (l.ValX = l.Val; *l.ValX && *l.ValX != '\r' && *l.ValX != '\n' && (*l.ValX != '#' || l.ValX[-1] != ' '); l.ValX++) {}
-				while (l.ValX[-1] == ' ') l.ValX--;
-				if (l.ValX <= l.Val) goto syntaxerror;
-				if (!((*l.Key == 'r') ? parseRun : parseOthers) || l.ProcessKey()) continue;
+				for (Next = Key; *Next != '\n' && *Next != '\r' && *Next; Next++) {}
+				if (Next == Key || *Key == '#') continue;
+				for (KeyX = Key; *KeyX && *KeyX != ':' && *KeyX > ' '; KeyX++) {}
+				if (*KeyX != ':' || KeyX == Key || KeyX[1] != ' ' ) goto syntaxerror;
+				for (Val = KeyX + 2; *Val == ' '; Val++) {}
+				for (ValX = Val; *ValX && *ValX != '\r' && *ValX != '\n' && (*ValX != '#' || ValX[-1] != ' '); ValX++) {}
+				while (ValX[-1] == ' ') ValX--;
+				if (ValX <= Val) goto syntaxerror;
+				if ((*Key == 'r' && !parseRun) || ProcessKey()) continue;
 				syntaxerror:
-				retro_notify(0, RETRO_LOG_ERROR, "Error in DOS.YML: %.*s", (int)(l.Next-l.Key), l.Key);
+				retro_notify(0, RETRO_LOG_ERROR, "Error in DOS.YML: %.*s", (int)(Next-Key), Key);
 				continue;
 			}
-			if (l.cpu_cycles || l.cpu_year || l.cpu_hz)
+			if (cpu_cycles || cpu_year || cpu_hz)
 			{
-				if (l.cpu_cycles) {}
-				else if (l.cpu_year) l.cpu_cycles = (int)DBP_CyclesForYear(l.cpu_year);
+				if (cpu_cycles) {}
+				else if (cpu_year) cpu_cycles = (int)DBP_CyclesForYear(cpu_year);
 				else
 				{
 					float cycle_per_hz = .3f; // default with auto (just a bad guess)
@@ -561,12 +575,12 @@ struct DBP_Run
 						case '2': cycle_per_hz = .09400f; break; // AT (286):       Mhz *  94.00
 						case '8': cycle_per_hz = .05828f; break; // XT (8088/8086): Mhz *  58.28
 					}
-					l.cpu_cycles = (int)(l.cpu_hz * cycle_per_hz + .4999f);
+					cpu_cycles = (int)(cpu_hz * cycle_per_hz + .4999f);
 				}
 				char buf[32];
-				l.ValX = (l.Val = buf) + sprintf(buf, "%s%d", (l.cpu_set_max ? "max limit " : ""), (int)l.cpu_cycles);
-				if (l.Parse(NULL, "cpu", "cycles", "~") && l.cpu_cycles >= 8192) // Switch to dynamic core for newer real mode games
-					{ l.ValX = (l.Val = "dynamic") + 7; l.Parse(NULL, "cpu", "core", "~"); }
+				ValX = (Val = buf) + sprintf(buf, "%s%d", (cpu_set_max ? "max limit " : ""), (int)cpu_cycles);
+				if (Parse(NULL, "cpu", "cycles", "~") && cpu_cycles >= 8192) // Switch to dynamic core for newer real mode games
+					{ ValX = (Val = "dynamic") + 7; Parse(NULL, "cpu", "core", "~"); }
 			}
 		}
 	};
@@ -574,13 +588,16 @@ struct DBP_Run
 	static bool PostInitFirstTime()
 	{
 		ReadAutoBoot();
-		size_t root_yml_len = 0;
-		if (patchDrive::ApplyVariant(patch.yml, patch.enabled_variant, &root_yml_len))
-		{
-			if (root_yml_len) DOSYML::Load(true, false, &root_yml_len);
-			patch.show_default = (startup.mode != RUN_NONE);
-			return true; // reset and re-run PreInit to load variant
-		}
+		size_t root_yml_len = patchDrive::dos_yml.size();
+		patchDrive::ActivateVariant(patch.enabled_variant);
+		DOSYMLLoader ymlload(true);
+
+		// Show default variant as an option only if there is a auto run setting in the base root yml
+		patch.show_default = (ymlload.first_startup_mode_key && ymlload.first_startup_mode_key < patchDrive::dos_yml.c_str() + root_yml_len);
+
+		// reset and re-run PreInit to set all settings of yml
+		if (ymlload.reboot) return true;
+
 		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
 		return false;
 	}
@@ -588,7 +605,7 @@ struct DBP_Run
 	static void PreInit()
 	{
 		if (!dbp_biosreboot) startup.mode = RUN_NONE;
-		if (patch.yml.length()) DOSYML::Load((!dbp_biosreboot && (patchDrive::variants.Len() == 0 || autoboot.startup.mode == RUN_VARIANT)), true); // ignore run keys on bios reboot
+		if (patchDrive::dos_yml.size()) DOSYMLLoader(!dbp_biosreboot && (patchDrive::variants.Len() == 0 || autoboot.startup.mode == RUN_VARIANT), true); // ignore run keys on bios reboot
 		if (!dbp_biosreboot && autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
 	}
 

@@ -874,7 +874,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 		while (s.step < 2)
 		{
 			const char* dotted = (s.step++ ? ".." : ".");
-			if (!WildFileCmp(dotted, pattern) || !s.dir_len) continue;
+			if (!DTA_PATTERN_MATCH(dotted, pattern) || !s.dir_len) continue;
 			FileStat_Block stat;
 			FileStat(s.dir, &stat); // both '.' and '..' return the stats from the current dir
 			if (~attr & (Bit8u)stat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
@@ -946,7 +946,7 @@ bool unionDrive::FindNext(DOS_DTA & dta)
 				if (!m || !m->IsRedirect()) continue;
 				if (m->RedirectDirLen() != s.dir_len) continue;
 				const char *redirect_target = m->RedirectTarget(), *redirect_newname = redirect_target + (s.dir_len ? s.dir_len + 1 : 0);
-				if (memcmp(redirect_target, s.dir, s.dir_len) || !WildFileCmp(redirect_newname, pattern)) continue;
+				if (memcmp(redirect_target, s.dir, s.dir_len) || !DTA_PATTERN_MATCH(redirect_newname, pattern)) continue;
 				FileStat_Block filestat;
 				if (!impl->under->FileStat(m->RedirectSource(), &filestat)) continue;
 				if (~attr & (Bit8u)filestat.attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
@@ -1004,7 +1004,12 @@ bool unionDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster
 	return true;
 }
 
-bool unionDrive::GetShadows(DOS_Drive*& a, DOS_Drive*& b) { a = impl->under; b = impl->over; return true; }
+DOS_Drive* unionDrive::GetShadow(int n, bool only_owned)
+{
+	if (n == 0 && only_owned && !impl->autodelete_over) n++;
+	return (n == 0 ? impl->over : ((n == 1 && (!only_owned || impl->autodelete_under)) ? impl->under : NULL));
+}
+
 Bit8u unionDrive::GetMediaByte(void) { return impl->over->GetMediaByte(); }
 bool unionDrive::isRemote(void) { return false; }
 bool unionDrive::isRemovable(void) { return false; }

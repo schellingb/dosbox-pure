@@ -333,10 +333,10 @@ void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH])
 
 Bit8u DriveGetIndex(DOS_Drive* drv)
 {
-	struct Local { static bool Compare(DOS_Drive *outer, DOS_Drive *inner)
+	struct Local { static bool Compare(DOS_Drive *outer, DOS_Drive *drv)
 	{
-		DOS_Drive *a, *b;
-		return (outer == inner || (outer->GetShadows(a, b) && (Compare(a, inner) || Compare(b, inner))));
+		if (outer == drv) return true;
+		for (int n = 0;; n++) { DOS_Drive* shadow = outer->GetShadow(n, true); if (!shadow) return false; if (Compare(shadow, drv)) return true; }
 	}};
 	for (Bit8u i = 0; i < DOS_DRIVES; i++) if (Drives[i] && Local::Compare(Drives[i], drv)) return i;
 	return DOS_DRIVES;
@@ -366,7 +366,7 @@ bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fc
 	Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII];const char* label;
 	dta.GetSearchParams(attr,pattern);
 	if (!(attr & DOS_ATTR_VOLUME) || !*(label = drv->GetLabel())) return false;
-	if ((attr & ~DOS_ATTR_VOLUME) && (*dir_path || fcb_findfirst || !WildFileCmp(label, pattern))) return false;
+	if ((attr & ~DOS_ATTR_VOLUME) && (*dir_path || fcb_findfirst || !DTA_PATTERN_MATCH(label, pattern))) return false;
 	dta.SetResult(label,0,0,0,DOS_ATTR_VOLUME);
 	return true;
 }

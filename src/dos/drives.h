@@ -488,6 +488,7 @@ private:
 #define FALSE_SET_DOSERR(ERRNAME) (dos.errorcode = (DOSERR_##ERRNAME), false)
 #define DOSPATH_REMOVE_ENDINGDOTS(VAR) char VAR##_buf[DOS_PATHLENGTH]; DrivePathRemoveEndingDots((const char**)&VAR, VAR##_buf)
 #define DOSPATH_REMOVE_ENDINGDOTS_KEEP(VAR) const char* VAR##_org = VAR; DOSPATH_REMOVE_ENDINGDOTS(VAR)
+#define DTA_PATTERN_MATCH(NAME, PATTERN) (((PATTERN)[0] == '*' && (PATTERN)[8] == '.' && (PATTERN)[9] == '*') || WildFileCmp(NAME, PATTERN))
 #define DBP_8DOT3_INVALID_CHAR '-'
 void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH]);
 Bit8u DriveGetIndex(DOS_Drive* drv); // index in Drives array, returns DOS_DRIVES if not found (includes shadows)
@@ -795,7 +796,7 @@ public:
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
 	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
-	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
+	virtual DOS_Drive* GetShadow(int n, bool only_owned);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);
@@ -806,7 +807,8 @@ private:
 
 class patchDrive : public DOS_Drive {
 public:
-	patchDrive(DOS_Drive& under, bool autodelete_under, DOS_File* patchzip = NULL, bool enable_crc_check = false);
+	patchDrive();
+	void AddLayer(DOS_Drive& under, bool autodelete_under, DOS_File* patchzip = NULL, bool enable_crc_check = false, bool is_final = false);
 	virtual ~patchDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
@@ -822,14 +824,15 @@ public:
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
 	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
-	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
+	virtual DOS_Drive* GetShadow(int n, bool only_owned);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);
 	virtual Bits UnMount(void);
 
+	static std::string dos_yml;
 	static StringToObjectHashMap<std::string> variants;
-	static bool ApplyVariant(std::string& yml, int enable_variant_number, size_t* out_root_yml_len = NULL);
+	static void ActivateVariant(int variant_number);
 private:
 	struct patchDriveImpl* impl;
 };
@@ -852,7 +855,7 @@ public:
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
 	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
-	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
+	virtual DOS_Drive* GetShadow(int n, bool only_owned);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);

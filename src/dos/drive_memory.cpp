@@ -371,7 +371,7 @@ bool memoryDrive::FindNext(DOS_DTA & dta)
 	while (s.index < 2)
 	{
 		const char* dotted = (s.index++ ? ".." : ".");
-		if (!WildFileCmp(dotted, pattern) || (s.dir->attr & DOS_ATTR_VOLUME)) continue;
+		if (!DTA_PATTERN_MATCH(dotted, pattern) || (s.dir->attr & DOS_ATTR_VOLUME)) continue;
 		if (~attr & (Bit8u)s.dir->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 		dta.SetResult(dotted, 0, s.dir->date, s.dir->time, (Bit8u)s.dir->attr);
 		return true;
@@ -379,7 +379,7 @@ bool memoryDrive::FindNext(DOS_DTA & dta)
 	for (Bit32u i = s.dir->entries.Capacity() - (s.index++ - 2); i--; s.index++) // iterate reverse to better deal with "DEL *.*"
 	{
 		Memory_Entry* e = s.dir->entries.GetAtIndex(i);
-		if (!e || !WildFileCmp(e->name, pattern)) continue;
+		if (!e || !DTA_PATTERN_MATCH(e->name, pattern)) continue;
 		if (~attr & (Bit8u)e->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 		dta.SetResult(e->name, (e->IsFile() ? e->AsFile()->Size() : 0), e->date, e->time, (Bit8u)e->attr);
 		return true;

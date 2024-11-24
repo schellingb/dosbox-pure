@@ -216,7 +216,7 @@ bool mirrorDrive::FindNext(DOS_DTA & dta)
 			Bit8u attr;char pattern[DOS_NAMELENGTH_ASCII], *slash = strchr((p == pStart ? p : ++p), '\\');
 			dta.GetSearchParams(attr,pattern);
 			*slash = '\0';
-			bool match = WildFileCmp(p, pattern);
+			bool match = DTA_PATTERN_MATCH(p, pattern);
 			if (match && (attr & DOS_ATTR_DIRECTORY))
 				dta.SetResult(p, 0, 8600, 48128, (Bit8u)DOS_ATTR_DIRECTORY);
 			dta.SetDirID(dir_id + 1);
@@ -251,7 +251,7 @@ bool mirrorDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluste
 	return impl->under.AllocationInfo(_bytes_sector, _sectors_cluster, _total_clusters, _free_clusters);
 }
 
-bool mirrorDrive::GetShadows(DOS_Drive*& a, DOS_Drive*& b) { a = &impl->under; b = &impl->under; return true; }
+DOS_Drive* mirrorDrive::GetShadow(int n, bool only_owned) { return ((n == 0 && (!only_owned || impl->autodeleteUnder)) ? &impl->under : NULL); }
 Bit8u mirrorDrive::GetMediaByte(void) { return impl->under.GetMediaByte(); }
 bool mirrorDrive::isRemote(void) { return impl->under.isRemote(); }
 bool mirrorDrive::isRemovable(void) { return impl->under.isRemovable(); }

@@ -1977,12 +1977,11 @@ DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error
 			zip_drive->impl = impl;
 			zip_drive->label.SetLabel("ZIP", false, true);
 
-			DOS_Drive* drive = zip_drive;
 			size_t len = strlen(path);
+			FILE* c_file_h = NULL;
 			if (len > 5 && (path[len - 1] == 'Z' || path[len - 1] == 'z'))
 			{
 				// Load .DOSC patch file overlay for .DOSZ
-				FILE* c_file_h = NULL;
 				if (dosc_path)
 					c_file_h = fopen_wrap(dosc_path, "rb");
 				else
@@ -1991,10 +1990,14 @@ DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error
 					doscpath.back() = (path[len - 1] == 'Z' ? 'C' : 'c');
 					c_file_h = fopen_wrap(doscpath.c_str(), "rb");
 				}
-				if (c_file_h)
-					drive = new patchDrive(*drive, true, new rawFile(c_file_h, false), enable_crc_check);
 			}
-			return (!parent_drive ? drive : new unionDrive(*parent_drive, *drive, true, true));
+			if (!parent_drive && !c_file_h) return zip_drive;
+
+			patchDrive* patch_drive = dynamic_cast<patchDrive*>(parent_drive);
+			if (!patch_drive) patch_drive = new patchDrive();
+
+			patch_drive->AddLayer(*zip_drive, true, (c_file_h ? new rawFile(c_file_h, false) : NULL), enable_crc_check, (z.child == NULL));
+			return patch_drive;
 		}
 	};
 	return Local::Open({path, NULL, NULL}, error_msg, enable_crc_check, enter_solo_root_dir, dosc_path);
@@ -2098,7 +2101,7 @@ bool zipDrive::FindNext(DOS_DTA & dta)
 	while (s.index < 2)
 	{
 		const char* dotted = (s.index++ ? ".." : ".");
-		if (!WildFileCmp(dotted, pattern) || (s.dir->attr & DOS_ATTR_VOLUME)) continue;
+		if (!DTA_PATTERN_MATCH(dotted, pattern) || (s.dir->attr & DOS_ATTR_VOLUME)) continue;
 		if (~attr & (Bit8u)s.dir->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 		dta.SetResult(dotted, 0, s.dir->date, s.dir->time, (Bit8u)s.dir->attr);
 		return true;
@@ -2106,7 +2109,7 @@ bool zipDrive::FindNext(DOS_DTA & dta)
 	for (Bit32u i = (s.index++ - 2), end = s.dir->entries.Capacity(); i != end; i++, s.index++)
 	{
 		Zip_Entry* e = s.dir->entries.GetAtIndex(i);
-		if (!e || !WildFileCmp(e->name, pattern)) continue;
+		if (!e || !DTA_PATTERN_MATCH(e->name, pattern)) continue;
 		if (~attr & (Bit8u)e->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
 		dta.SetResult(e->name, (e->IsFile() ? e->AsFile()->decomp_size : 0), e->date, e->time, (Bit8u)e->attr);
 		return true;

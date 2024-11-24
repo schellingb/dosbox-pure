@@ -572,7 +572,8 @@ void DOSBOX_Init(void) {
 #ifdef C_DBP_ENABLE_CAPTURE
 	secprop->AddInitFunction(&HARDWARE_Init);//done
 #endif
-	Pint = secprop->Add_int("memsize", Property::Changeable::WhenIdle,16);
+	//DBP: Fixed Changeable::WhenIdle to Changeable::OnlyAtStart
+	Pint = secprop->Add_int("memsize", Property::Changeable::OnlyAtStart,16);
 #ifndef C_DBP_LIBRETRO
 	Pint->SetMinMax(1,63);
 #else

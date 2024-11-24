@@ -657,13 +657,15 @@ static unsigned DBP_AppendImage(const char* in_path, bool sorted)
 {
 	for (DBP_Image& i : dbp_images) if (i.path == in_path) return (unsigned)(&i - &dbp_images[0]); // known
 
-	struct Local { static int GetDriveDepth(DOS_Drive* drv, const char* p, int dep = 0, int lvl = 0x40000000)
+	struct Local { static bool GetDriveDepth(DOS_Drive* drv, const char* p, int& res)
 	{
-		DOS_Drive *a, *b; int res;
-		if (!drv->GetShadows(a, b)) return (drv->FileExists(p) ? (dep | 1) : 0);
-		return ((res = GetDriveDepth(b, p, dep, lvl >> 2)) != 0 ? res : GetDriveDepth(a, p, dep + lvl, lvl >> 2));
+		res++;
+		for (int n = 0;; n++)
+			if (DOS_Drive* shadow = drv->GetShadow(n, true)) { if (GetDriveDepth(shadow, p, res)) return true; }
+			else return (!n && drv->FileExists(p));
 	}};
-	int dd = ((in_path[0] == '$' && Drives[in_path[1]-'A']) ? Local::GetDriveDepth(Drives[in_path[1]-'A'], in_path + 4) : 0);
+	int dd = 0;
+	if (in_path[0] == '$' && Drives[in_path[1]-'A']) Local::GetDriveDepth(Drives[in_path[1]-'A'], in_path + 4, dd);
 
 	// insert into image list ordered by drive depth and alphabetically
 	unsigned insert_index = (unsigned)dbp_images.size();
@@ -949,14 +951,15 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		if (error)
 		{
 			delete iso;
-			DOS_Drive **srcdrv = (path[0] == '$' && path[1] >= 'A' && path[1] <= 'Z' ? &Drives[path[1]-'A'] : NULL), *mirror = (srcdrv ? dynamic_cast<mirrorDrive*>(*srcdrv) : NULL), *shadows[2];
-			if (mirror && mirror->GetShadows(shadows[0], shadows[1]) && !boot)
-			{
-				*srcdrv = shadows[0];
-				drive = DBP_Mount(image_index, unmount_existing, remount_letter);
-				*srcdrv = mirror;
-				return drive;
-			}
+			if (DOS_Drive **srcdrv = ((!boot && path[0] == '$' && path[1] >= 'A' && path[1] <= 'Z') ? &Drives[path[1]-'A'] : NULL))
+				if (DOS_Drive *mirror = dynamic_cast<mirrorDrive*>(*srcdrv))
+					if (DOS_Drive* shadow = mirror->GetShadow(0, false))
+					{
+						*srcdrv = shadow;
+						drive = DBP_Mount(image_index, unmount_existing, remount_letter);
+						*srcdrv = mirror;
+						return drive;
+					}
 			error_type = "CD-ROM image";
 			goto TRY_DIRECTORY;
 		}
@@ -2690,7 +2693,7 @@ static void set_variables(bool force_midi_scan = false)
 	}
 }
 
-static bool check_variables(bool is_startup = false)
+static bool check_variables()
 {
 	struct Variables
 	{
@@ -2701,10 +2704,8 @@ static bool check_variables(bool is_startup = false)
 			Section* section = control->GetSection(section_name);
 			DBP_ASSERT(section);
 			Property* prop = section->GetProp(var_name);
-			DBP_ASSERT(prop);
-			std::string tmpval;
-			const char* old_val = (prop->Get_type() == Value::V_STRING ? (const char*)prop->GetValue() : (tmpval = prop->GetValue().ToString()).c_str());
-			if (!strcmp(new_value, old_val) || prop->IsFixed()) return false;
+			const Value& propVal = prop->GetValue();
+			if (!strcmp(new_value, (propVal.type == Value::V_STRING ? (const char*)propVal : propVal.ToString().c_str())) || prop->IsFixed()) return false;
 
 			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
 			if (disallow_in_game && dbp_game_running)
@@ -2762,7 +2763,7 @@ static bool check_variables(bool is_startup = false)
 		}
 		else if (!dbp_system_scannable)
 		{
-			if (!is_startup) set_variables(); // just update label on "scan" option
+			if (dbp_state != DBPSTATE_BOOT) set_variables(); // just update label on "scan" option
 			dbp_system_scannable = true;
 		}
 	}
@@ -3055,7 +3056,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 	}
 	control = new Config();
 	DOSBOX_Init();
-	check_variables(true);
+	check_variables();
 	Section* autoexec = control->GetSection("autoexec");
 	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec);
 	DBP_Run::PreInit();
@@ -3195,7 +3196,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 			}
 		}
 
-		// Check if a patch variant should be loaded right away (after evaluating dbp_images)
+		// Check if DOS.YML needs a reboot (after evaluating dbp_images)
 		if (DBP_Run::PostInitFirstTime())
 			return init_dosbox(firsttime, forcemenu, true);
 	}
