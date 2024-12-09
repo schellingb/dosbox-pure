@@ -410,12 +410,16 @@ struct DBP_Run
 				}
 				else if (*mapFrom == '^')
 				{
-					const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
-					(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
-					Property* prop = control->GetProp("midi", "midiconfig");
-					prop->SetValue(val);
-					prop->MarkFixed();
-					val.assign("intelligent");
+					if (db_key[1] == 'p') // called by ProcessKey() with 'mpu401'
+					{
+						Parse(yml_key, "midi", "midiconfig", mapFrom);
+						val.assign("intelligent");
+					}
+					else // recursively called from above with 'midiconfig'
+					{
+						const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
+						(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
+					}
 				}
 				else
 				{
@@ -599,6 +603,7 @@ struct DBP_Run
 		if (ymlload.reboot) return true;
 
 		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
+		else if (startup.mode != RUN_NONE && !autoboot.use && patchDrive::variants.Len() > 1) startup.mode = RUN_NONE;
 		return false;
 	}
 
