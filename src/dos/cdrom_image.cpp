@@ -622,7 +622,7 @@ bool CDROM_Interface_Image::ReadSector(Bit8u *buffer, bool raw, unsigned long se
 	else { if (!tracks[track].mode2 && !raw) seek += 16; }
 	if (tracks[track].mode2 && !raw) seek += (tracks[track].sectorSize >= RAW_SECTOR_SIZE ? 24 : 8);
 	if (tracks[track].file->read(buffer, seek, length)) return true;
-	// Pre-gap areas between tracks stored in separate files can be beyond the file size, suceeed and return a zeroed buffer instead of failing the read
+	// Pre-gap areas between tracks stored in separate files can be beyond the file size, succeed and return a zeroed buffer instead of failing the read
 	memset(buffer, 0, length);
 	return true;
 #else
@@ -1168,7 +1168,7 @@ bool CDROM_Interface_Image::LoadChdFile(char* filename)
 		err:
 		tracks.clear();
 		delete chd;
-		if (!not_chd) GFX_ShowMsg("Invalid or sunsupported CHD file, must be an uncompressed version 5 CD image");
+		if (!not_chd) GFX_ShowMsg("Invalid or unsupported CHD file, must be an uncompressed version 5 CD image");
 		return false;
 	}
 
