@@ -837,13 +837,9 @@ Bit32u DBP_MIXER_DoneSamplesCount()
 void DBP_MIXER_ScrapAudio()
 {
 	// Scrap all but 100 samples
-	if (mixer.done < 100) return; 
-	Bitu reduce = mixer.done - 100;
-	mixer.done -= reduce;
-	mixer.needed -= reduce;
-	Bitu pos = mixer.pos;
-	mixer.pos = (mixer.pos + reduce) & MIXER_BUFMASK;
-	for (; reduce--; pos++) { pos &= MIXER_BUFMASK; mixer.work[pos][0]=mixer.work[pos][1]=0; }
+	Bit8u dummy[64 * MIXER_SSIZE];
+	while (mixer.done > 100)
+		MIXER_CallBack(0, dummy, (mixer.done > 164 ? 64 : mixer.done - 100) * MIXER_SSIZE);
 }
 
 #include <dbp_serialize.h>
