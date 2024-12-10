@@ -652,16 +652,19 @@ struct patchDriveImpl
 		Patch_Entry* e;
 		if (is_dir || (stat.attr & DOS_ATTR_DIRECTORY))
 		{
+			if (dir->entries.Get(name)) return; // don't have a variant overwrite entire directories
 			e = new Patch_Directory(self.IterateLayer, stat.attr, name, stat.date, stat.time);
 			self.directories.Put(path, e->AsDirectory());
 		}
-		else if (underpath == path)
-			e = new Patch_File(self.IterateLayer, Patch_File::TYPE_RAW, stat.attr, name, stat.date, stat.time);
 		else
-			e = new Patch_File(self.IterateLayer, Patch_File::TYPE_PATCH, stat.attr, underpath + (name - path), stat.date, stat.time);
+		{
+			Patch_File::EType typ = (underpath == path ? Patch_File::TYPE_RAW : Patch_File::TYPE_PATCH);
+			const char*       nam = (underpath == path ? name : underpath + (name - path));
+			e = new Patch_File(self.IterateLayer, typ, stat.attr, nam, stat.date, stat.time);
 
-		if (Patch_Entry* existing = dir->entries.Get(e->name))
-			Patch_Directory::DeleteEntry(existing);
+			if (Patch_Entry* existing = dir->entries.Get(e->name))
+				Patch_Directory::DeleteEntry(existing);
+		}
 
 		strcpy(e->zippath, orgpath);
 		e->variantlen = (Bit8u)(path - orgpath);
