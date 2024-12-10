@@ -3871,7 +3871,7 @@ void retro_run(void)
 		DBP_ThreadControl(TCM_FINISH_FRAME);
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size())));
 		const char* midiarg, *midierr = DBP_MIDI_StartupError(control->GetSection("midi"), midiarg);
-		if (midierr) retro_notify(0, RETRO_LOG_WARN, midierr, midiarg);
+		if (midierr) retro_notify(10000, RETRO_LOG_ERROR, midierr, midiarg);
 		if (dbp_state == DBPSTATE_FIRST_FRAME)
 			dbp_state = DBPSTATE_RUNNING;
 		if (dbp_latency == DBP_LATENCY_VARIABLE)
