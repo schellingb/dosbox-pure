@@ -3407,7 +3407,20 @@ struct voodoo_ogl_state
 
 	void VBlankFlush()
 	{
-		//GFX_ShowMsg("[VOGL] vblank_flush [%u] - Commands: %u - Verts: %u", v->fbi.frontbuf, cmdbuf.commands.num, cmdbuf.vertices.num);
+		//GFX_ShowMsg("[VOGL] vblank_flush [%u] - Commands: %u - Verts: %u - Frame: %u", v->fbi.frontbuf, cmdbuf.commands.num, cmdbuf.vertices.num, renderframe);
+		if (!renderframe) // don't accumulate a large command buffer during a potentially auto skipped startup
+		{
+			UINT32 fc = cmdbuf.flushed_commands, nc = cmdbuf.commands.num - fc, fv = cmdbuf.flushed_vertices, nv = cmdbuf.vertices.num - fv;
+			if (nc && fc > nc * 4 && fv > nv * 4)
+			{
+				//GFX_ShowMsg("[VOGL] vblank_flush - Discard Commands: %u - Verts: %u", fc, fv);
+				memcpy(vogl->cmdbuf.commands.data, vogl->cmdbuf.commands.data + fc, nc * sizeof(*vogl->cmdbuf.commands.data));
+				memcpy(vogl->cmdbuf.vertices.data, vogl->cmdbuf.vertices.data + fv, nv * sizeof(*vogl->cmdbuf.vertices.data));
+				vogl->cmdbuf.commands.num = nc;
+				vogl->cmdbuf.vertices.num = nv;
+				for (ogl_command& c : vogl->cmdbuf.commands) { DBP_ASSERT(c.vertex_index >= fv); c.vertex_index -= fv; }
+			}
+		}
 		flushed_buffer = v->fbi.frontbuf;
 		cmdbuf.flushed_vertices = cmdbuf.vertices.num;
 		cmdbuf.flushed_commands = cmdbuf.commands.num;
