@@ -2093,7 +2093,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	}
 
 	#ifndef DBP_ENABLE_FPS_COUNTERS
-	if (dbp_perf == DBP_PERF_DETAILED)
+	if (dbp_perf == DBP_PERF_DETAILED && !DBP_Run::autoinput.ptr)
 	#endif
 	{
 		const DBP_Buffer& lbuf = dbp_buffers[buffer_active];
@@ -2917,8 +2917,8 @@ static bool check_variables()
 	if (machine_is_svga)
 	{
 		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "8mb"), true, true);
-		const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "1");
-		Variables::DosBoxSet("pci", "voodoo_perf", voodoo_perf);
+		const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "auto");
+		Variables::DosBoxSet("pci", "voodoo_perf", (voodoo_perf[0] == 'a' ? "4" : voodoo_perf)); // "4" falls back to multi-threaded without OpenGL
 		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE && (atoi(voodoo_perf) & 0x4))
 			retro_notify(0, RETRO_LOG_WARN, "To enable OpenGL hardware rendering, close and re-open.");
 		Variables::DosBoxSet("pci", "voodoo_gamma", retro_get_variable("dosbox_pure_voodoo_gamma", "-2"));
@@ -3488,13 +3488,13 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		return false;
 	}
 
-	if (atoi(retro_get_variable("dosbox_pure_voodoo_perf", "1")) & 0x4) // 3dfx wants to use OpenGL, request hardware render context
+	const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "auto");
+	if (voodoo_perf[0] == 'a' || voodoo_perf[0] == '4') // 3dfx wants to use OpenGL, request hardware render context
 	{
 		static struct sglproc { retro_proc_address_t& ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
 		static unsigned prog_dosboxbuffer, vbo, vao, tex, fbo, lastw, lasth;
 
 		static const Bit8u testhwcontexts[] = { RETRO_HW_CONTEXT_OPENGL_CORE, RETRO_HW_CONTEXT_OPENGLES_VERSION, RETRO_HW_CONTEXT_OPENGLES3, RETRO_HW_CONTEXT_OPENGLES2, RETRO_HW_CONTEXT_OPENGL };
-		static const Bit8u hwcontexttests[] = { 0, 4, 3, 0, 2, 1 }; // reverse map
 		struct HWContext
 		{
 			static void Reset(void)
@@ -3529,7 +3529,10 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				{
 					gl_error:
 					retro_notify(0, RETRO_LOG_INFO, "Error during OpenGL initialization. Please disable 'Hardware OpenGL' in the '3dfx Voodoo Performance' video core option.");
-					if (dbp_opengl_draw) OnReset(voodoo_ogl_contextlost, true);
+					OnReset(voodoo_ogl_initfailed, true);
+					//// Doesn't work in RetroArch, once hardware context has been activated it must be used
+					//dbp_hw_render.context_type = RETRO_HW_CONTEXT_NONE;
+					//environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &dbp_hw_render);
 					return;
 				}
 
@@ -3670,7 +3673,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 			}
 		};
 
-		for (int test = -1; test < 5; test++)
+		for (int test = -1; test != (voodoo_perf[0] == 'a' ? 0 : 5); test++)
 		{
 			if (test < 0)
 			{
@@ -3690,12 +3693,13 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 
 			if (environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &dbp_hw_render))
 			{
-				const char* names[] = { "NONE", "OpenGL 2.x", "OpenGL ES 2.0", "OpenGL 3/4", "Open GL ES 3.0", "Open GL ES 3.1+", "Vulkan", "D3D11", "D3D10", "D3D12", "D3D9", "DUMMY" };
+				const char* names[] = { "NONE", "OpenGL 2.x", "OpenGL ES 2.0", "OpenGL 3/4", "Open GL ES 3.0", "Open GL ES 3.1+" };
 				GFX_ShowMsg("[DBP:GL] Selected HW Renderer: %s : %d.%d", names[dbp_hw_render.context_type], dbp_hw_render.version_major, dbp_hw_render.version_minor);
 				break;
 			}
 			dbp_hw_render.context_type = RETRO_HW_CONTEXT_NONE;
 		}
+		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE) voodoo_ogl_initfailed(); // enforce software rendering
 	}
 
 	//// RETRO_ENVIRONMENT_SET_AUDIO_CALLBACK crashes RetroArch with the XAudio driver when launching from the command line

@@ -2923,11 +2923,11 @@ enum VoodoPerf : UINT8
 static UINT8 v_perf;
 
 #ifdef C_DBP_ENABLE_VOODOO_OPENGL
-UINT8 voodoo_ogl_scale;
-static struct voodoo_ogl_state* vogl;
 static bool vogl_palette_changed;
 static bool vogl_ncctexel_changed;
-static bool vogl_active, vogl_showing;
+static bool vogl_active, vogl_showing, vogl_unavailable;
+UINT8 voodoo_ogl_scale;
+static struct voodoo_ogl_state* vogl;
 
 #define GLERRORCLEAR {myglGetError();}
 #ifndef NDEBUG
@@ -3531,8 +3531,18 @@ bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation 
 }
 
 void voodoo_ogl_cleanup() { if (vogl) vogl->Cleanup(); }
-void voodoo_ogl_contextlost() { if (vogl) vogl->ContextLost(); }
-void voodoo_ogl_resetcontext() { voodoo_ogl_contextlost(); if (v && v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate(); }
+void voodoo_ogl_resetcontext()
+{
+	if (vogl && !vogl->vbo) return; // started up but never used, no need to reset
+	if (vogl) vogl->ContextLost();
+	if (v && v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
+}
+void voodoo_ogl_initfailed()
+{
+	if (vogl) { vogl->Cleanup(); delete vogl; vogl = NULL; }
+	vogl_unavailable = true;
+	v_perf &= ~V_PERFFLAG_OPENGL;
+}
 
 enum Voodoo_OGL_UsedBits : UINT32
 {
@@ -8846,6 +8856,7 @@ void VOODOO_Init(Section* sec) {
 	voodoo_ogl_scale = ((v_perf & V_PERFFLAG_OPENGL) ? section->Get_int("voodoo_scale") : 1);
 	if (voodoo_ogl_scale < 1 || voodoo_ogl_scale > 16) voodoo_ogl_scale = 1;
 	if (v_perf == V_PERFFLAG_OPENGL) v_perf |= V_PERFFLAG_MULTITHREAD; // keep multithread as fallback
+	if (vogl_unavailable) v_perf &= ~V_PERFFLAG_OPENGL;
 
 	if (voodoo_pagehandler)
 	{

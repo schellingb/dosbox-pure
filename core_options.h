@@ -491,16 +491,18 @@ static retro_core_option_v2_definition option_defs[] =
 		"3dfx Voodoo Performance", NULL,
 		"Options to tweak the behavior of the 3dfx Voodoo emulation." "\n"
 		"Switching to OpenGL requires a restart." "\n"
-		"If OpenGL is available, host-side 3D acceleation is used which can make 3D rendering much faster.", NULL,
+		"If OpenGL is available, host-side 3D acceleration is used which can make 3D rendering much faster.\n"
+		"Auto will use OpenGL if it is the active video driver in the frontend.", NULL,
 		"Video",
 		{
-			{ "1", "Software Multi Threaded (default)" },
+			{ "auto", "Auto (default)" },
 			{ "4", "Hardware OpenGL" },
+			{ "1", "Software Multi Threaded" },
 			{ "3", "Software Multi Threaded, low quality" },
 			{ "2", "Software Single Threaded, low quality" },
 			{ "0", "Software Single Threaded" },
 		},
-		"1",
+		"auto",
 	},
 	{
 		"dosbox_pure_voodoo_scale",

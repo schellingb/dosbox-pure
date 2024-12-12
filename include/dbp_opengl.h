@@ -164,5 +164,5 @@ bool voodoo_ogl_have_new_image();
 bool voodoo_ogl_display();
 bool voodoo_ogl_mainthread();
 void voodoo_ogl_cleanup();
-void voodoo_ogl_contextlost();
 void voodoo_ogl_resetcontext();
+void voodoo_ogl_initfailed();
