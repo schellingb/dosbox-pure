@@ -70,14 +70,18 @@ typedef struct {
 #endif
 	} frameskip;
 	struct {
+#ifdef C_DBP_ENABLE_SCALERS
 		Bitu size;
+#endif
 		scalerMode_t inMode;
 		scalerMode_t outMode;
+#ifdef C_DBP_ENABLE_SCALERS
 		scalerOperation_t op;
 #ifdef C_DBP_ENABLE_SCALERCACHE
 		bool clearCache;
 #endif
 		bool forced;
+#endif
 		ScalerLineHandler_t lineHandler;
 		ScalerLineHandler_t linePalHandler;
 		ScalerComplexHandler_t complexHandler;

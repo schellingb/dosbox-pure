@@ -61,6 +61,7 @@ typedef enum {
 	scalerMode8, scalerMode15, scalerMode16, scalerMode32
 } scalerMode_t;
 
+#ifdef C_DBP_ENABLE_SCALERS
 typedef enum scalerOperation {
 	scalerOpNormal,
 #if RENDER_USE_ADVANCED_SCALERS>2
@@ -78,6 +79,7 @@ typedef enum scalerOperation {
 #endif
 	scalerLast
 } scalerOperation_t;
+#endif
 
 typedef void (*ScalerLineHandler_t)(const void *src);
 typedef void (*ScalerComplexHandler_t)(void);

@@ -717,9 +717,11 @@ void RENDER_Init(Section * sec) {
 	//For restarting the renderer.
 	static bool running = false;
 	bool aspect = render.aspect;
+#ifdef C_DBP_ENABLE_SCALERS
 	Bitu scalersize = render.scale.size;
 	bool scalerforced = render.scale.forced;
 	scalerOperation_t scaleOp = render.scale.op;
+#endif
 
 	render.pal.first=256;
 	render.pal.last=0;
@@ -764,9 +766,6 @@ void RENDER_Init(Section * sec) {
 	else if (scaler == "scan2x"){ render.scale.op = scalerOpScan;render.scale.size = 2; }
 	else if (scaler == "scan3x"){ render.scale.op = scalerOpScan;render.scale.size = 3; }
 #endif
-#else // C_DBP_ENABLE_SCALERS
-	render.scale.op = scalerOpNormal;
-	render.scale.size = 1;
 #endif
 #if C_OPENGL
 	char* shader_src = render.shader_src;
@@ -787,12 +786,17 @@ void RENDER_Init(Section * sec) {
 
 	//If something changed that needs a ReInit
 	// Only ReInit when there is a src.bpp (fixes crashes on startup and directly changing the scaler without a screen specified yet)
-	if(running && render.src.bpp && ((render.aspect != aspect) || (render.scale.op != scaleOp) || 
-				  (render.scale.size != scalersize) || (render.scale.forced != scalerforced) ||
-#if C_OPENGL
-				  (render.shader_src != shader_src) ||
+	if(running && render.src.bpp && ((render.aspect != aspect)
+#ifdef C_DBP_ENABLE_SCALERS
+				|| (render.scale.op != scaleOp) || (render.scale.size != scalersize) || (render.scale.forced != scalerforced)
 #endif
-				   render.scale.forced))
+#if C_OPENGL
+				|| (render.shader_src != shader_src)
+#endif
+#ifdef C_DBP_ENABLE_SCALERS
+				|| render.scale.forced
+#endif
+				))
 		RENDER_CallBack( GFX_CallBackReset );
 
 	if(!running) render.updating=true;
