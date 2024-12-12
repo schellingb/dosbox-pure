@@ -644,9 +644,10 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, SBLASTER);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, TIMER);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, MOUSE);
-	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, unionDrive);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, unionDrive); // not stored anymore (old saves might have it though)
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, IDEController);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, Voodoo);
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, zipDrive); // not stored
 
 	float pic_indices[PIC_QUEUESIZE];
 	Bitu pic_values[PIC_QUEUESIZE];
@@ -660,8 +661,9 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	{
 		for (PICEntry* it = pic_queue.next_entry; it; it = it->next)
 		{
-			// skip storing state irrelevant union drive event which has a pointer in its value
+			// skip storing state irrelevant union and zip drive events which keep a pointer in the value
 			if (it->pic_event == DBPSerializePIC_EventHandlerunionDrivePtrs[0]) continue;
+			if (it->pic_event == DBPSerializePIC_EventHandlerzipDrivePtrs[0]) continue;
 			pic_indices[pic_count] = it->index;
 			pic_values[pic_count] = it->value;
 			pic_events[pic_count] = it->pic_event;
@@ -684,7 +686,7 @@ void DBPSerialize_PIC(DBPArchive& ar)
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, SBLASTER),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, TIMER),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, MOUSE),
-		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, unionDrive),
+		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, unionDrive), // not really needed but needs to be kept for compatibility with old saves
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, IDEController),
 		DBP_SERIALIZE_GET_POINTER_LIST(PIC_EventHandler, Voodoo));
 
