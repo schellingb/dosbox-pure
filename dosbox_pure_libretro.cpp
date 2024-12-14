@@ -4180,44 +4180,94 @@ bool retro_load_game_special(unsigned type, const struct retro_game_info *info, 
 void retro_deinit(void) { }
 
 // UTF8 fopen
-#include "libretro-common/include/compat/fopen_utf8.h"
-FILE *fopen_wrap(const char *path, const char *mode)
+#include <sys/stat.h>
+
+#ifdef WIN32
+wchar_t* AllocUTF8ToUTF16(const char *str)
+{
+	if (!str || !*str) return NULL;
+	wchar_t* res;
+	if (int len8 = MultiByteToWideChar(CP_UTF8, 0, str, -1, NULL, 0))
+	{
+		if (!(res = (wchar_t*)malloc(len8 * sizeof(wchar_t)))) return NULL;
+		if ((MultiByteToWideChar(CP_UTF8, 0, str, -1, res, len8)) < 0) { free(res); return NULL; }
+	}
+	if (int lena = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, 0)) // Fall back to ANSI codepage instead
+	{
+		if (!(res = (wchar_t*)malloc(lena * sizeof(wchar_t)))) return NULL;
+		if ((MultiByteToWideChar(CP_ACP, 0, str, -1, res, lena)) < 0) { free(res); return NULL; }
+	}
+	return res;
+}
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m)&S_IFMT)==S_IFDIR)
+#endif
+#endif
+
+FILE* fopen_wrap(const char* path, const char* mode)
 {
 	#ifdef WIN32
-	for (const unsigned char* p = (unsigned char*)path; *p; p++)
-		if (*p >= 0x80)
-			return (FILE*)fopen_utf8(path, mode);
+	for (const char* p = path; *p; p++) { if ((Bit8u)*p > 0x7F) goto needw; }
 	#endif
 	return fopen(path, mode);
+	#ifdef WIN32
+	needw:
+	wchar_t *wpath = AllocUTF8ToUTF16(path), wmode[20], *pwmode = wmode;
+	if (!wpath) return NULL;
+	for (const char* p = mode, *pEnd = p + 19; *p && p != pEnd; p++) *(pwmode++) = *p;
+	*pwmode = '\0';
+	FILE* f = _wfopen(wpath, wmode);
+	free(wpath);
+	return f;
+	#endif
 }
+
+static bool exists_utf8(const char* path, bool* out_is_dir)
+{
+	#ifdef WIN32
+	for (const char* p = path; *p; p++) { if ((Bit8u)*p > 0x7F) goto needw; }
+	#endif
+	struct stat test;
+	if (stat(path, &test)) return false;
+	if (out_is_dir) *out_is_dir = !!S_ISDIR(test.st_mode);
+	return true;
+	#ifdef WIN32
+	needw:
+	wchar_t *wpath = AllocUTF8ToUTF16(path);
+	if (!wpath) return NULL;
+	struct _stat64i32 wtest;
+	bool retval = !_wstat64i32(wpath, &wtest);
+	free(wpath);
+	if (out_is_dir && retval) *out_is_dir = !!S_ISDIR(wtest.st_mode);
+	return true;
+	#endif
+}
+
 #ifndef STATIC_LINKING
-#include "libretro-common/compat/fopen_utf8.c"
-#include "libretro-common/compat/compat_strl.c"
-#include "libretro-common/encodings/encoding_utf.c"
 #include "libretro-common/features/features_cpu.c"
 #endif
 
-bool fpath_nocase(char* path)
+bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 {
-	if (!path || !*path) return false;
-	struct stat test;
-	if (stat(path, &test) == 0) return true; // exists as is
+	if (pathstr.empty()) return false;
+	char* path = (char*)pathstr.c_str();
+	if (exists_utf8(path, out_is_dir)) return true; // exists as is
 
 	#ifdef WIN32
-	// If stat could handle utf8 strings, we just return false here because paths are not case senstive on Windows
-	size_t rootlen = ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) ? 3 : 0);
+	// For absolute paths we just return false here because paths are not case sensitive on Windows
+	if ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) || (path[0] == '\\' && path[1] == '\\')) return false;
 	#else
 	size_t rootlen = ((path[0] == '/' || path[0] == '\\') ? 1 : 0);
-	#endif
-	if (!path[rootlen]) return false;
+	if (!path[rootlen]) { if (out_is_dir) *out_is_dir = true; return true; } // querying root directory
 	std::string subdir;
-	const char* base_dir = (rootlen ? subdir.append(path, rootlen).c_str() : NULL);
+	const char* base_dir = (rootlen ? subdir.assign(path, rootlen).c_str() : NULL);
 	path += rootlen;
 
 	struct retro_vfs_interface_info vfs = { 3, NULL };
 	if (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) || vfs.required_interface_version < 3 || !vfs.iface)
 		return false;
 
+	bool relative_to_content = false;
 	for (char* psubdir;; *psubdir = CROSS_FILESPLIT, path = psubdir + 1)
 	{
 		char *next_slash = strchr(path, '/'), *next_bslash = strchr(path, '\\');
@@ -4226,6 +4276,7 @@ bool fpath_nocase(char* path)
 		if (psubdir) *psubdir = '\0';
 
 		// On Android opendir fails for directories the user/app doesn't have access so just assume it exists as is
+		bool confirmed = false;
 		if (struct retro_vfs_dir_handle *dir = (base_dir ? vfs.iface->opendir(base_dir, true) : NULL))
 		{
 			while (dir && vfs.iface->readdir(dir))
@@ -4233,15 +4284,40 @@ bool fpath_nocase(char* path)
 				const char* entry_name = vfs.iface->dirent_get_name(dir);
 				if (strcasecmp(entry_name, path)) continue;
 				strcpy(path, entry_name);
+				confirmed = true;
+				if (!psubdir && out_is_dir) *out_is_dir = vfs.iface->dirent_is_dir(dir);
 				break;
 			}
 			vfs.iface->closedir(dir);
 		}
-		if (!psubdir) return true;
-		if (subdir.empty() && base_dir) subdir = base_dir;
-		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
-		base_dir = subdir.append(path).c_str();
+		if (psubdir)
+		{
+			if (subdir.empty() && base_dir) subdir = base_dir;
+			if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
+			base_dir = subdir.append(path).c_str();
+			continue;
+		}
+
+		if (confirmed || rootlen) return true;
+		if (relative_to_content) return false;
+	#endif
+
+		const char *content = dbp_content_path.c_str(), *content_fs = strrchr(content, '/'), *content_bs = strrchr(content, '\\');
+		const char* content_dir_end = ((content_fs || content_bs) ? (content_fs > content_bs ? content_fs : content_bs) + 1 : content + dbp_content_path.length());
+		if (content_dir_end == content) return false;
+
+		pathstr.insert(0, content, (content_dir_end - content));
+		if (!content_fs && !content_bs) pathstr.insert(((content_dir_end++) - content), 1, CROSS_FILESPLIT);
+		if (exists_utf8(pathstr.c_str(), out_is_dir)) return true; // exists relative to content as is
+
+	#ifdef WIN32
+		return false;
+	#else
+		base_dir = subdir.assign(pathstr.c_str(), content_dir_end - 1 - content).c_str();
+		psubdir = (char*)pathstr.c_str() + subdir.length();
+		relative_to_content = true;
 	}
+	#endif
 }
 
 MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCPTR)

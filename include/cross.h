@@ -156,7 +156,7 @@ FILE *fopen_wrap(const char *path, const char *mode);
 #ifdef C_DBP_HAVE_FPATH_NOCASE
 // Check if path exists, will fix case in path
 // Returns true if file exists, otherwise path can be partially modified
-bool fpath_nocase(char* path);
+bool fpath_nocase(std::string& path, bool* out_is_dir = NULL);
 #endif
 
 //DBP: Use 64-bit fseek and ftell (based on libretro-common/vfs/vfs_implementation.c)

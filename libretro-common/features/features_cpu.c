@@ -29,7 +29,6 @@
 #include <unistd.h>
 #endif
 
-#include "../include/compat/strl.h"
 #include "../include/libretro.h"
 #include "../include/retro_timers.h"
 

@@ -516,7 +516,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		std::string filename_s(filename);
 		Cross::ResolveHomedir(filename_s);
 		#ifdef C_DBP_HAVE_FPATH_NOCASE
-		if (!fpath_nocase(&filename_s[0])) return NULL;
+		if (!fpath_nocase(filename_s)) return NULL;
 		#endif
 		FILE* raw_file_h;
 		if (writable && (raw_file_h = fopen_wrap(filename_s.c_str(), "rb+")) != NULL) {

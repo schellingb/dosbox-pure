@@ -314,6 +314,7 @@ public:
 				if (lastconfigdir.length())	temp_line = lastconfigdir + CROSS_FILESPLIT + temp_line;
 			}
 #endif
+#ifndef C_DBP_HAVE_FPATH_NOCASE
 			struct stat test;
 			//Win32 : strip tailing backslashes
 			//os2: some special drive check
@@ -377,6 +378,12 @@ public:
 				return;
 #endif
 			}
+#else
+			Cross::ResolveHomedir(temp_line);
+			bool path_is_dir;
+			if (!fpath_nocase(temp_line, &path_is_dir)) { WriteOut(MSG_Get("PROGRAM_MOUNT_ERROR_1"),temp_line.c_str()); return; }
+			if (!path_is_dir) { WriteOut(MSG_Get("PROGRAM_MOUNT_ERROR_2"),temp_line.c_str()); return; }
+#endif
 
 			if (temp_line[temp_line.size()-1]!=CROSS_FILESPLIT) temp_line+=CROSS_FILESPLIT;
 			Bit8u bit8size=(Bit8u) sizes[1];
