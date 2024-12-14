@@ -4265,23 +4265,40 @@ bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 {
 	if (pathstr.empty()) return false;
 	char* path = (char*)pathstr.c_str();
-	if (exists_utf8(path, out_is_dir)) return true; // exists as is
 
 	#ifdef WIN32
-	// For absolute paths we just return false here because paths are not case sensitive on Windows
-	if ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) || (path[0] == '\\' && path[1] == '\\')) return false;
+	// For absolute paths we just return here because paths are not case sensitive on Windows
+	if ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) || (path[0] == '\\' && path[1] == '\\')) return exists_utf8(path, out_is_dir);
 	#else
-	size_t rootlen = ((path[0] == '/' || path[0] == '\\') ? 1 : 0);
-	if (!path[rootlen]) { if (out_is_dir) *out_is_dir = true; return true; } // querying root directory
+	const bool is_absolute = (path[0] == '/' || path[0] == '\\');
+	if (is_absolute && exists_utf8(path, out_is_dir)) return true; // exists as is with an absolute path
 	std::string subdir;
-	const char* base_dir = (rootlen ? subdir.assign(path, rootlen).c_str() : NULL);
-	path += rootlen;
+	if (is_absolute) subdir.assign(path++, 1).c_str();
+	else
+	{
+		#endif
+		// Prefix with directory of content path
+		const char *content = dbp_content_path.c_str(), *content_fs = strrchr(content, '/'), *content_bs = strrchr(content, '\\');
+		const char* content_dir_end = ((content_fs || content_bs) ? (content_fs > content_bs ? content_fs : content_bs) + 1 : content + dbp_content_path.length());
+		if (content_dir_end != content)
+		{
+			pathstr.insert(0, content, (content_dir_end - content));
+			if (!content_fs && !content_bs) pathstr.insert(((content_dir_end++) - content), 1, CROSS_FILESPLIT);
+		}
+		if (exists_utf8(pathstr.c_str(), out_is_dir)) return true; // exists relative to content as is
+		#ifdef WIN32
+		return false; // does not exist, even case insensitive
+		#else
+		if (content_dir_end != content) subdir.assign(pathstr.c_str(), content_dir_end - 1 - content);
+		path = (char*)pathstr.c_str() + subdir.length();
+	}
 
 	struct retro_vfs_interface_info vfs = { 3, NULL };
 	if (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) || vfs.required_interface_version < 3 || !vfs.iface)
 		return false;
 
-	bool relative_to_content = false;
+	bool res = false;
+	const char* base_dir = (char*)subdir.c_str();
 	for (char* psubdir;; *psubdir = CROSS_FILESPLIT, path = psubdir + 1)
 	{
 		char *next_slash = strchr(path, '/'), *next_bslash = strchr(path, '\\');
@@ -4290,7 +4307,6 @@ bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 		if (psubdir) *psubdir = '\0';
 
 		// On Android opendir fails for directories the user/app doesn't have access so just assume it exists as is
-		bool confirmed = false;
 		if (struct retro_vfs_dir_handle *dir = (base_dir ? vfs.iface->opendir(base_dir, true) : NULL))
 		{
 			while (dir && vfs.iface->readdir(dir))
@@ -4298,38 +4314,15 @@ bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 				const char* entry_name = vfs.iface->dirent_get_name(dir);
 				if (strcasecmp(entry_name, path)) continue;
 				strcpy(path, entry_name);
-				confirmed = true;
-				if (!psubdir && out_is_dir) *out_is_dir = vfs.iface->dirent_is_dir(dir);
+				if (!psubdir) { res = true; if (out_is_dir) *out_is_dir = vfs.iface->dirent_is_dir(dir); } // found
 				break;
 			}
 			vfs.iface->closedir(dir);
 		}
-		if (psubdir)
-		{
-			if (subdir.empty() && base_dir) subdir = base_dir;
-			if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
-			base_dir = subdir.append(path).c_str();
-			continue;
-		}
-
-		if (confirmed || rootlen) return true;
-		if (relative_to_content) return false;
-	#endif
-
-		const char *content = dbp_content_path.c_str(), *content_fs = strrchr(content, '/'), *content_bs = strrchr(content, '\\');
-		const char* content_dir_end = ((content_fs || content_bs) ? (content_fs > content_bs ? content_fs : content_bs) + 1 : content + dbp_content_path.length());
-		if (content_dir_end == content) return false;
-
-		pathstr.insert(0, content, (content_dir_end - content));
-		if (!content_fs && !content_bs) pathstr.insert(((content_dir_end++) - content), 1, CROSS_FILESPLIT);
-		if (exists_utf8(pathstr.c_str(), out_is_dir)) return true; // exists relative to content as is
-
-	#ifdef WIN32
-		return false;
-	#else
-		base_dir = subdir.assign(pathstr.c_str(), content_dir_end - 1 - content).c_str();
-		psubdir = (char*)pathstr.c_str() + subdir.length();
-		relative_to_content = true;
+		if (!psubdir) return res;
+		if (subdir.empty() && base_dir) subdir = base_dir;
+		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
+		base_dir = subdir.append(path).c_str();
 	}
 	#endif
 }
