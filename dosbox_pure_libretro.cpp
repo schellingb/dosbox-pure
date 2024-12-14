@@ -3054,6 +3054,21 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		DBP_SetIntercept(NULL);
 		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
 	}
+
+	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str()), *path_file, *path_ext, *path_fragment; size_t path_namelen;
+	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext, &path_fragment) && dbp_content_name.empty())
+		dbp_content_name = std::string(path_file, path_namelen);
+	const int path_extlen = (path ? (int)((path_fragment ? path_fragment : path + dbp_content_path.length()) - path_ext) : 0);
+
+	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
+	const bool skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 3));
+	if (skip_c_mount && !dbconf)
+	{
+		std::string confcontent;
+		if (ReadAndClose(FindAndOpenDosFile(path), confcontent))
+			return init_dosbox(firsttime, forcemenu, reinit, &confcontent);
+	}
+
 	control = new Config();
 	DOSBOX_Init();
 	check_variables();
@@ -3067,24 +3082,23 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
 	PROGRAMS_MakeFile("XCOPY.COM", DBP_PureXCopyProgram);
 
-	const char* path = (dbp_content_path.empty() ? NULL : dbp_content_path.c_str()), *path_file, *path_ext; size_t path_namelen;
-	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext) && dbp_content_name.empty())
-		dbp_content_name = std::string(path_file, path_namelen);
-
-	dbp_legacy_save = false;
-	std::string save_file = DBP_GetSaveFile(SFT_GAMESAVE); // this can set dbp_legacy_save to true, needed by DBP_Mount
-	DOS_Drive* union_underlay = (path ? DBP_Mount(0, false, 0, path) : NULL);
-
-	if (!Drives['C'-'A'])
+	if (!skip_c_mount)
 	{
-		if (!union_underlay)
+		dbp_legacy_save = false;
+		std::string save_file = DBP_GetSaveFile(SFT_GAMESAVE); // this can set dbp_legacy_save to true, needed by DBP_Mount
+		DOS_Drive* union_underlay = (path ? DBP_Mount(0, false, 0, path) : NULL);
+
+		if (!Drives['C'-'A'])
 		{
-			union_underlay = new memoryDrive();
-			if (path) DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext);
+			if (!union_underlay)
+			{
+				union_underlay = new memoryDrive();
+				if (path) DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext);
+			}
+			unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true, dbp_strict_mode);
+			Drives['C'-'A'] = uni;
+			mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 		}
-		unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true, dbp_strict_mode);
-		Drives['C'-'A'] = uni;
-		mem_writeb(Real2Phys(dos.tables.mediaid) + ('C'-'A') * 9, uni->GetMediaByte());
 	}
 
 	// Detect content year and auto mapping
@@ -3201,34 +3215,36 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 			return init_dosbox(firsttime, forcemenu, true);
 	}
 
-	DOS_Drive* drive_c = Drives['C'-'A']; // guaranteed not NULL
 	const bool force_puremenu = (dbp_biosreboot || forcemenu);
-	if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
+	if (DOS_Drive* drive_c = Drives['C'-'A']) // guaranteed not NULL unless skip_c_mount
 	{
-		const char* confpath = NULL; std::string strconfpath, confcontent;
-		if (dbp_conf_loading == 'i') // load confs 'i'nside content
+		if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
 		{
-			if (drive_c->FileExists(("$C:\\DOSBOX.CON")+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
-			else if (drive_c->FileExists(("$C:\\DOSBOX~1.CON")+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+			const char* confpath = NULL; std::string strconfpath, confcontent;
+			if (dbp_conf_loading == 'i') // load confs 'i'nside content
+			{
+				if (drive_c->FileExists(("$C:\\DOSBOX.CON")+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
+				else if (drive_c->FileExists(("$C:\\DOSBOX~1.CON")+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+			}
+			else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
+			{
+				confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
+			}
+			if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
+				return init_dosbox(firsttime, forcemenu, true, &confcontent);
 		}
-		else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
-		{
-			confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
-		}
-		if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
-			return init_dosbox(firsttime, forcemenu, true, &confcontent);
-	}
 
-	// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
-	const char* mountedMidi;
-	if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists(("$C:\\MT32_PCM.ROM")+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
-	{
-		Section* sec = control->GetSection("midi");
-		Property* prop = sec->GetProp("midiconfig");
-		sec->ExecuteDestroy(false);
-		prop->SetValue(mountedMidi);
-		prop->MarkFixed();
-		sec->ExecuteInit(false);
+		// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
+		const char* mountedMidi;
+		if (drive_c->FileExists((mountedMidi = "$C:\\DOSBOX.SF2")+4) || (drive_c->FileExists(("$C:\\MT32_PCM.ROM")+4) && (drive_c->FileExists((mountedMidi = "$C:\\MT32TROL.ROM")+4) || drive_c->FileExists((mountedMidi = "$C:\\MT32_C~1.ROM")+4))))
+		{
+			Section* sec = control->GetSection("midi");
+			Property* prop = sec->GetProp("midiconfig");
+			sec->ExecuteDestroy(false);
+			prop->SetValue(mountedMidi);
+			prop->MarkFixed();
+			sec->ExecuteInit(false);
+		}
 	}
 
 	// Always start network again when it has been used once (or maybe we're restarting to start it up the first time)
@@ -3239,17 +3255,15 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 	// Always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
 	// For DBP we modified init_line to always run Z:\AUTOEXEC.BAT and not just any AUTOEXEC.BAT of the current drive/directory
-	DOS_SetDrive('C'-'A');
-
-	if (autoexec)
+	if (DOS_SetDrive('C'-'A') && autoexec) // SetDrive will fail if skip_c_mount
 	{
 		bool auto_mount = true;
 		autoexec->ExecuteDestroy();
-		if (!force_puremenu && dbp_menu_time != (char)-1 && path && (!strcasecmp(path_ext, "EXE") || !strcasecmp(path_ext, "COM") || !strcasecmp(path_ext, "BAT")) && !drive_c->FileExists("AUTOBOOT.DBP"))
+		if (!force_puremenu && dbp_menu_time != (char)-1 && path_extlen == 3 && (!strncasecmp(path_ext, "EXE", 3) || !strncasecmp(path_ext, "COM", 3) || !strncasecmp(path_ext, "BAT", 3)) && !Drives['C'-'A']->FileExists("AUTOBOOT.DBP"))
 		{
 			((((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += ((path_ext[0]|0x20) == 'b' ? "call " : "")) += path_file) += '\n') += "Z:PUREMENU") += " -FINISH\n";
 		}
-		else if (!force_puremenu && drive_c->FileExists("DOSBOX.BAT"))
+		else if (!force_puremenu && Drives['C'-'A']->FileExists("DOSBOX.BAT"))
 		{
 			((static_cast<Section_line*>(autoexec)->data += '@') += "DOSBOX.BAT") += '\n';
 			auto_mount = false;
