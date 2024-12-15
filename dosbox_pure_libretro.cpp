@@ -261,7 +261,7 @@ void retro_notify(int duration, retro_log_level lvl, char const* format,...)
 	va_end(ap);
 	retro_message_ext msg;
 	msg.msg = buf;
-	msg.duration = (duration ? (unsigned)abs(duration) : 4000);
+	msg.duration = (duration ? (unsigned)abs(duration) : (lvl == RETRO_LOG_ERROR ? 10000 : 4000));
 	msg.priority = 0;
 	msg.level = lvl;
 	msg.target = (duration < 0 ? RETRO_MESSAGE_TARGET_OSD : RETRO_MESSAGE_TARGET_ALL);
@@ -3542,11 +3542,10 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				if (missRequired)
 				{
 					gl_error:
-					retro_notify(0, RETRO_LOG_INFO, "Error during OpenGL initialization. Please disable 'Hardware OpenGL' in the '3dfx Voodoo Performance' video core option.");
+					retro_notify(0, RETRO_LOG_ERROR, "Error during OpenGL initialization. Please switch the '3dfx Voodoo Performance' video core option to 'Software'. Enable logging for details.");
 					OnReset(voodoo_ogl_initfailed, true);
-					//// Doesn't work in RetroArch, once hardware context has been activated it must be used
-					//dbp_hw_render.context_type = RETRO_HW_CONTEXT_NONE;
-					//environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &dbp_hw_render);
+					dbp_hw_render.context_type = RETRO_HW_CONTEXT_DUMMY; // signal failed context
+					av_info.timing.fps = -1; // force update of av_info in retro_run
 					return;
 				}
 
@@ -3889,7 +3888,7 @@ void retro_run(void)
 		DBP_ThreadControl(TCM_FINISH_FRAME);
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size())));
 		const char* midiarg, *midierr = DBP_MIDI_StartupError(control->GetSection("midi"), midiarg);
-		if (midierr) retro_notify(10000, RETRO_LOG_ERROR, midierr, midiarg);
+		if (midierr) retro_notify(0, RETRO_LOG_ERROR, midierr, midiarg);
 		if (dbp_state == DBPSTATE_FIRST_FRAME)
 			dbp_state = DBPSTATE_RUNNING;
 		if (dbp_latency == DBP_LATENCY_VARIABLE)
@@ -4089,6 +4088,15 @@ void retro_run(void)
 		av_info.geometry.base_height = view_height;
 		av_info.geometry.aspect_ratio = buf.ratio;
 		av_info.timing.fps = targetfps;
+		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_DUMMY)
+		{
+			// To force RetroArch to abandon the hardware context we need to do 2 things, clear hw render, then reinitialize the video driver by changing max size
+			memset(&dbp_hw_render, 0, sizeof(dbp_hw_render));
+			environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &dbp_hw_render);
+			av_info.geometry.max_width++;
+			environ_cb(RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO, &av_info);
+			av_info.geometry.max_width--;
+		}
 		environ_cb(((newfps || newmax) ? RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO : RETRO_ENVIRONMENT_SET_GEOMETRY), &av_info);
 	}
 
