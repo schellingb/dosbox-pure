@@ -43,9 +43,9 @@
 #include <sstream>
 
 // RETROARCH AUDIO/VIDEO
-#ifdef GEKKO // From RetroArch/config.def.h
-#define DBP_DEFAULT_SAMPLERATE 44100.0
-#define DBP_DEFAULT_SAMPLERATE_STRING "44100"
+#if defined(GEKKO) || defined(MIYOO) // From RetroArch/config.def.h
+#define DBP_DEFAULT_SAMPLERATE 32000.0
+#define DBP_DEFAULT_SAMPLERATE_STRING "32000"
 #elif defined(_3DS)
 #define DBP_DEFAULT_SAMPLERATE 32730.0
 #define DBP_DEFAULT_SAMPLERATE_STRING "32730"

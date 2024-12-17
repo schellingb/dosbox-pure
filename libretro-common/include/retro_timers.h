@@ -30,7 +30,16 @@
 #elif defined(GEKKO) || defined(__PSL1GHT__) || defined(__QNX__)
 #include <unistd.h>
 #elif defined(WIIU)
-#include <wiiu/os/thread.h>
+/* FROM #include <wiiu/os/thread.h> */
+#ifdef __cplusplus
+extern "C" {
+#endif
+#define ms_to_ticks(ms)          (((17 * 13 * 5*5*5 * 3*3) * (uint64_t)(ms)) / (2*2))
+typedef int64_t OSTime;
+void OSSleepTicks(OSTime ticks);
+#ifdef __cplusplus
+}
+#endif
 #elif defined(PSP)
 #include <pspthreadman.h>
 #elif defined(VITA)

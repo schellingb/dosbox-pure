@@ -26,7 +26,6 @@
 #include <ogcsys.h>
 #include <gccore.h>
 #include <ogc/cond.h>
-#include "../include/retro_inline.h"
 
 #ifndef OSThread
 #define OSThread lwp_t
@@ -72,6 +71,10 @@
 #define OSCreateThread(thread, func, intarg, ptrarg, stackbase, stacksize, priority, attrs) LWP_CreateThread(thread, func, ptrarg, stackbase, stacksize, priority)
 #endif
 
+#ifndef OSYieldThread
+#define OSYieldThread() LWP_YieldThread()
+#endif
+
 //#define STACKSIZE (8 * 1024)
 #define STACKSIZE DBP_STACK_SIZE
 
@@ -88,7 +91,7 @@ typedef OSCond pthread_condattr_t;
 #define pthread_attr_destroy(a)
 #endif
 
-static INLINE int pthread_create(pthread_t *thread,
+static inline int pthread_create(pthread_t *thread,
       const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg)
 {
    *thread = 0;
@@ -96,59 +99,65 @@ static INLINE int pthread_create(pthread_t *thread,
          0, STACKSIZE, 64, 0 /* unused */);
 }
 
-static INLINE int pthread_mutex_init(pthread_mutex_t *mutex,
+static inline int pthread_mutex_init(pthread_mutex_t *mutex,
       const pthread_mutexattr_t *attr)
 {
    return OSInitMutex(mutex);
 }
 
-static INLINE int pthread_mutex_destroy(pthread_mutex_t *mutex)
+static inline int pthread_mutex_destroy(pthread_mutex_t *mutex)
 {
    return LWP_MutexDestroy(*mutex);
 }
 
-static INLINE int pthread_mutex_lock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_lock(pthread_mutex_t *mutex)
 {
    return OSLockMutex(*mutex);
 }
 
-static INLINE int pthread_mutex_unlock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
    return OSUnlockMutex(*mutex);
 }
 
-static INLINE int pthread_detach(pthread_t thread)
+static inline int pthread_detach(pthread_t thread)
 {
    /* FIXME: pthread_detach equivalent missing? */
    (void)thread;
    return 0;
 }
 
-static INLINE int pthread_cond_wait(pthread_cond_t *cond,
+static inline int pthread_cond_wait(pthread_cond_t *cond,
       pthread_mutex_t *mutex)
 {
    return OSWaitCond(*cond, *mutex);
 }
 
-static INLINE int pthread_cond_init(pthread_cond_t *cond,
+static inline int pthread_cond_init(pthread_cond_t *cond,
       const pthread_condattr_t *attr)
 {
    return OSInitCond(cond);
 }
 
-static INLINE int pthread_cond_signal(pthread_cond_t *cond)
+static inline int pthread_cond_signal(pthread_cond_t *cond)
 {
    return LWP_CondSignal(*cond);
 }
 
-static INLINE int pthread_cond_broadcast(pthread_cond_t *cond)
+static inline int pthread_cond_broadcast(pthread_cond_t *cond)
 {
    return LWP_CondBroadcast(*cond);
 }
 
-static INLINE int pthread_cond_destroy(pthread_cond_t *cond)
+static inline int pthread_cond_destroy(pthread_cond_t *cond)
 {
    return LWP_CondDestroy(*cond);
 }
+
+/*static inline int pthread_yield(void)
+{
+   OSYieldThread();
+   return 0;
+}*/
 
 #endif

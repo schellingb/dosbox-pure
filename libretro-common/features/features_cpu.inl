@@ -94,7 +94,16 @@ with an environment or platform where the core gets statically linked into a fro
 #endif
 
 #ifdef WIIU
-#include <wiiu/os/time.h>
+/* FROM #include <wiiu/os/time.h> */
+#ifdef __cplusplus
+extern "C" {
+#endif
+#define ticks_to_us(ticks)       (((uint64_t)(ticks) * (2*2 * 2*2*2)) / (17 * 13 * 3*3))
+typedef int64_t OSTime;
+OSTime OSGetSystemTime();
+#ifdef __cplusplus
+}
+#endif
 #endif
 
 #if defined(HAVE_LIBNX)

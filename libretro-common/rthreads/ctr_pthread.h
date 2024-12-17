@@ -28,7 +28,6 @@
 #include <3ds/svc.h>
 #include <time.h>
 #include <errno.h>
-#include "../include/retro_inline.h"
 
 #define STACKSIZE (32 * 1024)
 
@@ -50,22 +49,22 @@ typedef int        pthread_condattr_t;
 
 typedef s32 CondVar;
 
-static INLINE Result syncArbitrateAddress(s32* addr, ArbitrationType type, s32 value)
+static inline Result syncArbitrateAddress(s32* addr, ArbitrationType type, s32 value)
 {
    return svcArbitrateAddress(__sync_get_arbiter(), (u32)addr, type, value, 0);
 }
 
-static INLINE Result syncArbitrateAddressWithTimeout(s32* addr, ArbitrationType type, s32 value, s64 timeout_ns)
+static inline Result syncArbitrateAddressWithTimeout(s32* addr, ArbitrationType type, s32 value, s64 timeout_ns)
 {
    return svcArbitrateAddress(__sync_get_arbiter(), (u32)addr, type, value, timeout_ns);
 }
 
-static INLINE void __dmb(void)
+static inline void __dmb(void)
 {
 	__asm__ __volatile__("mcr p15, 0, %[val], c7, c10, 5" :: [val] "r" (0) : "memory");
 }
 
-static INLINE void CondVar_BeginWait(CondVar* cv, LightLock* lock)
+static inline void CondVar_BeginWait(CondVar* cv, LightLock* lock)
 {
 	s32 val;
 	do
@@ -74,7 +73,7 @@ static INLINE void CondVar_BeginWait(CondVar* cv, LightLock* lock)
 	LightLock_Unlock(lock);
 }
 
-static INLINE bool CondVar_EndWait(CondVar* cv, s32 num_threads)
+static inline bool CondVar_EndWait(CondVar* cv, s32 num_threads)
 {
 	bool hasWaiters;
 	s32 val;
@@ -96,19 +95,19 @@ static INLINE bool CondVar_EndWait(CondVar* cv, s32 num_threads)
 	return hasWaiters;
 }
 
-static INLINE void CondVar_Init(CondVar* cv)
+static inline void CondVar_Init(CondVar* cv)
 {
 	*cv = 0;
 }
 
-static INLINE void CondVar_Wait(CondVar* cv, LightLock* lock)
+static inline void CondVar_Wait(CondVar* cv, LightLock* lock)
 {
 	CondVar_BeginWait(cv, lock);
 	syncArbitrateAddress(cv, ARBITRATION_WAIT_IF_LESS_THAN, 0);
 	LightLock_Lock(lock);
 }
 
-static INLINE int CondVar_WaitTimeout(CondVar* cv, LightLock* lock, s64 timeout_ns)
+static inline int CondVar_WaitTimeout(CondVar* cv, LightLock* lock, s64 timeout_ns)
 {
 	CondVar_BeginWait(cv, lock);
 
@@ -124,7 +123,7 @@ static INLINE int CondVar_WaitTimeout(CondVar* cv, LightLock* lock, s64 timeout_
 	return timedOut;
 }
 
-static INLINE void CondVar_WakeUp(CondVar* cv, s32 num_threads)
+static inline void CondVar_WakeUp(CondVar* cv, s32 num_threads)
 {
 	__dmb();
 	if (CondVar_EndWait(cv, num_threads))
@@ -133,12 +132,12 @@ static INLINE void CondVar_WakeUp(CondVar* cv, s32 num_threads)
 		__dmb();
 }
 
-static INLINE void CondVar_Signal(CondVar* cv)
+static inline void CondVar_Signal(CondVar* cv)
 {
 	CondVar_WakeUp(cv, 1);
 }
 
-static INLINE void CondVar_Broadcast(CondVar* cv)
+static inline void CondVar_Broadcast(CondVar* cv)
 {
 	CondVar_WakeUp(cv, ARBITRATION_SIGNAL_ALL);
 }
@@ -157,7 +156,7 @@ static void ctr_thread_launcher(void* data)
 	start_routine_jump_safe(data);
 }
 
-static INLINE int pthread_create(pthread_t *thread,
+static inline int pthread_create(pthread_t *thread,
       const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg)
 {
    s32 prio = 0;
@@ -194,37 +193,37 @@ static INLINE int pthread_create(pthread_t *thread,
    return 0;
 }
 
-static INLINE pthread_t pthread_self(void)
+static inline pthread_t pthread_self(void)
 {
    return (pthread_t)threadGetCurrent();
 }
 
-static INLINE int pthread_mutex_init(pthread_mutex_t *mutex,
+static inline int pthread_mutex_init(pthread_mutex_t *mutex,
       const pthread_mutexattr_t *attr)
 {
    LightLock_Init((LightLock *)mutex);
    return 0;
 }
 
-static INLINE int pthread_mutex_destroy(pthread_mutex_t *mutex)
+static inline int pthread_mutex_destroy(pthread_mutex_t *mutex)
 {
    /*Nothing to destroy*/
    return 0;
 }
 
-static INLINE int pthread_mutex_lock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_lock(pthread_mutex_t *mutex)
 {
    LightLock_Lock((LightLock *)mutex);
    return 0;
 }
 
-static INLINE int pthread_mutex_unlock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
    LightLock_Unlock((LightLock *)mutex);
    return 0;
 }
 
-static INLINE void pthread_exit(void *retval)
+static inline void pthread_exit(void *retval)
 {
    /*Yes the pointer to int cast is not ideal*/
    /*threadExit((int)retval);*/
@@ -233,13 +232,13 @@ static INLINE void pthread_exit(void *retval)
    threadExit(0);
 }
 
-static INLINE int pthread_detach(pthread_t thread)
+static inline int pthread_detach(pthread_t thread)
 {
    threadDetach((Thread)thread);
    return 0;
 }
 
-static INLINE int pthread_join(pthread_t thread, void **retval)
+static inline int pthread_join(pthread_t thread, void **retval)
 {
    /*retval is ignored*/
    if(threadJoin((Thread)thread, INT64_MAX))
@@ -250,19 +249,19 @@ static INLINE int pthread_join(pthread_t thread, void **retval)
    return 0;
 }
 
-static INLINE int pthread_mutex_trylock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_trylock(pthread_mutex_t *mutex)
 {
    return LightLock_TryLock((LightLock *)mutex);
 }
 
-static INLINE int pthread_cond_wait(pthread_cond_t *cond,
+static inline int pthread_cond_wait(pthread_cond_t *cond,
       pthread_mutex_t *mutex)
 {
    CondVar_Wait((CondVar *)cond, (LightLock *)mutex);
    return 0;
 }
 
-static INLINE int pthread_cond_timedwait(pthread_cond_t *cond,
+static inline int pthread_cond_timedwait(pthread_cond_t *cond,
       pthread_mutex_t *mutex, const struct timespec *abstime)
 {
    struct timespec now = {0};
@@ -290,36 +289,42 @@ static INLINE int pthread_cond_timedwait(pthread_cond_t *cond,
    return retval;
 }
 
-static INLINE int pthread_cond_init(pthread_cond_t *cond,
+static inline int pthread_cond_init(pthread_cond_t *cond,
       const pthread_condattr_t *attr)
 {
    CondVar_Init((CondVar *)cond);
    return 0;
 }
 
-static INLINE int pthread_cond_signal(pthread_cond_t *cond)
+static inline int pthread_cond_signal(pthread_cond_t *cond)
 {
    CondVar_Signal((CondVar *)cond);
    return 0;
 }
 
-static INLINE int pthread_cond_broadcast(pthread_cond_t *cond)
+static inline int pthread_cond_broadcast(pthread_cond_t *cond)
 {
    CondVar_Broadcast((CondVar *)cond);
    return 0;
 }
 
-static INLINE int pthread_cond_destroy(pthread_cond_t *cond)
+static inline int pthread_cond_destroy(pthread_cond_t *cond)
 {
    /*Nothing to destroy*/
    return 0;
 }
 
-static INLINE int pthread_equal(pthread_t t1, pthread_t t2)
+static inline int pthread_equal(pthread_t t1, pthread_t t2)
 {
-	if (threadGetHandle((Thread)t1) == threadGetHandle((Thread)t2))
-		return 1;
-	return 0;
+   if (threadGetHandle((Thread)t1) == threadGetHandle((Thread)t2))
+      return 1;
+   return 0;
 }
+
+/*static inline int pthread_yield(void)
+{
+   svcSleepThread(0);
+   return 0;
+}*/
 
 #endif

@@ -1,7 +1,6 @@
 #ifndef _WIIU_PTHREAD_WRAP_WIIU_
 #define _WIIU_PTHREAD_WRAP_WIIU_
 
-#include "../include/retro_inline.h"
 #include <stdint.h>
 #include <string.h>
 #include <malloc.h>
@@ -28,6 +27,7 @@ int OSCreateThread(OSThread *thread, OSThreadEntryPointFn entry, int32_t argc, c
 void OSDetachThread(OSThread *thread);
 OSThreadCleanupCallbackFn OSSetThreadCleanupCallback(OSThread *thread, OSThreadCleanupCallbackFn callback);
 int OSResumeThread(OSThread *thread);
+void OSYieldThread();
 
 #define OS_MUTEX_TAG 0x6D557458u
 typedef struct __attribute__ ((aligned (8))) OSMutex { uint32_t tag, buf[31]; } OSMutex;
@@ -69,7 +69,7 @@ static void WiiUThreadCleanup(OSThread *thread, WiiUThread *t)
    free(t);
 }
 
-static INLINE int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg)
+static inline int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void*), void *arg)
 {
    WiiUThread* t = (WiiUThread*)memalign(16, sizeof(WiiUThread));
    if (!t) return 0;
@@ -87,7 +87,7 @@ static INLINE int pthread_create(pthread_t *thread, const pthread_attr_t *attr, 
    return res;
 }
 
-static INLINE int pthread_detach(pthread_t thread)
+static inline int pthread_detach(pthread_t thread)
 {
    // Seems with devkitPPC_r29-1, OSDetachThread is not available
    //OSDetachThread(&wiiu_one_thread);
@@ -97,24 +97,24 @@ static INLINE int pthread_detach(pthread_t thread)
 typedef OSMutex pthread_mutex_t;
 typedef int pthread_mutexattr_t;
 
-static INLINE int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr)
+static inline int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr)
 {
    memset(mutex, 0, sizeof(*mutex));
    mutex->tag = OS_MUTEX_TAG;
    return OSInitMutex(mutex), 0;
 }
 
-static INLINE int pthread_mutex_destroy(pthread_mutex_t *mutex)
+static inline int pthread_mutex_destroy(pthread_mutex_t *mutex)
 {
    return 0;
 }
 
-static INLINE int pthread_mutex_lock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_lock(pthread_mutex_t *mutex)
 {
    return OSLockMutex(mutex),0;
 }
 
-static INLINE int pthread_mutex_unlock(pthread_mutex_t *mutex)
+static inline int pthread_mutex_unlock(pthread_mutex_t *mutex)
 {
    return OSUnlockMutex(mutex),0;
 }
@@ -122,31 +122,37 @@ static INLINE int pthread_mutex_unlock(pthread_mutex_t *mutex)
 typedef OSCondition pthread_cond_t;
 typedef int pthread_condattr_t;
 
-static INLINE int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
+static inline int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
 {
    memset(cond, 0, sizeof(*cond));
    cond->tag = OS_CONDITION_TAG;
    return OSInitCond(cond), 0;
 }
 
-static INLINE int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
+static inline int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
 {
    return OSWaitCond(cond, mutex), 0;
 }
 
-static INLINE int pthread_cond_signal(pthread_cond_t *cond)
+static inline int pthread_cond_signal(pthread_cond_t *cond)
 {
    return OSSignalCond(cond), 0;
 }
 
-static INLINE int pthread_cond_broadcast(pthread_cond_t *cond)
+static inline int pthread_cond_broadcast(pthread_cond_t *cond)
 {
    return OSSignalCond(cond), 0;
 }
 
-static INLINE int pthread_cond_destroy(pthread_cond_t *cond)
+static inline int pthread_cond_destroy(pthread_cond_t *cond)
 {
    return 0;
 }
+
+/*static inline int pthread_yield(void)
+{
+   OSYieldThread();
+   return 0;
+}*/
 
 #endif
