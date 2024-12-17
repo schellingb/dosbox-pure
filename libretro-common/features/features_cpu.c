@@ -20,6 +20,11 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+/*
+All symbols functions have been prefixed to make compilation of the core be best compatible
+with an environment or platform where the core gets statically linked into a frontend.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -120,7 +125,7 @@
 /**
  * TODO/FIXME: clock_gettime function is part of iOS 10 now
  **/
-static int ra_clock_gettime(int clk_ik, struct timespec *t)
+static int dbp_ra_clock_gettime(int clk_ik, struct timespec *t)
 {
    struct timeval now;
    int rv     = gettimeofday(&now, NULL);
@@ -134,7 +139,7 @@ static int ra_clock_gettime(int clk_ik, struct timespec *t)
 
 #if defined(__MACH__) && __IPHONE_OS_VERSION_MIN_REQUIRED < 100000
 #else
-#define ra_clock_gettime clock_gettime
+#define dbp_ra_clock_gettime clock_gettime
 #endif
 
 #ifdef EMSCRIPTEN
@@ -147,7 +152,7 @@ static int ra_clock_gettime(int clk_ik, struct timespec *t)
 
 #include <string.h>
 
-retro_time_t cpu_features_get_time_usec(void)
+retro_time_t dbp_cpu_features_get_time_usec(void)
 {
 #if defined(_WIN32)
    static LARGE_INTEGER freq;
@@ -174,7 +179,7 @@ retro_time_t cpu_features_get_time_usec(void)
    return osGetTime() * 1000;
 #elif defined(_POSIX_MONOTONIC_CLOCK) || defined(__QNX__) || defined(ANDROID) || defined(__MACH__)
    struct timespec tv;
-   if (ra_clock_gettime(CLOCK_MONOTONIC, &tv) < 0)
+   if (dbp_ra_clock_gettime(CLOCK_MONOTONIC, &tv) < 0)
       return 0;
    return tv.tv_sec * INT64_C(1000000) + (tv.tv_nsec + 500) / 1000;
 #elif defined(EMSCRIPTEN)
@@ -204,7 +209,7 @@ retro_time_t cpu_features_get_time_usec(void)
 
 #if defined(__ARM_NEON__)
 #if defined(__arm__)
-static void arm_enable_runfast_mode(void)
+static void dbp_arm_enable_runfast_mode(void)
 {
    /* RunFast mode. Enables flush-to-zero and some
     * floating point optimizations. */
@@ -223,7 +228,7 @@ static void arm_enable_runfast_mode(void)
 #endif
 #endif
 
-unsigned cpu_features_get_core_amount(void)
+unsigned dbp_cpu_features_get_core_amount(void)
 {
 #if defined(_WIN32) && !defined(_XBOX)
    /* Win32 */

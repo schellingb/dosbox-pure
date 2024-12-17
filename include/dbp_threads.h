@@ -22,4 +22,3 @@ struct Mutex { Mutex() { pthread_mutex_init(&h,0); } ~Mutex() { pthread_mutex_de
 struct Conditional { Conditional() { pthread_cond_init(&h,0); } ~Conditional() { pthread_cond_destroy(&h); } __inline void Broadcast() { pthread_cond_broadcast(&h); } __inline void Wait(Mutex& m) { pthread_cond_wait(&h,&m.h); } private:pthread_cond_t h;Conditional(const Conditional&);Conditional& operator=(const Conditional&);};
 struct Semaphore { Semaphore() : v(0) {} __inline void Post() { m.Lock(); v = 1; c.Broadcast(); m.Unlock(); } __inline void Wait() { m.Lock(); while (!v) c.Wait(m); v = 0; m.Unlock(); } private:Mutex m;Conditional c;int v;Semaphore(const Semaphore&);Semaphore& operator=(const Semaphore&);};
 #endif
-extern "C" { unsigned cpu_features_get_core_amount(void); };

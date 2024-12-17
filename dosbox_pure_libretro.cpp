@@ -226,8 +226,8 @@ static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...)
 extern "C" int __android_log_write(int prio, const char *tag, const char *text);
 static void retro_fallback_log(enum retro_log_level level, const char *fmt, ...) { static char buf[8192]; va_list va; va_start(va, fmt); vsprintf(buf, fmt, va); va_end(va); __android_log_write(2, "DBP", buf); }
 #endif
-extern retro_time_t cpu_features_get_time_usec(void);
-static retro_perf_get_time_usec_t time_cb = cpu_features_get_time_usec;
+extern retro_time_t dbp_cpu_features_get_time_usec(void);
+static retro_perf_get_time_usec_t time_cb = dbp_cpu_features_get_time_usec;
 static retro_log_printf_t         log_cb = retro_fallback_log;
 static retro_environment_t        environ_cb;
 static retro_video_refresh_t      video_cb;
@@ -4265,9 +4265,7 @@ static bool exists_utf8(const char* path, bool* out_is_dir)
 	#endif
 }
 
-#ifndef STATIC_LINKING
 #include "libretro-common/features/features_cpu.c"
-#endif
 
 bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 {

@@ -8811,8 +8811,8 @@ static void Voodoo_Startup() {
 	v->draw.vfreq = 1000.0f/60.0f;
 
 	memset(&v->tworker, 0, sizeof(v->tworker));
-	extern unsigned cpu_features_get_core_amount(void);
-	unsigned cores = cpu_features_get_core_amount();
+	extern unsigned dbp_cpu_features_get_core_amount(void);
+	unsigned cores = dbp_cpu_features_get_core_amount();
 	v->tworker.triangle_threads = (cores <= (MAX_TRIANGLE_THREADS+1) ? (UINT8)(cores - 1) : MAX_TRIANGLE_THREADS);
 
 	// Switch the pagehandler now that v has been allocated and is in use
