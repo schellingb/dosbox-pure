@@ -4265,7 +4265,7 @@ static bool exists_utf8(const char* path, bool* out_is_dir)
 	#endif
 }
 
-#include "libretro-common/features/features_cpu.c"
+#include "libretro-common/features/features_cpu.inl"
 
 bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 {
