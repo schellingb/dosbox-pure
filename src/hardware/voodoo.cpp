@@ -8990,6 +8990,7 @@ void DBPSerialize_Voodoo(DBPArchive& ar)
 			bool usevogl = (v->active && (v_perf & V_PERFFLAG_OPENGL));
 			if (vogl_active && !usevogl) voodoo_ogl_state::Deactivate();
 			if (!vogl_active && usevogl) voodoo_ogl_state::Activate();
+			if (vogl) for (ogl_texbase& tb : vogl->texbases) tb.valid_data = false; // force texture re-hash
 			#endif
 			v->resolution_dirty = true; // force call to RENDER_SetSize
 			v->clutDirty = v->ogl_clutDirty = true;
