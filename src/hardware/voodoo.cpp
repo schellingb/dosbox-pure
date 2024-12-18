@@ -3533,9 +3533,8 @@ bool voodoo_ogl_display() // called after voodoo_ogl_mainthread while emulation 
 void voodoo_ogl_cleanup() { if (vogl) vogl->Cleanup(); }
 void voodoo_ogl_resetcontext()
 {
-	if (vogl && !vogl->vbo) return; // started up but never used, no need to reset
-	if (vogl) vogl->ContextLost();
-	if (v && v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
+	if (vogl && vogl->vbo) vogl->ContextLost(); // if vbo is not set, it was just started up but never used, so no need to reset (but keep prepared commands and texture uploads)
+	if (v && !vogl_active && v->active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate(); // make sure vogl_active is true
 }
 void voodoo_ogl_initfailed()
 {
