@@ -603,7 +603,7 @@ struct DBP_Run
 		if (ymlload.reboot) return true;
 
 		if (autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
-		else if (startup.mode != RUN_NONE && !autoboot.use && patchDrive::variants.Len() > 1) startup.mode = RUN_NONE;
+		else if (startup.mode != RUN_NONE && !autoboot.use && patchDrive::variants.Len()) startup.mode = RUN_NONE;
 		return false;
 	}
 
