@@ -649,7 +649,7 @@ struct DBP_Run
 						if (it.size() == (p - str) + suffix_len && !memcmp(str, it.c_str(), it.size() - suffix_len))
 							{ autoboot.startup.mode = (linetype == 'O' ? RUN_BOOTOS : RUN_SHELL); autoboot.startup.info = (int)(&it - &strs[0]); break; }
 				}
-				else if (linetype == 'V') { autoboot.startup.mode = RUN_VARIANT; autoboot.skip = 0; line += 2; goto parseVariant; }
+				else if (linetype == 'V' && patchDrive::variants.Len()) { autoboot.startup.mode = RUN_VARIANT; autoboot.skip = 0; line += 2; goto parseVariant; }
 				else if (linetype == 'I')
 				{
 					for (const char* it : DBP_MachineNames)
