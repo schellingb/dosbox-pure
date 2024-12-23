@@ -4265,7 +4265,9 @@ static bool exists_utf8(const char* path, bool* out_is_dir)
 	#endif
 }
 
+#if !defined(HAVE_LIBNX) // platforms that don't support inlining this compile this as a separate object
 #include "libretro-common/features/features_cpu.inl"
+#endif
 
 bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 {

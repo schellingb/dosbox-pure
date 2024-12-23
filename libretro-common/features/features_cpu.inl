@@ -37,8 +37,6 @@ with an environment or platform where the core gets statically linked into a fro
 #include "../include/libretro.h"
 #include "../include/retro_timers.h"
 
-#define Mutex _Mutex; // avoid conflict in libnx
-
 #if defined(_WIN32) && !defined(_XBOX)
 #include <windows.h>
 #endif
@@ -315,5 +313,3 @@ unsigned dbp_cpu_features_get_core_amount(void)
    return 1;
 #endif
 }
-
-#undef Mutex // avoid conflict in libnx
