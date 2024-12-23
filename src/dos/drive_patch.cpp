@@ -135,7 +135,7 @@ struct Patch_File : Patch_Entry
 				if (!basef) return false;
 				basef->Seek64(&baseofs, DOS_SEEK_SET);
 
-				res.resize(targsz);
+				res.resize((size_t)targsz);
 				Local::Read(xorf, &res[0], (filesize - ofs));
 				Bit8u buf[1024]; Bit16u bufp = 0, bufn = 0;
 				for (Bit8u& r : res)
