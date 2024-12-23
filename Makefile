@@ -58,6 +58,7 @@ else ifneq (,$(findstring ios,$(platform)))
     MINVERSION = -miphoneos-version-min=5.0
   endif
   COMMONFLAGS += $(MINVERSION) -Wno-ignored-optimization-argument -Wno-unknown-warning-option
+  LDFLAGS += $(MINVERSION)
   STRIPCMD := $(or $(STRIP),strip) -xS
 else ifeq ($(platform),tvos-arm64)
   ifeq ($(IOSSDK),)
@@ -65,8 +66,9 @@ else ifeq ($(platform),tvos-arm64)
   endif
   OUTNAME := dosbox_pure_libretro_tvos.dylib
   CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
-  LDFLAGS := -Wl,-dead_strip
-  COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option
+  MINVERSION = -mappletvos-version-min=11.0
+  LDFLAGS := -Wl,-dead_strip $(MINVERSION)
+  COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option $(MINVERSION)
   STRIPCMD := $(or $(STRIP),strip) -xS
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
