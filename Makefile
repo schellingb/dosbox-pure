@@ -57,7 +57,7 @@ else ifneq (,$(findstring ios,$(platform)))
   else
     MINVERSION = -miphoneos-version-min=5.0
   endif
-  COMMONFLAGS += $(MINVERSION) -Wno-ignored-optimization-argument -Wno-unknown-warning-option
+  COMMONFLAGS += $(MINVERSION) -Wno-ignored-optimization-argument -Wno-unknown-warning-option -Wno-deprecated-declarations
   LDFLAGS += $(MINVERSION)
   STRIPCMD := $(or $(STRIP),strip) -xS
 else ifeq ($(platform),tvos-arm64)
@@ -68,13 +68,13 @@ else ifeq ($(platform),tvos-arm64)
   CXX     = c++ -arch arm64 -isysroot $(IOSSDK)
   MINVERSION = -mappletvos-version-min=11.0
   LDFLAGS := -Wl,-dead_strip $(MINVERSION)
-  COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option $(MINVERSION)
+  COMMONFLAGS += -DDISABLE_DYNAREC=1 -Wno-unknown-warning-option -Wno-deprecated-declarations $(MINVERSION)
   STRIPCMD := $(or $(STRIP),strip) -xS
 else ifneq ($(ISMAC),)
   OUTNAME := dosbox_pure_libretro.dylib
   CXX     ?= c++
   LDFLAGS := -Wl,-dead_strip
-  COMMONFLAGS += -pthread -Wno-unknown-warning-option
+  COMMONFLAGS += -pthread -Wno-unknown-warning-option -Wno-deprecated-declarations
   ifeq ($(CROSS_COMPILE),1)
     COMMONFLAGS  += -DDISABLE_DYNAREC=1
     TARGET_RULE   = -target $(LIBRETRO_APPLE_PLATFORM) -isysroot $(LIBRETRO_APPLE_ISYSROOT)
