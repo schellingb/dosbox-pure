@@ -1366,6 +1366,8 @@ bool PAGING_ForcePageInit(Bitu lin_addr) {
 }
 
 #if defined(USE_FULL_TLB)
+#include <stddef.h> //for offsetof
+
 void PAGING_InitTLB(void) {
 	//DBP: Performance improvement
 	DBP_STATIC_ASSERT(offsetof(PagingBlock, tlb.write) == offsetof(PagingBlock, tlb.read) + sizeof(paging.tlb.read));
