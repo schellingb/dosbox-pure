@@ -4280,7 +4280,11 @@ bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 	char* path = (char*)pathstr.c_str();
 
 	#ifdef WIN32
-	// For absolute paths we just return here because paths are not case sensitive on Windows
+	// Directories on Windows, for stat (used by exists_utf8) we need to remove trailing slashes except the one after :
+	for (char clast; ((clast = pathstr.back()) == '\\' || clast == '/') && pathstr.length() > (path[1] == ':' ? 3 : 1); path = (char*)pathstr.c_str()) pathstr.pop_back(); 
+	// Paths that start with / or \ need to be prefixed with the drive letter from the content path
+	if ((path[0] == '/' || path[0] == '\\') && path[1] != '\\' && dbp_content_path.length() > 1 && dbp_content_path[1] == ':') { pathstr.insert(0, &dbp_content_path[0], 2); path = (char*)pathstr.c_str(); }
+	// For absolute paths we can just return here because paths are not case sensitive on Windows
 	if ((path[1] == ':' && (path[2] == '/' || path[2] == '\\')) || (path[0] == '\\' && path[1] == '\\')) return exists_utf8(path, out_is_dir);
 	#else
 	const bool is_absolute = (path[0] == '/' || path[0] == '\\');
