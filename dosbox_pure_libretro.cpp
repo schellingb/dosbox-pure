@@ -1854,6 +1854,11 @@ bool DBP_IsLowLatency()
 	return dbp_latency == DBP_LATENCY_LOW;
 }
 
+bool DBP_WantAutoShutDown()
+{
+	return (dbp_menu_time >= 0 && dbp_menu_time < 99);
+}
+
 void DBP_EnableNetwork()
 {
 	if (dbp_use_network) return;
@@ -3750,11 +3755,11 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	DBP_ThreadControl(TCM_FINISH_FRAME);
 	if (dbp_biosreboot || dbp_state == DBPSTATE_EXITED)
 	{
-		// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config
-		DBP_ASSERT(dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size()));
+		// A reboot can happen during the first frame if puremenu wants to change DOSBox machine config or if autoexec via dosbox.conf ran 'exit'
+		DBP_ASSERT(dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size() || (control && !dbp_game_running)));
 		DBP_ForceReset();
 		DBP_ThreadControl(TCM_FINISH_FRAME);
-		DBP_ASSERT((!dbp_biosreboot && dbp_state == DBPSTATE_FIRST_FRAME) || dbp_crash_message.size());
+		DBP_ASSERT((!dbp_biosreboot && dbp_state == DBPSTATE_FIRST_FRAME) || dbp_crash_message.size() || (control && !dbp_game_running));
 	}
 	DBP_ASSERT(render.src.fps > 10.0); // validate initialized video mode after first frame
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];

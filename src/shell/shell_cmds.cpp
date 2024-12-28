@@ -302,7 +302,15 @@ void DOS_Shell::CMD_ECHO(char * args){
 
 void DOS_Shell::CMD_EXIT(char * args) {
 	HELP("EXIT");
+#ifndef C_DBP_LIBRETRO // prevent exiting the first shell
 	exit = true;
+#else
+	extern bool DBP_WantAutoShutDown();
+	if (this != first_shell || DBP_WantAutoShutDown())
+		exit = true;
+	else
+		WriteOut("\nUnable to exit top DOS shell\n\nChange the core option 'Emulation' -> 'Start Menu' to\n'shut down core .. after .. exit' to enable shutting\ndown of the core with the exit command.\n\n");
+#endif
 }
 
 void DOS_Shell::CMD_CHDIR(char * args) {
