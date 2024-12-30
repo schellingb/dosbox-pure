@@ -75,7 +75,7 @@ struct DBP_Run
 					else { sl = NULL; p = fn; } // try call full string which will likely show an error to tell the user auto start is wrong
 
 					const char* f = (sl  ? sl + 1 : p), *fext = strchr(f, '.');
-					bool isbat = (fext && !strcasecmp(fext, ".bat"));
+					bool isbat = (fext && (fext[1]|0x20) == 'b');
 					int call_cmd_len = (isbat ? 5 : 0), flen = (int)strlen(f);
 					memcpy(line, "call ", call_cmd_len);
 					memcpy(line+call_cmd_len, f, flen);
