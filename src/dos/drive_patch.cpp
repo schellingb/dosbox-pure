@@ -640,11 +640,13 @@ struct patchDriveImpl
 			patchsrc[dirlen + undernamelen] = '\0';
 			underpath = patchsrc;
 		}
-
-		// ignore any patch files existing in the layers above
-		for (Patch_Layer* l = &layer; l != self.layer_top; l++)
-			if (l->under.FileStat(underpath, &dummystat))
-				return;
+		else
+		{
+			// ignore any overlay files existing in the layers above (but allow binary patches)
+			for (Patch_Layer* l = &layer; l != self.layer_top; l++)
+				if (l->under.FileStat(underpath, &dummystat))
+					return;
+		}
 
 		// Don't query under file stats for .XOR patches
 		if (!ext || ext[1] != 'O' /* from .XOR */) layer.under.FileStat(underpath, &stat);
