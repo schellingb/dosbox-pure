@@ -761,22 +761,49 @@ static void DBP_Unmount(char drive)
 			i.mounted = false;
 }
 
-enum DBP_SaveFileType { SFT_GAMESAVE, SFT_VIRTUALDISK, SFT_DIFFDISK, _SFT_LAST_SAVE_DIRECTORY, SFT_SYSTEMDIR, SFT_NEWOSIMAGE };
+enum DBP_SaveFileType { SFT_GAMESAVE, SFT_SAVENAMEREDIRECT, SFT_VIRTUALDISK, SFT_DIFFDISK, _SFT_LAST_SAVE_DIRECTORY, SFT_SYSTEMDIR, SFT_NEWOSIMAGE };
 static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filename = NULL, Bit32u* out_diskhash = NULL)
 {
 	std::string res;
+	char savename[256];
+	size_t savenamelen = 0;
+	if (type < _SFT_LAST_SAVE_DIRECTORY)
+	{
+		// Find a file with a .savename extension to use as a save redirect for sharing saves between multiple contents
+		if (DOS_Drive* drv = (!dbp_legacy_save ? Drives['C'-'A'] : NULL))
+		{
+			RealPt save_dta = dos.dta();
+			dos.dta(dos.tables.tempdta);
+			DOS_DTA dta(dos.dta());
+			dta.SetupSearch(255, (Bit8u)(0xffff & ~(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY)), (char*)"*.sav");
+			for (bool more = drv->FindFirst((char*)"", dta); more; more = drv->FindNext(dta))
+			{
+				char dta_name[DOS_NAMELENGTH_ASCII]; Bit32u dta_size; Bit16u dta_date, dta_time; Bit8u dta_attr;
+				dta.GetResult(dta_name, dta_size, dta_date, dta_time, dta_attr);
+				if (drv->GetLongFileName(dta_name, savename) && (savenamelen = strlen(savename)) > 9 && !strncasecmp(savename + savenamelen - 9, ".SAVENAME", 9)) break;
+				savenamelen = 0;
+			}
+			dos.dta(save_dta);
+		}
+		if (type == SFT_SAVENAMEREDIRECT && !savenamelen) return res;
+	}
 	const char *env_dir = NULL;
 	if (environ_cb((type < _SFT_LAST_SAVE_DIRECTORY ? RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY : RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY), &env_dir) && env_dir)
 		res.assign(env_dir) += CROSS_FILESPLIT;
 	size_t dir_len = res.size();
 	if (type < _SFT_LAST_SAVE_DIRECTORY)
 	{
-		res.append(dbp_content_name.empty() ? "DOSBox-pure" : dbp_content_name.c_str());
-		if (type == SFT_GAMESAVE)
+		if (savenamelen) res.append(savename, savenamelen - 9);
+		else res.append(dbp_content_name.empty() ? "DOSBox-pure" : dbp_content_name.c_str());
+		if (type == SFT_GAMESAVE && !dbp_strict_mode) // strict mode has no support for legacy saves
 		{
 			if (FILE* fSave = fopen_wrap(res.append(".pure.zip").c_str(), "rb")) { fclose(fSave); } // new save exists!
 			else if (FILE* fSave = fopen_wrap(res.replace(res.length()-8, 3, "sav", 3).c_str(), "rb")) { dbp_legacy_save = true; fclose(fSave); }
 			else res.replace(res.length()-8, 3, "pur", 3); // use new save
+		}
+		else if (type <= SFT_SAVENAMEREDIRECT)
+		{
+			res.append(".pure.zip"); // only use new save
 		}
 		else if (type == SFT_VIRTUALDISK)
 		{
@@ -3099,6 +3126,12 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 			{
 				union_underlay = new memoryDrive();
 				if (path) DBP_SetDriveLabelFromContentPath(union_underlay, path, 'C', path_file, path_ext);
+			}
+			else
+			{
+				Drives['C'-'A'] = union_underlay; // set for DBP_GetSaveFile
+				std::string save_name_redirect = DBP_GetSaveFile(SFT_SAVENAMEREDIRECT);
+				if (!save_name_redirect.empty()) save_file.swap(save_name_redirect);
 			}
 			unionDrive* uni = new unionDrive(*union_underlay, (save_file.empty() ? NULL : &save_file[0]), true, dbp_strict_mode);
 			Drives['C'-'A'] = uni;
