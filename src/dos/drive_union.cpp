@@ -26,7 +26,7 @@
 
 #define TRUE_RESET_DOSERR (dos.errorcode = save_errorcode, true)
 
-static void CreateParentDirs(DOS_Drive& drv, const char* path)
+static void CreateParentDirs(DOS_Drive& drv, const char* path, DOS_Drive* must_exist_in = NULL)
 {
 	char dir_path[DOS_PATHLENGTH + 1], *p_dir_path = dir_path;
 	for (const char *p_path = path; *p_path; p_path++, p_dir_path++)
@@ -34,6 +34,7 @@ static void CreateParentDirs(DOS_Drive& drv, const char* path)
 		if (*p_path == '\\')
 		{
 			*p_dir_path = '\0';
+			if (must_exist_in && !must_exist_in->TestDir(dir_path)) return;
 			drv.MakeDir(dir_path);
 		}
 		*p_dir_path = *p_path;
@@ -699,16 +700,15 @@ bool unionDrive::FileCreate(DOS_File** file, char * path, Bit16u attributes)
 {
 	DOSPATH_REMOVE_ENDINGDOTS_KEEP(path);
 	if ((attributes & DOS_ATTR_DIRECTORY) || !*path) return FALSE_SET_DOSERR(ACCESS_DENIED);
-	if (!impl->UnionPrepareCreate(path, true)) return false;
-
 	const Bit16u save_errorcode = dos.errorcode;
+	if (!impl->UnionPrepareCreate(path, true)) return false;
 	DOS_File *real_file;
 	if (!impl->over->FileCreate(&real_file, path, attributes))
 	{
-		CreateParentDirs(*impl->over, path);
+		CreateParentDirs(*impl->over, path, impl->under);
 		if (!impl->over->FileCreate(&real_file, path, attributes))
 		{
-			// Should not happen, maybe disk is full
+			// Either parent directories did not exist in under or disk is full
 			return FALSE_SET_DOSERR(ACCESS_DENIED);
 		}
 	}
@@ -796,7 +796,16 @@ bool unionDrive::MakeDir(char* dir_path)
 {
 	DOSPATH_REMOVE_ENDINGDOTS(dir_path);
 	const Bit16u save_errorcode = dos.errorcode;
-	if (!impl->UnionPrepareCreate(dir_path, false) || !impl->over->MakeDir(dir_path)) return false;
+	if (!impl->UnionPrepareCreate(dir_path, false)) return false;
+	if (!impl->over->MakeDir(dir_path))
+	{
+		CreateParentDirs(*impl->over, dir_path, impl->under);
+		if (!impl->over->MakeDir(dir_path))
+		{
+			// Either parent directories did not exist in under or disk is full
+			return false;
+		}
+	}
 	impl->ScheduleSave();
 	return TRUE_RESET_DOSERR;
 }
