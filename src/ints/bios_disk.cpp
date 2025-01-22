@@ -1695,9 +1695,6 @@ void BIOS_ShutdownDisks(void) {
 		imageDiskList[i] = NULL;
 	}
 #endif
-	imgDTASeg = 0;
-	imgDTAPtr = 0;
-	if (imgDTA) { delete imgDTA; imgDTA = NULL; }
 }
 
 void DBP_SetMountSwappingRequested()

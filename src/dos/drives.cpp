@@ -288,6 +288,11 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
 		if (Drives[i] && DriveManager::UnmountDrive(i) == 0)
 			Drives[i] = NULL;
+
+	// do this now instead of in BIOS_ShutdownDisks because UnmountDrive of unionDrive might still want to iterate over files which needs this
+	imgDTASeg = 0;
+	imgDTAPtr = 0;
+	if (imgDTA) { delete imgDTA; imgDTA = NULL; }
 }
 
 void DRIVES_Init(Section* sec) {
