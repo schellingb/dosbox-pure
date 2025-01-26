@@ -1804,7 +1804,7 @@ static void DBP_PureMenuProgram(Program** make)
 				if (msgType == 1 && (DBP_GetTicks() - opentime) > ((Bit32u)dbp_menu_time * 1000)) first_shell->exit = true;
 			}
 			EndIntercept();
-			INT10_ReloadFont();
+			INT10_SetVideoMode(0x3);
 			return !first_shell->exit;
 		}
 	} interceptor;
