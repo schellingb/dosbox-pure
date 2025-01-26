@@ -46,10 +46,10 @@ struct DBP_Net
 	struct Addr { Bit8u ipxnetworknum[4], mac[6]; };
 };
 
-static bool dbp_net_connected;
+bool dbp_net_connected;
 static DBP_Net::Addr dbp_net_addr;
 static DBP_Net* dbp_net;
-const char* dbp_net_msg;
+static const char* dbp_net_msg;
 static struct DBP_Net_Cleanup { ~DBP_Net_Cleanup() { delete dbp_net; } } _dbp_net_cleanup;
 
 #if 1

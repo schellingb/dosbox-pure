@@ -3945,6 +3945,17 @@ void retro_run(void)
 			dbp_throttle = { RETRO_THROTTLE_NONE, (float)av_info.timing.fps };
 	}
 
+	static Bit8u fpsboost_count = 0, last_fpsboost = 1;
+	Bit8u next_fpsboost = 1, fpsboost = 1;
+	extern bool dbp_net_connected;
+	if (dbp_net_connected)
+	{
+		// Increase the rate retro_run is called during multiplayer. This can significantly improve network performance for games running in lock-step by giving the frontend more chances to send and receive packets.
+		fpsboost = ((dbp_throttle.mode == RETRO_THROTTLE_NONE && dbp_throttle.rate > (av_info.timing.fps * 1.5)) ? (int)(dbp_throttle.rate / av_info.timing.fps + .499) : 1);
+		dbp_throttle.rate /= fpsboost;
+		next_fpsboost = 4;
+	}
+
 	static retro_throttle_state throttle_last;
 	if (dbp_throttle.mode != throttle_last.mode || dbp_throttle.rate != throttle_last.rate)
 	{
@@ -4015,7 +4026,7 @@ void retro_run(void)
 	if (dbp_keys_down_count)
 		DBP_ReleaseKeyEvents(true);
 
-	bool skip_emulate = DBP_NeedFrameSkip(false);
+	bool skip_emulate = (fpsboost > 1 && (((fpsboost_count++)%fpsboost)!=0)) || DBP_NeedFrameSkip(false);
 	switch (dbp_latency)
 	{
 		case DBP_LATENCY_DEFAULT:
@@ -4055,6 +4066,7 @@ void retro_run(void)
 		numSamples = (av_info.timing.sample_rate / av_info.timing.fps) + dbp_audio_remain;
 	else
 		numSamples = (av_info.timing.sample_rate / dbp_throttle.rate) + dbp_audio_remain;
+	if (fpsboost > 1) numSamples /= (fpsboost*.9); // Without *.9 audio can end up skipping
 	if (numSamples && haveSamples > numSamples * .99 && dbp_audio_remain != -1) // Allow 1 percent stretch on underrun
 	{
 		mixSamples = (numSamples > haveSamples ? haveSamples : (Bit32u)numSamples);
@@ -4114,18 +4126,19 @@ void retro_run(void)
 
 	// handle video mode changes
 	double targetfps = DBP_GetFPS();
-	if (av_info.geometry.base_width != view_width || av_info.geometry.base_height != view_height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps)
+	if (av_info.geometry.base_width != view_width || av_info.geometry.base_height != view_height || av_info.geometry.aspect_ratio != buf.ratio || av_info.timing.fps != targetfps || next_fpsboost != last_fpsboost)
 	{
 		log_cb(RETRO_LOG_INFO, "[DOSBOX] Resolution changed %ux%u @ %.3fHz AR: %.5f => %ux%u @ %.3fHz AR: %.5f\n",
 			av_info.geometry.base_width, av_info.geometry.base_height, av_info.timing.fps, av_info.geometry.aspect_ratio,
 			view_width, view_height, av_info.timing.fps, buf.ratio);
-		bool newfps = (av_info.timing.fps != targetfps), newmax = (av_info.geometry.max_width < view_width || av_info.geometry.max_height < view_height);
+		bool newfps = (av_info.timing.fps != targetfps || next_fpsboost != last_fpsboost), newmax = (av_info.geometry.max_width < view_width || av_info.geometry.max_height < view_height);
 		if (av_info.geometry.max_width < view_width)   av_info.geometry.max_width = view_width;
 		if (av_info.geometry.max_height < view_height) av_info.geometry.max_height = view_height;
 		av_info.geometry.base_width = view_width;
 		av_info.geometry.base_height = view_height;
 		av_info.geometry.aspect_ratio = buf.ratio;
-		av_info.timing.fps = targetfps;
+		av_info.timing.fps = targetfps * next_fpsboost;
+		last_fpsboost = next_fpsboost;
 		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_DUMMY)
 		{
 			// To force RetroArch to abandon the hardware context we need to do 2 things, clear hw render, then reinitialize the video driver by changing max size
@@ -4136,10 +4149,13 @@ void retro_run(void)
 			av_info.geometry.max_width--;
 		}
 		environ_cb(((newfps || newmax) ? RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO : RETRO_ENVIRONMENT_SET_GEOMETRY), &av_info);
+		av_info.timing.fps = targetfps;
 	}
 
 	// submit video
-	if (dbp_opengl_draw)
+	if (skip_emulate)
+		video_cb(NULL, view_width, view_height, view_width * 4);
+	else if (dbp_opengl_draw)
 		dbp_opengl_draw(buf);
 	else
 		video_cb(buf.video, view_width, view_height, view_width * 4);
