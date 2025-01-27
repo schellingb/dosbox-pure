@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2023 Bernhard Schelling
+ *  Copyright (C) 2020-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -350,9 +350,14 @@ struct unionDriveImpl
 				Bit32u crc32 = (size ? DriveCalculateCRC32((Bit8u*)&s.buf[0], size) : 0);
 				if (under_match_size && under_crc32 == crc32) return;
 
-				// Don't write 0 sized files with .SWP ending (temporary swap files)
+				// Don't write files with .SWP ending that are either empty or filled with zero bytes (temporary swap files)
 				Bit16u pathLen = (Bit16u)(strlen(path) + (is_dir ? 1 : 0));
-				if (!size && !is_dir && pathLen > 4 && !memcmp(path + pathLen - 4, ".SWP", 4)) return;
+				if (!is_dir && pathLen > 4 && !memcmp(path + pathLen - 4, ".SWP", 4))
+				{
+					bool allzeros = true;
+					for (Bit8u *p = (Bit8u*)&s.buf[0], *pEnd = p + size; p != pEnd; p++) { if (*p) { allzeros = false; break; } }
+					if (allzeros) return;
+				}
 
 				// Generate local file header
 				Bit8u lfh[30 + DOS_PATHLENGTH + 8];
