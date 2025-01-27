@@ -917,10 +917,10 @@ bool patchDrive::isRemote(void) { return false; }
 bool patchDrive::isRemovable(void) { return false; }
 Bits patchDrive::UnMount(void) { delete this; return 0;  }
 
-void patchDrive::ActivateVariant(int variant_number)
+bool patchDrive::ActivateVariant(int variant_number)
 {
 	int enabledVariantIndex = variant_number - 1;
-	if (ActiveVariantIndex == enabledVariantIndex) return;
+	if (ActiveVariantIndex == enabledVariantIndex) return false;
 	ActiveVariantIndex = enabledVariantIndex;
 
 	struct Local
@@ -945,7 +945,7 @@ void patchDrive::ActivateVariant(int variant_number)
 	};
 	dos_yml.clear();
 	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A']);
-	return;
+	return true;
 }
 
 /*

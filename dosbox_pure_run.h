@@ -325,7 +325,7 @@ struct DBP_Run
 		if (mode == RUN_VARIANT)
 		{
 			patch.enabled_variant = info;
-			patchDrive::ActivateVariant(patch.enabled_variant);
+			startup.reboot |= patchDrive::ActivateVariant(patch.enabled_variant); // reboot if changed to revert to YML defaults
 			DOSYMLLoader ymlload(true);
 			startup.reboot |= ymlload.reboot; // read startup and autoinput from YML
 			mode = startup.mode;

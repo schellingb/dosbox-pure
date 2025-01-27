@@ -832,7 +832,7 @@ public:
 
 	static std::string dos_yml;
 	static StringToObjectHashMap<std::string> variants;
-	static void ActivateVariant(int variant_number);
+	static bool ActivateVariant(int variant_number);
 private:
 	struct patchDriveImpl* impl;
 };
