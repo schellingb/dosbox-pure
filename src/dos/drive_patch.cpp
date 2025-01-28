@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2024 Bernhard Schelling
+ *  Copyright (C) 2024-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -522,8 +522,7 @@ struct patchDriveImpl
 	std::vector<Patch_Layer> layers;
 	Patch_Layer *layer_top, *layer_bottom;
 	Bit8u IterateLayer;
-	bool IterateGetVariant;
-	bool IterateHadVariant;
+	bool IterateGetVariant, IterateHadVariant, IterateYMLOnly;
 
 	patchDriveImpl() : root(255, DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0, 0), layer_top(NULL), layer_bottom(NULL) { }
 
@@ -545,12 +544,15 @@ struct patchDriveImpl
 		return ReadAndClose(df, patchDrive::dos_yml);
 	}
 
-	void Reload()
+	void Reload(bool ymlOnly = false)
 	{
 		if (layers.empty()) { DBP_ASSERT(false); return; }
-		for (Patch_Entry* e : root.entries) Patch_Directory::DeleteEntry(e);
-		root.entries.Clear();
-		directories.Clear();
+		if (!ymlOnly)
+		{
+			for (Patch_Entry* e : root.entries) Patch_Directory::DeleteEntry(e);
+			root.entries.Clear();
+			directories.Clear();
+		}
 
 		DBP_ASSERT(!layer_top || layer_top == &layers.back()); // fixed once first used
 		layer_top = &layers.back();
@@ -558,7 +560,7 @@ struct patchDriveImpl
 		if (ActiveVariantIndex == -2) ActiveVariantIndex = -1; // because we fill out dos_yml for the default config now
 
 		Bit32u ignoreLayers = 0, layerLast = (Bit32u)(layer_top - layer_bottom);
-		for (IterateLayer = 0, IterateGetVariant = false;;)
+		for (IterateLayer = 0, IterateGetVariant = false, IterateYMLOnly = ymlOnly;;)
 		{
 			if (!(ignoreLayers & (1 << IterateLayer)))
 			{
@@ -620,6 +622,7 @@ struct patchDriveImpl
 			AppendYML(layer.patchzip, orgpath);
 			return; // DOS.YML of patch drives is not exposed to the DOS file system
 		}
+		else if (self.IterateYMLOnly) return;
 
 		const char* name;
 		Patch_Directory* dir = self.GetParentDir(path, &name);
@@ -704,7 +707,7 @@ void patchDrive::AddLayer(DOS_Drive& under, bool autodelete_under, DOS_File* pat
 {
 	impl->layers.emplace_back(under, autodelete_under, (patchzip ? new zipDrive(patchzip, enable_crc_check) : NULL));
 	if (impl->layers.size() == 1) label.SetLabel(under.GetLabel(), false, true);
-	if (is_final) impl->Reload();
+	if (is_final) { patchDrive::dos_yml.clear(); impl->Reload(); }
 }
 
 patchDrive::~patchDrive()
@@ -917,7 +920,7 @@ bool patchDrive::isRemote(void) { return false; }
 bool patchDrive::isRemovable(void) { return false; }
 Bits patchDrive::UnMount(void) { delete this; return 0;  }
 
-bool patchDrive::ActivateVariant(int variant_number)
+bool patchDrive::ActivateVariant(int variant_number, bool ymlonly)
 {
 	int enabledVariantIndex = variant_number - 1;
 	if (ActiveVariantIndex == enabledVariantIndex) return false;
@@ -925,18 +928,18 @@ bool patchDrive::ActivateVariant(int variant_number)
 
 	struct Local
 	{
-		static void ReloadAll(DOS_Drive *drv)
+		static void ReloadAll(DOS_Drive *drv, bool ymlonl)
 		{
 			if (patchDrive* pd = dynamic_cast<patchDrive*>(drv))
 			{
 				DBP_ASSERT(dos_yml.empty()); // it is assumed that there is only ever one drive with a YML
-				pd->impl->Reload();
+				pd->impl->Reload(ymlonl);
 				return;
 			}
 			if (dynamic_cast<memoryDrive*>(drv)) return; // DOS.YML is not allowed to be put into save file
 			for (int n = 0;; n++)
 			{
-				if (DOS_Drive* shadow = drv->GetShadow(n, true)) ReloadAll(shadow);
+				if (DOS_Drive* shadow = drv->GetShadow(n, true)) ReloadAll(shadow, ymlonl);
 				else { if (n) return; break; }
 			}
 			DBP_ASSERT(dos_yml.empty()); // it is assumed that there is only ever one drive with a YML
@@ -944,7 +947,7 @@ bool patchDrive::ActivateVariant(int variant_number)
 		}
 	};
 	dos_yml.clear();
-	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A']);
+	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A'], ymlonly);
 	return true;
 }
 

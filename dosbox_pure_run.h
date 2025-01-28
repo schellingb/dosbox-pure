@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2024 Bernhard Schelling
+ *  Copyright (C) 2020-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -322,10 +322,14 @@ struct DBP_Run
 		DBP_ASSERT(from_osd || mode != RUN_VARIANT); // only the OSD can switch the variant
 		if (from_osd) autoinput.str.clear();
 
+		// Always reboot if variant is changed to revert to YML defaults 
+		// We only refresh YML here because we reboot anyway (which will restart the patch drive)
+		// Also we actually don't want to switch underlying files before saving union drive save file differences.
+		startup.reboot |= patchDrive::ActivateVariant((mode == RUN_VARIANT ? info : patch.enabled_variant), true);
+
 		if (mode == RUN_VARIANT)
 		{
 			patch.enabled_variant = info;
-			startup.reboot |= patchDrive::ActivateVariant(patch.enabled_variant); // reboot if changed to revert to YML defaults
 			DOSYMLLoader ymlload(true);
 			startup.reboot |= ymlload.reboot; // read startup and autoinput from YML
 			mode = startup.mode;

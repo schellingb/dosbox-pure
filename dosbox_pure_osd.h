@@ -1267,8 +1267,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (DBP_FullscreenOSD || (cd_count + hd_count) <= 1) setsel = (patchDrive::variants.Len() ? (fs_rows - 2) : (exe_count ? fs_rows : (int)dbp_images.size()));
 			if (!exe_count) { list.emplace_back(IT_NONE, INFO_DIM, "No executable file found"); list.emplace_back(IT_NONE); }
 
-			if (DBP_FullscreenOSD && !dbp_strict_mode) list.emplace_back(IT_CLOSEOSD, 0, "Go to Command Line");
-			else if (dbp_game_running && !dbp_strict_mode) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
+			if (!dbp_strict_mode) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
 			if (!DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
 			if (list.back().type == IT_NONE) list.pop_back();
 		}

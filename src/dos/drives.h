@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2024  Bernhard Schelling
+ *  Copyright (C) 2020-2025  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -832,7 +832,7 @@ public:
 
 	static std::string dos_yml;
 	static StringToObjectHashMap<std::string> variants;
-	static bool ActivateVariant(int variant_number);
+	static bool ActivateVariant(int variant_number, bool ymlonly = false);
 private:
 	struct patchDriveImpl* impl;
 };

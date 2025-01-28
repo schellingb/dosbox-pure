@@ -346,10 +346,6 @@ struct unionDriveImpl
 					ReadAndClose(df, s.buf, 0xFFFFFFFF);
 				}
 
-				// If content matches, don't store in save file
-				Bit32u crc32 = (size ? DriveCalculateCRC32((Bit8u*)&s.buf[0], size) : 0);
-				if (under_match_size && under_crc32 == crc32) return;
-
 				// Don't write files with .SWP ending that are either empty or filled with zero bytes (temporary swap files)
 				Bit16u pathLen = (Bit16u)(strlen(path) + (is_dir ? 1 : 0));
 				if (!is_dir && pathLen > 4 && !memcmp(path + pathLen - 4, ".SWP", 4))
@@ -358,6 +354,10 @@ struct unionDriveImpl
 					for (Bit8u *p = (Bit8u*)&s.buf[0], *pEnd = p + size; p != pEnd; p++) { if (*p) { allzeros = false; break; } }
 					if (allzeros) return;
 				}
+
+				// If content matches, don't store in save file
+				Bit32u crc32 = (size ? DriveCalculateCRC32((Bit8u*)&s.buf[0], size) : 0);
+				if (under_match_size && under_crc32 == crc32) return;
 
 				// Generate local file header
 				Bit8u lfh[30 + DOS_PATHLENGTH + 8];
