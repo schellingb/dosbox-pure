@@ -360,7 +360,7 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "500000",  "Pentium III, 600 MHz from 1999 (500000 cps)" },
 			{ "1000000", "AMD Athlon, 1.2 GHz from 2000 (1000000 cps)" },
 		},
-		"auto"
+		"none"
 	},
 	{
 		"dosbox_pure_cycles_scale",
