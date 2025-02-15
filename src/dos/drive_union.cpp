@@ -141,6 +141,7 @@ public:
 	}
 };
 
+enum retro_log_level { RETRO_LOG_DEBUG = 0, RETRO_LOG_INFO, RETRO_LOG_WARN, RETRO_LOG_ERROR, RETRO_LOG_DUMMY = INT_MAX };
 struct unionDriveImpl
 {
 	memoryDrive* save_mem;
@@ -402,6 +403,14 @@ struct unionDriveImpl
 				memcpy(cd + 46, lfh + 30, pathLen);         // File name
 				s.local_file_offset += 30 + pathLen + size;
 				s.file_count++;
+
+				#if !defined(NDEBUG) && defined(_MSC_VER)
+				if (pathLen > 4 && !memcmp(lfh + 30 + pathLen - 4, ".SWP", 4) && size)
+				{
+					extern void retro_notify(int duration, retro_log_level lvl, char const* format,...);
+					retro_notify(2000, RETRO_LOG_INFO, "Game is writing %d MB swap file '%s'", size / 1024 / 1024, path);
+				}
+				#endif
 			}
 		};
 
@@ -412,6 +421,12 @@ struct unionDriveImpl
 		if (!s.f)
 		{
 			LOG_MSG("[DOSBOX] Opening file %s for writing failed", impl->save_file.c_str());
+			static int reportcount;
+			if (reportcount++ < 3 || !(reportcount % 6))
+			{
+				extern void retro_notify(int duration, retro_log_level lvl, char const* format,...);
+				retro_notify(2000, RETRO_LOG_ERROR, "Error while writing game save file '%s'!", impl->save_file.c_str());
+			}
 			impl->ScheduleSave(5000.f);
 			return;
 		}
