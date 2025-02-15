@@ -643,7 +643,7 @@ struct patchDriveImpl
 			patchsrc[dirlen + undernamelen] = '\0';
 			underpath = patchsrc;
 		}
-		else
+		else if (!is_dir)
 		{
 			// ignore any overlay files existing in the layers above (but allow binary patches)
 			for (Patch_Layer* l = &layer; l != self.layer_top; l++)
