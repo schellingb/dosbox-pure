@@ -23,6 +23,7 @@
 
 #include <time.h>
 #include <vector>
+#include <climits>
 
 #define TRUE_RESET_DOSERR (dos.errorcode = save_errorcode, true)
 
