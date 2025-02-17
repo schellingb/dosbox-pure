@@ -151,16 +151,25 @@ struct unionDriveImpl
 	std::vector<Union_Search> searches;
 	std::vector<Bit16u> free_search_ids;
 	std::string save_file;
-	Bit32u save_size;
+	Bit32u save_size, free_bytes;
 	bool writable, autodelete_under, autodelete_over, dirty;
 
 	unionDriveImpl(DOS_Drive* _under, DOS_Drive* _over, const char* _save_file, bool _autodelete_under, bool _autodelete_over = false, bool strict_mode = false)
-		: save_mem(_over ? NULL : new memoryDrive()), under(_under), over(_over ? _over : save_mem), save_size(0),
+		: save_mem(_over ? NULL : new memoryDrive()), under(_under), over(_over ? _over : save_mem), save_size(0), free_bytes(0),
 		  autodelete_under(_autodelete_under), autodelete_over(_autodelete_over || save_mem), dirty(false)
 	{
 		Bit16u bytes_sector; Bit8u sectors_cluster; Bit16u total_clusters; Bit16u free_clusters;
 		over->AllocationInfo(&bytes_sector, &sectors_cluster, &total_clusters, &free_clusters);
 		writable = (free_clusters > 0);
+		if (save_mem)
+		{
+			under->AllocationInfo(&bytes_sector, &sectors_cluster, &total_clusters, &free_clusters);
+			Bit32u under_bytes = total_clusters * sectors_cluster * bytes_sector;
+			if      (under_bytes < 128*1024*1024) free_bytes = 250*1024*1024;
+			else if (under_bytes < 256*1024*1024) free_bytes = 500*1024*1024;
+			else if (under_bytes < 512*1024*1024) free_bytes = 1000*1024*1024;
+			else                                  free_bytes = 1500*1024*1024;
+		}
 		if (_save_file)
 		{
 			DBP_ASSERT(!_over && writable);
@@ -1028,6 +1037,12 @@ bool unionDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster
 	Bit32u free_bytes  = over_free_clusters   * over_sectors_cluster  * over_bytes_sector;
 	*_bytes_sector    = (under_bytes_sector    > over_bytes_sector    ? under_bytes_sector    : over_bytes_sector   );
 	*_sectors_cluster = (under_sectors_cluster > over_sectors_cluster ? under_sectors_cluster : over_sectors_cluster);
+	if (impl->free_bytes > free_bytes)
+	{
+		free_bytes = impl->free_bytes;
+		Bit8u need_sectors_cluster = (Bit8u)(free_bytes > (32<<24) ? (free_bytes>>29<<5): 32);
+		if (need_sectors_cluster > *_sectors_cluster) *_sectors_cluster = need_sectors_cluster;
+	}
 	Bit32u cluster_div = (*_bytes_sector && *_sectors_cluster ? *_bytes_sector * *_sectors_cluster : 1);
 	*_total_clusters = (under_bytes > over_bytes ? under_bytes : over_bytes) / cluster_div;
 	*_free_clusters  = free_bytes / cluster_div;
