@@ -1958,7 +1958,7 @@ static std::vector<std::string>& DBP_ScanSystem(bool force_midi_scan)
 			else if (ln == 23 && !subdir.length() && !force_midi_scan && !strcasecmp(entry_name, "DOSBoxPureMidiCache.txt"))
 			{
 				std::string content;
-				ReadAndClose(FindAndOpenDosFile(path.assign(system_dir).append("/").append(entry_name).c_str()), content);
+				ReadAndClose(rawFile::TryOpen(path.assign(system_dir).append("/").append(entry_name).c_str()), content);
 				dynstr.clear();
 				dbp_osimages.clear();
 				dbp_shellzips.clear();
@@ -3097,7 +3097,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 	if (skip_c_mount && !dbconf)
 	{
 		std::string confcontent;
-		if (ReadAndClose(FindAndOpenDosFile(path), confcontent))
+		if (ReadAndClose(rawFile::TryOpen(path), confcontent))
 			return init_dosbox(firsttime, forcemenu, reinit, &confcontent);
 	}
 
@@ -3258,17 +3258,17 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 	{
 		if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
 		{
-			const char* confpath = NULL; std::string strconfpath, confcontent;
+			DOS_File* conffile = NULL; std::string strconfpath, confcontent;
 			if (dbp_conf_loading == 'i') // load confs 'i'nside content
 			{
-				if (drive_c->FileExists(("$C:\\DOSBOX.CON")+4)) { confpath = "$C:\\DOSBOX.CON"; } //8.3 filename in ZIPs
-				else if (drive_c->FileExists(("$C:\\DOSBOX~1.CON")+4)) { confpath = "$C:\\DOSBOX~1.CON"; } //8.3 filename in local file systems
+				if (drive_c->FileExists(("$C:\\DOSBOX.CON")+4)) { conffile = FindAndOpenDosFile("$C:\\DOSBOX.CON"); } //8.3 filename in ZIPs
+				else if (drive_c->FileExists(("$C:\\DOSBOX~1.CON")+4)) { conffile = FindAndOpenDosFile("$C:\\DOSBOX~1.CON"); } //8.3 filename in local file systems
 			}
 			else if (dbp_conf_loading == 'o' && path) // load confs 'o'utside content
 			{
-				confpath = strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str();
+				conffile = rawFile::TryOpen(strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str());
 			}
-			if (confpath && ReadAndClose(FindAndOpenDosFile(confpath), confcontent))
+			if (conffile && ReadAndClose(conffile, confcontent))
 				return init_dosbox(firsttime, forcemenu, true, &confcontent);
 		}
 

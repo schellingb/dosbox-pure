@@ -718,6 +718,7 @@ struct rawFile : public DOS_File
 	virtual bool Seek(Bit32u* pos, Bit32u type) { fseek(f, (long)*pos, type); *pos = (Bit32u)ftell_wrap(f); return open; }
 	virtual bool Seek64(Bit64u* pos, Bit32u type) { fseek_wrap(f, *pos, type); *pos = (Bit64u)ftell_wrap(f); return open; }
 	virtual Bit16u GetInformation(void) { return (OPEN_IS_WRITING(flags) ? 0x40 : 0); }
+	static rawFile* TryOpen(const char* path) { FILE* f = fopen_wrap(path, "rb"); return (f ? new rawFile(f, false) : NULL); }
 };
 
 class memoryDrive : public DOS_Drive {
