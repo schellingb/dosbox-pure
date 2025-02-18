@@ -1,0 +1,92 @@
+name: Build
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-win64-msvc:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: microsoft/setup-msbuild@v2
+    - run: MSBuild.exe dosbox_pure_libretro.vcxproj /p:Configuration=Release /p:Platform=x64
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_win64
+        path: build/Release_64bit/dosbox_pure_libretro.dll
+
+  build-win32-msvc:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: microsoft/setup-msbuild@v2
+    - run: MSBuild.exe dosbox_pure_libretro.vcxproj /p:Configuration=Release /p:Platform=Win32
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_win32
+        path: build/Release_32bit/dosbox_pure_libretro.dll
+
+  build-win64-gcc:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: make "CXX=g++ -static"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_win64_gcc
+        path: dosbox_pure_libretro.dll
+        
+  build-linux_x64:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: make -j4
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_linux_x64
+        path: dosbox_pure_libretro.so
+
+  build-linux_arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+    - uses: actions/checkout@v4
+    - run: make -j4
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_linux_arm64
+        path: dosbox_pure_libretro.so
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: make -j4
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_macos
+        path: dosbox_pure_libretro.dylib
+
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r20b
+        local-cache: true
+    - name: ndk-build
+      run: |
+        cd jni
+        ndk-build -j4
+        cp ../libs/armeabi-v7a/libretro.so ../libs/armeabi-v7a/dosbox_pure_libretro_android.so.20290101T$(echo 000000$GITHUB_RUN_NUMBER | tail -c 7).$(echo 000000000$GITHUB_RUN_NUMBER | tail -c 9).0.lcbk
+        cp ../libs/arm64-v8a/libretro.so ../libs/arm64-v8a/dosbox_pure_libretro_android.so.20290101T$(echo 000000$GITHUB_RUN_NUMBER | tail -c 7).$(echo 000000000$GITHUB_RUN_NUMBER | tail -c 9).0.lcbk
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_android_arm32
+        path: libs/armeabi-v7a/*.lcbk
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_android_arm64
+        path: libs/arm64-v8a/*.lcbk
