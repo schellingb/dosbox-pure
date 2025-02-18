@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2021 Bernhard Schelling
+ *  Copyright (C) 2020-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -19,8 +19,11 @@
 #include "mixer.h"
 #include "support.h"
 #include "cross.h"
-#include "mt32emu.h"
 #include "../dos/drives.h"
+#ifdef _MSC_VER
+#pragma warning ( disable : 4244 ) // conversion from 'double' to 'float', possible loss of data
+#endif
+#include "mt32emu.h"
 
 static void MIDI_MT32_CallBack(Bitu len);
 

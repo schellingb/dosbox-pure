@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2011  The DOSBox Team
- *  Copyright (C) 2022-2024  Bernhard Schelling
+ *  Copyright (C) 2022-2025  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1045,8 +1045,8 @@ static void FitGammaCurve(const UINT8* crv, float& pow_exponent, float& multiply
 	float crv_maxi = (float)crv[maxi], fmaxi = maxi*0.03125f, bestp_e = 1.0f, bestfac = 256.0f, bestmiss = 1e+38F, fixfac = (maxi == 31 ? 256.0f : 0.0f);
 	for (float p_e = 0.01f, step = 0.32f; ; p_e += step)
 	{
-		float fac = (fixfac ? fixfac : (crv_maxi / pow(fmaxi, p_e))), miss = 0.0f;
-		for (int i = mini; i != maxi; i++) miss += fabs(pow(i*0.03125f, p_e) * fac - crv[i]);
+		float fac = (fixfac ? fixfac : (crv_maxi / (float)pow(fmaxi, p_e))), miss = 0.0f;
+		for (int i = mini; i != maxi; i++) miss += (float)fabs((float)pow(i*0.03125f, p_e) * fac - crv[i]);
 		if (miss < bestmiss)
 		{
 			bestp_e = p_e;
