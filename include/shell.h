@@ -116,6 +116,9 @@ public:
 	void CMD_VER(char * args);
 	/* The shell's variables */
 	Bit16u input_handle;
+	//DBP: Avoid freeze during infinite loop in batch
+	Bit16u same_tick_lines = 0;
+	Bit32u last_pic_ticks = 0;
 	BatchFile * bf;
 	bool echo;
 	bool exit;

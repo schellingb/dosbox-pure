@@ -27,6 +27,7 @@
 #include "callback.h"
 #include "support.h"
 
+extern Bitu PIC_Ticks;
 
 Bitu call_shellstop;
 /* Larger scope so shell_del autoexec can use it to
@@ -359,6 +360,19 @@ void DOS_Shell::Run(void) {
 				ParseLine(input_line);
 				if (echo) WriteOut("\n");
 			}
+
+			//DBP: Avoid freeze during infinite loop in batch
+			if (last_pic_ticks != (Bit32u)PIC_Ticks)
+			{
+				last_pic_ticks = (Bit32u)PIC_Ticks;
+				same_tick_lines = 0;
+			}
+			else if (same_tick_lines++ > 250)
+			{
+				CALLBACK_Idle();
+				CALLBACK_Idle();
+				last_pic_ticks = PIC_Ticks;
+			}
 		} else {
 			if (echo) ShowPrompt();
 			InputCommand(input_line);
@@ -374,7 +388,11 @@ void DOS_Shell::SyntaxError(void) {
 
 class AUTOEXEC:public Module_base {
 private:
+#ifdef C_DBP_NATIVE_CONFIGFILE
 	AutoexecObject autoexec[17];
+#else
+	AutoexecObject autoexec[1];
+#endif
 	AutoexecObject autoexec_echo;
 public:
 	AUTOEXEC(Section* configuration):Module_base(configuration) {
