@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2024 Bernhard Schelling
+ *  Copyright (C) 2020-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -3037,7 +3037,7 @@ static bool check_variables()
 	return visibility_changed;
 }
 
-static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_autoexec)
+static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_autoexec, bool force_puremenu)
 {
 	std::string line; Section* section = NULL; std::string::size_type loc;
 	for (std::istringstream in(cfg); std::getline(in, line);)
@@ -3051,8 +3051,12 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_au
 				if (Section* sec = control->GetSection(line.erase(loc).erase(0, 1))) section = sec;
 				continue;
 			default:
+				if (section == ref_autoexec)
+				{
+					if (force_puremenu) continue; // don't read autoexec if forcing menu
+					ref_autoexec = NULL; // otherwise skip loading the menu with this
+				}
 				if (!section || !section->HandleInputline(line)) continue;
-				if (section == ref_autoexec) ref_autoexec = NULL; // skip our default autoexec
 				if ((loc = line.find('=')) == std::string::npos) continue;
 				trim(line.erase(loc));
 				if (Property* p = section->GetProp(line.c_str())) p->MarkFixed();
@@ -3094,6 +3098,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
 	const bool skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 3));
+	const bool force_puremenu = (dbp_biosreboot || forcemenu);
 	if (skip_c_mount && !dbconf)
 	{
 		std::string confcontent;
@@ -3105,7 +3110,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 	DOSBOX_Init();
 	check_variables();
 	Section* autoexec = control->GetSection("autoexec");
-	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec);
+	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec, force_puremenu);
 	DBP_Run::PreInit();
 	dbp_boot_time = time_cb();
 	control->Init();
@@ -3253,10 +3258,9 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 			return init_dosbox(firsttime, forcemenu, true);
 	}
 
-	const bool force_puremenu = (dbp_biosreboot || forcemenu);
 	if (DOS_Drive* drive_c = Drives['C'-'A']) // guaranteed not NULL unless skip_c_mount
 	{
-		if (dbp_conf_loading != 'f' && !reinit && !force_puremenu)
+		if (dbp_conf_loading != 'f' && !reinit)
 		{
 			DOS_File* conffile = NULL; std::string strconfpath, confcontent;
 			if (dbp_conf_loading == 'i') // load confs 'i'nside content
