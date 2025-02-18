@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2024 Bernhard Schelling
+ *  Copyright (C) 2020-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -1541,7 +1541,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (ok_type != IT_CLOSEOSD)
 			{
 				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || ok_type == IT_VARIANTRUN));
-				if (!show_popup && dbp_game_running)
+				if (!show_popup && (dbp_game_running || first_shell->bf))
 				{
 					popupsel = 0;
 					show_popup = true;
