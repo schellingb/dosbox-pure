@@ -523,9 +523,9 @@ struct DBP_Run
 					);
 				case 'v':
 					return (0
-						||Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "generic_ega","ega" , "generic_vga","vgaonly" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
+						||Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_ega","ega" , "generic_vga","vgaonly" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "tandy","tandy" , "pcjr","pcjr" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
 						||Parse("video_memory", "dosbox", "vmemsize", "/")
-						||Parse("video_voodoo", "pci", "voodoo" , "true","8mb" , "false","false" , "")
+						||Parse("video_voodoo", "pci", "voodoo" , "v1_8mb","8mb" , "v1_4mb","4mb" , "none","false" , "")
 					);
 				case 's':
 					return (0
