@@ -951,6 +951,13 @@ bool patchDrive::ActivateVariant(int variant_number, bool ymlonly)
 	return true;
 }
 
+void patchDrive::ResetVariants()
+{
+	ActiveVariantIndex = -2;
+	patchDrive::dos_yml.clear();
+	patchDrive::variants.Clear();
+}
+
 /*
 void patchDrive::Patch()
 {

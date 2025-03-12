@@ -53,14 +53,15 @@
 #define DBP_DEFAULT_SAMPLERATE 48000.0
 #define DBP_DEFAULT_SAMPLERATE_STRING "48000"
 #endif
+#include "core_options.h"
 static retro_system_av_info av_info;
 
 // DOSBOX STATE
 static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_REBOOT, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
-static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_DISABLED, DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND } dbp_serializemode;
+static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
-static bool dbp_optionsupdatecallback, dbp_last_hideadvanced, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
+static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_targetrefreshrate;
@@ -78,7 +79,7 @@ static Bit16s dbp_content_year;
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
 static bool dbp_doublescan, dbp_padding;
-static struct DBP_Buffer { Bit32u* video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
+static struct DBP_Buffer { Bit32u *video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
 enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
 static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
 static double dbp_audio_remain;
@@ -273,12 +274,6 @@ static const char* retro_get_variable(const char* key, const char* default_value
 {
 	retro_variable var = { key };
 	return (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value ? var.value : default_value);
-}
-
-static void retro_set_visibility(const char* key, bool visible)
-{
-	retro_core_option_display disp = { key, visible };
-	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &disp);
 }
 
 // ------------------------------------------------------------------------------
@@ -826,7 +821,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 				Bit8u arr[] = { (Bit8u)(size>>24), (Bit8u)(size>>16), (Bit8u)(size>>8), (Bit8u)(size), (Bit8u)(date>>8), (Bit8u)(date), (Bit8u)(time>>8), (Bit8u)(time), attr };
 				hash = DriveCalculateCRC32(arr, sizeof(arr), DriveCalculateCRC32((const Bit8u*)path, pathlen, hash));
 			}};
-			Bit32u hash = (Bit32u)(0x11111111 - 1024) + (Bit32u)atoi(retro_get_variable("dosbox_pure_bootos_dfreespace", "1024"));
+			Bit32u hash = (Bit32u)(0x11111111 - 1024) + (Bit32u)atoi(DBP_Option::Get(DBP_Option::bootos_dfreespace));
 			DriveFileIterator(Drives['C'-'A'], Local::FileHash, (Bitu)&hash);
 			res.resize(res.size() + 32);
 			res.resize(res.size() - 32 + sprintf(&res[res.size() - 32], (hash == 0x11111111 ? ".sav" : "-%08X.sav"), hash));
@@ -1894,7 +1889,7 @@ void DBP_EnableNetwork()
 	extern const char* RunningProgram;
 	bool running_dos_game = (dbp_had_game_running && strcmp(RunningProgram, "BOOT"));
 	if (running_dos_game && DBP_GetTicks() < 10000) { DBP_ForceReset(); return; }
-	retro_set_visibility("dosbox_pure_modem", true);
+	DBP_Option::SetDisplay(DBP_Option::modem, true);
 
 	bool pauseThread = (dbp_state != DBPSTATE_BOOT && dbp_state != DBPSTATE_SHUTDOWN);
 	if (pauseThread) DBP_ThreadControl(TCM_PAUSE_FRAME);
@@ -1904,7 +1899,7 @@ void DBP_EnableNetwork()
 	sec->ExecuteInit(false);
 	sec = control->GetSection("serial");
 	sec->ExecuteDestroy(false);
-	sec->GetProp("serial1")->SetValue((retro_get_variable("dosbox_pure_modem", "null")[0] == 'n') ? "libretro null" : "libretro");
+	sec->GetProp("serial1")->SetValue((DBP_Option::Get(DBP_Option::modem)[0] == 'n') ? "libretro null" : "libretro");
 	sec->ExecuteInit(false);
 	if (pauseThread) DBP_ThreadControl(TCM_RESUME_FRAME);
 }
@@ -2389,7 +2384,7 @@ void GFX_Events()
 				break;
 			case DBPET_KEYUP: KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
 
-			case DBPET_ONSCREENKEYBOARD: DBP_StartOSD(DBPOSD_OSK); break;
+			case DBPET_ONSCREENKEYBOARD: DBP_StartOSD(); break;
 			case DBPET_ONSCREENKEYBOARDUP: break;
 
 			case DBPET_ACTIONWHEEL: DBP_WheelShiftOSD(e.port, true); break;
@@ -2660,25 +2655,20 @@ static void set_variables(bool force_midi_scan = false)
 {
 	std::vector<std::string>& dynstr = DBP_ScanSystem(force_midi_scan);
 
-	#include "core_options.h"
-	for (retro_core_option_v2_definition& def : option_defs)
-	{
-		if (!def.key || strcmp(def.key, "dosbox_pure_midi")) continue;
-		size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 : dynstr.size());
-		for (size_t f = 0; f != numfiles; f += 2)
-			if (((&dynstr[f].back())[-1]|0x20) == 'f') // .SF* extension soundfont
-				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
-		for (size_t f = 0; f != numfiles; f += 2)
-			if (((&dynstr[f].back())[-1]|0x20) != 'f') // .ROM extension munt rom
-				def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
-		def.values[i++] = { "disabled", "Disabled" };
-		def.values[i++] = { "frontend", "Frontend MIDI driver" };
-		if (dbp_system_cached)
-			def.values[i++] = { "scan", (!strcmp(retro_get_variable("dosbox_pure_midi", ""), "scan") ? "System directory scan finished" : "Scan System directory for soundfonts (open this menu again after)") };
-		def.values[i] = { 0, 0 };
-		def.default_value = def.values[0].value;
-		break;
-	}
+	retro_core_option_v2_definition& def = option_defs[DBP_Option::midi];
+	size_t i = 0, numfiles = (dynstr.size() > (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 ? (RETRO_NUM_CORE_OPTION_VALUES_MAX-4)*2 : dynstr.size());
+	for (size_t f = 0; f != numfiles; f += 2)
+		if (((&dynstr[f].back())[-1]|0x20) == 'f') // .SF* extension soundfont
+			def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
+	for (size_t f = 0; f != numfiles; f += 2)
+		if (((&dynstr[f].back())[-1]|0x20) != 'f') // .ROM extension munt rom
+			def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
+	def.values[i++] = { "disabled", "Disabled" };
+	def.values[i++] = { "frontend", "Frontend MIDI driver" };
+	if (dbp_system_cached)
+		def.values[i++] = { "scan", (!strcmp(DBP_Option::Get(DBP_Option::midi), "scan") ? "System directory scan finished" : "Scan System directory for soundfonts (open this menu again after)") };
+	def.values[i] = { 0, 0 };
+	def.default_value = def.values[0].value;
 
 	unsigned options_ver = 0;
 	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
@@ -2725,66 +2715,97 @@ static void set_variables(bool force_midi_scan = false)
 	}
 }
 
+const char* DBP_Option::Get(DBP_Option::Index idx, bool* was_modified)
+{
+	retro_core_option_v2_definition& def = option_defs[idx];
+	retro_variable var = { def.key };
+	const char* v = (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value ? var.value : def.default_value);
+	if (!was_modified) return v;
+	Bit32u oldhash = (Bit32u)(size_t)(void*)def.values[RETRO_NUM_CORE_OPTION_VALUES_MAX-3].label, newhash = BaseStringToPointerHashMap::Hash(v);
+	if (oldhash && oldhash != newhash) *was_modified = true;
+	def.values[RETRO_NUM_CORE_OPTION_VALUES_MAX-3].label = (const char*)(void*)(size_t)newhash;
+	return v;
+}
+
+bool DBP_Option::Apply(Section& section, const char* var_name, const char* new_value, bool disallow_in_game, bool need_restart, bool user_modified)
+{
+	if (!control) return false;
+
+	Property* prop = section.GetProp(var_name);
+	if (prop->IsFixed())
+	{
+		if (user_modified) retro_notify(0, RETRO_LOG_WARN, "Unable to change setting which was fixed with game configuration");
+		return false;
+	}
+
+	const Value& propVal = prop->GetValue();
+	if (!strcmp(new_value, (propVal.type == Value::V_STRING ? (const char*)propVal : propVal.ToString().c_str()))) return false;
+
+	bool reInitSection = (dbp_state != DBPSTATE_BOOT);
+	if (disallow_in_game && dbp_game_running)
+	{
+		retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
+		reInitSection = false;
+	}
+	if (need_restart && reInitSection && dbp_game_running)
+	{
+		retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
+		reInitSection = false;
+	}
+	else if (need_restart && reInitSection)
+	{
+		dbp_state = DBPSTATE_REBOOT;
+	}
+
+	//log_cb(RETRO_LOG_INFO, "[DOSBOX] variable %s::%s updated from %s to %s\n", section_name, var_name, old_val.c_str(), new_value);
+	bool sectionExecInit = false;
+	if (reInitSection) DBP_ThreadControl(TCM_PAUSE_FRAME);
+	if (reInitSection)
+	{
+		if (!strcmp(var_name, "midiconfig") && MIDI_TSF_SwitchSF(new_value))
+		{
+			// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
+		}
+		else if (!strcmp(var_name, "cycles"))
+		{
+			// Set cycles value without Destroy/Init (because that can cause FPU overflow crashes)
+			DBP_CPU_ModifyCycles(new_value);
+		}
+		else
+		{
+			section.ExecuteDestroy(false);
+			sectionExecInit = true;
+		}
+	}
+	bool res = prop->SetValue(new_value);
+	DBP_ASSERT(res && prop->GetValue().ToString() == new_value);
+	if (sectionExecInit) section.ExecuteInit(false);
+	if (reInitSection) DBP_ThreadControl(TCM_RESUME_FRAME);
+	return true;
+}
+
+bool DBP_Option::GetAndApply(Section& section, const char* var_name, DBP_Option::Index idx, bool disallow_in_game, bool need_restart)
+{
+	bool user_modified = false;
+	const char* new_value = Get(idx, &user_modified);
+	return Apply(section, var_name, new_value, disallow_in_game, need_restart, user_modified);
+}
+
+void DBP_Option::SetDisplay(DBP_Option::Index idx, bool visible)
+{
+	retro_core_option_v2_definition& def = option_defs[idx];
+	retro_core_option_display disp = { def.key, visible };
+	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &disp);
+	def.values[RETRO_NUM_CORE_OPTION_VALUES_MAX-2].label = (const char*)(void*)(size_t)(!visible);
+}
+
+bool DBP_Option::GetHidden(const retro_core_option_v2_definition& d) { return !!(size_t)(void*)d.values[RETRO_NUM_CORE_OPTION_VALUES_MAX-2].label; }
+
 static bool check_variables()
 {
-	struct Variables
-	{
-		static bool DosBoxSet(const char* section_name, const char* var_name, const char* new_value, bool disallow_in_game = false, bool need_restart = false)
-		{
-			if (!control) return false;
-
-			Section* section = control->GetSection(section_name);
-			DBP_ASSERT(section);
-			Property* prop = section->GetProp(var_name);
-			const Value& propVal = prop->GetValue();
-			if (!strcmp(new_value, (propVal.type == Value::V_STRING ? (const char*)propVal : propVal.ToString().c_str())) || prop->IsFixed()) return false;
-
-			bool reInitSection = (dbp_state != DBPSTATE_BOOT);
-			if (disallow_in_game && dbp_game_running)
-			{
-				retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
-				reInitSection = false;
-			}
-			if (need_restart && reInitSection && dbp_game_running)
-			{
-				retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
-				reInitSection = false;
-			}
-			else if (need_restart && reInitSection)
-			{
-				dbp_state = DBPSTATE_REBOOT;
-			}
-
-			//log_cb(RETRO_LOG_INFO, "[DOSBOX] variable %s::%s updated from %s to %s\n", section_name, var_name, old_val.c_str(), new_value);
-			bool sectionExecInit = false;
-			if (reInitSection) DBP_ThreadControl(TCM_PAUSE_FRAME);
-			if (reInitSection)
-			{
-				if (!strcmp(var_name, "midiconfig") && MIDI_TSF_SwitchSF(new_value))
-				{
-					// Do the SF2 reload directly (otherwise midi output stops until dos program restart)
-				}
-				else if (!strcmp(var_name, "cycles"))
-				{
-					// Set cycles value without Destroy/Init (because that can cause FPU overflow crashes)
-					DBP_CPU_ModifyCycles(new_value);
-				}
-				else
-				{
-					section->ExecuteDestroy(false);
-					sectionExecInit = true;
-				}
-			}
-			bool res = prop->SetValue(new_value);
-			DBP_ASSERT(res && prop->GetValue().ToString() == new_value);
-			if (sectionExecInit) section->ExecuteInit(false);
-			if (reInitSection) DBP_ThreadControl(TCM_RESUME_FRAME);
-			return true;
-		}
-	};
-
-	// Depending on this we call set_variables, which needs to be done before any retro_set_visibility call
-	const char* midi = retro_get_variable("dosbox_pure_midi", "");
+	// Depending on this we call set_variables, which needs to be done before any DBP_Option::SetDisplay call
+	bool midi_changed = false;
+	const char* midi = DBP_Option::Get(DBP_Option::midi, &midi_changed);
 	if (dbp_system_cached)
 	{
 		if (!strcmp(midi, "scan"))
@@ -2803,48 +2824,28 @@ static bool check_variables()
 	char buf[32];
 	unsigned options_ver = 0;
 	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
-	bool show_advanced = (options_ver != 1 || retro_get_variable("dosbox_pure_advanced", "false")[0] != 'f');
 	bool visibility_changed = false;
 
-	if (dbp_last_hideadvanced == show_advanced)
-	{
-		static const char* advanced_options[] =
-		{
-			"dosbox_pure_mouse_speed_factor_x",
-			"dosbox_pure_actionwheel_inputs"
-			"dosbox_pure_auto_mapping",
-			"dosbox_pure_joystick_timed",
-			"dosbox_pure_keyboard_layout",
-			"dosbox_pure_joystick_analog_deadzone",
-			"dosbox_pure_cpu_core",
-			"dosbox_pure_menu_time",
-			"dosbox_pure_sblaster_type",
-			"dosbox_pure_sblaster_adlib_mode",
-			"dosbox_pure_sblaster_adlib_emu",
-			"dosbox_pure_gus",
-			"dosbox_pure_tandysound",
-			"dosbox_pure_swapstereo",
-		};
-		for (const char* i : advanced_options) retro_set_visibility(i, show_advanced);
-		dbp_last_hideadvanced = !show_advanced;
-		visibility_changed = true;
-	}
-
-	dbp_actionwheel_inputs = (Bit8u)atoi(retro_get_variable("dosbox_pure_actionwheel_inputs", "14"));
-	dbp_auto_mapping_mode = retro_get_variable("dosbox_pure_auto_mapping", "true")[0];
+	dbp_actionwheel_inputs = (Bit8u)atoi(DBP_Option::Get(DBP_Option::actionwheel_inputs));
+	dbp_auto_mapping_mode = DBP_Option::Get(DBP_Option::auto_mapping)[0];
 
 	bool old_strict_mode = dbp_strict_mode;
-	dbp_strict_mode = (retro_get_variable("dosbox_pure_strict_mode", "false")[0] == 't');
+	dbp_strict_mode = (DBP_Option::Get(DBP_Option::strict_mode)[0] == 't');
 	if (old_strict_mode != dbp_strict_mode && dbp_state != DBPSTATE_BOOT && !dbp_game_running)
 		dbp_state = DBPSTATE_REBOOT;
 
-	char mchar = (dbp_reboot_machine ? dbp_reboot_machine : retro_get_variable("dosbox_pure_machine", "svga")[0]);
-	int mch = (dbp_state != DBPSTATE_BOOT ? machine : -1);
-	bool machine_is_svga = (mch == MCH_VGA && svgaCard != SVGA_None), machine_is_cga = (mch == MCH_CGA), machine_is_hercules = (mch == MCH_HERC);
+	Section &sec_dosbox   = *control->GetSection("dosbox"),   &sec_dos = *control->GetSection("dos"), &sec_mixer    = *control->GetSection("mixer"), &sec_midi = *control->GetSection("midi"), 
+	        &sec_speaker  = *control->GetSection("speaker"),  &sec_cpu = *control->GetSection("cpu"), &sec_render   = *control->GetSection("render"),
+	        &sec_sblaster = *control->GetSection("sblaster"), &sec_gus = *control->GetSection("gus"), &sec_joystick = *control->GetSection("joystick");
+
+	char dbp_mchar = (dbp_reboot_machine ? dbp_reboot_machine : DBP_Option::Get(DBP_Option::machine)[0]);
+	char db_mchar = (control ? *(const char*)control->GetProp("dosbox", "machine")->GetValue() : '\0');
+	int db_mch = (dbp_state != DBPSTATE_BOOT ? machine : -1);
+	bool machine_is_svga = ((db_mch == MCH_VGA && svgaCard != SVGA_None) || db_mchar == 's'), machine_is_cga = (db_mch == MCH_CGA || db_mchar == 'c'), machine_is_hercules = (db_mch == MCH_HERC || db_mchar == 'h');
 	const char* dbmachine;
-	switch (mchar)
+	switch (dbp_mchar)
 	{
-		case 's': dbmachine = retro_get_variable("dosbox_pure_svga", "svga_s3"); machine_is_svga = true; break;
+		case 's': dbmachine = DBP_Option::Get(DBP_Option::svga); machine_is_svga = true; break;
 		case 'v': dbmachine = "vgaonly"; break;
 		case 'e': dbmachine = "ega"; break;
 		case 'c': dbmachine = "cga"; machine_is_cga = true; break;
@@ -2852,37 +2853,38 @@ static bool check_variables()
 		case 'h': dbmachine = "hercules"; machine_is_hercules = true; break;
 		case 'p': dbmachine = "pcjr"; break;
 	}
-	visibility_changed |= Variables::DosBoxSet("dosbox", "machine", dbmachine, false, true);
+	visibility_changed |= DBP_Option::Apply(sec_dosbox, "machine", dbmachine, false, true);
 	if (dbp_reboot_machine) dbp_reboot_machine = 0;
-	Variables::DosBoxSet("dosbox", "vmemsize", retro_get_variable("dosbox_pure_svgamem", "2"), false, true);
+	DBP_Option::GetAndApply(sec_dosbox, "vmemsize", DBP_Option::svgamem, false, true);
 
-	const char* mem = retro_get_variable("dosbox_pure_memory_size", "16");
+	bool mem_changed = false;
+	const char* mem = DBP_Option::Get(DBP_Option::memory_size, &mem_changed);
 	if (dbp_reboot_set64mem) mem = "64";
 	bool mem_use_extended = (atoi(mem) > 0);
-	Variables::DosBoxSet("dos", "xms", (mem_use_extended ? "true" : "false"), true);
-	Variables::DosBoxSet("dos", "ems", (mem_use_extended ? "true" : "false"), true);
-	Variables::DosBoxSet("dosbox", "memsize", (mem_use_extended ? mem : "16"), false, true);
+	DBP_Option::Apply(sec_dos, "xms", (mem_use_extended ? "true" : "false"), true, false, mem_changed);
+	DBP_Option::Apply(sec_dos, "ems", (mem_use_extended ? "true" : "false"), true, false, mem_changed);
+	DBP_Option::Apply(sec_dosbox, "memsize", (mem_use_extended ? mem : "16"), false, true, mem_changed);
 
-	const char* audiorate = retro_get_variable("dosbox_pure_audiorate", DBP_DEFAULT_SAMPLERATE_STRING);
-	Variables::DosBoxSet("mixer", "rate", audiorate, false, true);
-	Variables::DosBoxSet("mixer", "swapstereo", retro_get_variable("dosbox_pure_swapstereo", "false"));
+	const char* audiorate = DBP_Option::Get(DBP_Option::audiorate);
+	DBP_Option::Apply(sec_mixer, "rate", audiorate, false, true);
+	DBP_Option::GetAndApply(sec_mixer, "swapstereo", DBP_Option::swapstereo);
 	dbp_swapstereo = (bool)control->GetProp("mixer", "swapstereo")->GetValue(); // to also get dosbox.conf override
 
 	if (dbp_state == DBPSTATE_BOOT)
 	{
-		Variables::DosBoxSet("sblaster", "oplrate",   audiorate);
-		Variables::DosBoxSet("speaker",  "pcrate",    audiorate);
-		Variables::DosBoxSet("speaker",  "tandyrate", audiorate);
+		DBP_Option::Apply(sec_sblaster, "oplrate",   audiorate);
+		DBP_Option::Apply(sec_speaker,  "pcrate",    audiorate);
+		DBP_Option::Apply(sec_speaker,  "tandyrate", audiorate);
 
 		// initiate audio buffer, we don't need SDL specific behavior, so just set a large enough buffer
-		Variables::DosBoxSet("mixer", "prebuffer", "0");
-		Variables::DosBoxSet("mixer", "blocksize", "2048");
+		DBP_Option::Apply(sec_mixer, "prebuffer", "0");
+		DBP_Option::Apply(sec_mixer, "blocksize", "2048");
 	}
 
 	// Emulation options
-	dbp_force60fps = (retro_get_variable("dosbox_pure_force60fps", "default")[0] == 't');
+	dbp_force60fps = (DBP_Option::Get(DBP_Option::force60fps)[0] == 't');
 
-	const char latency = retro_get_variable("dosbox_pure_latency", "none")[0];
+	const char latency = DBP_Option::Get(DBP_Option::latency)[0];
 	bool toggled_variable = (dbp_state != DBPSTATE_BOOT && (dbp_latency == DBP_LATENCY_VARIABLE) != (latency == 'v'));
 	if (toggled_variable) DBP_ThreadControl(TCM_PAUSE_FRAME);
 	switch (latency)
@@ -2892,75 +2894,79 @@ static bool check_variables()
 		default:  dbp_latency = DBP_LATENCY_DEFAULT;  break;
 	}
 	if (toggled_variable) DBP_ThreadControl(dbp_pause_events ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
-	retro_set_visibility("dosbox_pure_auto_target", (dbp_latency == DBP_LATENCY_LOW));
+	DBP_Option::SetDisplay(DBP_Option::auto_target, (dbp_latency == DBP_LATENCY_LOW));
 
-	switch (retro_get_variable("dosbox_pure_perfstats", "none")[0])
+	switch (DBP_Option::Get(DBP_Option::perfstats)[0])
 	{
 		case 's': dbp_perf = DBP_PERF_SIMPLE; break;
 		case 'd': dbp_perf = DBP_PERF_DETAILED; break;
 		default:  dbp_perf = DBP_PERF_NONE; break;
 	}
-	switch (retro_get_variable("dosbox_pure_savestate", "on")[0])
+	switch (DBP_Option::Get(DBP_Option::savestate)[0])
 	{
 		case 'd': dbp_serializemode = DBPSERIALIZE_DISABLED; break;
 		case 'r': dbp_serializemode = DBPSERIALIZE_REWIND; break;
 		default: dbp_serializemode = DBPSERIALIZE_STATES; break;
 	}
 	DBPArchive::accomodate_delta_encoding = (dbp_serializemode == DBPSERIALIZE_REWIND);
-	dbp_conf_loading = retro_get_variable("dosbox_pure_conf", "false")[0];
-	dbp_menu_time = (char)atoi(retro_get_variable("dosbox_pure_menu_time", "99"));
+	dbp_conf_loading = DBP_Option::Get(DBP_Option::conf)[0];
+	dbp_menu_time = (char)atoi(DBP_Option::Get(DBP_Option::menu_time));
 
-	const char* cycles = retro_get_variable("dosbox_pure_cycles", "auto");
+	bool cycles_changed = false;
+	const char* cycles = DBP_Option::Get(DBP_Option::cycles, &cycles_changed);
 	bool cycles_numeric = (cycles[0] >= '0' && cycles[0] <= '9');
-	int cycles_max = (cycles_numeric ? 0 : atoi(retro_get_variable("dosbox_pure_cycles_max", "none")));
-	retro_set_visibility("dosbox_pure_cycles_max", !cycles_numeric);
-	retro_set_visibility("dosbox_pure_cycles_scale", cycles_numeric || cycles_max);
-	retro_set_visibility("dosbox_pure_cycle_limit", !cycles_numeric);
+	int cycles_max = (cycles_numeric ? 0 : atoi(DBP_Option::Get(DBP_Option::cycles_max, &cycles_changed)));
+	DBP_Option::SetDisplay(DBP_Option::cycles_max, !cycles_numeric);
+	DBP_Option::SetDisplay(DBP_Option::cycles_scale, cycles_numeric || cycles_max);
+	DBP_Option::SetDisplay(DBP_Option::cycle_limit, !cycles_numeric);
 	if (cycles_numeric)
 	{
-		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(retro_get_variable("dosbox_pure_cycles_scale", "1.0")) + .499));
+		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(DBP_Option::Get(DBP_Option::cycles_scale, &cycles_changed)) + .499));
 		cycles = buf;
 	}
 	else if (cycles_max)
 	{
-		snprintf(buf, sizeof(buf), "%s limit %d", cycles, (int)(cycles_max * (float)atof(retro_get_variable("dosbox_pure_cycles_scale", "1.0")) + .499));
+		snprintf(buf, sizeof(buf), "%s limit %d", cycles, (int)(cycles_max * (float)atof(DBP_Option::Get(DBP_Option::cycles_scale, &cycles_changed)) + .499));
 		cycles = buf;
 	}
-	visibility_changed |= Variables::DosBoxSet("cpu", "cycles", cycles);
+	visibility_changed |= DBP_Option::Apply(sec_cpu, "cycles", cycles, false, false, cycles_changed);
 
 	dbp_auto_target =
-		(dbp_latency == DBP_LATENCY_LOW ? (float)atof(retro_get_variable("dosbox_pure_auto_target", "0.8")) : 1.0f)
-		* (cycles_numeric ? 1.0f : (float)atof(retro_get_variable("dosbox_pure_cycle_limit", "1.0")));
+		(dbp_latency == DBP_LATENCY_LOW ? (float)atof(DBP_Option::Get(DBP_Option::auto_target)) : 1.0f)
+		* (cycles_numeric ? 1.0f : (float)atof(DBP_Option::Get(DBP_Option::cycle_limit)));
 
 	extern const char* RunningProgram;
-	Variables::DosBoxSet("cpu", "core", ((!memcmp(RunningProgram, "BOOT", 5) && retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') ? "normal" : retro_get_variable("dosbox_pure_cpu_core", "auto")));
-	Variables::DosBoxSet("cpu", "cputype", retro_get_variable("dosbox_pure_cpu_type", "auto"), true);
+	bool cpu_code_changed = false;
+	const char* cpu_core = ((!memcmp(RunningProgram, "BOOT", 5) && DBP_Option::Get(DBP_Option::bootos_forcenormal, &cpu_code_changed)[0] == 't') ? "normal" : DBP_Option::Get(DBP_Option::cpu_core, &cpu_code_changed));
+	DBP_Option::Apply(sec_cpu, "core", cpu_core, false, false, cpu_code_changed);
+	DBP_Option::GetAndApply(sec_cpu, "cputype", DBP_Option::cpu_type, true);
 
-	retro_set_visibility("dosbox_pure_modem", dbp_use_network);
+	DBP_Option::SetDisplay(DBP_Option::modem, dbp_use_network);
 	if (dbp_use_network)
-		Variables::DosBoxSet("serial", "serial1", ((retro_get_variable("dosbox_pure_modem", "null")[0] == 'n') ? "libretro null" : "libretro"));
+		DBP_Option::Apply(*control->GetSection("serial"), "serial1", ((DBP_Option::Get(DBP_Option::modem)[0] == 'n') ? "libretro null" : "libretro"));
 
-	retro_set_visibility("dosbox_pure_svga", machine_is_svga);
-	retro_set_visibility("dosbox_pure_svgamem", machine_is_svga);
-	retro_set_visibility("dosbox_pure_voodoo", machine_is_svga);
-	retro_set_visibility("dosbox_pure_voodoo_perf", machine_is_svga);
-	retro_set_visibility("dosbox_pure_voodoo_gamma", machine_is_svga);
-	retro_set_visibility("dosbox_pure_voodoo_scale", machine_is_svga);
+	DBP_Option::SetDisplay(DBP_Option::svga, machine_is_svga);
+	DBP_Option::SetDisplay(DBP_Option::svgamem, machine_is_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo, machine_is_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo_perf, machine_is_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo_gamma, machine_is_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo_scale, machine_is_svga);
 	if (machine_is_svga)
 	{
-		Variables::DosBoxSet("pci", "voodoo", retro_get_variable("dosbox_pure_voodoo", "8mb"), true, true);
-		const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "auto");
-		Variables::DosBoxSet("pci", "voodoo_perf", (voodoo_perf[0] == 'a' ? "4" : voodoo_perf)); // "4" falls back to multi-threaded without OpenGL
+		Section& sec_pci = *control->GetSection("pci");
+		DBP_Option::GetAndApply(sec_pci, "voodoo", DBP_Option::voodoo, true, true);
+		const char* voodoo_perf = DBP_Option::Get(DBP_Option::voodoo_perf);
+		DBP_Option::Apply(sec_pci, "voodoo_perf", (voodoo_perf[0] == 'a' ? "4" : voodoo_perf)); // "4" falls back to multi-threaded without OpenGL
 		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE && (atoi(voodoo_perf) & 0x4))
 			retro_notify(0, RETRO_LOG_WARN, "To enable OpenGL hardware rendering, close and re-open.");
-		Variables::DosBoxSet("pci", "voodoo_gamma", retro_get_variable("dosbox_pure_voodoo_gamma", "-2"));
-		Variables::DosBoxSet("pci", "voodoo_scale", retro_get_variable("dosbox_pure_voodoo_scale", "1"));
+		DBP_Option::GetAndApply(sec_pci, "voodoo_gamma", DBP_Option::voodoo_gamma);
+		DBP_Option::GetAndApply(sec_pci, "voodoo_scale", DBP_Option::voodoo_scale);
 	}
 
-	retro_set_visibility("dosbox_pure_cga", machine_is_cga);
+	DBP_Option::SetDisplay(DBP_Option::cga, machine_is_cga);
 	if (machine_is_cga)
 	{
-		const char* cga = retro_get_variable("dosbox_pure_cga", "early_auto");
+		const char* cga = DBP_Option::Get(DBP_Option::cga);
 		bool cga_new_model = false;
 		const char* cga_mode = NULL;
 		if (!memcmp(cga, "early_", 6)) { cga_new_model = false; cga_mode = cga + 6; }
@@ -2968,20 +2974,21 @@ static bool check_variables()
 		DBP_CGA_SetModelAndComposite(cga_new_model, (!cga_mode || cga_mode[0] == 'a' ? 0 : ((cga_mode[0] == 'o' && cga_mode[1] == 'n') ? 1 : 2)));
 	}
 
-	retro_set_visibility("dosbox_pure_hercules", machine_is_hercules);
+	DBP_Option::SetDisplay(DBP_Option::hercules, machine_is_hercules);
 	if (machine_is_hercules)
 	{
-		const char herc_mode = retro_get_variable("dosbox_pure_hercules", "white")[0];
+		const char herc_mode = DBP_Option::Get(DBP_Option::hercules)[0];
 		DBP_Hercules_SetPalette(herc_mode == 'a' ? 1 : (herc_mode == 'g' ? 2 : 0));
 	}
 
-	const char* dbp_aspectratio = retro_get_variable("dosbox_pure_aspect_correction", "false");
-	Variables::DosBoxSet("render", "aspect", (dbp_aspectratio[0] == 'f' ? "false" : "true"));
+	const char* dbp_aspectratio = DBP_Option::Get(DBP_Option::aspect_correction);
+	DBP_Option::Apply(sec_render, "aspect", (dbp_aspectratio[0] == 'f' ? "false" : "true"));
 	dbp_padding = (dbp_aspectratio[0] == 'p');
 	dbp_doublescan = (dbp_aspectratio[0] == 'd' || (dbp_padding && !strcmp(dbp_aspectratio, "padded-doublescan")));
-	dbp_overscan = (unsigned char)atoi(retro_get_variable("dosbox_pure_overscan", "0"));
+	dbp_overscan = (unsigned char)atoi(DBP_Option::Get(DBP_Option::overscan));
 
-	const char* sblaster_conf = retro_get_variable("dosbox_pure_sblaster_conf", "A220 I7 D1 H5");
+	bool sblaster_changed = false;
+	const char* sblaster_conf = DBP_Option::Get(DBP_Option::sblaster_conf, &sblaster_changed);
 	static const char sb_attribs[] = { 'A', 'I', 'D', 'H' };
 	static const char* sb_props[] = { "sbbase", "irq", "dma", "hdma" };
 	for (int i = 0; i != 4; i++)
@@ -2992,35 +2999,34 @@ static bool check_variables()
 		if (plen >= sizeof(buf)) continue;
 		memcpy(buf, p, plen);
 		buf[plen] = '\0';
-		Variables::DosBoxSet("sblaster", sb_props[i], buf);
+		DBP_Option::Apply(sec_sblaster, sb_props[i], buf, false, false, sblaster_changed);
 	}
 
 	std::string soundfontpath;
 	if (!*midi || !strcmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
 	else if (strcmp(midi, "frontend") && strcmp(midi, "scan"))
 		midi = (soundfontpath = DBP_GetSaveFile(SFT_SYSTEMDIR)).append(midi).c_str();
-	Variables::DosBoxSet("midi", "midiconfig", midi);
-	Variables::DosBoxSet("midi", "mpu401", (*midi ? "intelligent" : "none"));
+	DBP_Option::Apply(sec_midi, "midiconfig", midi, false, false, midi_changed);
+	DBP_Option::Apply(sec_midi, "mpu401", (*midi ? "intelligent" : "none"), false, false, midi_changed);
 
-	Variables::DosBoxSet("sblaster", "sbtype", retro_get_variable("dosbox_pure_sblaster_type", "sb16"));
-	Variables::DosBoxSet("sblaster", "oplmode", retro_get_variable("dosbox_pure_sblaster_adlib_mode", "auto"));
-	Variables::DosBoxSet("sblaster", "oplemu", retro_get_variable("dosbox_pure_sblaster_adlib_emu", "default"));
-	Variables::DosBoxSet("gus", "gus", retro_get_variable("dosbox_pure_gus", "false"));
-	Variables::DosBoxSet("speaker", "tandy", retro_get_variable("dosbox_pure_tandysound", "auto"));
-
-	Variables::DosBoxSet("joystick", "timed", retro_get_variable("dosbox_pure_joystick_timed", "true"));
+	DBP_Option::GetAndApply(sec_sblaster, "sbtype",  DBP_Option::sblaster_type);
+	DBP_Option::GetAndApply(sec_sblaster, "oplmode", DBP_Option::sblaster_adlib_mode);
+	DBP_Option::GetAndApply(sec_sblaster, "oplemu",  DBP_Option::sblaster_adlib_emu);
+	DBP_Option::GetAndApply(sec_gus,      "gus",     DBP_Option::gus);
+	DBP_Option::GetAndApply(sec_speaker,  "tandy",   DBP_Option::tandysound);
+	DBP_Option::GetAndApply(sec_joystick, "timed",   DBP_Option::joystick_timed);
 
 	// Keyboard layout can't be change in protected mode (extracting keyboard layout doesn't work when EMS/XMS is in use)
-	Variables::DosBoxSet("dos", "keyboardlayout", retro_get_variable("dosbox_pure_keyboard_layout", "us"), true);
+	DBP_Option::GetAndApply(sec_dos, "keyboardlayout", DBP_Option::keyboard_layout, true);
 
-	const char* mouse_wheel = retro_get_variable("dosbox_pure_mouse_wheel", "67/68");
+	const char* mouse_wheel = DBP_Option::Get(DBP_Option::mouse_wheel);
 	const char* mouse_wheel2 = (mouse_wheel ? strchr(mouse_wheel, '/') : NULL);
 	int wkey1 = (mouse_wheel ? atoi(mouse_wheel) : 0);
 	int wkey2 = (mouse_wheel2 ? atoi(mouse_wheel2 + 1) : 0);
 	Bit16s bind_mousewheel = (wkey1 > KBD_NONE && wkey1 < KBD_LAST && wkey2 > KBD_NONE && wkey2 < KBD_LAST ? DBP_MAPPAIR_MAKE(wkey1, wkey2) : 0);
 
-	bool on_screen_keyboard = (retro_get_variable("dosbox_pure_on_screen_keyboard", "true")[0] != 'f');
-	char mouse_input = retro_get_variable("dosbox_pure_mouse_input", "true")[0];
+	bool on_screen_keyboard = (DBP_Option::Get(DBP_Option::on_screen_keyboard)[0] != 'f');
+	char mouse_input = DBP_Option::Get(DBP_Option::mouse_input)[0];
 	if (on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 	{
 		dbp_on_screen_keyboard = on_screen_keyboard;
@@ -3028,11 +3034,11 @@ static bool check_variables()
 		dbp_bind_mousewheel = bind_mousewheel;
 		if (dbp_state > DBPSTATE_SHUTDOWN) DBP_PadMapping::SetInputDescriptors(true);
 	}
-	dbp_alphablend_base = (Bit8u)((atoi(retro_get_variable("dosbox_pure_menu_transparency", "50")) + 30) * 0xFF / 130);
-	dbp_mouse_speed = (float)atof(retro_get_variable("dosbox_pure_mouse_speed_factor", "1.0"));
-	dbp_mouse_speed_x = (float)atof(retro_get_variable("dosbox_pure_mouse_speed_factor_x", "1.0"));
+	dbp_alphablend_base = (Bit8u)((atoi(DBP_Option::Get(DBP_Option::menu_transparency)) + 30) * 0xFF / 130);
+	dbp_mouse_speed = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor));
+	dbp_mouse_speed_x = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor_x));
 
-	dbp_joy_analog_deadzone = (int)((float)atoi(retro_get_variable("dosbox_pure_joystick_analog_deadzone", "15")) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
+	dbp_joy_analog_deadzone = (int)((float)atoi(DBP_Option::Get(DBP_Option::joystick_analog_deadzone)) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 
 	return visibility_changed;
 }
@@ -3093,6 +3099,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		dbp_serializesize = 0;
 		dbp_audio_remain = 0;
 		DBP_SetIntercept(NULL);
+		if (firsttime) dbp_images.clear();
 		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
 	}
 
@@ -3103,7 +3110,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
 	bool skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 4));
-	const bool force_puremenu = (dbp_biosreboot || forcemenu);
+	const bool force_puremenu = ((dbp_biosreboot && !firsttime) || forcemenu);
 	if (skip_c_mount && !dbconf)
 	{
 		std::string confcontent;
@@ -3113,10 +3120,10 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 	control = new Config();
 	DOSBOX_Init();
-	check_variables();
 	Section* autoexec = control->GetSection("autoexec");
 	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec, force_puremenu, skip_c_mount);
 	DBP_Run::PreInit();
+	check_variables();
 	dbp_boot_time = time_cb();
 	control->Init();
 	PROGRAMS_MakeFile("PUREMENU.COM", DBP_PureMenuProgram);
@@ -3318,7 +3325,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		else
 		{
 			// Boot into puremenu, it will take care of further auto start options
-			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
+			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || (dbp_biosreboot && !firsttime)) ? " -BOOT" : "")) += '\n';
 		}
 		autoexec->ExecuteInit();
 
@@ -3549,7 +3556,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 		return false;
 	}
 
-	const char* voodoo_perf = retro_get_variable("dosbox_pure_voodoo_perf", "auto");
+	const char* voodoo_perf = DBP_Option::Get(DBP_Option::voodoo_perf);
 	if (voodoo_perf[0] == 'a' || voodoo_perf[0] == '4') // 3dfx wants to use OpenGL, request hardware render context
 	{
 		static struct sglproc { retro_proc_address_t& ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
@@ -3805,7 +3812,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info) // #5
 	}
 	DBP_ASSERT(render.src.fps > 10.0); // validate initialized video mode after first frame
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];
-	const Bit32u vscale = (Bit32u)atoi(retro_get_variable("dosbox_pure_voodoo_scale", "1")), vscale2 = (vscale < 16 ? vscale : 1), vw = 640 * vscale2, vh = 480 * vscale2;
+	const Bit32u vscale = (Bit32u)atoi(DBP_Option::Get(DBP_Option::voodoo_scale)), vscale2 = (vscale < 16 ? vscale : 1), vw = 640 * vscale2, vh = 480 * vscale2;
 	av_info.geometry.max_width = (buf.width > 1024 ? buf.width : 1024);
 	av_info.geometry.max_height = (buf.height > 1024 ? buf.height : 1024);
 	if (vw > av_info.geometry.max_width) av_info.geometry.max_width = vw;
@@ -3833,7 +3840,7 @@ void retro_set_controller_port_device(unsigned port, unsigned device) //#5
 void retro_reset(void)
 {
 	// Calling input_state_cb before the first frame can be fatal (RetroArch would crash), but during retro_reset it should be fine
-	init_dosbox(false, input_state_cb && (
+	init_dosbox(dbp_content_name.empty(), input_state_cb && (
 		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LSHIFT) ||
 		input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RSHIFT) ||
 		input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2) ||

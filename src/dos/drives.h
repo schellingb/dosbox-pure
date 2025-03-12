@@ -648,6 +648,7 @@ template <typename TVal> struct StringToObjectHashMap : public StringToPointerHa
 	}
 	INLINE const std::vector<TVal>& GetStorage() { return storage; }
 	INLINE int GetStorageIndex(const TVal* v) { return (int)(v - &storage[0]); }
+	INLINE void Clear() { storage.clear(); StringToPointerHashMap<TVal>::Clear(); }
 	private: std::vector<TVal> storage; bool Put(const char*, TVal*, Bit32u, Bit32u);
 };
 
@@ -834,6 +835,7 @@ public:
 	static std::string dos_yml;
 	static StringToObjectHashMap<std::string> variants;
 	static bool ActivateVariant(int variant_number, bool ymlonly = false);
+	static void ResetVariants();
 private:
 	struct patchDriveImpl* impl;
 };

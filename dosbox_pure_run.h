@@ -231,7 +231,7 @@ struct DBP_Run
 			{
 				Bit32u save_hash = 0;
 				DBP_SetDriveLabelFromContentPath(Drives['C'-'A'], dbp_content_path.c_str(), 'C', NULL, NULL, true);
-				const char* dfreespace = retro_get_variable("dosbox_pure_bootos_dfreespace", "1024"); // can also be "discard" or "hide"
+				const char* dfreespace = DBP_Option::Get(DBP_Option::bootos_dfreespace); // can also be "discard" or "hide"
 				if (dfreespace && dfreespace[0] != 'h')
 				{
 					std::string save_path = DBP_GetSaveFile(SFT_VIRTUALDISK, NULL, &save_hash); // always call to fill out save_hash and dbp_vdisk_filter
@@ -241,7 +241,7 @@ struct DBP_Run
 			}
 
 			// Ramdisk setting must be false while installing os
-			char ramdisk = (is_install ? 'f' : retro_get_variable("dosbox_pure_bootos_ramdisk", "false")[0]);
+			char ramdisk = (is_install ? 'f' : DBP_Option::Get(DBP_Option::bootos_ramdisk)[0]);
 
 			// Now mount OS hard disk image as C: drive
 			if (BatchFileBoot::MountOSIMG('C', path.c_str(), "OS image", (ramdisk == 'f'), true) && ramdisk == 'd')
@@ -276,7 +276,7 @@ struct DBP_Run
 		Section* section = control->GetSection("cpu");
 		section->ExecuteDestroy(false);
 		section->HandleInputline("cputype=pentium_slow");
-		if (retro_get_variable("dosbox_pure_bootos_forcenormal", "false")[0] == 't') section->HandleInputline("core=normal");
+		if (DBP_Option::Get(DBP_Option::bootos_forcenormal)[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
 		section->GetProp("cputype")->MarkFixed();
 		if (dbp_content_year < 1993 && (CPU_CycleAutoAdjust || (CPU_AutoDetermineMode & (CPU_AUTODETERMINE_CYCLES|(CPU_AUTODETERMINE_CYCLES<<CPU_AUTODETERMINE_SHIFT))))) DBP_SetCyclesByYear(1993, 1993);
@@ -312,10 +312,10 @@ struct DBP_Run
 	}
 
 	enum EMode : Bit8u { RUN_NONE, RUN_EXEC, RUN_BOOTIMG, RUN_BOOTOS, RUN_INSTALLOS, RUN_SHELL, RUN_VARIANT, RUN_COMMANDLINE };
-	static struct Startup { EMode mode; bool reboot; int info; std::string exec; } startup;
-	static struct Autoboot { Startup startup; bool have, use; int skip; Bit32u hash; } autoboot;
-	static struct Autoinput { std::string str; const char* ptr; Bit32s oldcycles; Bit8u oldchange; Bit16s oldyear; } autoinput;
-	static struct Patch { int enabled_variant; bool show_default; } patch;
+	static struct Startup { EMode mode = RUN_NONE; bool reboot = false; int info = 0; std::string exec; } startup;
+	static struct Autoboot { Startup startup; bool have = false, use = false; int skip = 0; Bit32u hash = 0; } autoboot;
+	static struct Autoinput { std::string str; const char* ptr = NULL; Bit32s oldcycles = 0; Bit8u oldchange = 0; Bit16s oldyear = 0; } autoinput;
+	static struct Patch { int enabled_variant = 0; bool show_default = false; } patch;
 
 	static bool Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{

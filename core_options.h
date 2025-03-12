@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2023 Bernhard Schelling
+ *  Copyright (C) 2020-2025 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,33 +16,105 @@
  *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+namespace DBP_OptionCat
+{
+	static const char* Emulation   = "Emulation";
+	static const char* Input       = "Input";
+	static const char* Performance = "Performance";
+	static const char* Video       = "Video";
+	static const char* System      = "System";
+	static const char* Audio       = "Audio";
+};
+
 static retro_core_option_v2_category option_cats[] =
 {
-	{ "Emulation",   "Emulation",   "Core specific settings (latency, save states, start menu)." },
-	{ "Input",       "Input",       "Keyboard, mouse and joystick settings." },
-	{ "Performance", "Performance", "Adjust the performance of the emulated CPU." },
-	{ "Video",       "Video",       "Settings for the emulated graphics card and aspect ratio." },
-	{ "System",      "System",      "Other system settings for the emulated RAM and CPU." },
-	{ "Audio",       "Audio",       "MIDI, SoundBlaster and other audio settings." },
+	{ DBP_OptionCat::Emulation,   DBP_OptionCat::Emulation,   "Core specific settings (latency, save states, start menu)." },
+	{ DBP_OptionCat::Input,       DBP_OptionCat::Input,       "Keyboard, mouse and joystick settings." },
+	{ DBP_OptionCat::Performance, DBP_OptionCat::Performance, "Adjust the performance of the emulated CPU." },
+	{ DBP_OptionCat::Video,       DBP_OptionCat::Video,       "Settings for the emulated graphics card and aspect ratio." },
+	{ DBP_OptionCat::System,      DBP_OptionCat::System,      "Other hardware emulation settings for RAM, CPU and OS." },
+	{ DBP_OptionCat::Audio,       DBP_OptionCat::Audio,       "MIDI, SoundBlaster and other audio settings." },
 	{ NULL, NULL, NULL }
 };
 
-static retro_core_option_v2_definition option_defs[] =
+namespace DBP_Option
 {
+	enum Index
 	{
-		"dosbox_pure_advanced",
-		"Show Advanced Options", NULL,
-		"Close and re-open the menu to refresh this options page.", NULL,
-		NULL,
-		{ { "false", "Off" }, { "true", "On" } },
-		"false"
-	},
+		// Emulation
+		force60fps,
+		savestate,
+		strict_mode,
+		conf,
+		menu_time,
+		menu_transparency,
+		latency,
+		auto_target,
+		// Input
+		on_screen_keyboard,
+		mouse_input,
+		mouse_wheel,
+		mouse_speed_factor,
+		mouse_speed_factor_x,
+		actionwheel_inputs,
+		auto_mapping,
+		keyboard_layout,
+		joystick_analog_deadzone,
+		joystick_timed,
+		// Performance
+		cycles,
+		cycles_max,
+		cycles_scale,
+		cycle_limit,
+		perfstats,
+		// Video
+		machine,
+		cga,
+		hercules,
+		svga,
+		svgamem,
+		voodoo,
+		voodoo_perf,
+		voodoo_scale,
+		voodoo_gamma,
+		aspect_correction,
+		overscan,
+		// System
+		memory_size,
+		modem,
+		cpu_type,
+		cpu_core,
+		bootos_ramdisk,
+		bootos_dfreespace,
+		bootos_forcenormal,
+		// Audio
+		audiorate,
+		sblaster_conf,
+		midi,
+		sblaster_type,
+		sblaster_adlib_mode,
+		sblaster_adlib_emu,
+		gus,
+		tandysound,
+		swapstereo,
+		_OPTIONS_NULL_TERMINATOR, _OPTIONS_TOTAL,
+	};
+
+	const char* Get(Index idx, bool* was_modified = NULL);
+	bool Apply(Section& section, const char* var_name, const char* new_value, bool disallow_in_game = false, bool need_restart = false, bool user_modified = false);
+	bool GetAndApply(Section& section, const char* var_name, Index idx, bool disallow_in_game = false, bool need_restart = false);
+	void SetDisplay(Index idx, bool visible);
+	bool GetHidden(const retro_core_option_v2_definition& d);
+};
+
+static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
+{
 	// Emulation
 	{
 		"dosbox_pure_force60fps",
 		"Force 60 FPS Output", NULL,
 		"Enable this to force output at 60FPS. Use this if you encounter screen tearing or vsync issues.", NULL,
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			{ "false", "Off" },
 			{ "true", "On" },
@@ -50,24 +122,12 @@ static retro_core_option_v2_definition option_defs[] =
 		"false"
 	},
 	{
-		"dosbox_pure_perfstats",
-		"Show Performance Statistics", NULL,
-		"Enable this to show statistics about performance and framerate and check if emulation runs at full speed.", NULL,
-		"Emulation",
-		{
-			{ "none",     "Disabled" },
-			{ "simple",   "Simple" },
-			{ "detailed", "Detailed information" },
-		},
-		"none"
-	},
-	{
 		"dosbox_pure_savestate",
 		"Save States Support", NULL,
 		"Make sure to test it in each game before using it. Complex late era DOS games might have problems." "\n"
 		"Be aware that states saved with different video, CPU or memory settings are not loadable." "\n"
 		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer.", NULL,
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			{ "on",       "Enable save states" },
 			{ "rewind",   "Enable save states with rewind" },
@@ -79,7 +139,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_strict_mode",
 		"Advanced > Use Strict Mode", NULL,
 		"Disable the command line, running installed operating systems and using .BAT/.COM/.EXE/DOS.YML files from the save game.", NULL,
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			{ "false", "Off" },
 			{ "true", "On" },
@@ -90,7 +150,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_conf",
 		"Advanced > Loading of dosbox.conf", NULL,
 		"DOSBox Pure is meant to be configured via core options but optionally supports loading of legacy .conf files.", NULL,
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			{ "false", "Disabled conf support (default)" },
 			{ "inside", "Try 'dosbox.conf' in the loaded content (ZIP or folder)" },
@@ -103,7 +163,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Advanced > Start Menu", NULL,
 		"Set the behavior of the start menu before and after launching a game." "\n"
 		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'.", NULL,
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			{ "99", "Show at start, show again after game exit (default)" },
 #ifndef STATIC_LINKING
@@ -116,11 +176,21 @@ static retro_core_option_v2_definition option_defs[] =
 		"99"
 	},
 	{
+		"dosbox_pure_menu_transparency",
+		"Advanced > Menu Transparency", NULL,
+		"Set the transparency level of the On Screen Keyboard and the Gamepad Mapper.", NULL,
+		DBP_OptionCat::Emulation,
+		{
+			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
+		},
+		"70"
+	},
+	{
 		"dosbox_pure_latency",
 		"Advanced > Input Latency", NULL,
 		"By default the core operates in a high performance mode with good input latency." "\n"
 		"There is a special mode available which minimizes input latency further requiring manual tweaking.", NULL,
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			{ "default", "Default" },
 			{ "low", "Lowest latency - See CPU usage setting below!" },
@@ -134,7 +204,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"In low latency mode when emulating DOS as fast as possible, how much time per frame should be used by the emulation." "\n"
 		"If the video is stuttering, lower this or improve render performance in the frontend (for example by disabling vsync or video processing)." "\n"
 		"Use the performance statistics to easily find the maximum that still hits the emulated target framerate." "\n\n", NULL, //end of Emulation > Advanced section
-		"Emulation",
+		DBP_OptionCat::Emulation,
 		{
 			//{ "0.2", "20%" }, { "0.21", "21%" }, { "0.22", "22%" }, { "0.23", "23%" }, { "0.24", "24%" }, { "0.25", "25%" }, { "0.26", "26%" }, { "0.27", "27%" }, { "0.28", "28%" }, { "0.29", "29%" },
 			//{ "0.3", "30%" }, { "0.31", "31%" }, { "0.32", "32%" }, { "0.33", "33%" }, { "0.34", "34%" }, { "0.35", "35%" }, { "0.36", "36%" }, { "0.37", "37%" }, { "0.38", "38%" }, { "0.39", "39%" },
@@ -146,7 +216,7 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "0.9", "90%" }, { "0.91", "91%" }, { "0.92", "92%" }, { "0.93", "93%" }, { "0.94", "94%" }, { "0.95", "95%" }, { "0.96", "96%" }, { "0.97", "97%" }, { "0.98", "98%" }, { "0.99", "99%" },
 			{ "1.0", "100%" },
 		},
-		"0.9",
+		"0.8",
 	},
 
 	// Input
@@ -154,7 +224,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_on_screen_keyboard",
 		"Enable On Screen Keyboard", NULL,
 		"Enable the On Screen Keyboard feature which can be activated with the L3 button on the controller.", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{ { "true", "On" }, { "false", "Off" } },
 		"true"
 	},
@@ -163,7 +233,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Mouse Input Mode", NULL,
 		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work)." "\n"
 		"In touchpad mode use drag to move, tap to click, two finger tap to right-click and press-and-hold to drag", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{
 #if defined(ANDROID) || defined(DBP_IOS) || defined(HAVE_LIBNX) || defined(_3DS) || defined(WIIU) || defined(VITA)
 			{ "pad", "Touchpad mode (default, see description, best for touch screens)" },
@@ -182,7 +252,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_mouse_wheel",
 		"Bind Mouse Wheel To Key", NULL,
 		"Bind mouse wheel up and down to two keyboard keys to be able to use it in DOS games.", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{
 			{ "67/68", "Left-Bracket/Right-Bracket" },
 			{ "72/71", "Comma/Period" },
@@ -204,7 +274,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_mouse_speed_factor",
 		"Mouse Sensitivity", NULL,
 		"Sets the overall mouse cursor movement speed." "\n\n", NULL, //end of Input section
-		"Input",
+		DBP_OptionCat::Input,
 		{
 			{ "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" },
 			{ "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" },
@@ -220,7 +290,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_mouse_speed_factor_x",
 		"Advanced > Horizontal Mouse Sensitivity.", NULL,
 		"Experiment with this value if the mouse is too fast/slow when moving left/right.", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{
 			{ "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" },
 			{ "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" },
@@ -236,7 +306,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_actionwheel_inputs",
 		"Advanced > Action Wheel Inputs", NULL,
 		"Sets which inputs control the action wheel.", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{
 			{ "14", "Right Stick, D-Pad, Mouse (Default)" }, { "6",  "Right Stick, D-Pad" }, { "10", "Right Stick, Mouse" }, { "2",  "Right Stick" },
 			{ "15", "Both Sticks, D-Pad, Mouse" }, { "7",  "Both Sticks, D-Pad" }, { "11", "Both Sticks, Mouse" }, { "3",  "Both Sticks" },
@@ -250,7 +320,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Advanced > Automatic Game Pad Mappings", NULL,
 		"DOSBox Pure can automatically apply a gamepad control mapping scheme when it detects a game." "\n"
 		"These button mappings are provided by the Keyb2Joypad Project (by Jemy Murphy and bigjim).", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{ { "true", "On (default)" }, { "notify", "Enable with notification on game detection" }, { "false", "Off" } },
 		"true"
 	},
@@ -258,7 +328,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_keyboard_layout",
 		"Advanced > Keyboard Layout", NULL,
 		"Select the keyboard layout (will not change the On Screen Keyboard).", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{
 			{ "us",    "US (default)" },
 			{ "uk",    "UK" },
@@ -290,20 +360,10 @@ static retro_core_option_v2_definition option_defs[] =
 		"us"
 	},
 	{
-		"dosbox_pure_menu_transparency",
-		"Advanced > Menu Transparency", NULL,
-		"Set the transparency level of the On Screen Keyboard and the Gamepad Mapper.", NULL,
-		"Input",
-		{
-			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
-		},
-		"70"
-	},
-	{
 		"dosbox_pure_joystick_analog_deadzone",
 		"Advanced > Joystick Analog Deadzone", NULL,
 		"Set the deadzone of the joystick analog sticks. May be used to eliminate drift caused by poorly calibrated joystick hardware.", NULL,
-		"Input",
+		DBP_OptionCat::Input,
 		{
 			{ "0",  "0%" }, { "5",  "5%" }, { "10", "10%" }, { "15", "15%" }, { "20", "20%" }, { "25", "25%" }, { "30", "30%" }, { "35", "35%" }, { "40", "40%" },
 		},
@@ -313,7 +373,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_joystick_timed",
 		"Advanced > Enable Joystick Timed Intervals", NULL,
 		"Enable timed intervals for joystick axes. Experiment with this option if your joystick drifts." "\n\n", NULL, //end of Input > Advanced section
-		"Input",
+		DBP_OptionCat::Input,
 		{ { "true", "On (default)" }, { "false", "Off" } },
 		"true"
 	},
@@ -323,7 +383,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_cycles",
 		"Emulated Performance", NULL,
 		"The raw performance that DOSBox will try to emulate." "\n\n", NULL, //end of Performance section
-		"Performance",
+		DBP_OptionCat::Performance,
 		{
 			{ "auto",    "AUTO - DOSBox will try to detect performance needs (default)" },
 			{ "max",     "MAX - Emulate as many instructions as possible" },
@@ -345,7 +405,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_cycles_max",
 		"Detailed > Maximum Emulated Performance", NULL,
 		"With dynamic CPU speed (AUTO or MAX above), the maximum emulated performance level.", NULL,
-		"Performance",
+		DBP_OptionCat::Performance,
 		{
 			{ "none",    "Unlimited" },
 			{ "315",     "8086/8088, 4.77 MHz from 1980 (315 cps)" },
@@ -366,7 +426,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_cycles_scale",
 		"Detailed > Performance Scale", NULL,
 		"Fine tune the emulated performance for specific needs.", NULL,
-		"Performance",
+		DBP_OptionCat::Performance,
 		{
 			{ "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" },
 			{ "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" },
@@ -383,7 +443,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Detailed > Limit CPU Usage", NULL,
 		"When emulating DOS as fast as possible, how much time per frame should be used by the emulation." "\n"
 		"Lower this if your device becomes hot while using this core." "\n\n", NULL, //end of Performance > Detailed section
-		"Performance",
+		DBP_OptionCat::Performance,
 		{
 			//{ "0.2", "20%" }, { "0.21", "21%" }, { "0.22", "22%" }, { "0.23", "23%" }, { "0.24", "24%" }, { "0.25", "25%" }, { "0.26", "26%" }, { "0.27", "27%" }, { "0.28", "28%" }, { "0.29", "29%" },
 			//{ "0.3", "30%" }, { "0.31", "31%" }, { "0.32", "32%" }, { "0.33", "33%" }, { "0.34", "34%" }, { "0.35", "35%" }, { "0.36", "36%" }, { "0.37", "37%" }, { "0.38", "38%" }, { "0.39", "39%" },
@@ -397,13 +457,25 @@ static retro_core_option_v2_definition option_defs[] =
 		},
 		"1.0",
 	},
+	{
+		"dosbox_pure_perfstats",
+		"Advanced > Show Performance Statistics", NULL,
+		"Enable this to show statistics about performance and framerate and check if emulation runs at full speed.", NULL,
+		DBP_OptionCat::Performance,
+		{
+			{ "none",     "Disabled" },
+			{ "simple",   "Simple" },
+			{ "detailed", "Detailed information" },
+		},
+		"none"
+	},
 
 	// Video
 	{
 		"dosbox_pure_machine",
 		"Emulated Graphics Chip (restart required)", NULL,
 		"The type of graphics chip that DOSBox will emulate.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "svga",     "SVGA (Super Video Graphics Array) (default)" },
 			{ "vga",      "VGA (Video Graphics Array)" },
@@ -419,7 +491,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_cga",
 		"CGA Mode", NULL,
 		"The CGA variation that is being emulated.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "early_auto", "Early model, composite mode auto (default)" },
 			{ "early_on",   "Early model, composite mode on" },
@@ -434,7 +506,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_hercules",
 		"Hercules Color Mode", NULL,
 		"The color scheme for Hercules emulation.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "white", "Black & white (default)" },
 			{ "amber", "Black & amber" },
@@ -446,7 +518,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_svga",
 		"SVGA Mode (restart required)", NULL,
 		"The SVGA variation that is being emulated. Try changing this if you encounter graphical glitches.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "svga_s3",       "S3 Trio64 (default)" },
 			{ "vesa_nolfb",    "S3 Trio64 no-line buffer hack (reduces flickering in some games)" },
@@ -461,7 +533,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_svgamem",
 		"SVGA Memory (restart required)", NULL,
 		"The amount of memory available to the emulated SVGA card.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "0",  "512KB" },
 			{ "1", "1MB" },
@@ -477,7 +549,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"3dfx Voodoo Emulation", NULL,
 		"Enables certain games with support for the Voodoo 3D accelerator." "\n"
 		"3dfx Voodoo Graphics SST-1/2 emulator by Aaron Giles and the MAME team (license: BSD-3-Clause)", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "8mb", "Enabled - 8MB memory (default)" },
 			{ "12mb", "Enabled - 12MB memory, Dual Texture" },
@@ -493,7 +565,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Switching to OpenGL requires a restart." "\n"
 		"If OpenGL is available, host-side 3D acceleration is used which can make 3D rendering much faster.\n"
 		"Auto will use OpenGL if it is the active video driver in the frontend.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "auto", "Auto (default)" },
 			{ "4", "Hardware OpenGL" },
@@ -508,7 +580,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_voodoo_scale",
 		"3dfx Voodoo OpenGL Scaling", NULL,
 		"Increase the native resolution of the rendered image.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "1", "1x" }, { "2", "2x" }, { "3", "3x" }, { "4", "4x" }, { "5", "5x" }, { "6", "6x" }, { "7", "7x" }, { "8", "8x" },
 		},
@@ -518,7 +590,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_voodoo_gamma",
 		"3dfx Voodoo Gamma Correction", NULL,
 		"Change brightness of rendered 3dfx output.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "-10", "-10" }, { "-9", "-9" }, { "-8", "-8" }, { "-7", "-7" }, { "-6", "-6" }, { "-5", "-5" }, { "-4", "-4" }, { "-3", "-3" }, { "-2", "-2" }, { "-1", "-1" },
 			{ "0", "None" },
@@ -531,7 +603,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
 		"Adjust the core's aspect ratio to approximate what a CRT monitor would display.", NULL,
-		"Video",
+		DBP_OptionCat::Video,
 		{
 			{ "false", "Off (default)" },
 			{ "true", "On (single-scan)" },
@@ -545,7 +617,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_overscan",
 		"Overscan Border Size", NULL,
 		"When enabled, show a border around the display. Some games use the color of the border to convey information." "\n\n", NULL, //end of Video section
-		"Video",
+		DBP_OptionCat::Video,
 		{ { "0", "Off (default)" }, { "1", "Small" }, { "2", "Medium" }, { "3", "Large" } },
 		"0"
 	},
@@ -556,7 +628,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Memory Size (restart required)", NULL,
 		"The amount of (high) memory that the emulated machine has. You can also disable extended memory (EMS/XMS)." "\n"
 		"Using more than the default is not recommended, due to incompatibility with certain games and applications.", NULL,
-		"System",
+		DBP_OptionCat::System,
 		{
 			{ "none", "Disable extended memory (no EMS/XMS)" },
 			{ "4",  "4 MB" },
@@ -579,7 +651,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_modem",
 		"Modem Type", NULL,
 		"Type of emulated modem on COM1 for netplay. With the dial-up modem, one side needs to dial any number to connect.", NULL,
-		"System",
+		DBP_OptionCat::System,
 		{
 			{ "null", "Null Modem (Direct Serial)" },
 			{ "dial", "Dial-Up Modem (Hayes Standard)" },
@@ -594,7 +666,7 @@ static retro_core_option_v2_definition option_defs[] =
 			"386 (prefetch): X-Men: Madness in The Murderworld, Terminator 1, Contra, Fifa International Soccer 1994" "\n"
 			"486 (slow): Betrayal in Antara" "\n"
 			"Pentium (slow): Fifa International Soccer 1994, Windows 95/Windows 3.x games" "\n\n", NULL, //end of System section
-		"System",
+		DBP_OptionCat::System,
 		{
 			{ "auto", "Auto - Mixed feature set with maximum performance and compatibility" },
 			{ "386", "386 - 386 instruction with fast memory access" },
@@ -609,7 +681,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_cpu_core",
 		"Advanced > CPU Core", NULL,
 		"Emulation method (DOSBox CPU core) used.", NULL,
-		"System",
+		DBP_OptionCat::System,
 		{
 			#if defined(C_DYNAMIC_X86)
 			{ "auto", "Auto - Real-mode games use normal, protected-mode games use dynamic" },
@@ -633,7 +705,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"When running an installed operating system, modifications to the C: drive will be made on the disk image by default." "\n"
 		"Setting it to 'Discard' allows the content to be closed any time without worry of file system or registry corruption." "\n"
 		"When using 'Save Difference Per Content' the disk image must never be modified again, otherwise existing differences become unusable.", NULL,
-		"System",
+		DBP_OptionCat::System,
 		{
 			{ "false", "Keep (default)" },
 			{ "true", "Discard" },
@@ -647,7 +719,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Controls the amount of free space available on the D: drive when running an installed operating system." "\n"
 		"If the total size of the D: drive (data + free space) exceeds 2 GB, it can't be used in earlier versions of Windows 95." "\n"
 		"WARNING: Created save files are tied to this setting, so changing this will hide all existing D: drive changes.", NULL,
-		"System",
+		DBP_OptionCat::System,
 		{ { "1024", "1GB (default)" }, { "2048", "2GB" }, { "4096", "4GB" }, { "8192", "8GB" }, { "discard", "Discard Changes to D:" }, { "hide", "Disable D: Hard Disk (use only CD-ROM)" } },
 		"1024"
 	},
@@ -656,7 +728,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Advanced > Force Normal Core in OS", NULL,
 		"The normal core can be more stable when running an installed operating system." "\n"
 		"This can be toggled on and off to navigate around crashes." "\n\n", NULL, //end of System > Advanced section
-		"System",
+		DBP_OptionCat::System,
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
 	},
@@ -666,7 +738,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_audiorate",
 		"Audio Sample Rate (restart required)", NULL,
 		"This should match the frontend audio output rate (Hz) setting.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{
 			{ "48000", NULL },
 			{ "44100", NULL },
@@ -686,7 +758,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_sblaster_conf",
 		"SoundBlaster Settings", NULL,
 		"Set the address, interrupt, low 8-bit and high 16-bit DMA.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{
 			// Some common (and less common) port, irq, low and high dma settings (based on a very scientific web search)
 			{ "A220 I7 D1 H5",  "Port 0x220, IRQ 7, 8-Bit DMA 1, 16-bit DMA 5"  },
@@ -708,7 +780,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Select the .SF2 SoundFont file, .ROM file or interface used for MIDI output." "\n"
 		"To add SoundFonts or ROM files, copy them into the 'system' directory of the frontend." "\n"
 		"To use the frontend MIDI driver, make sure it's set up correctly." "\n\n", NULL, //end of Audio section
-		"Audio",
+		DBP_OptionCat::Audio,
 		{
 			// dynamically filled in retro_init
 		},
@@ -718,7 +790,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_sblaster_type",
 		"Advanced > SoundBlaster Type", NULL,
 		"Type of emulated SoundBlaster card.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{
 			{ "sb16", "SoundBlaster 16 (default)" },
 			{ "sbpro2", "SoundBlaster Pro 2" },
@@ -734,7 +806,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_sblaster_adlib_mode",
 		"Advanced > SoundBlaster Adlib/FM Mode", NULL,
 		"The SoundBlaster emulated FM synth mode. All modes are Adlib compatible except CMS.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{
 			{ "auto",     "Auto (select based on the SoundBlaster type) (default)" },
 			{ "cms",      "CMS (Creative Music System / GameBlaster)" },
@@ -750,7 +822,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_sblaster_adlib_emu",
 		"Advanced > SoundBlaster Adlib Provider", NULL,
 		"Provider for the Adlib emulation. Default has good quality and low performance requirements.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{
 			{ "default", "Default" },
 			{ "nuked", "High quality Nuked OPL3" },
@@ -762,7 +834,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"Advanced > Enable Gravis Ultrasound (restart required)", NULL,
 		"Enable Gravis Ultrasound emulation. Settings are fixed at port 0x240, IRQ 5, DMA 3." "\n"
 		"If the ULTRADIR variable needs to be different than the default 'C:\\ULTRASND' you need to issue 'SET ULTRADIR=...' in the command line or in a batch file.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
 	},
@@ -770,7 +842,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_tandysound",
 		"Advanced > Enable Tandy Sound Device (restart required)", NULL,
 		"Enable Tandy Sound Device emulation even when running without Tandy Graphics Adapter emulation.", NULL,
-		"Audio",
+		DBP_OptionCat::Audio,
 		{ { "auto", "Off (default)" }, { "on", "On" } },
 		"auto"
 	},
@@ -778,7 +850,7 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_swapstereo",
 		"Advanced > Swap Stereo Channels", NULL,
 		"Swap the left and the right audio channel." "\n\n", NULL, //end of Audio > Advanced section
-		"Audio",
+		DBP_OptionCat::Audio,
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
 	},
