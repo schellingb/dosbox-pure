@@ -1,3 +1,21 @@
+/*
+ *  Copyright (C) 2024-2025 Bernhard Schelling
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ */
+
 #define MYGL_FRAGMENT_SHADER                0x8B30
 #define MYGL_VERTEX_SHADER                  0x8B31
 #define MYGL_COLOR_BUFFER_BIT               0x00004000
@@ -148,11 +166,16 @@
 	MYGL_FOR_EACH_PROC2(M) \
 	//------------------------------------------------------------------------------------
 
-#include "../libretro-common/include/libretro.h"
-#define MYGL_MAKEFUNCEXT(REQUIRE, RET, NAME, ARGS) extern RET (RETRO_CALLCONV* mygl ## NAME)ARGS;
+#if (defined(__WIN32__) || defined(WIN32) || defined(_WIN32) || defined(_MSC_VER)) && !defined(_WIN64) && !defined(__MINGW64__) && !defined(_M_X64) && !defined(_LP64) && !defined(__LP64__) && !defined(__ia64__) && !defined(__ia64__) && !defined(__x86_64__) && !defined(__x86_64__) && !defined(__LLP64__) && !defined(__aarch64__) && !defined(_M_ARM64) && !defined(__arm__)
+#define MYGLCALL __stdcall
+#else 
+#define MYGLCALL
+#endif
+
+#define MYGL_MAKEFUNCEXT(REQUIRE, RET, NAME, ARGS) extern RET (MYGLCALL* mygl ## NAME)ARGS;
 MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCEXT)
 
-#define MYGL_MAKEFUNCPTR(REQUIRE, RET, NAME, ARGS) RET (RETRO_CALLCONV* mygl ## NAME)ARGS;
+#define MYGL_MAKEFUNCPTR(REQUIRE, RET, NAME, ARGS) RET (MYGLCALL* mygl ## NAME)ARGS;
 #define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t&)mygl ## NAME , "gl" #NAME, REQUIRE },
 
 unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs);
