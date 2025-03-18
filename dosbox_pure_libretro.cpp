@@ -2674,13 +2674,13 @@ static void set_variables(bool force_midi_scan = false)
 	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
 	if (options_ver >= 2)
 	{
-		// Category options support, skip the first 'Show Advanced Options' entry
-		static const struct retro_core_options_v2 options = { option_cats, option_defs+1 };
+		// Category options support
+		static const struct retro_core_options_v2 options = { option_cats, option_defs };
 		environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2, (void*)&options);
 	}
 	else if (options_ver == 1)
 	{
-		// Convert options to V1 format, keep first 'Show Advanced Options' entry
+		// Convert options to V1 format
 		static std::vector<retro_core_option_definition> v1defs;
 		for (const retro_core_option_v2_definition& v2def : option_defs)
 		{
@@ -2697,7 +2697,7 @@ static void set_variables(bool force_midi_scan = false)
 	}
 	else
 	{
-		// Convert options to legacy format, skip the first 'Show Advanced Options' entry
+		// Convert options to legacy format
 		static std::vector<retro_variable> v0defs;
 		for (const retro_core_option_v2_definition& v2def : option_defs)
 		{
@@ -2711,7 +2711,7 @@ static void set_variables(bool force_midi_scan = false)
 					dynstr.back().append("|").append(v2val.value);
 			v0defs.push_back({ v2def.key, dynstr.back().c_str() });
 		}
-		environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)&v0defs[1]);
+		environ_cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)&v0defs[0]);
 	}
 }
 
