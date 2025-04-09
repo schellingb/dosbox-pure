@@ -379,7 +379,9 @@ public:
 #endif
 			}
 #else
+			#ifdef C_DBP_NATIVE_HOMEDIR
 			Cross::ResolveHomedir(temp_line);
+			#endif
 			bool path_is_dir;
 			if (!fpath_nocase(temp_line, &path_is_dir)) { WriteOut(MSG_Get("PROGRAM_MOUNT_ERROR_1"),temp_line.c_str()); return; }
 			if (!path_is_dir) { WriteOut(MSG_Get("PROGRAM_MOUNT_ERROR_2"),temp_line.c_str()); return; }
@@ -856,7 +858,7 @@ public:
 		swapInDisks();
 #else
 		// assign to image disk list drive if not already mounted same file (which might also have a fatDrive in Drives[] array that is in use)
-		if (usefile_1 && strcmp(imageDiskList[drive-65]->diskname, first_img_path.c_str()))
+		if (usefile_1 && (!imageDiskList[drive-65] || strcmp(imageDiskList[drive-65]->diskname, first_img_path.c_str())))
 		{
 			if (imageDiskList[drive-65]) delete imageDiskList[0];
 			imageDiskList[drive-65]=usefile_1;
