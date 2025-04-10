@@ -1544,12 +1544,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (ok_type != IT_CLOSEOSD)
 			{
 				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || ok_type == IT_VARIANTRUN));
-				if (!show_popup && (dbp_game_running || first_shell->bf))
-				{
-					popupsel = 0;
-					show_popup = true;
-					return;
-				}
+				if (!show_popup && (dbp_game_running || first_shell->bf)) { popupsel = 0; show_popup = true; return; } // confirm
 
 				if (!DBP_Run::Run(
 					ok_type == IT_RUN             ? DBP_Run::RUN_EXEC :
@@ -1632,7 +1627,7 @@ struct DBP_MenuInterceptor : DBP_Interceptor
 			{
 				if (!input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, dbp_keymap_dos2retro[i])) continue;
 				warned_game_focus = true;
-				retro_notify(10000, RETRO_LOG_WARN,
+				emuthread_notify(10000, LOG_WARN,
 					"Detected keyboard and joypad being pressed at the same time.\n"
 					"To freely use the keyboard without hotkeys enable 'Game Focus' (Scroll Lock key by default) if available.");
 				break;

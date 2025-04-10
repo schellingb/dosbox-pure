@@ -132,12 +132,12 @@ struct DBP_Run
 			if ((raw_file_h = fopen_wrap(path, "rb")) == NULL)
 			{
 				if (complainnotfound)
-					retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", type, path, "");
+					emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s%s", type, path, "");
 				return false;
 			}
 			if (needwritable)
 			{
-				retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", type, path, " (file is read-only!)");
+				emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s%s", type, path, " (file is read-only!)");
 				fclose(raw_file_h);
 				return false;
 			}
@@ -203,7 +203,7 @@ struct DBP_Run
 			Bit32u heads, cyl, sect, sectSize;
 			memDsk->Get_Geometry(&heads, &cyl, &sect, &sectSize);
 			FILE* f = fopen_wrap(path.c_str(), "wb");
-			if (!f) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", "OS image", path.c_str(), " (create file failed)"); return; }
+			if (!f) { emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s%s", "OS image", path.c_str(), " (create file failed)"); return; }
 			for (Bit32u i = 0, total = heads * cyl * sect; i != total; i++) { Bit8u data[512]; memDsk->Read_AbsoluteSector(i, data); fwrite(data, 512, 1, f); }
 			fclose(f);
 			delete memDsk;
@@ -294,7 +294,7 @@ struct DBP_Run
 		if (!base_drive) return;
 		std::string path = DBP_GetSaveFile(SFT_SYSTEMDIR).append(dbp_shellzips[shellidx]);
 		FILE* zip_file_h = fopen_wrap(path.c_str(), "rb");
-		if (!zip_file_h) { retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s", "System Shell", path.c_str()); return; }
+		if (!zip_file_h) { emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s", "System Shell", path.c_str()); return; }
 		base_drive->AddUnder(*new zipDrive(new rawFile(zip_file_h, false), false), true);
 
 		const char* exes[] = { "C:\\WINDOWS.BAT", "C:\\AUTOEXEC.BAT", "C:\\WINDOWS\\WIN.COM" };
@@ -565,7 +565,7 @@ struct DBP_Run
 				if (ValX <= Val) goto syntaxerror;
 				if ((*Key == 'r' && !parseRun) || ProcessKey()) continue;
 				syntaxerror:
-				retro_notify(0, RETRO_LOG_ERROR, "Error in DOS.YML: %.*s", (int)(Next-Key), Key);
+				emuthread_notify(0, LOG_ERROR, "Error in DOS.YML: %.*s", (int)(Next-Key), Key);
 				continue;
 			}
 			if (cpu_cycles || cpu_year || cpu_hz)

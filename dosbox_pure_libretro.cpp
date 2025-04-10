@@ -253,21 +253,47 @@ static Bit32u dbp_lastfpstick, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fp
 #define DBP_FPSCOUNT(DBP_FPSCOUNT_VARNAME)
 #endif
 
-void retro_notify(int duration, retro_log_level lvl, char const* format,...)
+void setup_retro_notify(retro_message_ext& msg, int duration, retro_log_level lvl, char const* format, va_list ap)
 {
 	static char buf[1024];
-	va_list ap;
-	va_start(ap, format);
 	vsnprintf(buf, sizeof(buf), format, ap);
-	va_end(ap);
-	retro_message_ext msg;
 	msg.msg = buf;
 	msg.duration = (duration ? (unsigned)abs(duration) : (lvl == RETRO_LOG_ERROR ? 10000 : 4000));
 	msg.priority = 0;
 	msg.level = lvl;
 	msg.target = (duration < 0 ? RETRO_MESSAGE_TARGET_OSD : RETRO_MESSAGE_TARGET_ALL);
 	msg.type = (duration < 0 ? RETRO_MESSAGE_TYPE_STATUS : RETRO_MESSAGE_TYPE_NOTIFICATION);
-	if (!environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg) && duration >= 0) log_cb(RETRO_LOG_ERROR, "%s", buf);
+}
+
+void retro_notify(int duration, retro_log_level lvl, char const* format,...)
+{
+	retro_message_ext msg;
+	va_list ap; va_start(ap, format); setup_retro_notify(msg, duration, lvl, format, ap); va_end(ap);
+	if (!environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, &msg) && msg.type == RETRO_MESSAGE_TYPE_NOTIFICATION) log_cb(RETRO_LOG_ERROR, "%s", msg.msg);
+}
+
+static retro_message_ext* dbp_message_queue;
+void emuthread_notify(int duration, LOG_SEVERITIES lvl, char const* format,...)
+{
+	retro_log_level rlvl = (lvl == LOG_NORMAL ? RETRO_LOG_INFO : lvl == LOG_WARN ? RETRO_LOG_WARN : RETRO_LOG_ERROR);
+	retro_message_ext stk, *msg = (dbp_state == DBPSTATE_BOOT ? &stk : (retro_message_ext*)malloc(sizeof(retro_message_ext)+sizeof(retro_message_ext*)));
+	va_list ap; va_start(ap, format); setup_retro_notify(*msg, duration, rlvl, format, ap); va_end(ap);
+	if (msg == &stk) { if (!environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, msg) && msg->type == RETRO_MESSAGE_TYPE_NOTIFICATION) log_cb(RETRO_LOG_ERROR, "%s", msg->msg); return; }
+	msg->msg = strdup(msg->msg);
+	*(retro_message_ext**)(msg+1) = dbp_message_queue;
+	dbp_message_queue = msg;
+}
+
+static void run_emuthread_notify()
+{
+	while (dbp_message_queue)
+	{
+		retro_message_ext* msg = dbp_message_queue;
+		dbp_message_queue = *(retro_message_ext**)(msg+1);
+		if (!environ_cb(RETRO_ENVIRONMENT_SET_MESSAGE_EXT, msg) && msg->type == RETRO_MESSAGE_TYPE_NOTIFICATION) log_cb(RETRO_LOG_ERROR, "%s", msg->msg);
+		free((void*)msg->msg);
+		free((void*)msg);
+	}
 }
 
 static const char* retro_get_variable(const char* key, const char* default_value)
@@ -905,7 +931,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		}
 		if (!drive)
 		{
-			if (ziperr) { retro_notify(0, RETRO_LOG_ERROR, "%s", ziperr->c_str()); delete ziperr; }
+			if (ziperr) { emuthread_notify(0, LOG_ERROR, "%s", ziperr->c_str()); delete ziperr; }
 			error_type = "ZIP";
 			goto TRY_DIRECTORY;
 		}
@@ -1033,7 +1059,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		dir_information* dirp = open_directory(dir.c_str());
 		if (!dirp)
 		{
-			retro_notify(0, RETRO_LOG_ERROR, "Unable to open %s file: %s%s", error_type, path, "");
+			emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s%s", error_type, path, "");
 			return NULL;
 		}
 		close_directory(dirp);
@@ -1543,7 +1569,7 @@ private:
 
 		dbp_binds_changed |= (1 << port);
 		return mapping;
-		err: retro_notify(0, RETRO_LOG_ERROR, "Gamepad mapping data is invalid"); return mapping+(DBP_PADMAP_MAXSIZE_PORT*DBP_MAX_PORTS);
+		err: emuthread_notify(0, LOG_ERROR, "Gamepad mapping data is invalid"); return mapping+(DBP_PADMAP_MAXSIZE_PORT*DBP_MAX_PORTS);
 	}
 
 	static const Bit8u* SkipMapping(const Bit8u* mapping)
@@ -3901,6 +3927,8 @@ void retro_run(void)
 		dbp_fpscount_retro = dbp_fpscount_gfxstart = dbp_fpscount_gfxend = dbp_fpscount_event = 0;
 	}
 	#endif
+
+	if (dbp_message_queue) run_emuthread_notify();
 
 	if (dbp_state < DBPSTATE_RUNNING)
 	{
