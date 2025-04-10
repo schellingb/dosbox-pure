@@ -2009,7 +2009,7 @@ DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error
 					c_file_h = fopen_wrap(doscpath.c_str(), "rb");
 				}
 			}
-			if (!parent_drive && !c_file_h) return zip_drive;
+			if (!parent_drive && !c_file_h && !z.child) return zip_drive;
 
 			patchDrive* patch_drive = dynamic_cast<patchDrive*>(parent_drive);
 			if (!patch_drive) patch_drive = new patchDrive();
