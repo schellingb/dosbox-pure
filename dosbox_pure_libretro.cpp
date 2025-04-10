@@ -61,10 +61,10 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
-static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_last_fastforward, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
+static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
-static float dbp_auto_target, dbp_targetrefreshrate;
+static float dbp_auto_target, dbp_targetrefreshrate, dbp_last_fastforward;
 static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_emu_waiting, dbp_paused_work;
 static Semaphore semDoContinue, semDidPause;
 static retro_throttle_state dbp_throttle;
@@ -2161,18 +2161,18 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	if (!dbp_last_fastforward) render.frameskip.max = (DBP_NeedFrameSkip(true) ? 1 : 0);
 
 	// handle frame skipping and CPU speed during fast forwarding
-	if (dbp_last_fastforward == (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD)) return;
+	const float ffrate = (dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD ? 0.0f : (dbp_throttle.rate ? dbp_throttle.rate : -1.0f));
+	if (dbp_last_fastforward == ffrate) return;
 	static Bit32s old_max;
 	static bool old_pmode;
-	if (dbp_last_fastforward ^= true)
+	if (ffrate)
 	{
-		old_max = CPU_CycleMax;
-		old_pmode = cpu.pmode;
-		if (dbp_throttle.rate && (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME))
+		if (!dbp_last_fastforward) { old_max = CPU_CycleMax; old_pmode = cpu.pmode; }
+		if (ffrate > 0 && (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME))
 		{
 			// If fast forwarding at a desired rate, apply custom frameskip and max cycle rules
-			render.frameskip.max = (int)(dbp_throttle.rate / av_info.timing.fps * 1.5f + .4f);
-			CPU_CycleMax = (Bit32s)(old_max / (CPU_CycleAutoAdjust ? dbp_throttle.rate / av_info.timing.fps : 1.0f));
+			render.frameskip.max = (int)(ffrate / av_info.timing.fps * 1.5f + .4f);
+			CPU_CycleMax = (Bit32s)(old_max / (CPU_CycleAutoAdjust ? ffrate / av_info.timing.fps : 1.0f));
 		}
 		else
 		{
@@ -2187,6 +2187,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		old_max = 0;
 		DBP_SetRealModeCycles();
 	}
+	dbp_last_fastforward = ffrate;
 }
 
 static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
