@@ -114,12 +114,13 @@ public:
 	static void GetPlatformConfigDir(std::string& in);
 	static void GetPlatformConfigName(std::string& in);
 	static void CreatePlatformConfigDir(std::string& in);
-#endif
 	static void ResolveHomedir(std::string & temp_line);
-#ifdef C_DBP_ENABLE_CAPTURE
 	static void CreateDir(std::string const& temp);
-#endif
 	static bool IsPathAbsolute(std::string const& in);
+#else
+	static std::string& MakePathAbsolute(std::string& in);
+	static std::string& NormalizePath(std::string& in);
+#endif
 };
 
 

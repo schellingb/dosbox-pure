@@ -101,7 +101,6 @@ void Cross::CreatePlatformConfigDir(std::string& in) {
 #endif
 	in += CROSS_FILESPLIT;
 }
-#endif //defined(C_DBP_ENABLE_CONFIG_PROGRAM) || defined(C_DBP_ENABLE_CAPTURE) || defined(C_OPENGL)
 
 void Cross::ResolveHomedir(std::string & temp_line) {
 #ifdef C_DBP_NATIVE_HOMEDIR
@@ -122,7 +121,6 @@ void Cross::ResolveHomedir(std::string & temp_line) {
 #endif
 }
 
-#ifdef C_DBP_ENABLE_CAPTURE
 void Cross::CreateDir(std::string const& in) {
 #ifdef WIN32
 	mkdir(in.c_str());
@@ -130,7 +128,6 @@ void Cross::CreateDir(std::string const& in) {
 	mkdir(in.c_str(),0700);
 #endif
 }
-#endif
 
 bool Cross::IsPathAbsolute(std::string const& in) {
 	// Absolute paths
@@ -144,6 +141,49 @@ bool Cross::IsPathAbsolute(std::string const& in) {
 #endif
 	return false;
 }
+#else //defined(C_DBP_ENABLE_CONFIG_PROGRAM) || defined(C_DBP_ENABLE_CAPTURE) || defined(C_OPENGL)
+std::string& Cross::MakePathAbsolute(std::string& str)
+{
+	size_t strsz = str.size();
+	#ifdef WIN32
+	if (strsz > 2 && (str[1] == ':' || (str[0]=='\\' && str[1]=='\\'))) return str;
+	wchar_t buf[512]; UINT cp; int len;
+	GetCurrentDirectoryW(512, buf);
+	if ((len = WideCharToMultiByte(CP_UTF8, 0, buf, -1, NULL, 0, NULL, NULL)) > 0) cp = CP_UTF8;
+	else if ((len = WideCharToMultiByte((cp = CP_ACP), 0, buf, -1, NULL, 0, NULL, NULL)) <= 0) return str; // fall back to ANSI codepage
+	str.insert(0, len, ' '); // len includes \0 terminator
+	WideCharToMultiByte(cp, 0, buf, -1, &str[0], len, NULL, NULL);
+	if (strsz) str[len - 1] = '\\'; // swap \0 to path separator
+	else str.resize(len - 1); // truncate without \0 terminator
+	#else
+	if (strsz > 1 && str[0] == '/' ) return str;
+	char buf[512];
+	if (!getcwd(buf, 510)) return str;
+	if (strsz) strcat(buf, "/");
+	str.insert(0, buf);
+	#endif
+	return str;
+}
+std::string& Cross::NormalizePath(std::string& str) // strip ., .., repeated / and trailing / (unless root), standardize path separator
+{
+	if (!*str.c_str()) return str; // c_str guarantees \0 terminator afterwards
+	for (char *path = &str[0], *src = path, *dst = path, *root = src + (*src == '/' || *src == '\\'), c;;)
+	{
+		if ((c = *(src++)) != '.')
+		{
+			if (c == '\0') { str.resize(dst - (dst > root && dst[-1] == CROSS_FILESPLIT) - path); return str; }
+			else if (c != '/' && c != '\\') *(dst++) = c;
+			#ifdef WIN32
+			else if (src - path == 1 && c == '\\' && *src == '\\') { src++; dst += 2; } // network path
+			#endif
+			else if (dst != root && !(dst > path && dst[-1] == CROSS_FILESPLIT)) { *(dst++) = CROSS_FILESPLIT; }
+		}
+		else if ((dst == path || dst[-1] == CROSS_FILESPLIT) && (src[0] == '/' || src[0] == '\\' || src[0] == '\0')) src += 0 + (src[0] != '\0');
+		else if (dst == path || dst[-1] != CROSS_FILESPLIT || src[0] != '.' || (src[1] != '/' && src[1] != '\\' && src[1] != '\0') || (dst >= path + 3 && dst[-2] == '.' && dst[-3] == '.' && (dst == path + 3 || dst[-4] == CROSS_FILESPLIT))) *(dst++) = '.';
+		else { src += 1 + (src[1] != '\0'); if (dst > root) { for (dst--; dst[-1] != CROSS_FILESPLIT;) { if (--dst == root) break; } } }
+	}
+}
+#endif
 
 #if defined (WIN32)
 

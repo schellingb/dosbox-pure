@@ -811,6 +811,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 	const char *env_dir = NULL;
 	if (environ_cb((type < _SFT_LAST_SAVE_DIRECTORY ? RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY : RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY), &env_dir) && env_dir)
 		res.assign(env_dir) += CROSS_FILESPLIT;
+	Cross::MakePathAbsolute(res);
 	size_t dir_len = res.size();
 	if (type < _SFT_LAST_SAVE_DIRECTORY)
 	{

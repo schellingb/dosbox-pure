@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2024  Bernhard Schelling
+ *  Copyright (C) 2020-2025  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -519,7 +519,9 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	if (!force_mounted) {
 		//File not found on mounted filesystem. Try regular filesystem
 		std::string filename_s(filename);
+		#ifdef C_DBP_NATIVE_HOMEDIR
 		Cross::ResolveHomedir(filename_s);
+		#endif
 		#ifdef C_DBP_HAVE_FPATH_NOCASE
 		if (!fpath_nocase(filename_s)) return NULL;
 		#endif
@@ -652,6 +654,19 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 		Iter::ParseDir(drv, dir.c_str(), dirs, func, data);
 	}
 }
+
+#ifndef NDEBUG // Can be used in a debuggers watch window to get a file list
+std::string DriveToString(DOS_Drive* drv)
+{
+	std::string res;
+	struct Local { static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
+	{
+		((std::string*)data)->append(path) += '\n';
+	}};
+	if (drv) DriveFileIterator(drv, Local::FileIter, (Bitu)&res);
+	return res;
+}
+#endif
 
 #include <dbp_serialize.h>
 
