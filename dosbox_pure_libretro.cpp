@@ -3367,7 +3367,7 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 				DBP_Mount(i, dbp_images[i].remount);
 		if (!newcontent) dbp_image_index = (active_disk_image_index >= dbp_images.size() ? 0 : active_disk_image_index);
 	}
-	dbp_biosreboot = false;
+	dbp_biosreboot = dbp_reboot_set64mem = false;
 	DBP_ReportCoreMemoryMaps();
 
 	// Clear any dos errors that could have been set by drive file access until now

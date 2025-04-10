@@ -179,7 +179,7 @@ struct DBP_Run
 	static void BootOS(bool is_install, int osidx_or_size)
 	{
 		// Make sure we have at least 32 MB of RAM, if not set it to 64
-		if ((MEM_TotalPages() / 256) < 32)
+		if ((MEM_TotalPages() / 256) < 32 && !control->GetProp("dosbox", "memsize")->IsFixed())
 		{
 			dbp_reboot_set64mem = true;
 			DBP_OnBIOSReboot();
