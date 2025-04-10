@@ -4145,6 +4145,13 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			}
 			if (FBZMODE_AUX_BUFFER_MASK(cmd.fastfill.fbz_mode) && cmd.fastfill.auxoffs != (UINT32)(~0))
 			{
+				if (!last_use_depth_test || last_use_depth_test == 255 || !last_depth_masked || last_depth_masked == 255)
+				{
+					myglEnable(MYGL_DEPTH_TEST);
+					myglDepthMask(1);
+					last_use_depth_test = 1;
+					last_depth_masked = 1;
+				}
 				if (myglClearDepth) { myglClearDepth((float)((UINT16)cmd.fastfill.zacolor)/65535.0f); GLERRORASSERT }
 				else if (myglClearDepthf) { myglClearDepthf((float)((UINT16)cmd.fastfill.zacolor)/65535.0f); GLERRORASSERT }
 				else if (cmd.fastfill.zacolor != 65535) GFX_ShowMsg("[VOGL] MISSING CLEAR DEPTH SUPPORT");
