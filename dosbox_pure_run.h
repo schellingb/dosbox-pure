@@ -611,8 +611,16 @@ struct DBP_Run
 		return false;
 	}
 
-	static void PreInit()
+	static void PreInit(bool newcontent)
 	{
+		if (newcontent)
+		{
+			startup = Startup();
+			autoboot = Autoboot();
+			autoinput = Autoinput();
+			patch = Patch();
+			patchDrive::ResetVariants();
+		}
 		if (!dbp_biosreboot) startup.mode = RUN_NONE;
 		if (patchDrive::dos_yml.size()) DOSYMLLoader(!dbp_biosreboot && (patchDrive::variants.Len() == 0 || autoboot.startup.mode == RUN_VARIANT), true); // ignore run keys on bios reboot
 		if (!dbp_biosreboot && autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
@@ -687,7 +695,7 @@ struct DBP_Run
 		if (!autoboot.use || mode == RUN_NONE || mode == RUN_INSTALLOS || mode == RUN_COMMANDLINE)
 		{
 			if (autoboot.have) Drives['C'-'A']->FileUnlink((char*)"AUTOBOOT.DBP");
-			autoboot.startup.mode = RUN_NONE; autoboot.have = autoboot.use = false;
+			autoboot.startup.mode = RUN_NONE; autoboot.skip = 0; autoboot.have = autoboot.use = false;
 			return;
 		}
 		DBP_ASSERT(mode == RUN_EXEC || mode == RUN_BOOTOS || mode == RUN_SHELL || mode == RUN_VARIANT || mode == RUN_BOOTIMG);

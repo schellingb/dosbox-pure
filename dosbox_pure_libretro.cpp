@@ -753,7 +753,7 @@ static bool DBP_ExtractPathInfo(const char* path, const char ** out_path_file = 
 	else p_dot_drive = NULL;
 
 	if (out_path_file) *out_path_file = path_file;
-	if (out_namelen) *out_namelen = (p_dot_drive ? p_dot_drive : ext) - (ext[-1] == '.' ? 1 : 0) - path_file;
+	if (out_namelen) *out_namelen = (p_dot_drive ? p_dot_drive : ext) - ((*ext && ext[-1] == '.') ? 1 : 0) - path_file;
 	if (out_ext) *out_ext = ext;
 	if (out_fragment) *out_fragment = fragment;
 	if (out_letter) *out_letter = letter;
@@ -3101,7 +3101,7 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_au
 	}
 }
 
-static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = false, const std::string* dbconf = NULL)
+static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = false, const std::string* dbconf = NULL)
 {
 	if (reinit)
 	{
@@ -3125,7 +3125,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		dbp_serializesize = 0;
 		dbp_audio_remain = 0;
 		DBP_SetIntercept(NULL);
-		if (firsttime) dbp_images.clear();
+		if (newcontent) dbp_images.clear();
 		for (DBP_Image& i : dbp_images) { i.remount = i.mounted; i.mounted = false; }
 	}
 
@@ -3136,19 +3136,20 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
 	bool skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 4));
-	const bool force_puremenu = ((dbp_biosreboot && !firsttime) || forcemenu);
+	if (newcontent) dbp_biosreboot = false; // ignore this when switching content
+	const bool force_puremenu = (dbp_biosreboot || forcemenu);
 	if (skip_c_mount && !dbconf)
 	{
 		std::string confcontent;
 		if (ReadAndClose(rawFile::TryOpen(path), confcontent))
-			return init_dosbox(firsttime, forcemenu, reinit, &confcontent);
+			return init_dosbox(newcontent, forcemenu, reinit, &confcontent);
 	}
 
 	control = new Config();
 	DOSBOX_Init();
 	Section* autoexec = control->GetSection("autoexec");
 	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec, force_puremenu, skip_c_mount);
-	DBP_Run::PreInit();
+	DBP_Run::PreInit(newcontent && !reinit);
 	check_variables();
 	dbp_boot_time = time_cb();
 	control->Init();
@@ -3183,7 +3184,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 	}
 
 	// Detect content year and auto mapping
-	if (firsttime && !reinit)
+	if (newcontent && !reinit)
 	{
 		DBP_PadMapping::Load(); // if loaded don't show auto map notification
 
@@ -3293,7 +3294,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 
 		// Check if DOS.YML needs a reboot (after evaluating dbp_images)
 		if (DBP_Run::PostInitFirstTime())
-			return init_dosbox(firsttime, forcemenu, true, dbconf);
+			return init_dosbox(newcontent, forcemenu, true, dbconf);
 	}
 
 	if (DOS_Drive* drive_c = Drives['C'-'A']) // guaranteed not NULL unless skip_c_mount
@@ -3311,7 +3312,7 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 				conffile = rawFile::TryOpen(strconfpath.assign(path, path_ext - path).append(path_ext[-1] == '.' ? 0 : 1, '.').append("conf").c_str());
 			}
 			if (conffile && ReadAndClose(conffile, confcontent))
-				return init_dosbox(firsttime, forcemenu, true, &confcontent);
+				return init_dosbox(newcontent, forcemenu, true, &confcontent);
 		}
 
 		// Try to load either DOSBOX.SF2 or a pair of MT32_CONTROL.ROM/MT32_PCM.ROM from the mounted C: drive and use as fixed midi config
@@ -3351,18 +3352,18 @@ static void init_dosbox(bool firsttime, bool forcemenu = false, bool reinit = fa
 		else
 		{
 			// Boot into puremenu, it will take care of further auto start options
-			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || (dbp_biosreboot && !firsttime)) ? " -BOOT" : "")) += '\n';
+			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
 		}
 		autoexec->ExecuteInit();
 
 		// Mount the first found cdrom image as well as the first found floppy, or reinsert them on core restart (and keep selected index)
 		unsigned active_disk_image_index = dbp_image_index;
 		for (unsigned i = 0; auto_mount && i != (unsigned)dbp_images.size(); i++)
-			if (!firsttime && (dbp_images[i].path[0] == '$' && !Drives[dbp_images[i].path[1]-'A']))
+			if (!newcontent && (dbp_images[i].path[0] == '$' && !Drives[dbp_images[i].path[1]-'A']))
 				dbp_images.erase(dbp_images.begin() + (i--));
-			else if (firsttime || dbp_images[i].remount)
+			else if (newcontent || dbp_images[i].remount)
 				DBP_Mount(i, dbp_images[i].remount);
-		if (!firsttime) dbp_image_index = (active_disk_image_index >= dbp_images.size() ? 0 : active_disk_image_index);
+		if (!newcontent) dbp_image_index = (active_disk_image_index >= dbp_images.size() ? 0 : active_disk_image_index);
 	}
 	dbp_biosreboot = false;
 	DBP_ReportCoreMemoryMaps();
@@ -4233,16 +4234,18 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 				retro_notify(0, RETRO_LOG_ERROR, "%sUnsupported version (%d)", "Load State Error: ", ar.version);
 				break;
 			case DBPArchive::ERR_DOSNOTRUNNING:
-				if (ar.mode == DBPArchive::MODE_LOAD)
-					retro_notify(0, RETRO_LOG_WARN, "Unable to load a save state while game the isn't running, start it first.");
-				else if (dbp_serializemode != DBPSERIALIZE_REWIND)
-					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running.\nIf using rewind, make sure to modify the related core option.", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while DOS was" : "save state while DOS is"));
-				break;
 			case DBPArchive::ERR_GAMENOTRUNNING:
 				if (ar.mode == DBPArchive::MODE_LOAD)
 					retro_notify(0, RETRO_LOG_WARN, "Unable to load a save state while game the isn't running, start it first.");
 				else if (dbp_serializemode != DBPSERIALIZE_REWIND)
-					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s not running.\nIf using rewind, make sure to modify the related core option.", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "), (ar.mode == DBPArchive::MODE_LOAD ? "load state made while game was" : "save state while game is"));
+					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s while %s %s not running."
+						#ifndef DBP_STANDALONE
+						"\nIf using rewind, make sure to modify the related core option."
+						#endif
+						"", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "),
+						(ar.mode == DBPArchive::MODE_LOAD ? "load state made" : "save state"),
+						(ar.had_error == DBPArchive::ERR_DOSNOTRUNNING ? "DOS" : "game"),
+						(ar.mode == DBPArchive::MODE_LOAD ? "was" : "is"));
 				break;
 			case DBPArchive::ERR_WRONGMACHINECONFIG:
 				retro_notify(0, RETRO_LOG_ERROR, "%sWrong graphics chip configuration (%s instead of %s)", "Load State Error: ",
@@ -4312,7 +4315,7 @@ wchar_t* AllocUTF8ToUTF16(const char *str)
 		if (!(res = (wchar_t*)malloc(len8 * sizeof(wchar_t)))) return NULL;
 		if ((MultiByteToWideChar(CP_UTF8, 0, str, -1, res, len8)) < 0) { free(res); return NULL; }
 	}
-	if (int lena = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, 0)) // Fall back to ANSI codepage instead
+	else if (int lena = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, 0)) // Fall back to ANSI codepage instead
 	{
 		if (!(res = (wchar_t*)malloc(lena * sizeof(wchar_t)))) return NULL;
 		if ((MultiByteToWideChar(CP_ACP, 0, str, -1, res, lena)) < 0) { free(res); return NULL; }
