@@ -575,8 +575,8 @@ bool DOS_OpenFile(char const * name,Bit8u flags,Bit16u * entry,bool fcb) {
 #else
 		//DBP: Abort only for invalid access code (unlike vanilla DOSBox which leads to errors in many programs for example Windows 3.11 install)
 		else if (dos.errorcode == DOSERR_ACCESS_CODE_INVALID) return false;
-		//DBP: Make sure none of the drive implementations sets an errorcode but still succeeds
-		DBP_ASSERT(!dos.errorcode || !exists);
+		//DBP: Make sure none of the drive implementations sets an errorcode but still succeeds (except NO_MORE_FILES which is set by farDrive)
+		DBP_ASSERT(!dos.errorcode || !exists || dos.errorcode == DOSERR_NO_MORE_FILES);
 #endif
 		dos.errorcode=olderror;
 	}
