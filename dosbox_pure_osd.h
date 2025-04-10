@@ -165,9 +165,9 @@ DBP_STATIC_ASSERT(sizeof(DBP_BufferDrawing) == sizeof(DBP_Buffer)); // drawing i
 
 struct DBP_MenuMouse
 {
-	float x, y, jx, jy; Bit16u bw, bh; Bit16s mx, my; Bit8s kx, ky, mspeed; Bit8u realmouse : 1, left_pressed : 1, left_up : 1, right_up : 1, wheel_down : 1, wheel_up : 1, ignoremove : 1;
+	float x, y, jx1, jy1, jx2, jy2; Bit16u bw, bh; Bit16s mx, my; Bit8s kx, ky, mspeed; Bit8u realmouse : 1, left_pressed : 1, left_up : 1, right_up : 1, wheel_down : 1, wheel_up : 1, ignoremove : 1;
 	DBP_MenuMouse() { memset(this, 0, sizeof(*this)); }
-	void Reset() { mspeed = 2; left_pressed = false; if (realmouse) mx = dbp_mouse_x, my = dbp_mouse_y; }
+	void Reset() { mspeed = 2; left_pressed = false; if (realmouse) Input(DBPET_MOUSEMOVE, 0, 0); }
 
 	void Input(DBP_Event_Type type, int val, int val2)
 	{
@@ -179,7 +179,8 @@ struct DBP_MenuMouse
 				break;
 			case DBPET_MOUSEDOWN:
 				if (val == 0) left_pressed = true; //left
-				x = 99999999.f; // force update menu selection
+				else break;
+				x = 99999999.f; // force update menu selection on left click
 				/* fall through */
 			case DBPET_MOUSEMOVE:
 				mx = dbp_mouse_x;
@@ -203,8 +204,10 @@ struct DBP_MenuMouse
 					case KBD_up:    case KBD_kp8: case KBD_down:  case KBD_kp2: ky = 0; break;
 				}
 				break;
-			case DBPET_JOY1X: case DBPET_JOY2X: case DBPET_JOYMX: jx = DBP_GET_JOY_ANALOG_VALUE(val); break;
-			case DBPET_JOY1Y: case DBPET_JOY2Y: case DBPET_JOYMY: jy = DBP_GET_JOY_ANALOG_VALUE(val); break;
+			case DBPET_JOY1X: jx1 = DBP_GET_JOY_ANALOG_VALUE(val); break;
+			case DBPET_JOY1Y: jy1 = DBP_GET_JOY_ANALOG_VALUE(val); break;
+			case DBPET_JOY2X: jx2 = DBP_GET_JOY_ANALOG_VALUE(val); break;
+			case DBPET_JOY2Y: jy2 = DBP_GET_JOY_ANALOG_VALUE(val); break;
 			case DBPET_MOUSESETSPEED: mspeed = (val > 0 ? 4 : 1); break;
 			case DBPET_MOUSERESETSPEED: mspeed = 2; break;
 		}
@@ -229,12 +232,12 @@ struct DBP_MenuMouse
 			if (newx == x && newy == y) { if (ignoremove) ignoremove = false; return false; }
 			x = newx, y = newy;
 		}
-		else if (jx || kx || jy || ky)
+		else if (jx1 || jx2 || kx || jy1 || jy2 || ky)
 		{
 			realmouse = false;
 			if (!joykbd) { if (ignoremove) ignoremove = false; return false; }
-			x += (jx + kx) * mspeed * buf.width / 320;
-			y += (jy + ky) * mspeed * buf.height / 240;
+			x += (jx1 + jx2 + kx) * mspeed * buf.width / 320;
+			y += (jy1 + jy2 + ky) * mspeed * buf.height / 240;
 		}
 		else { if (ignoremove) ignoremove = false; return false; }
 		if (x <            1) x = (float)1;
@@ -326,7 +329,7 @@ struct DBP_MenuState
 				if (val == 0) click_sel = mouse_sel; // can be different than sel
 				break;
 			case DBPET_MOUSEUP:
-				if (val == 0 && click_sel == sel) res = RES_OK; // left
+				if (val == 0 && (click_sel == sel || show_popup)) res = RES_OK; // left
 				if (val == 1) res = RES_CANCEL; // right
 				break;
 			case DBPET_JOY1X: case DBPET_JOY2X:
@@ -394,6 +397,14 @@ struct DBP_MenuState
 		bool scrollbar = (count > rows);
 		int listu = menuu + ((centerv && rows > count) ? ((rows - count) * lh) / 3 : 0);
 
+		// Update Scroll
+		if (count <= rows) scroll = 0;
+		else if (scroll == -1)
+		{
+			scroll = sel - rows/2;
+			scroll = (scroll < 0 ? 0 : scroll > count - rows ? count - rows : scroll);
+		}
+
 		if (!show_popup)
 		{
 			if (scrollbar && m.left_pressed && (m.x >= scrx || click_sel == -2) && m.y >= menuu && m.y < menuu+menuh && scroll != -1)
@@ -405,14 +416,7 @@ struct DBP_MenuState
 
 			if (scroll == -1 && m.realmouse) mouseMoved = refresh_mousesel; // refresh when switching tab
 
-			// Update Scroll
-			if (count <= rows) scroll = 0;
-			else if (scroll == -1)
-			{
-				scroll = sel - rows/2;
-				scroll = (scroll < 0 ? 0 : scroll > count - rows ? count - rows : scroll);
-			}
-			else
+			if (count > rows)
 			{
 				if (m.realmouse && m.y >= menuu && m.y < menuu+menuh)
 				{
@@ -1182,12 +1186,13 @@ struct DBP_PureMenuState : DBP_MenuState
 		}
 	}
 
-	void GoToSubMenu(ItemType mode, ItemType subtype, int find_info = -1, std::string* find_string = nullptr)
+	bool GoToSubMenu(ItemType mode, ItemType subtype, int find_info = -1, std::string* find_string = nullptr)
 	{
 		if (mode != listmode) RefreshList(mode);
 		for (const Item& it : list)
 			if (it.type == subtype && (find_string ? (it.str == *find_string) : (it.info == find_info)))
-				{ ResetSel((int)(&it - &list[0])); return; }
+				{ ResetSel((int)(&it - &list[0])); return true; }
+		return false;
 	}
 
 	static const char* GetVariantSection(const std::string& v, int get_sec, int& out_len, int& out_total_secs)
