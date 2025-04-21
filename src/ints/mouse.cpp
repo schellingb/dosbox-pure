@@ -1296,6 +1296,8 @@ void DBPSerialize_Mouse(DBPArchive& ar)
 			mouse.cursorMask = (cursorMask_num ? (cursorMask_num == 1 ? defaultCursorMask : userdefCursorMask) : NULL);
 			for (Bit8u i = 0; i != MOUSE_BUTTONS; i++)
 				Mouse_ButtonReleased(i);
+			oldmouseX = static_cast<Bit16s>(mouse.x);
+			oldmouseY = static_cast<Bit16s>(mouse.y);
 		}
 		else if (mouse.timer_in_progress)
 		{
