@@ -60,7 +60,7 @@ static retro_system_av_info av_info;
 static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_REBOOT, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
 static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
-static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_force60fps, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
+static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
 static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
@@ -74,7 +74,7 @@ static std::string dbp_content_path;
 static std::string dbp_content_name;
 static retro_time_t dbp_boot_time;
 static size_t dbp_serializesize;
-static Bit16s dbp_content_year;
+static Bit16s dbp_content_year, dbp_forcefps;
 
 // DOSBOX AUDIO/VIDEO
 static Bit8u buffer_active, dbp_overscan;
@@ -1859,7 +1859,7 @@ void DBP_OnBIOSReboot()
 static double DBP_GetFPS()
 {
 	// More accurate then render.src.fps would be (1000.0 / vga.draw.delay.vtotal)
-	if (dbp_force60fps) return 60;
+	if (dbp_forcefps) return dbp_forcefps;
 	if (dbp_latency != DBP_LATENCY_VARIABLE) return render.src.fps;
 	if (!dbp_targetrefreshrate && (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &dbp_targetrefreshrate) || dbp_targetrefreshrate < 1)) dbp_targetrefreshrate = 60.0f;
 	return dbp_targetrefreshrate;
@@ -2910,7 +2910,8 @@ static bool check_variables()
 	}
 
 	// Emulation options
-	dbp_force60fps = (DBP_Option::Get(DBP_Option::force60fps)[0] == 't');
+	const char* forcefps = DBP_Option::Get(DBP_Option::forcefps);
+	dbp_forcefps = (Bit16s)(forcefps[0] == 'f' ? 0 : forcefps[0] == 't' ? 60 : atoi(forcefps));
 
 	const char latency = DBP_Option::Get(DBP_Option::latency)[0];
 	bool toggled_variable = (dbp_state != DBPSTATE_BOOT && (dbp_latency == DBP_LATENCY_VARIABLE) != (latency == 'v'));

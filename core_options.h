@@ -42,7 +42,7 @@ namespace DBP_Option
 	enum Index
 	{
 		// Emulation
-		force60fps,
+		forcefps,
 		savestate,
 		strict_mode,
 		conf,
@@ -112,12 +112,19 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	// Emulation
 	{
 		"dosbox_pure_force60fps",
-		"Force 60 FPS Output", NULL,
-		"Enable this to force output at 60FPS. Use this if you encounter screen tearing or vsync issues.", NULL,
+		"Force Output FPS", NULL,
+		"Enable this to force output at a fixed rate. Try 60 FPS if you encounter screen tearing or vsync issues.", NULL,
 		DBP_OptionCat::Emulation,
 		{
 			{ "false", "Off" },
-			{ "true", "On" },
+			{ "true", "On (60 FPS)" },
+			{ "50", "On (50 FPS)" },
+			{ "70", "On (70 FPS)" },
+			{ "90", "On (90 FPS)" },
+			{ "120", "On (120 FPS)" },
+			{ "144", "On (144 FPS)" },
+			{ "240", "On (240 FPS)" },
+			{ "360", "On (360 FPS)" },
 		},
 		"false"
 	},
