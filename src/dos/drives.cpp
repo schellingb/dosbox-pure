@@ -161,6 +161,12 @@ void DriveManager::InitializeDrive(int drive) {
 		Drives[currentDrive] = disk;
 		if (driveInfo.disks.size() > 1) disk->Activate();
 	}
+
+	#ifdef C_DBP_LIBRETRO
+	//DBP: Share with libretro disc control system
+	void DBP_UpdateDriveManager(char drive, std::vector<DOS_Drive*>& disks, Bit32u currentDisk);
+	DBP_UpdateDriveManager('A' + drive, driveInfos[drive].disks, driveInfos[drive].currentDisk);
+	#endif
 }
 
 /*
@@ -229,11 +235,17 @@ int DriveManager::UnmountDrive(int drive) {
 	int result = 0;
 	// unmanaged drive
 	if (driveInfos[drive].disks.size() == 0) {
+		//DBP: called by DRIVES_ShutDown even on drives not mounted (to clear up managed drives)
+		if (!Drives[drive]) return 1;
 		result = Drives[drive]->UnMount();
 	} else {
 		// managed drive
 		int currentDisk = driveInfos[drive].currentDisk;
 		result = driveInfos[drive].disks[currentDisk]->UnMount();
+		//DBP: Delete drive even if failed (an already unmounted iso drive fails but we can just delete it)
+		if (result) { DBP_ASSERT(dynamic_cast<isoDrive*>(driveInfos[drive].disks[currentDisk])); delete driveInfos[drive].disks[currentDisk]; result = 0; }
+		//DBP: Clear drives array entry now (imageDisk destructor will access disk array)
+		Drives[drive] = NULL;
 		// only delete on success, current disk set to NULL because of UnMount
 		if (result == 0) {
 			driveInfos[drive].disks[currentDisk] = NULL;
@@ -286,8 +298,11 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	MSCDEX_ShutDown(NULL);
 	// unmount remaining drives last
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
-		if (Drives[i] && DriveManager::UnmountDrive(i) == 0)
+		if (DriveManager::UnmountDrive(i) == 0)
 			Drives[i] = NULL;
+
+	// confirm unmount
+	DBP_ASSERT(!Drives[0] && !Drives[1] && !Drives[2] && !Drives[3] && !Drives[4] && !Drives[5] && Drives['Z'-'A']); // Virtual 'Z' drive stays mounted
 
 	// do this now instead of in BIOS_ShutdownDisks because UnmountDrive of unionDrive might still want to iterate over files which needs this
 	imgDTASeg = 0;
