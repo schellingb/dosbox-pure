@@ -105,6 +105,7 @@ struct DBP_Run
 				if (location > 2) { startup.mode = RUN_NONE; DBP_OnBIOSReboot(); }
 				return true;
 			}
+			updateDPT(); // reflect imageDisk geometry in BIOS memory
 			ConsoleClearScreen();
 			memcpy(line, "@Z:BOOT -l  \n", 14);
 			line[11] = (char)file_handle; // drive letter
@@ -160,7 +161,7 @@ struct DBP_Run
 		DBP_ASSERT(!dbp_images.empty()); // IT_BOOTIMG should only be available if this is true
 		if (!dbp_images.empty())
 		{
-			DBP_Mount(); // make sure something is mounted
+			DBP_Mount(0, false); // make sure something is mounted
 
 			// If hard disk image was mounted to D:, swap it to be the bootable C: drive
 			std::swap(imageDiskList['D'-'A'], imageDiskList['C'-'A']);
@@ -260,7 +261,7 @@ struct DBP_Run
 			Drives['Y'-'A'] = new memoryDrive();
 			DriveCreateFile(Drives['Y'-'A'], "CDBOOT.IMG", bootdisk_image, bootdisk_size);
 			free(bootdisk_image);
-			DBP_Mount(DBP_AppendImage("$Y:\\CDBOOT.IMG", false), true); // this mounts the image as the A drive
+			DBP_Mount(DBP_AppendImage("$Y:\\CDBOOT.IMG", false)); // this mounts the image as the A drive
 			//// Generate autoexec bat that starts the OS setup program?
 			//DriveCreateFile(Drives['A'-'A'], "CONFIG.SYS", (const Bit8u*)"", 0);
 			//DriveCreateFile(Drives['A'-'A'], "AUTOEXEC.BAT", (const Bit8u*)"DIR\r\n", 5);
@@ -677,7 +678,7 @@ struct DBP_Run
 			{
 				for (const DBP_Image& i : dbp_images)
 					if (!strcmp(DBP_Image_Label(i), line))
-						{ if (!i.mounted) DBP_Mount((unsigned)(&i - &dbp_images[0]), true); break; }
+						{ if (!i.mounted) DBP_Mount((unsigned)(&i - &dbp_images[0])); break; }
 			}
 			else if (line_no == 4)
 			{

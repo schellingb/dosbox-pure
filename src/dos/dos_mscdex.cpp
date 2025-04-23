@@ -1345,12 +1345,12 @@ bool MSCDEX_HasMediaChanged(Bit8u subUnit)
 	return true;
 }
 
-void MSCDEX_SetCDInterface(int intNr, int numCD) {
 #ifdef C_DBP_NATIVE_CDROM
+void MSCDEX_SetCDInterface(int intNr, int numCD) {
 	useCdromInterface = intNr;
-#endif
 	forceCD	= numCD;
 }
+#endif
 
 void MSCDEX_ShutDown(Section* sec) {
 	delete mscdex;

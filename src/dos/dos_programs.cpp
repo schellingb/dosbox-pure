@@ -76,12 +76,19 @@ static const char* UnmountHelper(char umount) {
 		return MSG_Get("PROGRAM_MOUNT_UMOUNT_NOT_MOUNTED");
 
 	if (Drives[i_drive]) {
+		#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 		switch (DriveManager::UnmountDrive(i_drive)) {
 			case 1: return MSG_Get("PROGRAM_MOUNT_UMOUNT_NO_VIRTUAL");
 			case 2: return MSG_Get("MSCDEX_ERROR_MULTIPLE_CDROMS");
 		}
 		Drives[i_drive] = 0;
 		mem_writeb(Real2Phys(dos.tables.mediaid)+i_drive*9,0);
+		#else
+		if (dynamic_cast<Virtual_Drive*>(Drives[i_drive])) return MSG_Get("PROGRAM_MOUNT_UMOUNT_NO_VIRTUAL");
+		void DBP_Unmount(char drive);
+		DBP_Unmount('A' + i_drive);
+		DBP_ASSERT(!Drives[i_drive]);
+		#endif
 		if (i_drive == DOS_GetDefaultDrive()) {
 			DOS_SetDrive(ZDRIVE_NUM);
 		}
@@ -390,10 +397,10 @@ public:
 			if (temp_line[temp_line.size()-1]!=CROSS_FILESPLIT) temp_line+=CROSS_FILESPLIT;
 			Bit8u bit8size=(Bit8u) sizes[1];
 			if (type=="cdrom") {
+#ifdef C_DBP_NATIVE_CDROM
 				int num = -1;
 				cmd->FindInt("-usecd",num,true);
 				int error = 0;
-#ifdef C_DBP_NATIVE_CDROM
 				if (cmd->FindExist("-aspi",false)) {
 					MSCDEX_SetCDInterface(CDROM_USE_ASPI, num);
 				} else if (cmd->FindExist("-ioctl_dio",false)) {
@@ -423,7 +430,7 @@ public:
 #endif
 				}
 #else
-				MSCDEX_SetCDInterface(0, num);
+				int error = 0;
 #endif /* C_DBP_NATIVE_CDROM */
 				newdrive  = new cdromDrive(drive,temp_line.c_str(),sizes[0],bit8size,sizes[2],0,mediaid,error);
 				// Check Mscdex, if it worked out...
@@ -1507,7 +1514,8 @@ public:
 		// find all file parameters, assuming that all option parameters have been removed
 		while(cmd->FindCommand((unsigned int)(paths.size() + 2), temp_line) && temp_line.size()) {
 #if defined(C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE) && defined(C_DBP_SUPPORT_DISK_MOUNT_DOSFILE)
-			DOS_File *test = FindAndOpenDosFile(temp_line.c_str());
+			paths.emplace_back();
+			DOS_File *test = FindAndOpenDosFile(temp_line.c_str(), NULL, NULL, NULL, &paths.back());
 			if (test==NULL) {
 				WriteOut(MSG_Get("PROGRAM_IMGMOUNT_FILE_NOT_FOUND"));
 				return;
@@ -1553,8 +1561,8 @@ public:
 				WriteOut(MSG_Get("PROGRAM_IMGMOUNT_MOUNT"));
 				return;
 			}
-#endif
 			paths.push_back(temp_line);
+#endif
 		}
 		if (paths.size() == 0) {
 			WriteOut(MSG_Get("PROGRAM_IMGMOUNT_SPECIFY_FILE"));
@@ -1618,6 +1626,7 @@ public:
 				return;
 			}
 
+#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 			std::vector<DOS_Drive*> imgDisks;
 			std::vector<std::string>::size_type i;
 			std::vector<DOS_Drive*>::size_type ct;
@@ -1679,6 +1688,16 @@ public:
 					}
 					break;
 			}
+#else
+			void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso);
+			DBP_ImgMountLoadDisks(drive, paths, true, false);
+			
+			std::string tmp(paths[0]);
+			for (std::vector<std::string>::size_type i = 1; i < paths.size(); i++) {
+				tmp += "; " + paths[i];
+			}
+			WriteOut(MSG_Get("PROGRAM_MOUNT_STATUS_2"), drive, tmp.c_str());
+#endif
 		} else if (fstype=="iso") {
 
 			if (Drives[drive-'A']) {
@@ -1686,6 +1705,7 @@ public:
 				return;
 			}
 
+#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 #ifdef C_DBP_NATIVE_CDROM
 			MSCDEX_SetCDInterface(0, -1);
 #endif
@@ -1723,6 +1743,12 @@ public:
 			
 			// Set the correct media byte in the table 
 			mem_writeb(Real2Phys(dos.tables.mediaid) + (drive - 'A') * 9, mediaid);
+#else
+			void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso);
+			DBP_ImgMountLoadDisks(drive, paths, false, true);
+
+			std::vector<std::string>::size_type i;
+#endif
 			
 			// Print status message (success)
 			WriteOut(MSG_Get("MSCDEX_SUCCESS"));

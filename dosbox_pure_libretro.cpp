@@ -87,7 +87,7 @@ static struct retro_hw_render_callback dbp_hw_render;
 static void (*dbp_opengl_draw)(const DBP_Buffer& buf);
 
 // DOSBOX DISC MANAGEMENT
-struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false; char drive; int dirlen, dd; DOS_Drive* managed_drive = NULL; };
+struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false, imgmount = false, imfat = false, imiso = false; char drive; int dirlen, dd; };
 static std::vector<DBP_Image> dbp_images;
 static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
@@ -766,22 +766,20 @@ static bool DBP_IsMounted(char drive)
 	return Drives[drive-'A'] || (drive < 'A'+MAX_DISK_IMAGES && imageDiskList[drive-'A']);
 }
 
-static void DBP_Unmount(char drive)
+void DBP_Unmount(char drive)
 {
 	DBP_ASSERT(drive >= 'A' && drive <= 'Z');
-	bool managed = false;
 	for (DBP_Image& i : dbp_images)
 	{
 		if (!i.mounted || i.drive != drive) continue;
 		i.mounted = false;
-		managed |= !!i.managed_drive;
 	}
-	if (Drives[drive-'A'] && !managed && Drives[drive-'A']->UnMount() != 0) { DBP_ASSERT(false); return; }
+	if (Drives[drive-'A'] && Drives[drive-'A']->UnMount() != 0) { DBP_ASSERT(false); return; }
 	Drives[drive-'A'] = NULL;
 	MSCDEX_RemoveDrive(drive);
 	if (drive < 'A'+MAX_DISK_IMAGES)
 		if (imageDisk*& dsk = imageDiskList[drive-'A'])
-			{ if (!managed) delete dsk; dsk = NULL; }
+			{ delete dsk; dsk = NULL; }
 	IDE_RefreshCDROMs();
 	mem_writeb(Real2Phys(dos.tables.mediaid)+(drive-'A')*9,0);
 }
@@ -880,7 +878,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 
 static void DBP_SetDriveLabelFromContentPath(DOS_Drive* drive, const char *path, char letter = 'C', const char *path_file = NULL, const char *ext = NULL, bool forceAppendExtension = false)
 {
-	// Use content filename as drive label, cut off at file extension, the first occurence of a ( or [ character or right white space.
+	// Use content filename as drive label, cut off at file extension, the first occurrence of a ( or [ character or right white space.
 	if (!path_file && !DBP_ExtractPathInfo(path, &path_file, NULL, &ext)) return;
 	char lbl[11+1], *lblend = lbl + (ext - path_file > 11 ? 11 : ext - (*ext ? 1 : 0) - path_file);
 	memcpy(lbl, path_file, lblend - lbl);
@@ -894,7 +892,7 @@ static void DBP_SetDriveLabelFromContentPath(DOS_Drive* drive, const char *path,
 	drive->label.SetLabel(lbl, (letter > 'C'), true);
 }
 
-static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = false, char remount_letter = 0, const char* boot = NULL)
+static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = true, char remount_letter = 0, const char* boot = NULL)
 {
 	DBP_Image* dbpimage = (!boot ? &dbp_images[image_index] : NULL);
 	const char *path = (dbpimage ? dbpimage->path.c_str() : boot), *path_file, *ext, *fragment; char letter;
@@ -902,7 +900,14 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	if (remount_letter) letter = remount_letter;
 
 	std::string path_no_fragment;
-	if (fragment)
+	if (dbpimage && dbpimage->imgmount)
+	{
+		// somewhat dangerous to set ext as not part of path but it is OK for the IMG and ISO code paths below
+		if (dbpimage->imfat) ext = "IMG";
+		if (dbpimage->imiso) ext = "ISO";
+		if (!remount_letter) letter = remount_letter = dbpimage->drive;
+	}
+	else if (fragment)
 	{
 		path_no_fragment.assign(path, fragment - path);
 		ext       = path_no_fragment.c_str() + (ext       - path);
@@ -910,19 +915,12 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		path      = path_no_fragment.c_str();
 	}
 
-	DOS_Drive *drive = NULL, *managed_drive = (dbpimage ? dbpimage->managed_drive : NULL);
+	DOS_Drive *drive = NULL;
 	imageDisk* disk = NULL;
 	CDROM_Interface* cdrom = NULL;
 	Bit8u media_byte = 0;
 	const char* error_type = "content";
-	if (managed_drive)
-	{
-		drive = managed_drive;
-		if (isoDrive* iso = dynamic_cast<isoDrive*>(drive)) cdrom = iso->GetInterface();
-		if (fatDrive* fat = dynamic_cast<fatDrive*>(drive)) disk = fat->loadedDisk;
-		if (!remount_letter) letter = dbpimage->drive;
-	}
-	else if (!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ") || !strcasecmp(ext, "DOSC"))
+	if (!strcasecmp(ext, "ZIP") || !strcasecmp(ext, "DOSZ") || !strcasecmp(ext, "DOSC"))
 	{
 		if (!letter) letter = (boot ? 'C' : 'D');
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
@@ -993,6 +991,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 				// also register with BIOS/CMOS to make this image bootable (make sure it's its own instance as we pass this one to be owned by unionDrive)
 				fatDrive* fat2 = new fatDrive(path, 512, 0, 0, 0, 0);
 				imageDiskList['C'-'A'] = fat2->loadedDisk;
+				updateDPT();
 				fat2->loadedDisk = NULL; // don't want it deleted by ~fatDrive
 				delete fat2;
 				return fat;
@@ -1004,7 +1003,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	else if (!strcasecmp(ext, "ISO") || !strcasecmp(ext, "CHD") || !strcasecmp(ext, "CUE") || !strcasecmp(ext, "INS"))
 	{
 		MOUNT_ISO:
-		if (letter < 'D') letter = 'D';
+		if (letter < 'D' && !remount_letter) letter = 'D';
 		if (!unmount_existing && Drives[letter-'A']) return NULL;
 		if (DBP_IsMounted(letter)) DBP_Unmount(letter); // needs to be done before constructing isoDrive as it registers itself with MSCDEX overwriting the current drives registration
 		int error = -1;
@@ -1088,8 +1087,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	{
 		if (!unmount_existing)
 		{
-			if (managed_drive) { }
-			else if (drive) delete drive; // also deletes disk
+			if (drive) delete drive; // also deletes disk
 			else if (disk) delete disk;
 			return NULL;
 		}
@@ -1111,9 +1109,6 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 		MSCDEX_AddDrive(letter, "", subUnit);
 	}
 
-	if (managed_drive)
-		managed_drive->Activate();
-
 	// Register CDROM with IDE controller only when running with 32MB or more RAM (used when booting an operating system)
 	if (cdrom && (MEM_TotalPages() / 256) >= 32)
 	{
@@ -1133,6 +1128,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = fa
 	{
 		imageDiskList[letter-'A'] = disk;
 		dbpimage->image_disk = true;
+		if (letter >= 'C') updateDPT();
 	}
 
 	return NULL;
@@ -1158,6 +1154,7 @@ static void DBP_Remount(char drive1, char drive2)
 			if (drive2 < 'A'+MAX_DISK_IMAGES) imageDiskList[drive2-'A'] = dsk;
 			else if (!dynamic_cast<fatDrive*>(Drives[drive1-'A'])) delete dsk;
 			dsk = NULL;
+			updateDPT();
 		}
 
 		// Swap media bytes in dos table
@@ -1186,21 +1183,17 @@ static void DBP_Remount(char drive1, char drive2)
 	}
 }
 
-void DBP_UpdateDriveManager(char drive, std::vector<DOS_Drive*>& disks, Bit32u currentDisk)
+void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso)
 {
-	for (DBP_Image& i : dbp_images)
-		if (i.drive == drive)
-			i.mounted = false;
-
-	DOS_Drive* mounted_disk = disks[currentDisk];
-	for (DOS_Drive* disk : disks)
+	for (const std::string& path : paths)
 	{
-		DBP_Image& i = dbp_images[DBP_AppendImage(disk->info, false)];
+		DBP_Image& i = dbp_images[DBP_AppendImage(path.c_str(), false)];
 		i.drive = drive;
-		i.managed_drive = disk;
-		i.mounted = (disk == mounted_disk);
-		i.image_disk = (dynamic_cast<fatDrive*>(disk) ? true : false);
+		i.imgmount = true;
+		i.imfat = fat;
+		i.imiso = iso;
 	}
+	DBP_Mount(DBP_AppendImage(paths[0].c_str(), false));
 }
 
 struct DBP_PadMapping
@@ -3164,7 +3157,7 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 		for (size_t i = dbp_images.size(); i--;)
 		{
 			DBP_Image& img = dbp_images[i];
-			if (newcontent || img.managed_drive) dbp_images.erase(dbp_images.begin() + i);
+			if (newcontent || img.imgmount) dbp_images.erase(dbp_images.begin() + i);
 			else { img.remount = img.mounted; img.mounted = false; }
 		}
 	}
@@ -3494,7 +3487,7 @@ void retro_init(void) //#3
 			if (ejected)
 				DBP_Unmount(dbp_images[dbp_image_index].drive);
 			else
-				DBP_Mount(dbp_image_index, true);
+				DBP_Mount(dbp_image_index);
 			DBP_SetMountSwappingRequested(); // set swapping_requested flag for CMscdex::GetMediaStatus
 			DBP_ThreadControl(TCM_RESUME_FRAME);
 			DBP_QueueEvent(DBPET_CHANGEMOUNTS, DBP_NO_PORT);

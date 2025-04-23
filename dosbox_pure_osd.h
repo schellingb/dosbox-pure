@@ -1341,7 +1341,9 @@ struct DBP_PureMenuState : DBP_MenuState
 			list.emplace_back(IT_NONE);
 			const char* dfreespace = DBP_Option::Get(DBP_Option::bootos_dfreespace); // can also be "discard" or "hide"
 			extern const char* RunningProgram;
-			if (imageDiskList['D'-'A'] || imageDiskList['E'-'A'] || (strcmp(RunningProgram, "BOOT") && imageDiskList['C'-'A']))
+			bool mountedHDIMage = false;
+			for (DBP_Image& i : dbp_images) { if (!DBP_Image_IsCD(i)) { mountedHDIMage = true; break; } }
+			if (mountedHDIMage && (imageDiskList['D'-'A'] || imageDiskList['E'-'A'] || (strcmp(RunningProgram, "BOOT") && imageDiskList['C'-'A'])))
 				list.emplace_back(IT_NONE, INFO_WARN, "D: will be based on the loaded .IMG file");
 			else if (atoi(dfreespace))
 			{
@@ -1487,7 +1489,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (dbp_images[item.info].mounted)
 				DBP_Unmount(dbp_images[item.info].drive);
 			else
-				DBP_Mount((unsigned)item.info, true);
+				DBP_Mount((unsigned)item.info);
 			RefreshList(listmode, true);
 		}
 		else if (ok_type == IT_INSTALLOSSIZE || ok_type == IT_BOOTOSLIST || ok_type == IT_SHELLLIST || ok_type == IT_VARIANTLIST)

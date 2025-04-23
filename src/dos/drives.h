@@ -31,6 +31,7 @@
 bool WildFileCmp(const char * file, const char * wild);
 void Set_Label(char const * const input, char * const output, bool cdrom);
 
+#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 class DriveManager {
 public:
 	static void AppendDisk(int drive, DOS_Drive* disk);
@@ -50,6 +51,7 @@ private:
 	
 	static int currentDrive;
 };
+#endif
 
 class localDrive : public DOS_Drive {
 public:
@@ -495,7 +497,7 @@ Bit8u DriveGetIndex(DOS_Drive* drv); // index in Drives array, returns DOS_DRIVE
 bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
 bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fcb_findfirst);
 Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len, bool& was_changed);
-DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize = NULL, bool* writable = NULL, char const* relative_to = NULL);
+DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize = NULL, bool* writable = NULL, char const* relative_to = NULL, std::string* out_resolve_path = NULL);
 bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize = 1024*1024);
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
 bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes);

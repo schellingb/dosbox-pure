@@ -144,6 +144,7 @@ void DOS_Drive::ForceCloseAll() {
 	}
 }
 
+#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 // static members variables
 int DriveManager::currentDrive;
 DriveManager::DriveInfo DriveManager::driveInfos[26];
@@ -270,6 +271,7 @@ void DriveManager::Init(Section* /* sec */) {
 //	MAPPER_AddHandler(&CycleDisk, MK_f3, MMOD1, "cycledisk", "Cycle Disk");
 //	MAPPER_AddHandler(&CycleDrive, MK_f3, MMOD2, "cycledrive", "Cycle Drv");
 }
+#endif
 
 //DBP: memory cleanup for restart
 static void DRIVES_ShutDown(Section* /*sec*/) {
@@ -285,6 +287,7 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	void IDE_ShutdownControllers(void);
 	IDE_ShutdownControllers();
 
+#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 	// unmount image file based drives first (they could be mounted from other mounted drives)
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
 		if (Drives[i] && (dynamic_cast<fatDrive*>(Drives[i]) || dynamic_cast<isoDrive*>(Drives[i])) && DriveManager::UnmountDrive(i) == 0)
@@ -300,9 +303,30 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	for (Bit8u i = 0; i < DOS_DRIVES; i++)
 		if (DriveManager::UnmountDrive(i) == 0)
 			Drives[i] = NULL;
-
 	// confirm unmount
 	DBP_ASSERT(!Drives[0] && !Drives[1] && !Drives[2] && !Drives[3] && !Drives[4] && !Drives[5] && Drives['Z'-'A']); // Virtual 'Z' drive stays mounted
+#else
+	// unmount image file based drives first (they could be mounted from other mounted drives)
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i] && (dynamic_cast<fatDrive*>(Drives[i]) || dynamic_cast<isoDrive*>(Drives[i])) && Drives[i]->UnMount() == 0)
+			Drives[i] = NULL;
+	// unmount mirror drives next (they are based from other mounted drives)
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i] && (dynamic_cast<mirrorDrive*>(Drives[i])) && Drives[i]->UnMount() == 0)
+			Drives[i] = NULL;
+	// force shutdown mscdex now because it could have a drive mounted without an isoDrive backed ISO file system
+	void MSCDEX_ShutDown(Section*);
+	MSCDEX_ShutDown(NULL);
+	// unmount remaining drives last
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if (Drives[i] && Drives[i]->UnMount() == 0)
+			Drives[i] = NULL;
+	#ifdef NDEBUG
+	// confirm unmount
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		DBP_ASSERT(!Drives[i] || dynamic_cast<Virtual_Drive*>(Drives[i])); // Virtual 'Z' drive stays mounted until DOS_ShutDown
+	#endif
+#endif
 
 	// do this now instead of in BIOS_ShutdownDisks because UnmountDrive of unionDrive might still want to iterate over files which needs this
 	imgDTASeg = 0;
@@ -311,7 +335,9 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 }
 
 void DRIVES_Init(Section* sec) {
+	#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 	DriveManager::Init(sec);
+	#endif
 	sec->AddDestroyFunction(&DRIVES_ShutDown,false);
 }
 
@@ -427,7 +453,7 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 	return (Bit32u)(target - target_start);
 }
 
-DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable, char const* relative_to)
+DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable, char const* relative_to, std::string* out_resolve_path)
 {
 	if (!filename || !*filename) return NULL;
 	if (relative_to && *relative_to)
@@ -447,11 +473,15 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	bool force_mounted = (filename[0] == '$');
 	if (force_mounted) filename++;
 
-	DOS_File *dos_file;
+	DOS_File* dos_file = NULL;
+	std::string filename_s;
+	char dos_path[DOS_PATHLENGTH + 2];
+	const char *drv_path = NULL;
 	const Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : (control ? DOS_GetDefaultDrive() : DOS_DRIVES));
-	if (DOS_Drive* drv = (drive < DOS_DRIVES ? Drives[drive] : NULL))
+	DOS_Drive* drv = (drive < DOS_DRIVES ? Drives[drive] : NULL);
+	if (drv)
 	{
-		char dos_path[DOS_PATHLENGTH + 2], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
+		char *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
 		const char* n = filename + (filename[1] == ':' ? 2 : 0);
 		if (*n == '\\' || *n == '/') n++; // absolute path
 		else if (*drv->curdir) // relative path
@@ -463,6 +493,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		if (!transformed)
 		{
 			// try open path untransformed (works on localDrive and with paths without long file names)
+			drv_path = n;
 			if (writable && drv->FileOpen(&dos_file, (char*)n, OPEN_READWRITE))
 				goto get_file_size;
 			if (drv->FileOpen(&dos_file, (char*)n, OPEN_READ))
@@ -524,16 +555,18 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		if (transformed)
 		{
 			*p_dos = '\0';
+			drv_path = dos_path;
 			if (writable && drv->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
 				goto get_file_size;
 			if (drv->FileOpen(&dos_file, dos_path, OPEN_READ))
 				goto get_file_size_write_protected;
 		}
+		drv = NULL;
 	}
 
 	if (!force_mounted) {
 		//File not found on mounted filesystem. Try regular filesystem
-		std::string filename_s(filename);
+		filename_s.assign(filename);
 		#ifdef C_DBP_NATIVE_HOMEDIR
 		Cross::ResolveHomedir(filename_s);
 		#endif
@@ -562,6 +595,11 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 		DBP_ASSERT(can_seek);
 		Bit32u seekzero = 0;
 		dos_file->Seek(&seekzero, DOS_SEEK_SET);
+	}
+	if (out_resolve_path) {
+		if (drv) { out_resolve_path->assign(1, '$').append(1, (char)('A'+drive)).append(":\\").append(drv_path); upcase(*out_resolve_path); }
+		else { out_resolve_path->assign(filename_s); }
+		DBP_ASSERT(!out_resolve_path->empty());
 	}
 	return dos_file;
 }
