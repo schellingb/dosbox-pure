@@ -4405,8 +4405,8 @@ static bool exists_utf8(const char* path, bool* out_is_dir)
 
 bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 {
-	if (pathstr.empty()) return false;
-	char* path = (char*)pathstr.c_str();
+	if (!*pathstr.c_str()) return false; // c_str guarantees \0 terminator afterwards
+	char* path = &pathstr[0];
 
 	#ifdef WIN32
 	// Directories on Windows, for stat (used by exists_utf8) we need to remove trailing slashes except the one after :
@@ -4418,9 +4418,8 @@ bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 	#else
 	const bool is_absolute = (path[0] == '/' || path[0] == '\\');
 	if (is_absolute && exists_utf8(path, out_is_dir)) return true; // exists as is with an absolute path
-	std::string subdir;
-	if (is_absolute) subdir.assign(path++, 1).c_str();
-	else
+	size_t contentdirlen = 1; // 1 to use root on absolute path
+	if (!is_absolute)
 	{
 		#endif
 		// Prefix with directory of content path
@@ -4435,39 +4434,52 @@ bool fpath_nocase(std::string& pathstr, bool* out_is_dir)
 		#ifdef WIN32
 		return false; // does not exist, even case insensitive
 		#else
-		if (content_dir_end != content) subdir.assign(pathstr.c_str(), content_dir_end - 1 - content);
-		path = (char*)pathstr.c_str() + subdir.length();
+		contentdirlen = (content_dir_end != content ? content_dir_end - 1 - content : 0);
+		path = &pathstr[0];
+	}
+	if (strchr(path, '\\'))
+	{
+		strreplace(path, '\\', '/');
+		if (exists_utf8(path, out_is_dir)) return true; // exists with native slashes
 	}
 
 	struct retro_vfs_interface_info vfs = { 3, NULL };
 	if (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) || vfs.required_interface_version < 3 || !vfs.iface)
 		return false;
 
-	bool res = false;
+	std::string subdir;
+	if (contentdirlen) { subdir.assign(path, contentdirlen); path += contentdirlen; }
+
+	bool res = false, wantDir = false;
+	while (pathstr.back() == '/') { wantDir = true; pathstr.pop_back(); path = (char*)pathstr.c_str() + contentdirlen; }
 	const char* base_dir = (char*)subdir.c_str();
 	for (char* psubdir;; *psubdir = CROSS_FILESPLIT, path = psubdir + 1)
 	{
-		char *next_slash = strchr(path, '/'), *next_bslash = strchr(path, '\\');
-		psubdir = (next_slash && (!next_bslash || next_slash < next_bslash) ? next_slash : next_bslash);
-		if (psubdir == path) continue;
-		if (psubdir) *psubdir = '\0';
+		if ((psubdir = strchr(path, '/')) != NULL)
+		{
+			if (psubdir == path || psubdir[1] == '/') continue;
+			*psubdir = '\0';
+		}
 
 		// On Android opendir fails for directories the user/app doesn't have access so just assume it exists as is
 		if (struct retro_vfs_dir_handle *dir = (base_dir ? vfs.iface->opendir(base_dir, true) : NULL))
 		{
-			while (dir && vfs.iface->readdir(dir))
+			while (vfs.iface->readdir(dir))
 			{
 				const char* entry_name = vfs.iface->dirent_get_name(dir);
 				if (strcasecmp(entry_name, path)) continue;
 				strcpy(path, entry_name);
-				if (!psubdir) { res = true; if (out_is_dir) *out_is_dir = vfs.iface->dirent_is_dir(dir); } // found
+				if (psubdir) break; // not yet done
+				bool is_dir = (wantDir || out_is_dir) && vfs.iface->dirent_is_dir(dir);
+				res = (!wantDir || is_dir);
+				if (out_is_dir) *out_is_dir = is_dir;
 				break;
 			}
 			vfs.iface->closedir(dir);
 		}
 		if (!psubdir) return res;
 		if (subdir.empty() && base_dir) subdir = base_dir;
-		if (!subdir.empty() && subdir.back() != '/' && subdir.back() != '\\') subdir += CROSS_FILESPLIT;
+		if (!subdir.empty() && subdir.back() != '/') subdir += '/';
 		base_dir = subdir.append(path).c_str();
 	}
 	#endif
