@@ -98,7 +98,7 @@ struct DBP_InputBind
 {
 	Bit8u port, device, index, id;
 	Bit16s evt, meta; union { Bit16s lastval; Bit32u _32bitalign; };
-	void Update(Bit16s val);
+	void Update(Bit16s val, bool is_analog_button = false);
 	#define PORT_DEVICE_INDEX_ID(b) (*(Bit32u*)&static_cast<const DBP_InputBind&>(b))
 };
 enum { DBP_MAX_PORTS = 8, DBP_KEYBOARD_PORT, DBP_PORT_MASK = 0x7, DBP_SHIFT_PORT_BIT = 0x80, DBP_NO_PORT = 255, DBP_JOY_ANALOG_RANGE = 0x8000 }; // analog stick range is -0x8000 to 0x8000
@@ -435,14 +435,14 @@ static void DBP_ReleaseKeyEvents(bool onlyPhysicalKeys)
 	}
 }
 
-void DBP_InputBind::Update(Bit16s val)
+void DBP_InputBind::Update(Bit16s val, bool is_analog_button)
 {
 	Bit16s prevval = lastval;
 	lastval = val; // set before calling DBP_QueueEvent
 	if (evt <= _DBPET_JOY_AXIS_MAX)
 	{
 		// handle analog axis mapped to analog functions
-		if (device == RETRO_DEVICE_JOYPAD && (!dbp_analog_buttons || device != RETRO_DEVICE_JOYPAD || evt > _DBPET_JOY_AXIS_MAX)) { lastval = prevval; return; } // handled by dbp_analog_buttons
+		if (device == RETRO_DEVICE_JOYPAD && !is_analog_button) { lastval = prevval; return; } // handled by dbp_analog_buttons
 		DBP_ASSERT(device == RETRO_DEVICE_JOYPAD || meta == 0); // analog axis mapped to analog functions should always have 0 in meta
 		DBP_ASSERT(device != RETRO_DEVICE_JOYPAD || meta == 1 || meta == -1); // buttons mapped to analog functions should always have 1 or -1 in meta
 		DBP_QueueEvent((DBP_Event_Type)evt, port, (meta ? val * meta : val), 0);
@@ -4083,7 +4083,7 @@ void retro_run(void)
 				if (b.evt > _DBPET_JOY_AXIS_MAX || b.device != RETRO_DEVICE_JOYPAD) continue; // handled below
 				Bit16s val = input_state_cb(b.port, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_BUTTON, b.id);
 				if (!val) val = (input_state_cb(b.port, RETRO_DEVICE_JOYPAD, 0, b.id) ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
-				if (val != b.lastval) b.Update(val);
+				if (val != b.lastval) b.Update(val, true);
 			}
 		}
 
