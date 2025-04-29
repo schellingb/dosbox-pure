@@ -200,8 +200,10 @@ struct DBP_MenuMouse
 			case DBPET_KEYUP:
 				switch ((KBD_KEYS)val)
 				{
-					case KBD_left:  case KBD_kp4: case KBD_right: case KBD_kp6: kx = 0; break;
-					case KBD_up:    case KBD_kp8: case KBD_down:  case KBD_kp2: ky = 0; break;
+					case KBD_left:  case KBD_kp4: if (kx == -1) kx = 0; break;
+					case KBD_right: case KBD_kp6: if (kx ==  1) kx = 0; break;
+					case KBD_up:    case KBD_kp8: if (ky == -1) ky = 0; break;
+					case KBD_down:  case KBD_kp2: if (ky ==  1) ky = 0; break;
 				}
 				break;
 			case DBPET_JOY1X: jx1 = DBP_GET_JOY_ANALOG_VALUE(val); break;
