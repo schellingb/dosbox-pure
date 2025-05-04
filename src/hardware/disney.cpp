@@ -66,7 +66,12 @@ static struct {
 static void DISNEY_CallBack(Bitu len);
 
 static void DISNEY_disable(Bitu) {
-	if (disney.mo) {
+	if (!disney.chan)
+		return;
+
+	// mixer object might still exist while the channel is gone, 
+	// so guard both pointers.
+	if (disney.mo && disney.chan) {
 		disney.chan->AddSilence();
 		disney.chan->Enable(false);
 	}
@@ -76,9 +81,16 @@ static void DISNEY_disable(Bitu) {
 	disney.interface_det = 0;
 	disney.interface_det_ext = 0;
 	disney.stereo = false;
+
+	// mark as disabled so later calls become no‑ops rather than
+	// dereferencing freed memory (fixes double‑shutdown crash)
+	disney.chan = nullptr;
 }
 
 static void DISNEY_enable(Bitu freq) {
+	if (!disney.chan)
+		return;
+
 	if (freq < 500 || freq > 100000) {
 		// try again..
 		disney.state = DS_IDLE;
