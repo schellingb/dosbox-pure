@@ -379,7 +379,6 @@ private:
 public:
 	DISNEY(Section* configuration):Module_base(configuration) {
 		Section_prop * section=static_cast<Section_prop *>(configuration);
-		if(!section->Get_bool("disney")) return;
 
 		WriteHandler.Install(DISNEY_BASE,disney_write,IO_MB,3);
 		ReadHandler.Install(DISNEY_BASE,disney_read,IO_MB,3);
@@ -410,6 +409,10 @@ static void DISNEY_ShutDown(Section* /*sec*/){
 }
 
 void DISNEY_Init(Section* sec) {
+	auto* s = static_cast<Section_prop*>(sec);
+    if (!s->Get_bool("disney"))
+        return;                     // ← nothing allocated, nothing to shut down
+		
 	test = new DISNEY(sec);
 	sec->AddDestroyFunction(&DISNEY_ShutDown,true);
 }

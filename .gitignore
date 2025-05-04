@@ -16,3 +16,5 @@ libs/
 *.so
 *.dylib
 jni/*.bat
+.vscode/pro-deployer.json
+.vscode/settings.json
