@@ -387,7 +387,8 @@ public:
 		if (disney.mo)
 			delete disney.mo;
 		//DBP: Added cleanup for restart support
-		disney.chan=0;
+		disney.mo=NULL;
+		disney.chan=NULL;
 	}
 };
 
