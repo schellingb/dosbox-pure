@@ -774,7 +774,8 @@ void DBP_Unmount(char drive)
 		if (!i.mounted || i.drive != drive) continue;
 		i.mounted = false;
 	}
-	if (Drives[drive-'A'] && Drives[drive-'A']->UnMount() != 0) { DBP_ASSERT(false); return; }
+	DOS_Drive *drv = Drives[drive-'A'], *tst;
+	if (drv && drv->UnMount() != 0) { DBP_ASSERT(false); return; }
 	Drives[drive-'A'] = NULL;
 	MSCDEX_RemoveDrive(drive);
 	if (drive < 'A'+MAX_DISK_IMAGES)
@@ -782,6 +783,11 @@ void DBP_Unmount(char drive)
 			{ delete dsk; dsk = NULL; }
 	IDE_RefreshCDROMs();
 	mem_writeb(Real2Phys(dos.tables.mediaid)+(drive-'A')*9,0);
+
+	// Unmount anything that is a subst mirror of the drive that just got unmounted
+	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+		if ((tst = Drives[i]) != NULL && tst != drv && tst->GetShadow(0, false) == drv)
+			DBP_Unmount(i + 'A');
 }
 
 enum DBP_SaveFileType { SFT_GAMESAVE, SFT_SAVENAMEREDIRECT, SFT_VIRTUALDISK, SFT_DIFFDISK, _SFT_LAST_SAVE_DIRECTORY, SFT_SYSTEMDIR, SFT_NEWOSIMAGE };
