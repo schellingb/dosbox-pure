@@ -23,7 +23,7 @@ struct DBP_Run
 	static void RunBatchFile(BatchFile* bf)
 	{
 		DBP_ASSERT(!dbp_game_running);
-		const bool inAutoexec = (first_shell->bf && first_shell->bf->filename[0] == 'Z');
+		const bool inAutoexec = (first_shell->bf && first_shell->bf->IsAutoexec());
 		while (first_shell->bf) delete first_shell->bf;
 		bf->prev = NULL; // was just deleted
 		bf->echo = true; // always want this back after returning
@@ -349,7 +349,7 @@ struct DBP_Run
 		}
 
 		const Property* bootImgMachine = ((mode == RUN_BOOTIMG) ? control->GetProp("dosbox", "machine") : NULL);
-		if (startup.reboot || dbp_game_running || (from_osd && first_shell->bf) || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue()))
+		if (startup.reboot || dbp_game_running || (from_osd && first_shell->bf && !first_shell->bf->IsAutoexec()) || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue()))
 		{
 			startup.reboot = false;
 			if (bootImgMachine) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());

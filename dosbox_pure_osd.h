@@ -1553,7 +1553,7 @@ struct DBP_PureMenuState : DBP_MenuState
 			if (ok_type != IT_CLOSEOSD)
 			{
 				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || ok_type == IT_VARIANTRUN));
-				if (!show_popup && (dbp_game_running || first_shell->bf)) { popupsel = 0; show_popup = true; return; } // confirm
+				if (!show_popup && (dbp_game_running || (first_shell->bf && !first_shell->bf->IsAutoexec()))) { popupsel = 0; show_popup = true; return; } // confirm
 
 				if (!DBP_Run::Run(
 					ok_type == IT_RUN             ? DBP_Run::RUN_EXEC :

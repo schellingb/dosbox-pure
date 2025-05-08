@@ -56,6 +56,8 @@ public:
 	BatchFile * prev;
 	CommandLine * cmd;
 	std::string filename;
+	//DBP: Utility to detect Z:\AUTOEXEC.BAT
+	inline bool IsAutoexec() const{return filename[0] == 'Z';}
 };
 
 class AutoexecEditor;
