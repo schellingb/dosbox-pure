@@ -377,9 +377,9 @@ const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg)
 	{
 		const char* conf = midisec->GetProp("midiconfig")->GetValue();
 		if (conf[0] == '^' && conf[1] == 'S')
-			{ arg = conf + 2; return "SF2 sound font file not found in %s"; }
+			{ arg = conf + 2; return "SF2 sound font file '%s' not found - Unable to play music"; }
 		if (conf[0] == '^' && conf[1] == 'M')
-			{ arg = conf + 2; return "MT-32 ROM pair not found in %s"; }
+			{ arg = conf + 2; return "MT-32 ROM file '%s' not found - Unable to play music"; }
 	}
 	return NULL;
 }

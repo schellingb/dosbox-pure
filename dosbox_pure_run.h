@@ -422,8 +422,7 @@ struct DBP_Run
 					}
 					else // recursively called from above with 'midiconfig'
 					{
-						const char* p = dbp_content_path.c_str(), *fs = strrchr(p, '/'), *bs = strrchr(p, '\\');
-						(((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(p, (fs > bs ? (fs - p) : bs ? (bs - p) : 0)) += CROSS_FILESPLIT).append(Val, (size_t)(ValX - Val));
+						((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(Val, (size_t)(ValX - Val));
 					}
 				}
 				else

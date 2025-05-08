@@ -258,7 +258,7 @@ void setup_retro_notify(retro_message_ext& msg, int duration, retro_log_level lv
 	static char buf[1024];
 	vsnprintf(buf, sizeof(buf), format, ap);
 	msg.msg = buf;
-	msg.duration = (duration ? (unsigned)abs(duration) : (lvl == RETRO_LOG_ERROR ? 10000 : 4000));
+	msg.duration = (duration ? (unsigned)abs(duration) : (lvl == RETRO_LOG_ERROR ? 12000 : 4000));
 	msg.priority = 0;
 	msg.level = lvl;
 	msg.target = (duration < 0 ? RETRO_MESSAGE_TARGET_OSD : RETRO_MESSAGE_TARGET_ALL);
@@ -808,7 +808,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 			}
 			dos.dta(save_dta);
 		}
-		if (type == SFT_SAVENAMEREDIRECT && !savenamelen) return res;
+		if (type == SFT_SAVENAMEREDIRECT && !savenamelen) return std::move(res);
 	}
 	const char *env_dir = NULL;
 	if (environ_cb((type < _SFT_LAST_SAVE_DIRECTORY ? RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY : RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY), &env_dir) && env_dir)
@@ -874,6 +874,16 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 	}
 	if (out_filename) *out_filename = res.c_str() + dir_len;
 	return std::move(res);
+}
+
+FILE* DBP_FileOpenContentOrSystem(const char* fname)
+{
+	std::string tmp;
+	const char *p = fname, *content = dbp_content_path.c_str(), *content_fs = strrchr(content, '/'), *content_bs = strrchr(content, '\\');
+	const char* content_dir_end = ((content_fs || content_bs) ? (content_fs > content_bs ? content_fs : content_bs) + 1 : content + dbp_content_path.length());
+	if (content_dir_end != content) p = tmp.append(content, (content_dir_end - content)).append((size_t)(!content_fs && !content_bs), CROSS_FILESPLIT).append(fname).c_str();
+	if (FILE* f = fopen_wrap(p, "rb")) return f;
+	return fopen_wrap((tmp = DBP_GetSaveFile(SFT_SYSTEMDIR)).append(fname).c_str(), "rb");
 }
 
 static void DBP_SetDriveLabelFromContentPath(DOS_Drive* drive, const char *path, char letter = 'C', const char *path_file = NULL, const char *ext = NULL, bool forceAppendExtension = false)

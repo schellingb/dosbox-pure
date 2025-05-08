@@ -55,7 +55,8 @@ struct MidiHandler_tsf : public MidiHandler
 		size_t conf_len = strlen(conf);
 		if (conf[0] == '^' && conf[1] == 'S') // a path to a ZIP on the host file system
 		{
-			FILE* zip_file_h = fopen_wrap(conf + 2, "rb");
+			FILE* DBP_FileOpenContentOrSystem(const char* fname);
+			FILE* zip_file_h = DBP_FileOpenContentOrSystem(conf + 2);
 			if (!zip_file_h) return false;
 			d_zip = new zipDrive(new rawFile(zip_file_h, false));
 			DriveFileIterator(d_zip, IterateZip, (Bitu)this);
