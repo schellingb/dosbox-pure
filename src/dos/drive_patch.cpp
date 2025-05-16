@@ -731,9 +731,10 @@ bool patchDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 		*file = new Patch_Handle(e->AsFile(), flags, name_org);
 		return true;
 	}
+	const Bit16u save_errorcode = dos.errorcode;
 	for (Patch_Layer* l = impl->layer_top; l >= impl->layer_bottom; l--)
 		if (l->under.FileOpen(file, name, flags))
-			return true;
+			return (dos.errorcode = save_errorcode, true);
 	return false;
 }
 
