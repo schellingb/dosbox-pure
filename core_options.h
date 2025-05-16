@@ -241,19 +241,25 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work)." "\n"
 		"In touchpad mode use drag to move, tap to click, two finger tap to right-click and press-and-hold to drag", NULL,
 		DBP_OptionCat::Input,
-		{
 #if defined(ANDROID) || defined(DBP_IOS) || defined(HAVE_LIBNX) || defined(_3DS) || defined(WIIU) || defined(VITA)
+		{
 			{ "pad", "Touchpad mode (default, see description, best for touch screens)" },
+			{ "true", "Auto (virtual or direct)" },
+			{ "virtual", "Virtual mouse movement" },
 			{ "direct", "Direct controlled mouse (not supported by all games)" },
-			{ "true", "Virtual mouse" },
+			{ "false", "Off (ignore mouse inputs)" },
+		},
+		"pad"
 #else
-			{ "true", "Virtual mouse (default)" },
+		{
+			{ "true", "Auto (default)" },
+			{ "virtual", "Virtual mouse movement" },
 			{ "direct", "Direct controlled mouse (not supported by all games)" },
 			{ "pad", "Touchpad mode (see description, best for touch screens)" },
-#endif
 			{ "false", "Off (ignore mouse inputs)" },
 		},
 		"true"
+#endif
 	},
 	{
 		"dosbox_pure_mouse_wheel",

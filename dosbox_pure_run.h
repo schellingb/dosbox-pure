@@ -317,6 +317,7 @@ struct DBP_Run
 	static struct Autoboot { Startup startup; bool have = false, use = false; int skip = 0; Bit32u hash = 0; } autoboot;
 	static struct Autoinput { std::string str; const char* ptr = NULL; Bit32s oldcycles = 0; Bit8u oldchange = 0; Bit16s oldyear = 0; } autoinput;
 	static struct Patch { int enabled_variant = 0; bool show_default = false; } patch;
+	static struct Input { bool directmouse = false; float mousespeed = 1, mousexfactor = 1; } input;
 
 	static bool Run(EMode mode, int info, std::string& str, bool from_osd = false)
 	{
@@ -504,6 +505,28 @@ struct DBP_Run
 			}
 			return true;
 		}
+		bool ParseInput()
+		{
+			size_t keyLen = (size_t)(KeyX - Key);
+			if (keyLen == (sizeof("input_directmouse") - 1) && !strncmp("input_directmouse", Key, (size_t)(sizeof("input_directmouse") - 1)))
+			{
+				input.directmouse = (Val[0]|0x20) == 't';
+			}
+			else if (keyLen == (sizeof("input_mousespeed") - 1) && !strncmp("input_mousespeed", Key, (size_t)(sizeof("input_mousespeed") - 1)))
+			{
+				int percent = atoi(Val);
+				if (percent <= 0) return false;
+				input.mousespeed = percent / 100.0f;
+			}
+			else if (keyLen == (sizeof("input_mousexfactor") - 1) && !strncmp("input_mousexfactor", Key, (size_t)(sizeof("input_mousexfactor") - 1)))
+			{
+				int percent = atoi(Val);
+				if (percent <= 0) return false;
+				input.mousexfactor = percent / 100.0f;
+			}
+			else return false;
+			return true;
+		}
 		bool ProcessKey()
 		{
 			switch (*Key)
@@ -539,6 +562,8 @@ struct DBP_Run
 						||Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
 						||Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
 					);
+				case 'i':
+					return ParseInput();
 				case 'r':
 					return (0
 						||ParseRun("run_path")
@@ -622,7 +647,11 @@ struct DBP_Run
 			patchDrive::ResetVariants();
 		}
 		if (!dbp_biosreboot) startup.mode = RUN_NONE;
-		if (patchDrive::dos_yml.size()) DOSYMLLoader(!dbp_biosreboot && (patchDrive::variants.Len() == 0 || autoboot.startup.mode == RUN_VARIANT), true); // ignore run keys on bios reboot
+		if (patchDrive::dos_yml.size())
+		{
+			input = Input();
+			DOSYMLLoader(!dbp_biosreboot && (patchDrive::variants.Len() == 0 || autoboot.startup.mode == RUN_VARIANT), true); // ignore run keys on bios reboot
+		}
 		if (!dbp_biosreboot && autoboot.use && autoboot.startup.mode != RUN_VARIANT) startup = autoboot.startup;
 	}
 
@@ -865,3 +894,4 @@ DBP_Run::Startup DBP_Run::startup;
 DBP_Run::Autoinput DBP_Run::autoinput;
 DBP_Run::Autoboot DBP_Run::autoboot;
 DBP_Run::Patch DBP_Run::patch;
+DBP_Run::Input DBP_Run::input;

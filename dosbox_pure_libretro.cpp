@@ -2440,8 +2440,8 @@ void GFX_Events()
 	{
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
 		dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE);
+		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [%4d@%6d] %s %08x%s\n", dbp_framecount, DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_intercept_next ? " [INTERCEPTED]" : ""));
 		bool intercepted = (dbp_intercept_next && dbp_intercept_next->evnt(e.type, e.val, e.val2));
-		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [%4d@%6d] %s %08x%s\n", dbp_framecount, DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (intercepted ? " [INTERCEPTED]" : ""));
 		if (intercepted && !DBP_IS_RELEASE_EVENT(e.type)) continue;
 		#if 0
 		if (e.type == DBPET_KEYDOWN && e.val == KBD_b) { void DBP_DumpPSPs(); DBP_DumpPSPs(); }
@@ -3098,6 +3098,7 @@ static bool check_variables()
 
 	bool on_screen_keyboard = (DBP_Option::Get(DBP_Option::on_screen_keyboard)[0] != 'f');
 	char mouse_input = DBP_Option::Get(DBP_Option::mouse_input)[0];
+	if (mouse_input == 't' && DBP_Run::input.directmouse) mouse_input = 'd';
 	if (on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 	{
 		dbp_on_screen_keyboard = on_screen_keyboard;
@@ -3106,8 +3107,8 @@ static bool check_variables()
 		if (dbp_state > DBPSTATE_SHUTDOWN) DBP_PadMapping::SetInputDescriptors(true);
 	}
 	dbp_alphablend_base = (Bit8u)((atoi(DBP_Option::Get(DBP_Option::menu_transparency)) + 30) * 0xFF / 130);
-	dbp_mouse_speed = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor));
-	dbp_mouse_speed_x = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor_x));
+	dbp_mouse_speed = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor)) * DBP_Run::input.mousespeed;
+	dbp_mouse_speed_x = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor_x)) * DBP_Run::input.mousexfactor;
 
 	dbp_joy_analog_deadzone = (int)((float)atoi(DBP_Option::Get(DBP_Option::joystick_analog_deadzone)) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 
@@ -4077,6 +4078,11 @@ void retro_run(void)
 		int16_t prss = input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_PRESSED);
 		//int16_t lgx = input_state_cb(0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_X);
 		//int16_t lgy = input_state_cb(0, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SCREEN_Y);
+		//int16_t screenmousex = input_state_cb(0, RETRO_DEVICE_MOUSE | 0x10000, 0, RETRO_DEVICE_ID_MOUSE_X);
+		//int16_t screenmousey = input_state_cb(0, RETRO_DEVICE_MOUSE | 0x10000, 0, RETRO_DEVICE_ID_MOUSE_Y);
+		//int16_t screenpointerx = input_state_cb(0, RETRO_DEVICE_POINTER | 0x10000, 0, RETRO_DEVICE_ID_POINTER_X);
+		//int16_t screenpointery = input_state_cb(0, RETRO_DEVICE_POINTER | 0x10000, 0, RETRO_DEVICE_ID_POINTER_Y);
+		//log_cb(RETRO_LOG_INFO, "[DOSBOX MOUSE] [%4d@%6d] Rel: %d,%d - Abs: %d,%d - LG: %d,%d - Press: %d - Count: %d - ScreenMouse: %d,%d - ScreenPointer: %d,%d\n", dbp_framecount, DBP_GetTicks(), movx, movy, absx, absy, lgx, lgy, prss, input_state_cb(0, RETRO_DEVICE_POINTER, 0, RETRO_DEVICE_ID_POINTER_COUNT), screenmousex,screenmousey,screenpointerx,screenpointery);
 		bool absvalid = (absx || absy || prss);
 		if (dbp_mouse_input == 'p')
 			retro_run_touchpad(!!prss, absx, absy);
