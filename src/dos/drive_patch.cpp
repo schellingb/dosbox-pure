@@ -605,7 +605,7 @@ struct patchDriveImpl
 	static void LoadFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
 	{
 		patchDriveImpl& self = *(patchDriveImpl*)data;
-		Patch_Layer& layer = self.layers[self.IterateLayer];
+		Patch_Layer& layer = self.layer_bottom[self.IterateLayer];
 
 		const char* orgpath = path, *ext = NULL;
 		if (!RootOrVariant(*layer.patchzip, path)) return; // ignore other variants
@@ -645,8 +645,8 @@ struct patchDriveImpl
 		}
 		else if (!is_dir)
 		{
-			// ignore any overlay files existing in the layers above (but allow binary patches)
-			for (Patch_Layer* l = &layer; l != self.layer_top; l++)
+			// Ignore any overlay files existing in the layers above (but allow binary patches)
+			for (Patch_Layer* l = &layer; l <= self.layer_top; l++)
 				if (l->under.FileStat(underpath, &dummystat))
 					return;
 		}
@@ -724,7 +724,7 @@ bool patchDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 	if (Patch_Entry* e = impl->Get(name))
 	{
 		if (e->IsDirectory()) return FALSE_SET_DOSERR(FILE_NOT_FOUND);
-		Patch_Layer& layer = impl->layers[e->layer];
+		Patch_Layer& layer = impl->layer_bottom[e->layer];
 		if (e->AsFile()->type == Patch_File::TYPE_RAW)
 			return layer.patchzip->FileOpen(file, e->zippath, flags);
 		if (!e->AsFile()->patched) e->AsFile()->DoPatch(layer.under, *layer.patchzip);
@@ -828,7 +828,7 @@ bool patchDrive::FindNext(DOS_DTA & dta)
 			Patch_Entry* e = s.dir->entries.GetAtIndex(s.dir_index - 3);
 			if (!e || !DTA_PATTERN_MATCH(e->name, pattern)) continue;
 			if (~attr & (Bit8u)e->attr & (DOS_ATTR_DIRECTORY | DOS_ATTR_HIDDEN | DOS_ATTR_SYSTEM)) continue;
-			Patch_Layer* file_layer = (e->IsFile() ? &impl->layers[e->layer] : NULL);
+			Patch_Layer* file_layer = (e->IsFile() ? (impl->layer_bottom + e->layer) : NULL);
 			dta.SetResult(e->name, (file_layer ? e->AsFile()->Size(file_layer->under, file_layer->patchzip) : 0), e->date, e->time, (Bit8u)e->attr);
 			s.dones.Put(e->name, (void*)(size_t)-1);
 			return true;
@@ -865,7 +865,7 @@ bool patchDrive::FileStat(const char* name, FileStat_Block * const stat_block)
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	if (Patch_Entry* p = impl->Get(name))
 	{
-		Patch_Layer* file_layer = (p->IsFile() ? &impl->layers[p->layer] : NULL);
+		Patch_Layer* file_layer = (p->IsFile() ? (impl->layer_bottom + p->layer) : NULL);
 		stat_block->attr = p->attr;
 		stat_block->size = (file_layer ? p->AsFile()->Size(file_layer->under, file_layer->patchzip) : 0);
 		stat_block->date = p->date;
@@ -894,7 +894,7 @@ bool patchDrive::GetLongFileName(const char* path, char longname[256])
 	if (!*path) return false;
 	if (Patch_Entry* p = impl->Get(path))
 		if (p->IsDirectory() || p->AsFile()->type == Patch_File::TYPE_RAW)
-			return impl->layers[p->layer].patchzip->GetLongFileName(p->zippath, longname);
+			return impl->layer_bottom[p->layer].patchzip->GetLongFileName(p->zippath, longname);
 	for (Patch_Layer* l = impl->layer_top; l >= impl->layer_bottom; l--)
 		if (l->under.GetLongFileName(path, longname))
 			return true;
