@@ -530,9 +530,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core_options.h" />
-    <ClInclude Include="include\dbp_network.h" />
-    <ClInclude Include="include\dbp_serialize.h" />
+    <ClInclude Include="dosbox_pure_osd.h" />
+    <ClInclude Include="dosbox_pure_run.h" />
+    <ClInclude Include="dosbox_pure_pad.h" />
     <ClInclude Include="libretro-common\include\libretro.h" />
+    <ClInclude Include="include\dbp_network.h" />
+    <ClInclude Include="include\dbp_opengl.h" />
+    <ClInclude Include="include\dbp_serialize.h" />
     <ClInclude Include="include\bios.h" />
     <ClInclude Include="include\bios_disk.h" />
     <ClInclude Include="include\callback.h" />
@@ -571,8 +575,6 @@
     <ClInclude Include="include\timer.h" />
     <ClInclude Include="include\vga.h" />
     <ClInclude Include="include\video.h" />
-    <ClInclude Include="dosbox_pure_osd.h" />
-    <ClInclude Include="dosbox_pure_run.h" />
     <ClInclude Include="src\cpu\core_dyn_x86\decoder.h" />
     <ClInclude Include="src\cpu\core_dyn_x86\dyn_fpu.h" />
     <ClInclude Include="src\cpu\core_dyn_x86\dyn_fpu_dh.h" />

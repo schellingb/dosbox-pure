@@ -362,6 +362,9 @@
     <ClInclude Include="include\dbp_serialize.h">
       <Filter>include</Filter>
     </ClInclude>
+    <ClInclude Include="include\dbp_opengl.h">
+      <Filter>include</Filter>
+    </ClInclude>
     <ClInclude Include="include\debug.h">
       <Filter>include</Filter>
     </ClInclude>
@@ -663,6 +666,7 @@
       <Filter>src\ints</Filter>
     </ClInclude>
     <ClInclude Include="dosbox_pure_osd.h" />
+    <ClInclude Include="dosbox_pure_pad.h" />
     <ClInclude Include="dosbox_pure_run.h" />
     <ClInclude Include="core_options.h" />
     <ClInclude Include="libretro-common\include\libretro.h" />
