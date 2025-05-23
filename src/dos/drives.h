@@ -498,6 +498,7 @@ bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
 bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fcb_findfirst);
 Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len, bool& was_changed);
 DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize = NULL, bool* writable = NULL, char const* relative_to = NULL, std::string* out_resolve_path = NULL);
+bool DriveGetFileContent(DOS_Drive* drv, const char* path, std::vector<Bit8u>& out);
 bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize = 1024*1024);
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
 bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes);
@@ -838,6 +839,7 @@ public:
 	static StringToObjectHashMap<std::string> variants;
 	static bool ActivateVariant(int variant_number, bool ymlonly = false);
 	static void ResetVariants();
+	static std::vector<std::string> VariantConflictFiles(int variant_number, bool reset_conflicts);
 private:
 	struct patchDriveImpl* impl;
 };

@@ -478,6 +478,17 @@ struct DBP_MenuState
 		held_ticks = (t - held_ticks > 120 ? t : held_ticks + 60);
 		Input(DBPET_KEYDOWN, (int)held_key, 1);
 	}
+
+	void AddWrappedText(int lineLength, const char* prefix, const char* str, Bit16s info = 0)
+	{
+		for (const char* line = str, *p, *pmax, *lastspace; *line; line = (*lastspace ? lastspace + 1 : lastspace))
+		{
+			for (lastspace = NULL, p = line, pmax = p + lineLength; *p && p != pmax;) { if (*(++p) <= ' ' && *(lastspace = p) == '\n') break; }
+			if (*line == '\n' && !line[1]) break;
+			list.emplace_back(IT_NONE, info, prefix);
+			list.back().str.append(line, (size_t)(*line == '\n' ? 0 : (lastspace - line)));
+		}
+	}
 };
 
 static const Bit8u DBP_MapperJoypadNums[] = { RETRO_DEVICE_ID_JOYPAD_UP, RETRO_DEVICE_ID_JOYPAD_DOWN, RETRO_DEVICE_ID_JOYPAD_LEFT, RETRO_DEVICE_ID_JOYPAD_RIGHT, RETRO_DEVICE_ID_JOYPAD_B, RETRO_DEVICE_ID_JOYPAD_A, RETRO_DEVICE_ID_JOYPAD_Y, RETRO_DEVICE_ID_JOYPAD_X, RETRO_DEVICE_ID_JOYPAD_SELECT, RETRO_DEVICE_ID_JOYPAD_START, RETRO_DEVICE_ID_JOYPAD_L, RETRO_DEVICE_ID_JOYPAD_R, RETRO_DEVICE_ID_JOYPAD_L2, RETRO_DEVICE_ID_JOYPAD_R2, RETRO_DEVICE_ID_JOYPAD_L3, RETRO_DEVICE_ID_JOYPAD_R3 };
@@ -1069,15 +1080,15 @@ struct DBP_OnScreenKeyboardState
 
 struct DBP_PureMenuState : DBP_MenuState
 {
-	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, _IT_NO_AUTOBOOT, IT_MAINMENU, IT_COMMANDLINE, IT_CLOSEOSD, IT_VARIANTLIST, IT_VARIANTTOGGLE, IT_VARIANTRUN, IT_SYSTEMREFRESH };
+	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, _IT_NO_AUTOBOOT, IT_MAINMENU, IT_COMMANDLINE, IT_CLOSEOSD, IT_VARIANTLIST, IT_VARIANTTOGGLE, IT_VARIANTRUN, IT_VARIANTRUN_RESET_CONFLICTS, IT_VARIANTRUN_KEEP_CONFLICTS, IT_SYSTEMREFRESH };
 	enum { INFO_HEADER = 0x0A, INFO_WARN = 0x0B, INFO_DIM = 0xC };
 
-	int exe_count, fs_rows;
+	int exe_count, fs_rows, windowlinelength;
 	bool multidrive;
 	Bit8u popupsel;
 	ItemType listmode;
 
-	DBP_PureMenuState() : exe_count(0), fs_rows(0), multidrive(false), popupsel(0)
+	DBP_PureMenuState() : exe_count(0), fs_rows(0), windowlinelength(60), multidrive(false), popupsel(0)
 	{
 		if (dbp_game_running) INT10_SetCursorShape(0x1e, 0); // hide blinking cursor
 		RefreshList(IT_MAINMENU); // always read exe_count and fs_rows, even if switching menu below
@@ -1112,6 +1123,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		int inforow = (w > 319), hdr = lh*2+12, rows = (h - hdr - ftr) / lh - inforow, count = (int)list.size(), bot = hdr + rows * lh + 3 - (lh == 8 ? 1 : 0);
 		int listu = DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, 8, w - 8, hdr, (list[0].type == IT_NONE));
 		bool autoboot_show = (DBP_Run::autoboot.use && listmode != IT_VARIANTLIST && (list[sel].type < _IT_NO_AUTOBOOT || hide_sel));
+		windowlinelength = (w - 80) / buf.CW;
 
 		for (int i = scroll, se = (hide_sel ? -1 : sel); i != count && i != (scroll + rows); i++)
 		{
@@ -1532,7 +1544,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		{
 			DBP_MenuInterceptorRefreshSystem = true;
 		}
-		else if (res == RES_REFRESHSYSTEM)
+		else if (res == RES_REFRESHSYSTEM || (res == RES_CANCEL && list.back().type == IT_VARIANTLIST))
 		{
 			RefreshList(listmode);
 		}
@@ -1546,14 +1558,34 @@ struct DBP_PureMenuState : DBP_MenuState
 			// Go to top menu (if in submenu) or refresh list
 			RefreshList(IT_MAINMENU);
 		}
+		else if (ok_type == IT_VARIANTRUN)
+		{
+			Bit16s variant = item.info; // store before clear
+			std::vector<std::string> conflicts = patchDrive::VariantConflictFiles(variant, false);
+			if (conflicts.empty()) goto handle_result;
+
+			list.clear();
+			AddWrappedText(windowlinelength, "", "The selected configuration can't be applied because the settings in the files below have been customized:", INFO_WARN);
+			list.emplace_back(IT_NONE);
+			for (const std::string& path : conflicts) list.emplace_back(IT_NONE, 0, path.c_str());
+			list.emplace_back(IT_NONE);
+			AddWrappedText(windowlinelength, "", "To use the configuration as intended the files need to be reset, but any changes made to them by you will be lost.", INFO_DIM);
+			list.emplace_back(IT_NONE);
+			list.emplace_back(IT_VARIANTRUN_RESET_CONFLICTS, variant, "[ Yes, reset these files ]");
+			list.emplace_back(IT_VARIANTRUN_KEEP_CONFLICTS, variant, "[ No, keep my custom files as is ]");
+			list.emplace_back(IT_VARIANTLIST, 0, "[ Cancel ]");
+			ResetSel((int)list.size() - 2);
+		}
 		else if (ok_type)
 		{
 			handle_result:
 			if (dbp_strict_mode && (ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || (ok_type == IT_CLOSEOSD && DBP_FullscreenOSD))) return;
 			if (ok_type != IT_CLOSEOSD)
 			{
-				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || ok_type == IT_VARIANTRUN));
+				DBP_ASSERT(item.type == ok_type && (ok_type == IT_RUN || ok_type == IT_BOOTIMG || ok_type == IT_BOOTIMG_MACHINE || ok_type == IT_BOOTOS || ok_type == IT_INSTALLOS || ok_type == IT_RUNSHELL || ok_type == IT_COMMANDLINE || ok_type == IT_VARIANTRUN || ok_type == IT_VARIANTRUN_RESET_CONFLICTS || ok_type == IT_VARIANTRUN_KEEP_CONFLICTS));
 				if (!show_popup && (dbp_game_running || (first_shell->bf && !first_shell->bf->IsAutoexec()))) { popupsel = 0; show_popup = true; return; } // confirm
+				if (ok_type == IT_VARIANTRUN_RESET_CONFLICTS) { ok_type = IT_VARIANTRUN; patchDrive::VariantConflictFiles(item.info, true); }
+				if (ok_type == IT_VARIANTRUN_KEEP_CONFLICTS) { ok_type = IT_VARIANTRUN; }
 
 				if (!DBP_Run::Run(
 					ok_type == IT_RUN             ? DBP_Run::RUN_EXEC :

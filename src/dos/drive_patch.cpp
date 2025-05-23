@@ -923,9 +923,9 @@ Bits patchDrive::UnMount(void) { delete this; return 0;  }
 
 bool patchDrive::ActivateVariant(int variant_number, bool ymlonly)
 {
-	int enabledVariantIndex = variant_number - 1;
-	if (ActiveVariantIndex == enabledVariantIndex) return false;
-	ActiveVariantIndex = enabledVariantIndex;
+	int newVariantIndex = variant_number - 1;
+	if (ActiveVariantIndex == newVariantIndex) return false;
+	ActiveVariantIndex = newVariantIndex;
 
 	struct Local
 	{
@@ -957,6 +957,55 @@ void patchDrive::ResetVariants()
 	ActiveVariantIndex = -2;
 	patchDrive::dos_yml.clear();
 	patchDrive::variants.Clear();
+}
+
+std::vector<std::string> patchDrive::VariantConflictFiles(int variant_number, bool reset_conflicts)
+{
+	struct Local
+	{
+		static void GetDrives(DOS_Drive *drv, Local& l)
+		{
+			if (patchDrive* ppd = dynamic_cast<patchDrive*>(drv)) { l.PatchDrive = ppd; return; }
+			if (memoryDrive* pmemd = dynamic_cast<memoryDrive*>(drv)) { l.MemoryDrive = pmemd; return; }
+			for (int n = 0;; n++) { if (DOS_Drive* shadow = drv->GetShadow(n, true)) { GetDrives(shadow, l); } else break; }
+		}
+		static void CheckFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
+		{
+			if (is_dir) return;
+			Local& l = *(Local*)data;
+
+			FileStat_Block stat;
+			if (!l.MemoryDrive->FileStat(path, &stat)) return;
+			if (stat.size == size)
+			{
+				if (!size) return;
+				l.Buf.clear();
+				DriveGetFileContent(l.MemoryDrive, path, l.Buf);
+				DriveGetFileContent(l.PatchDrive, path, l.Buf);
+				if (!memcmp(&l.Buf[0], &l.Buf[size], size)) return;
+			}
+			l.Result.push_back(path);
+		}
+		patchDrive* PatchDrive = NULL;
+		memoryDrive* MemoryDrive = NULL;
+		std::vector<std::string> Result;
+		std::vector<Bit8u> Buf;
+	} l;
+
+	if (Drives['C'-'A']) Local::GetDrives(Drives['C'-'A'], l);
+	if (l.PatchDrive && l.MemoryDrive)
+	{
+		int oldVariantNumber = ActiveVariantIndex + 1;
+		ActivateVariant(variant_number);
+		DriveFileIterator(l.PatchDrive, Local::CheckFiles, (Bitu)&l);
+		ActivateVariant(oldVariantNumber);
+		if (reset_conflicts)
+		{
+			for (const std::string& path : l.Result) l.MemoryDrive->FileUnlink((char*)path.c_str());
+			l.Result.clear();
+		}
+	}
+	return l.Result;
 }
 
 /*

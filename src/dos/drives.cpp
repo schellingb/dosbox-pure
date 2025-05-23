@@ -604,16 +604,10 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	return dos_file;
 }
 
-bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
+static bool ReadAndClose(DOS_File *df, Bit32u filesize, Bit8u* buf)
 {
-	if (!df) return false;
-	if (!df->refCtr) df->AddRef();
-	Bit32u curlen = (Bit32u)out.size(), filesize = 0, seekzero = 0;
-	df->Seek(&filesize, DOS_SEEK_END);
+	Bit32u seekzero = 0;
 	df->Seek(&seekzero, DOS_SEEK_SET);
-	if (!filesize || filesize > maxsize) { df->Close(); delete df; return false; }
-	out.resize(curlen + filesize);
-	Bit8u* buf = (Bit8u*)&out[curlen];
 	for (Bit16u read; filesize; filesize -= read, buf += read)
 	{
 		read = (Bit16u)(filesize > 0xFFFF ? 0xFFFF : filesize);
@@ -622,6 +616,28 @@ bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
 	df->Close();
 	delete df;
 	return true;
+}
+
+bool DriveGetFileContent(DOS_Drive* drv, const char* path, std::vector<Bit8u>& out)
+{
+	DOS_File* df;
+	if (!drv->FileOpen(&df, (char*)path, 0)) return false;
+	df->AddRef();
+	Bit32u curlen = (Bit32u)out.size(), filesize = 0, seekzero = 0;
+	df->Seek(&filesize, DOS_SEEK_END);
+	out.resize(curlen + filesize);
+	return ReadAndClose(df, filesize, &out[curlen]);
+}
+
+bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
+{
+	if (!df) return false;
+	if (!df->refCtr) df->AddRef();
+	Bit32u curlen = (Bit32u)out.size(), filesize = 0;
+	df->Seek(&filesize, DOS_SEEK_END);
+	if (filesize > maxsize) { df->Close(); delete df; return false; }
+	out.resize(curlen + filesize);
+	return ReadAndClose(df, filesize, (Bit8u*)&out[curlen]);
 }
 
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes)
