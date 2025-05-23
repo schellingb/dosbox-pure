@@ -48,8 +48,6 @@ namespace DBP_Option
 		conf,
 		menu_time,
 		menu_transparency,
-		latency,
-		auto_target,
 		// Input
 		on_screen_keyboard,
 		mouse_input,
@@ -191,39 +189,6 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
 		},
 		"70"
-	},
-	{
-		"dosbox_pure_latency",
-		"Advanced > Input Latency", NULL,
-		"By default the core operates in a high performance mode with good input latency." "\n"
-		"There is a special mode available which minimizes input latency further requiring manual tweaking.", NULL,
-		DBP_OptionCat::Emulation,
-		{
-			{ "default", "Default" },
-			{ "low", "Lowest latency - See CPU usage setting below!" },
-			{ "variable", "Irregular latency - Might improve performance on low-end devices" },
-		},
-		"default"
-	},
-	{
-		"dosbox_pure_auto_target",
-		"Advanced > Low latency CPU usage", NULL,
-		"In low latency mode when emulating DOS as fast as possible, how much time per frame should be used by the emulation." "\n"
-		"If the video is stuttering, lower this or improve render performance in the frontend (for example by disabling vsync or video processing)." "\n"
-		"Use the performance statistics to easily find the maximum that still hits the emulated target framerate." "\n\n", NULL, //end of Emulation > Advanced section
-		DBP_OptionCat::Emulation,
-		{
-			//{ "0.2", "20%" }, { "0.21", "21%" }, { "0.22", "22%" }, { "0.23", "23%" }, { "0.24", "24%" }, { "0.25", "25%" }, { "0.26", "26%" }, { "0.27", "27%" }, { "0.28", "28%" }, { "0.29", "29%" },
-			//{ "0.3", "30%" }, { "0.31", "31%" }, { "0.32", "32%" }, { "0.33", "33%" }, { "0.34", "34%" }, { "0.35", "35%" }, { "0.36", "36%" }, { "0.37", "37%" }, { "0.38", "38%" }, { "0.39", "39%" },
-			//{ "0.4", "40%" }, { "0.41", "41%" }, { "0.42", "42%" }, { "0.43", "43%" }, { "0.44", "44%" }, { "0.45", "45%" }, { "0.46", "46%" }, { "0.47", "47%" }, { "0.48", "48%" }, { "0.49", "49%" },
-			{ "0.5", "50%" }, { "0.51", "51%" }, { "0.52", "52%" }, { "0.53", "53%" }, { "0.54", "54%" }, { "0.55", "55%" }, { "0.56", "56%" }, { "0.57", "57%" }, { "0.58", "58%" }, { "0.59", "59%" },
-			{ "0.6", "60%" }, { "0.61", "61%" }, { "0.62", "62%" }, { "0.63", "63%" }, { "0.64", "64%" }, { "0.65", "65%" }, { "0.66", "66%" }, { "0.67", "67%" }, { "0.68", "68%" }, { "0.69", "69%" },
-			{ "0.7", "70%" }, { "0.71", "71%" }, { "0.72", "72%" }, { "0.73", "73%" }, { "0.74", "74%" }, { "0.75", "75%" }, { "0.76", "76%" }, { "0.77", "77%" }, { "0.78", "78%" }, { "0.79", "79%" },
-			{ "0.8", "80%" }, { "0.81", "81%" }, { "0.82", "82%" }, { "0.83", "83%" }, { "0.84", "84%" }, { "0.85", "85%" }, { "0.86", "86%" }, { "0.87", "87%" }, { "0.88", "88%" }, { "0.89", "89%" },
-			{ "0.9", "90%" }, { "0.91", "91%" }, { "0.92", "92%" }, { "0.93", "93%" }, { "0.94", "94%" }, { "0.95", "95%" }, { "0.96", "96%" }, { "0.97", "97%" }, { "0.98", "98%" }, { "0.99", "99%" },
-			{ "1.0", "100%" },
-		},
-		"0.8",
 	},
 
 	// Input

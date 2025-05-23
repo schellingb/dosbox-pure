@@ -59,7 +59,6 @@ static retro_system_av_info av_info;
 // DOSBOX STATE
 static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_REBOOT, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
-static enum DBP_Latency : Bit8u { DBP_LATENCY_DEFAULT, DBP_LATENCY_LOW, DBP_LATENCY_VARIABLE } dbp_latency;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
 static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
@@ -645,7 +644,7 @@ void DBP_SetRealModeCycles()
 static bool DBP_NeedFrameSkip(bool in_emulation)
 {
 	if ((in_emulation ? (dbp_throttle.rate > render.src.fps - 1) : (render.src.fps > dbp_throttle.rate - 1))
-		|| dbp_throttle.rate < 10 || dbp_latency == DBP_LATENCY_VARIABLE
+		|| dbp_throttle.rate < 10
 		|| dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING || dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD
 		|| dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.mode == RETRO_THROTTLE_REWINDING) return false;
 	static float accum;
@@ -1245,10 +1244,7 @@ void DBP_OnBIOSReboot()
 static double DBP_GetFPS()
 {
 	// More accurate then render.src.fps would be (1000.0 / vga.draw.delay.vtotal)
-	if (dbp_forcefps) return dbp_forcefps;
-	if (dbp_latency != DBP_LATENCY_VARIABLE) return render.src.fps;
-	if (!dbp_targetrefreshrate && (!environ_cb || !environ_cb(RETRO_ENVIRONMENT_GET_TARGET_REFRESH_RATE, &dbp_targetrefreshrate) || dbp_targetrefreshrate < 1)) dbp_targetrefreshrate = 60.0f;
-	return dbp_targetrefreshrate;
+	return (dbp_forcefps ? dbp_forcefps : render.src.fps);
 }
 
 void DBP_Crash(const char* msg)
@@ -1282,11 +1278,6 @@ bool DBP_IsShuttingDown()
 bool DBP_GetRetroMidiInterface(retro_midi_interface* res)
 {
 	return (environ_cb && environ_cb(RETRO_ENVIRONMENT_GET_MIDI_INTERFACE, res));
-}
-
-bool DBP_IsLowLatency()
-{
-	return dbp_latency == DBP_LATENCY_LOW;
 }
 
 bool DBP_WantAutoShutDown()
@@ -1613,30 +1604,9 @@ static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 	if (force_skip)
 		goto return_true;
 
-	if (dbp_latency != DBP_LATENCY_VARIABLE || dbp_state == DBPSTATE_FIRST_FRAME)
-		DBP_ThreadControl(TCM_ON_FINISH_FRAME);
+	DBP_ThreadControl(TCM_ON_FINISH_FRAME);
 
-	retro_time_t time_after = time_cb();
-	if (dbp_latency == DBP_LATENCY_VARIABLE)
-	{
-		while (time_after > dbp_lastrun + 100000 && !dbp_pause_events) retro_sleep(0); // paused or frame stepping
-		if (dbp_pause_events) DBP_ThreadControl(TCM_ON_PAUSE_FRAME);
-		if (dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.rate > .1f)
-		{
-			Bit32u frameTime = (Bit32u)(1000000.0 / render.src.fps * (((dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION) && dbp_throttle.rate > .1f) ? av_info.timing.fps / dbp_throttle.rate : 1.0));
-			if (St.TimeSleepUntil <= time_after - frameTime * 2)
-				St.TimeSleepUntil = time_after;
-			else
-				St.TimeSleepUntil += frameTime;
-			while ((Bit32s)(St.TimeSleepUntil - time_after) > 0)
-			{
-				retro_sleep(((St.TimeSleepUntil - time_after) > 1500 ? 1 : 0)); // double brackets because of missing brackets in macro...
-				if (dbp_pause_events) DBP_ThreadControl(TCM_ON_PAUSE_FRAME);
-				time_after = time_cb();
-			}
-		}
-	}
-	retro_time_t time_last = St.TimeLast;
+	retro_time_t time_last = St.TimeLast, time_after = time_cb();
 	St.TimeLast = time_after;
 
 	if (dbp_perf)
@@ -2300,18 +2270,6 @@ static bool check_variables()
 	const char* forcefps = DBP_Option::Get(DBP_Option::forcefps);
 	dbp_forcefps = (Bit16s)(forcefps[0] == 'f' ? 0 : forcefps[0] == 't' ? 60 : atoi(forcefps));
 
-	const char latency = DBP_Option::Get(DBP_Option::latency)[0];
-	bool toggled_variable = (dbp_state != DBPSTATE_BOOT && (dbp_latency == DBP_LATENCY_VARIABLE) != (latency == 'v'));
-	if (toggled_variable) DBP_ThreadControl(TCM_PAUSE_FRAME);
-	switch (latency)
-	{
-		case 'l': dbp_latency = DBP_LATENCY_LOW;      break;
-		case 'v': dbp_latency = DBP_LATENCY_VARIABLE; break;
-		default:  dbp_latency = DBP_LATENCY_DEFAULT;  break;
-	}
-	if (toggled_variable) DBP_ThreadControl(dbp_pause_events ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
-	DBP_Option::SetDisplay(DBP_Option::auto_target, (dbp_latency == DBP_LATENCY_LOW));
-
 	switch (DBP_Option::Get(DBP_Option::perfstats)[0])
 	{
 		case 's': dbp_perf = DBP_PERF_SIMPLE; break;
@@ -2347,9 +2305,7 @@ static bool check_variables()
 	}
 	visibility_changed |= DBP_Option::Apply(sec_cpu, "cycles", cycles, false, false, cycles_changed);
 
-	dbp_auto_target =
-		(dbp_latency == DBP_LATENCY_LOW ? (float)atof(DBP_Option::Get(DBP_Option::auto_target)) : 1.0f)
-		* (cycles_numeric ? 1.0f : (float)atof(DBP_Option::Get(DBP_Option::cycle_limit)));
+	dbp_auto_target = 1.0f * (cycles_numeric ? 1.0f : (float)atof(DBP_Option::Get(DBP_Option::cycle_limit)));
 
 	extern const char* RunningProgram;
 	bool cpu_code_changed = false;
@@ -3388,11 +3344,6 @@ void retro_run(void)
 		if (midierr) retro_notify(0, RETRO_LOG_ERROR, midierr, midiarg);
 		if (dbp_state == DBPSTATE_FIRST_FRAME)
 			dbp_state = DBPSTATE_RUNNING;
-		if (dbp_latency == DBP_LATENCY_VARIABLE)
-		{
-			DBP_ThreadControl(TCM_NEXT_FRAME);
-			dbp_targetrefreshrate = 0; // force refresh this because only in retro_run RetroArch will return the correct value
-		}
 	}
 
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_THROTTLE_STATE, &dbp_throttle))
@@ -3491,20 +3442,7 @@ void retro_run(void)
 		DBP_ReleaseKeyEvents(true);
 
 	bool skip_emulate = (fpsboost > 1 && (((fpsboost_count++)%fpsboost)!=0)) || DBP_NeedFrameSkip(false);
-	switch (dbp_latency)
-	{
-		case DBP_LATENCY_DEFAULT:
-			DBP_ThreadControl(skip_emulate ? TCM_PAUSE_FRAME : TCM_FINISH_FRAME);
-			break;
-		case DBP_LATENCY_LOW:
-			if (skip_emulate) break;
-			if (!dbp_frame_pending) DBP_ThreadControl(TCM_NEXT_FRAME);
-			DBP_ThreadControl(TCM_FINISH_FRAME);
-			break;
-		case DBP_LATENCY_VARIABLE:
-			dbp_lastrun = time_cb();
-			break;
-	}
+	DBP_ThreadControl(skip_emulate ? TCM_PAUSE_FRAME : TCM_FINISH_FRAME);
 
 	Bit32u tpfActual = 0, tpfTarget = 0, tpfDraws = 0;
 	#ifdef DBP_ENABLE_WAITSTATS
@@ -3536,31 +3474,16 @@ void retro_run(void)
 		mixSamples = (numSamples > haveSamples ? haveSamples : (Bit32u)numSamples);
 		dbp_audio_remain = ((numSamples <= mixSamples || numSamples > haveSamples) ? 0.0 : (numSamples - mixSamples));
 		if (mixSamples > DBP_MAX_SAMPLES) mixSamples = DBP_MAX_SAMPLES;
-		if (dbp_latency == DBP_LATENCY_VARIABLE)
-		{
-			if (dbp_pause_events) DBP_ThreadControl(TCM_RESUME_FRAME); // can be paused by serialize
-			while (DBP_MIXER_DoneSamplesCount() < mixSamples * 12 / 10) { dbp_lastrun = time_cb(); retro_sleep(0); } // buffer ahead a bit
-			DBP_ThreadControl(TCM_PAUSE_FRAME); 
-		}
 		MIXER_CallBack(0, (Bit8u*)dbp_audio, mixSamples * 4);
-		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_opengl_draw) DBP_ThreadControl(TCM_RESUME_FRAME);
 	}
 
 	// Read buffer_active before waking up emulation thread
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];
 	Bit32u view_width = buf.width, view_height = buf.height;
 
-	if (dbp_opengl_draw)
-	{
-		if (dbp_latency == DBP_LATENCY_VARIABLE && !dbp_pause_events) DBP_ThreadControl(TCM_PAUSE_FRAME);
-		if (voodoo_ogl_mainthread()) { view_width *= voodoo_ogl_scale; view_height *= voodoo_ogl_scale; }
-		if (dbp_latency == DBP_LATENCY_VARIABLE) DBP_ThreadControl(TCM_RESUME_FRAME);
-	}
+	if (dbp_opengl_draw && voodoo_ogl_mainthread()) { view_width *= voodoo_ogl_scale; view_height *= voodoo_ogl_scale; }
 
-	if (dbp_latency == DBP_LATENCY_DEFAULT)
-	{
-		DBP_ThreadControl(skip_emulate ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
-	}
+	DBP_ThreadControl(skip_emulate ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
 
 	// submit audio
 	//log_cb(RETRO_LOG_INFO, "[retro_run] Submit %d samples (remain %f) - Had: %d - Left: %d\n", mixSamples, dbp_audio_remain, haveSamples, DBP_MIXER_DoneSamplesCount());
