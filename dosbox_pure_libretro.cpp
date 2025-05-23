@@ -3248,7 +3248,26 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 			if (fext++)
 			{
 				bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
-				if (isFS && !strncmp(fext, "IM", 2) && (size < 163840 || (size <= 2949120 && (size % 20480) && (size % 20480) != 1024))) isFS = false; //validate floppy images
+				if (isFS && !strncmp(fext, "IM", 2))
+				{
+					DOS_File *df;
+					if (size < 163840 || (size % 512)) isFS = false; // validate generic disk image
+					else if (size < 2949120) // validate floppy images
+					{
+						for (Bit32u i = 0, dgsz;; i++) if ((dgsz = DiskGeometryList[i].ksize * 1024) == size || dgsz + 1024 == size) goto img_is_fs;
+						isFS = false;
+						img_is_fs:;
+					}
+					else if (!Drives[data]->FileOpen(&df, (char*)path, OPEN_READ)) { DBP_ASSERT(0); isFS = false; }
+					else // validate mountable hard disk
+					{
+						df->AddRef();
+						imageDisk* id = new imageDisk(df, "", (size / 1024), true);
+						id->Set_GeometryForHardDisk();
+						if (!id->sector_size || !id->heads || !id->cylinders ||!id->sectors) isFS = false;
+						delete id; // closes and deletes df
+					}
+				}
 				if (isFS && !strcmp(fext, "INS"))
 				{
 					// Make sure this is an actual CUE file with an INS extension
