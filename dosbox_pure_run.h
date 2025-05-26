@@ -524,6 +524,10 @@ struct DBP_Run
 				if (percent <= 0) return false;
 				input.mousexfactor = percent / 100.0f;
 			}
+			else if ((keyLen > (sizeof("input_pad_") - 1) && !strncmp("input_pad_", Key, (size_t)(sizeof("input_pad_") - 1))) || (keyLen > (sizeof("input_wheel_") - 1) && !strncmp("input_wheel_", Key, (size_t)(sizeof("input_wheel_") - 1))))
+			{
+				return DBP_PadMapping::ParseYML(Key, KeyX, Val, ValX);
+			}
 			else return false;
 			return true;
 		}
@@ -814,18 +818,9 @@ struct DBP_Run
 				cmdNext++;
 			}
 
-			static const char* DBP_Commands[KBD_LAST+3] =
-			{
-				"","1","2","3","4","5","6","7","8","9","0","q","w","e","r","t","y","u","i","o","p","a","s","d","f","g","h","j","k","l","z","x","c","v","b","n","m",
-				"f1","f2","f3","f4","f5","f6","f7","f8","f9","f10","f11","f12","esc","tab","backspace","enter","space","leftalt","rightalt","leftctrl","rightctrl","leftshift","rightshift",
-				"capslock","scrolllock","numlock","grave","minus","equals","backslash","leftbracket","rightbracket","semicolon","quote","period","comma","slash","extra_lt_gt",
-				"printscreen","pause","insert","home","pageup","delete","end","pagedown","left","up","down","right","kp1","kp2","kp3","kp4","kp5","kp6","kp7","kp8","kp9","kp0",
-				"kpdivide","kpmultiply","kpminus","kpplus","kpenter","kpperiod",
-				"wait","waitmodechange","delay"
-			};
 			if (i == 0)
 				for (; i != KBD_LAST+3; i++)
-					if (!strncasecmp(DBP_Commands[i], cmd, cmdlen) && DBP_Commands[i][cmdlen] == '\0')
+					if (!strncasecmp(DBP_YMLKeyCommands[i], cmd, cmdlen) && DBP_YMLKeyCommands[i][cmdlen] == '\0')
 						break;
 
 			if (i == KBD_LAST+0 && cmdColon) // wait command

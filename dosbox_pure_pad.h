@@ -325,6 +325,118 @@ struct DBP_PadMapping
 		return bnd;
 	}
 
+	static bool ParseYML(const char *Key, const char *KeyX, const char *Val, const char *ValX)
+	{
+		static const char *padnames[24] = { "b", "y", "select", "start", "up", "down", "left", "right", "a", "x", "l", "r", "l2", "r2", "l3", "r3", "lstick_left", "lstick_right", "lstick_up", "lstick_down", "rstick_left", "rstick_right", "rstick_up", "rstick_down" };
+		const bool iswheel = (Key[6] == 'w');
+		int padwheelnum;
+		if (!iswheel)
+		{
+			const char* padname = Key + 10;
+			size_t padlen = KeyX - padname;
+			for (padwheelnum = 0; padwheelnum != 24; padwheelnum++) if (!strncmp(padname, padnames[padwheelnum], padlen) && padnames[padwheelnum][padlen] == '\0') goto gotnum;
+			return false;
+			gotnum:;
+		}
+		else
+		{
+			padwheelnum = atoi(Key + 12) - 1;
+			if (padwheelnum < 0 || padwheelnum > 99) return false;
+		}
+
+		const char *split, *txt;
+		for (split = Val; split != ValX && *split != ' ';) split++;
+		for (txt = split; txt != ValX && *txt == ' ';) txt++;
+		Bit8u maps[8] = { 0 }, keyCount = 0;
+
+		const Bit8u btnID = (Bit8u)(iswheel ? DBP_PadMapping::WHEEL_ID : (padwheelnum < 16 ? padwheelnum : (16 + (padwheelnum - 16) / 2)));
+		const char *name = (txt != ValX ? txt : NULL), *nameEnd = ValX;
+		const bool isAnalog = ((btnID >> 2) == 4); // 16 - 19
+		const Bit8u analogpart = (isAnalog ? (padwheelnum & 1) : 0);
+
+		for (const char* p = Val, *pid = Val; p <= split; p++)
+		{
+			if (p != split && *p != '+') continue;
+
+			Bit8u mapid = 0;
+			size_t cmdlen = (p-pid);
+			for (Bit8u i = 1; i != KBD_LAST; i++)
+				if (!strncasecmp(DBP_YMLKeyCommands[i], pid, cmdlen) && DBP_YMLKeyCommands[i][cmdlen] == '\0')
+					{ mapid = i; break; }
+			if (mapid == 0)
+				for (const DBP_SpecialMapping& sm : DBP_SpecialMappings)
+				{
+					if (!sm.ymlid || strncasecmp(pid, sm.ymlid, cmdlen) || sm.ymlid[cmdlen]) continue;
+					mapid = (Bit8u)DBP_SPECIALMAPPINGS_KEY + (Bit8u)(&sm - DBP_SpecialMappings);
+					break;
+				}
+			if (mapid == 0 || keyCount == 4) return false;
+			maps[(keyCount++) * (isAnalog ? 2 : 1) + analogpart] = mapid;
+			pid = p+1;
+		}
+
+		static std::vector<Bit8u> YMLMapping;
+		static std::string YMLNames;
+		if (!dbp_auto_mapping)
+		{
+			YMLMapping.clear();
+			YMLNames.clear();
+			YMLMapping.insert(YMLMapping.begin(), 1, 0);
+		}
+
+		size_t nameofs = YMLNames.length();
+		for (const BindDecoder& it : BindDecoder(dbp_auto_mapping))
+		{
+			if (it.BtnID != btnID) continue;
+			if (isAnalog)
+			{
+				if (it.P[analogpart]) return false; // already bound
+				if (it.KeyCount > keyCount) keyCount = it.KeyCount;
+				for (int i = 0; i != it.KeyCount; i++)
+					maps[i * 2 + (int)(!analogpart)] = it.P[i * 2 + (int)(!analogpart)];
+
+				if (it.HasActionName)
+				{
+					size_t oldnamelen = strlen(&YMLNames[it.NameOffset]);
+					YMLNames.append(&YMLNames[it.NameOffset]);
+					if (name) YMLNames.append(" / ");
+				}
+
+				const Bit8u* itStart = it.P - (it.HasActionName ? (it.NameOffset >= 2097152 ? 4 : it.NameOffset >= 16384 ? 3 : it.NameOffset >= 128 ? 2 : 1) : 0) - 1;
+				const Bit8u* itEnd = it.P + (it.KeyCount * 2);
+				YMLMapping.erase(YMLMapping.begin() + (itStart - &YMLMapping[0]), YMLMapping.begin() + (itEnd - &YMLMapping[0]));
+				YMLMapping[0]--;
+				break;
+			}
+			else if (!iswheel) return false; // already bound
+			else if (!(padwheelnum--)) return false; // wheel index already added
+		}
+		if (iswheel && padwheelnum) return false; // wheel index in wrong order
+
+		const bool hasActionName = (name || YMLNames.size() > nameofs);
+		const int actionNameBytes = (hasActionName ? (nameofs >= 2097152 ? 4 : nameofs >= 16384 ? 3 : nameofs >= 128 ? 2 : 1) : 0);
+		const size_t ymlofs = YMLMapping.size();
+
+		YMLMapping[0]++;
+		YMLMapping.insert(YMLMapping.end(), 1 + actionNameBytes + keyCount * (isAnalog ? 2 : 1), 0);
+		Bit8u* p = &YMLMapping[ymlofs];
+		*(p++) = (Bit8u)(((keyCount - 1) << 6) | (hasActionName ? 32 : 0) | btnID);
+		for (int i = actionNameBytes - 1; i != -1; i--)
+			*(p++) = ((nameofs >> (7 * i)) & 127) | (i ? 128 : 0);
+		memcpy(p, maps, keyCount * (isAnalog ? 2 : 1));
+
+		if (hasActionName)
+		{
+			if (name) YMLNames.append(name, (nameEnd - name));
+			YMLNames += '\0';
+		}
+
+		dbp_auto_mapping = &YMLMapping[0];
+		dbp_auto_mapping_names = YMLNames.c_str();
+		dbp_auto_mapping_title = "Content Provided Mapping";
+		return true;
+	}
+
 private:
 	static int InsertBind(const DBP_InputBind& b)
 	{
@@ -672,4 +784,29 @@ private:
 		}
 		const Bit8u *P, **OutPtr; Bit8u Remain, KeyCount, BtnID; bool IsAnalog, HasActionName; Bit32u NameOffset;
 	};
+
+	#ifndef NDEBUG // Can be used in a debuggers watch window
+	public:
+	static std::string PadMappingToString(const Bit8u* mapping, const char* names = NULL)
+	{
+		std::string res;
+		char buf[1024];
+		static const char *padnames[] = { "b", "y", "select", "start", "up", "down", "left", "right", "a", "x", "l", "r", "l2", "r2", "l3", "r3", "lstick_x", "lstick_y", "rstick_x", "rstick_y", "wheel", "???????" };
+		for (const BindDecoder& it : BindDecoder(mapping))
+		{
+			res.append((sprintf(buf, "Remain: %2d, KeyCount: %2d, BtnID: %2d (%-10s), IsAnalog: %d, HasActionName: %d, NameOffset: %4u (%s):", it.Remain, it.KeyCount, it.BtnID, padnames[it.BtnID], it.IsAnalog, it.HasActionName, it.NameOffset, ((it.HasActionName && names) ? names+it.NameOffset : "")), buf));
+			for (int i = 0, istep = (it.IsAnalog ? 2 : 1), iend = it.KeyCount * istep; i != iend; i += istep)
+			{
+				if (it.IsAnalog) res.append((sprintf(buf, " [%s (%d) / %s (%d)]", DBP_GETKEYNAME(it.P[i]), it.P[i], DBP_GETKEYNAME(it.P[i + 1]), it.P[i + 1]), buf));
+				else             res.append((sprintf(buf, " [%s (%d)]", DBP_GETKEYNAME(it.P[i]), it.P[i]), buf));
+			}
+			res.append("\n");
+		}
+		return res;
+	}
+	#endif
 };
+
+#ifndef NDEBUG // Can be used in a debuggers watch window
+std::string PadMappingToString(const Bit8u* mapping, const char* names = NULL) { return DBP_PadMapping::PadMappingToString(mapping, names); }
+#endif
