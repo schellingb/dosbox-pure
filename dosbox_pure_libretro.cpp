@@ -2400,25 +2400,9 @@ static bool check_variables()
 	// Keyboard layout can't be change in protected mode (extracting keyboard layout doesn't work when EMS/XMS is in use)
 	DBP_Option::GetAndApply(sec_dos, "keyboardlayout", DBP_Option::keyboard_layout, true);
 
-	const char* mouse_wheel = DBP_Option::Get(DBP_Option::mouse_wheel);
-	const char* mouse_wheel2 = (mouse_wheel ? strchr(mouse_wheel, '/') : NULL);
-	int wkey1 = (mouse_wheel ? atoi(mouse_wheel) : 0);
-	int wkey2 = (mouse_wheel2 ? atoi(mouse_wheel2 + 1) : 0);
-	Bit16s bind_mousewheel = (wkey1 > KBD_NONE && wkey1 < KBD_LAST && wkey2 > KBD_NONE && wkey2 < KBD_LAST ? DBP_MAPPAIR_MAKE(wkey1, wkey2) : 0);
+	DBP_PadMapping::CheckInputVariables();
 
-	bool on_screen_keyboard = (DBP_Option::Get(DBP_Option::on_screen_keyboard)[0] != 'f');
-	char mouse_input = DBP_Option::Get(DBP_Option::mouse_input)[0];
-	if (on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
-	{
-		dbp_on_screen_keyboard = on_screen_keyboard;
-		dbp_mouse_input = ((mouse_input == 't' && DBP_Run::input.directmouse) ? 'd' : mouse_input);
-		dbp_bind_mousewheel = bind_mousewheel;
-		if (dbp_state > DBPSTATE_SHUTDOWN) DBP_PadMapping::SetInputDescriptors(true);
-	}
 	dbp_alphablend_base = (Bit8u)((atoi(DBP_Option::Get(DBP_Option::menu_transparency)) + 30) * 0xFF / 130);
-	dbp_mouse_speed = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor)) * DBP_Run::input.mousespeed;
-	dbp_mouse_speed_x = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor_x)) * DBP_Run::input.mousexfactor;
-
 	dbp_joy_analog_deadzone = (int)((float)atoi(DBP_Option::Get(DBP_Option::joystick_analog_deadzone)) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
 
 	return visibility_changed;
