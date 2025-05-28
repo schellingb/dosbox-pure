@@ -1232,7 +1232,7 @@ struct DBP_PureMenuState : DBP_MenuState
 		for (size_t i = str.find('#'), j; i != std::string::npos; i = str.find('#', j))
 		{
 			for (j = i; j && str[j-1] >= '0' && str[j-1] <= '9';) j--;
-			if (j != i) str.erase(j, i-j+1);
+			if (j != i) str.erase(j, i-j+1); else j++;
 		}
 	}
 
