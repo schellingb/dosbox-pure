@@ -25,7 +25,8 @@ static char dbp_mouse_input, dbp_auto_mapping_mode;
 static const Bit8u* dbp_auto_mapping;
 static const char *dbp_auto_mapping_names, *dbp_auto_mapping_title;
 static bool dbp_yml_directmouse, dbp_yml_mapping;
-static float dbp_yml_mousespeed = 1, dbp_yml_mousexfactor = 1;
+static float dbp_yml_mousespeed = 1, dbp_yml_mousexfactor = 1, dbp_yml_padmousespeed = 1;
+static float dbp_mouse_speed = 1, dbp_mouse_speed_x = 1, dbp_joymouse_speed = .0003f;
 
 struct DBP_PadMapping
 {
@@ -350,19 +351,20 @@ struct DBP_PadMapping
 		}
 		dbp_mouse_speed = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor)) * dbp_yml_mousespeed;
 		dbp_mouse_speed_x = (float)atof(DBP_Option::Get(DBP_Option::mouse_speed_factor_x)) * dbp_yml_mousexfactor;
+		dbp_joymouse_speed = .0003f * dbp_yml_padmousespeed;
 	}
 
 	static void ResetYML()
 	{
 		dbp_yml_mousewheel = 0;
 		dbp_yml_directmouse = false;
-		dbp_yml_mousespeed = dbp_yml_mousexfactor = 1;
+		dbp_yml_mousespeed = dbp_yml_mousexfactor = dbp_yml_padmousespeed = 1;
 		if (dbp_yml_mapping) { dbp_auto_mapping = NULL; dbp_yml_mapping = false; }
 	}
 
 	static void PostYML()
 	{
-		if (dbp_yml_mousewheel || dbp_yml_directmouse || dbp_yml_mousespeed != 1 || dbp_yml_mousexfactor != 1 || dbp_yml_mapping)
+		if (dbp_yml_mousewheel || dbp_yml_directmouse || dbp_yml_mousespeed != 1 || dbp_yml_mousexfactor != 1 || dbp_yml_padmousespeed != 1 || dbp_yml_mapping)
 			CheckInputVariables();
 	}
 
@@ -374,19 +376,20 @@ struct DBP_PadMapping
 			dbp_yml_directmouse = (Val[0]|0x20) == 't';
 			return true;
 		}
-		if (   (keyLen == (sizeof("input_mousespeed")   - 1) && !strncmp("input_mousespeed",   Key, (size_t)(sizeof("input_mousespeed")   - 1)))
-			|| (keyLen == (sizeof("input_mousexfactor") - 1) && !strncmp("input_mousexfactor", Key, (size_t)(sizeof("input_mousexfactor") - 1))))
+		if (   (keyLen == (sizeof("input_mousespeed")    - 1) && !strncmp("input_mousespeed",    Key, (size_t)(sizeof("input_mousespeed")    - 1)))
+			|| (keyLen == (sizeof("input_mousexfactor")  - 1) && !strncmp("input_mousexfactor",  Key, (size_t)(sizeof("input_mousexfactor")  - 1)))
+			|| (keyLen == (sizeof("input_padmousespeed") - 1) && !strncmp("input_padmousespeed", Key, (size_t)(sizeof("input_padmousespeed") - 1))))
 		{
 			int percent = atoi(Val);
 			if (percent <= 0) return false;
-			(Key[11] == 'x' ? dbp_yml_mousexfactor : dbp_yml_mousespeed) = percent / 100.0f;
+			(Key[6] == 'p' ? dbp_yml_padmousespeed : (Key[11] == 'x' ? dbp_yml_mousexfactor : dbp_yml_mousespeed)) = percent / 100.0f;
 			return true;
 		}
 		if (   (keyLen == (sizeof("input_mousewheelup")   - 1) && !strncmp("input_mousewheelup",   Key, (size_t)(sizeof("input_mousewheelup")   - 1)))
 			|| (keyLen == (sizeof("input_mousewheeldown") - 1) && !strncmp("input_mousewheeldown", Key, (size_t)(sizeof("input_mousewheeldown") - 1))))
 		{
 			const Bit8u mapid = GetYMLMapId(Val, ValX - Val);
-			if (mapid == 0) return false;
+			if (mapid == 255) return false;
 			dbp_yml_mousewheel = DBP_MAPPAIR_MAKE((Key[16] == 'u' ? mapid : DBP_MAPPAIR_GET(-1, dbp_yml_mousewheel)), (Key[16] == 'd' ? mapid : DBP_MAPPAIR_GET(1, dbp_yml_mousewheel)));
 			return true;
 		}
@@ -426,13 +429,36 @@ struct DBP_PadMapping
 		{
 			if (p != split && *p != '+') continue;
 			const Bit8u mapid = GetYMLMapId(pid, p - pid);
-			if (mapid == 0 || keyCount == 4) return false;
-			maps[(keyCount++) * (isAnalog ? 2 : 1) + analogpart] = mapid;
+			if (mapid == 255 || keyCount == 4) return false;
+			if (mapid) maps[(keyCount++) * (isAnalog ? 2 : 1) + analogpart] = mapid;
 			pid = p+1;
 		}
 
 		static std::string YMLNames;
 		static std::vector<Bit8u> YMLMapping;
+		size_t appendName = (size_t)-1;
+		for (const BindDecoder& it : BindDecoder(dbp_yml_mapping ? &YMLMapping[0] : NULL))
+		{
+			if (it.BtnID != btnID) continue;
+			if (isAnalog && !it.P[analogpart]) // configure other analog part
+			{
+				if (it.HasActionName) appendName = (size_t)it.NameOffset;
+				if (it.KeyCount > keyCount) keyCount = it.KeyCount;
+				for (int i = 0; i != it.KeyCount; i++)
+					maps[i * 2 + (int)(!analogpart)] = it.P[i * 2 + (int)(!analogpart)];
+			}
+			else if (iswheel && padwheelnum--) continue; // wrong wheel index
+
+			// overwrite existing entry
+			const Bit8u* itStart = it.P - (it.HasActionName ? (it.NameOffset >= 2097152 ? 4 : it.NameOffset >= 16384 ? 3 : it.NameOffset >= 128 ? 2 : 1) : 0) - 1;
+			const Bit8u* itEnd = it.P + (it.KeyCount * (isAnalog ? 2 : 1));
+			YMLMapping.erase(YMLMapping.begin() + (itStart - &YMLMapping[0]), YMLMapping.begin() + (itEnd - &YMLMapping[0]));
+			if (!(--YMLMapping[0])) { dbp_auto_mapping = NULL; dbp_yml_mapping = false; }
+			break;
+		}
+		if (keyCount == 0) return true; // entry was unbound with none
+		if (iswheel && padwheelnum) return false; // wheel index in wrong order
+
 		if (!dbp_yml_mapping)
 		{
 			YMLNames.clear();
@@ -440,36 +466,8 @@ struct DBP_PadMapping
 			YMLMapping.push_back(0);
 		}
 
-		size_t nameofs = YMLNames.length();
-		for (const BindDecoder& it : BindDecoder(dbp_auto_mapping))
-		{
-			if (it.BtnID != btnID) continue;
-			if (isAnalog)
-			{
-				if (it.P[analogpart]) return false; // already bound
-				if (it.KeyCount > keyCount) keyCount = it.KeyCount;
-				for (int i = 0; i != it.KeyCount; i++)
-					maps[i * 2 + (int)(!analogpart)] = it.P[i * 2 + (int)(!analogpart)];
-
-				if (it.HasActionName)
-				{
-					size_t oldnamelen = strlen(&YMLNames[it.NameOffset]);
-					YMLNames.append(&YMLNames[it.NameOffset]);
-					if (name) YMLNames.append(" / ");
-				}
-
-				const Bit8u* itStart = it.P - (it.HasActionName ? (it.NameOffset >= 2097152 ? 4 : it.NameOffset >= 16384 ? 3 : it.NameOffset >= 128 ? 2 : 1) : 0) - 1;
-				const Bit8u* itEnd = it.P + (it.KeyCount * 2);
-				YMLMapping.erase(YMLMapping.begin() + (itStart - &YMLMapping[0]), YMLMapping.begin() + (itEnd - &YMLMapping[0]));
-				YMLMapping[0]--;
-				break;
-			}
-			else if (!iswheel) return false; // already bound
-			else if (!(padwheelnum--)) return false; // wheel index already added
-		}
-		if (iswheel && padwheelnum) return false; // wheel index in wrong order
-
-		const bool hasActionName = (name || YMLNames.size() > nameofs);
+		const size_t nameofs = YMLNames.length();
+		const bool hasActionName = (name || appendName != (size_t)-1);
 		const int actionNameBytes = (hasActionName ? (nameofs >= 2097152 ? 4 : nameofs >= 16384 ? 3 : nameofs >= 128 ? 2 : 1) : 0);
 		const size_t ymlofs = YMLMapping.size();
 
@@ -478,11 +476,12 @@ struct DBP_PadMapping
 		Bit8u* p = &YMLMapping[ymlofs];
 		*(p++) = (Bit8u)(((keyCount - 1) << 6) | (hasActionName ? 32 : 0) | btnID);
 		for (int i = actionNameBytes - 1; i != -1; i--)
-			*(p++) = ((nameofs >> (7 * i)) & 127) | (i ? 128 : 0);
+			*(p++) = (Bit8u)(((nameofs >> (7 * i)) & 127) | (i ? 128 : 0));
 		memcpy(p, maps, keyCount * (isAnalog ? 2 : 1));
 
 		if (hasActionName)
 		{
+			if (appendName != (size_t)-1) YMLNames.append(&YMLNames[appendName]).append(name ? " / " : "");
 			if (name) YMLNames.append(name, (nameEnd - name));
 			YMLNames += '\0';
 		}
@@ -503,7 +502,7 @@ private:
 		for (const DBP_SpecialMapping& sm : DBP_SpecialMappings)
 			if (sm.ymlid && !strncasecmp(str, sm.ymlid, strlen) && sm.ymlid[strlen] == '\0')
 				return (Bit8u)DBP_SPECIALMAPPINGS_KEY + (Bit8u)(&sm - DBP_SpecialMappings);
-		return 0;
+		return ((strlen == 4 && !strncasecmp("none", str, 4)) ? 0 : 255);
 	}
 
 	static int InsertBind(const DBP_InputBind& b)

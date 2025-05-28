@@ -122,7 +122,6 @@ static std::vector<DBP_InputBind> dbp_input_binds;
 static Bit8u dbp_port_mode[DBP_MAX_PORTS], dbp_binds_changed, dbp_actionwheel_inputs;
 static Bit16s dbp_mouse_x, dbp_mouse_y;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
-static float dbp_mouse_speed = 1, dbp_mouse_speed_x = 1;
 #define DBP_GET_JOY_ANALOG_VALUE(V) ((V >= -dbp_joy_analog_deadzone && V <= dbp_joy_analog_deadzone) ? 0.0f : \
 	((float)((V > dbp_joy_analog_deadzone) ? (V - dbp_joy_analog_deadzone) : (V + dbp_joy_analog_deadzone)) / (float)(DBP_JOY_ANALOG_RANGE - dbp_joy_analog_deadzone)))
 
@@ -1831,7 +1830,7 @@ void GFX_Events()
 	{
 		if ((mouse_joy_x || mouse_joy_y) && (abs(mouse_joy_x) > 5 || abs(mouse_joy_y) > 5))
 		{
-			float mx = mouse_joy_x*.0003f, my = mouse_joy_y*.0003f;
+			float mx = mouse_joy_x * dbp_joymouse_speed, my = mouse_joy_y * dbp_joymouse_speed;
 
 			if (!mouse_speed_up && !mouse_speed_down) {}
 			else if (mouse_speed_up && mouse_speed_down) mx *= 5, my *= 5;
