@@ -2137,15 +2137,17 @@ bool DBP_Option::Apply(Section& section, const char* var_name, const char* new_v
 	{
 		retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
 		reInitSection = false;
+		DBP_Run::startup.reboot = true;
 	}
-	if (need_restart && reInitSection && dbp_game_running)
+	if (need_restart && reInitSection && (dbp_game_running || DBP_OSD.mode == DBPOSD_CLOSED || !DBP_FullscreenOSD))
 	{
 		retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
 		reInitSection = false;
+		DBP_Run::startup.reboot = true;
 	}
 	else if (need_restart && reInitSection)
 	{
-		dbp_state = DBPSTATE_REBOOT;
+		DBP_Run::startup.reboot = true;
 	}
 
 	//log_cb(RETRO_LOG_INFO, "[DOSBOX] variable %s::%s updated from %s to %s\n", section_name, var_name, old_val.c_str(), new_value);
