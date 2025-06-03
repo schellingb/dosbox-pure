@@ -63,11 +63,10 @@ static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_p
 static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_swapstereo;
 static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
-static float dbp_auto_target, dbp_targetrefreshrate, dbp_last_fastforward;
+static float dbp_auto_target, dbp_last_fastforward;
 static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_emu_waiting, dbp_paused_work;
 static Semaphore semDoContinue, semDidPause;
 static retro_throttle_state dbp_throttle;
-static retro_time_t dbp_lastrun;
 static std::string dbp_crash_message;
 static std::string dbp_content_path;
 static std::string dbp_content_name;
@@ -814,7 +813,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 			}
 			dos.dta(save_dta);
 		}
-		if (type == SFT_SAVENAMEREDIRECT && !savenamelen) return std::move(res);
+		if (type == SFT_SAVENAMEREDIRECT && !savenamelen) return res;
 	}
 	const char *env_dir = NULL;
 	if (environ_cb((type < _SFT_LAST_SAVE_DIRECTORY ? RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY : RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY), &env_dir) && env_dir)
@@ -879,7 +878,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 		}
 	}
 	if (out_filename) *out_filename = res.c_str() + dir_len;
-	return std::move(res);
+	return res;
 }
 
 FILE* DBP_FileOpenContentOrSystem(const char* fname)
@@ -1351,12 +1350,11 @@ static std::vector<std::string>& DBP_ScanSystem(bool force_midi_scan)
 			}
 			else if (ln > 4 && (!strcasecmp(entry_name + ln - 4, ".IMG") || !strcasecmp(entry_name + ln - 4, ".IMA") || !strcasecmp(entry_name + ln - 4, ".VHD")))
 			{
-				int32_t entry_size = 0;
 				std::string subpath(subdir); subpath.append(subdir.length() ? "/" : "").append(entry_name);
 				FILE* f = fopen_wrap(path.assign(system_dir).append("/").append(subpath).c_str(), "rb");
 				Bit64u fsize = 0; if (f) { fseek_wrap(f, 0, SEEK_END); fsize = (Bit64u)ftell_wrap(f); fclose(f); }
 				if (fsize < 1024*1024*7 || (fsize % 512)) continue; // min 7MB hard disk image made up of 512 byte sectors
-				dbp_osimages.push_back(std::move(subpath));
+				dbp_osimages.emplace_back(std::move(subpath));
 			}
 			else if (ln > 5 && !strcasecmp(entry_name + ln - 5, ".DOSZ"))
 			{
