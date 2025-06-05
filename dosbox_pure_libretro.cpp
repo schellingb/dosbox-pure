@@ -2235,7 +2235,7 @@ static bool check_variables()
 	char db_mchar = (control ? *(const char*)control->GetProp("dosbox", "machine")->GetValue() : '\0');
 	int db_mch = (dbp_state != DBPSTATE_BOOT ? machine : -1);
 	bool machine_is_svga = ((db_mch == MCH_VGA && svgaCard != SVGA_None) || db_mchar == 's'), machine_is_cga = (db_mch == MCH_CGA || db_mchar == 'c'), machine_is_hercules = (db_mch == MCH_HERC || db_mchar == 'h');
-	const char* dbmachine;
+	const char* dbmachine = "svga_s3";
 	switch (dbp_mchar)
 	{
 		case 's': dbmachine = DBP_Option::Get(DBP_Option::svga); machine_is_svga = true; break;
@@ -2948,7 +2948,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	const char* voodoo_perf = DBP_Option::Get(DBP_Option::voodoo_perf);
 	if (voodoo_perf[0] == 'a' || voodoo_perf[0] == '4') // 3dfx wants to use OpenGL, request hardware render context
 	{
-		static struct sglproc { retro_proc_address_t& ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
+		static struct sglproc { retro_proc_address_t* ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
 		static unsigned prog_dosboxbuffer, vbo, vao, tex, fbo, lastw, lasth;
 
 		static const Bit8u testhwcontexts[] = { RETRO_HW_CONTEXT_OPENGL_CORE, RETRO_HW_CONTEXT_OPENGLES_VERSION, RETRO_HW_CONTEXT_OPENGLES3, RETRO_HW_CONTEXT_OPENGLES2, RETRO_HW_CONTEXT_OPENGL };
@@ -2959,20 +2959,20 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				bool missRequired = false;
 				for (sglproc& glproc : glprocs)
 				{
-					glproc.ptr = dbp_hw_render.get_proc_address(glproc.name);
-					if (!glproc.ptr)
+					*glproc.ptr = dbp_hw_render.get_proc_address(glproc.name);
+					if (!*glproc.ptr)
 					{
 						//GFX_ShowMsg("[DBP:GL] OpenGL Function %s is not available!", glproc.name);
 						char buf[256], *arboes = buf + strlen(glproc.name);
 						memcpy(buf, glproc.name, (arboes - buf));
 						memcpy(arboes, "ARB", 4);
-						glproc.ptr = dbp_hw_render.get_proc_address(buf);
-						if (!glproc.ptr)
+						*glproc.ptr = dbp_hw_render.get_proc_address(buf);
+						if (!*glproc.ptr)
 						{
 							//GFX_ShowMsg("[DBP:GL] OpenGL Function %s is not available!", buf);
 							memcpy(arboes, "OES", 4);
-							glproc.ptr = dbp_hw_render.get_proc_address(buf);
-							if (!glproc.ptr)
+							*glproc.ptr = dbp_hw_render.get_proc_address(buf);
+							if (!*glproc.ptr)
 							{
 								GFX_ShowMsg("[DBP:GL] %s OpenGL Function %s is not available!", (glproc.required ? "Required" : "Optional"), glproc.name);
 								if (glproc.required) { DBP_ASSERT(0); missRequired = true; }
