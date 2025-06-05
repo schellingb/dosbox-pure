@@ -176,7 +176,7 @@
 MYGL_FOR_EACH_PROC(MYGL_MAKEFUNCEXT)
 
 #define MYGL_MAKEFUNCPTR(REQUIRE, RET, NAME, ARGS) RET (MYGLCALL* mygl ## NAME)ARGS;
-#define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t&)mygl ## NAME , "gl" #NAME, REQUIRE },
+#define MYGL_MAKEPROCARRENTRY(REQUIRE, RET, NAME, ARGS) { (retro_proc_address_t*)&mygl ## NAME , "gl" #NAME, REQUIRE },
 
 unsigned DBP_Build_GL_Program(int vertex_shader_srcs_count, const char** vertex_shader_srcs, int fragment_shader_srcs_count, const char** fragment_shader_srcs, int bind_attribs_count, const char** bind_attribs);
 

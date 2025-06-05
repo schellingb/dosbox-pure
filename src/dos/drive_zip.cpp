@@ -626,7 +626,6 @@ struct oz_unshrink
 		oz_uint8  oz_bitreader_nbits_in_buf = 0;
 		oz_uint8  oz_curr_code_size = OZ_INITIAL_CODE_SIZE;
 		oz_code   oz_oldcode = 0;
-		oz_code   oz_last_code_added = 0;
 		oz_code   oz_highest_code_ever_used = 0;
 		oz_code   oz_free_code_search_start = 257;
 		oz_uint8  oz_last_value = 0;
@@ -712,7 +711,7 @@ struct oz_unshrink
 			else if (code_is_in_table) { late_add =  true; goto OZ_EMIT_CODE;         } //emit, then add
 			else                       { late_add = false; goto OZ_ADD_TO_DICTIONARY; } //add, then emit
 
-			// Add a code to the dictionary. Sets oz_last_code_added to the position where it was added.
+			// Add a code to the dictionary.
 			OZ_ADD_TO_DICTIONARY:
 			oz_code newpos;
 			for (newpos = oz_free_code_search_start; ; newpos++)
@@ -722,7 +721,6 @@ struct oz_unshrink
 			}
 			oz->ct[newpos].parent = oz_oldcode;
 			oz->ct[newpos].value = oz_last_value;
-			oz_last_code_added = newpos;
 			oz_free_code_search_start = newpos + 1;
 			if (newpos > oz_highest_code_ever_used)
 			{
@@ -1140,7 +1138,7 @@ struct Zip_File : Zip_Entry
 	ZIP_Unpacker* unpacker;
 
 	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, Bit64u _data_ofs, Bit32u _decomp_size, Bit32u _comp_size, Bit32u _crc, Bit8u _bit_flags, Bit8u _method)
-		: Zip_Entry(_attr, filename, _date, _time), data_ofs(_data_ofs), decomp_size(_decomp_size), comp_size(_comp_size), crc(_crc), refs(0), bit_flags(_bit_flags), method(_method), have_pic(0), ofs_past_header(0), unpacker(NULL) {}
+		: Zip_Entry(_attr, filename, _date, _time), decomp_size(_decomp_size), comp_size(_comp_size), crc(_crc), refs(0), ofs_past_header(0), bit_flags(_bit_flags), method(_method), have_pic(0), data_ofs(_data_ofs), unpacker(NULL) {}
 
 	~Zip_File()
 	{
@@ -1242,7 +1240,7 @@ struct Zip_DeflateMemoryUnpacker : Zip_MemoryUnpacker
 		mem_data.resize(f.decomp_size);
 
 		miniz::tinfl_decompressor inflator;
-		Bit64u ofs = f.data_ofs, ofs_last_read = 0;
+		Bit64u ofs = f.data_ofs;
 		Bit32u out_buf_ofs = 0, read_buf_avail = 0, read_buf_ofs = 0, comp_remaining = f.comp_size;
 		Bit8u read_buf[miniz::MZ_ZIP_MAX_IO_BUF_SIZE], *out_data = &mem_data[0];
 		miniz::tinfl_init(&inflator);
@@ -1254,7 +1252,6 @@ struct Zip_DeflateMemoryUnpacker : Zip_MemoryUnpacker
 				read_buf_avail = (comp_remaining < miniz::MZ_ZIP_MAX_IO_BUF_SIZE ? comp_remaining : miniz::MZ_ZIP_MAX_IO_BUF_SIZE);
 				if (archive.Read(ofs, read_buf, read_buf_avail) != read_buf_avail)
 					break;
-				ofs_last_read = ofs;
 				ofs += read_buf_avail;
 				comp_remaining -= read_buf_avail;
 				read_buf_ofs = 0;
@@ -1731,7 +1728,7 @@ struct zipDriveImpl
 		MZ_ZIP_LDH_FILENAME_LEN_OFS = 26, MZ_ZIP_LDH_EXTRA_LEN_OFS = 28,
 	};
 
-	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir, std::string** out_parent = NULL, bool* out_multi_parent = NULL, zipDriveImpl* child_impl = NULL) : root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), archive(_zip, enable_crc_check), total_decomp_size(0)
+	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir, std::string** out_parent = NULL, bool* out_multi_parent = NULL, zipDriveImpl* child_impl = NULL) : archive(_zip, enable_crc_check), root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), total_decomp_size(0)
 	{
 		// Basic sanity checks - reject files which are too small.
 		if (archive.size < MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
@@ -1743,7 +1740,7 @@ struct zipDriveImpl
 		for (;; ecdh_ofs = MZ_MAX(ecdh_ofs - (sizeof(buf) - 3), 0))
 		{
 			Bit32s i, n = (Bit32s)MZ_MIN(sizeof(buf), archive.size - ecdh_ofs);
-			if (archive.Read(ecdh_ofs, buf, (Bit32s)n) != (Bit32s)n) return;
+			if (archive.Read(ecdh_ofs, buf, (Bit32s)n) != (Bit32u)n) return;
 			for (i = n - 4; i >= 0; --i) { if (MZ_READ_LE32(buf + i) == MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIG) break; }
 			if (i >= 0) { ecdh_ofs += i; break; }
 			if (!ecdh_ofs || (archive.size - ecdh_ofs) >= (0xFFFF + MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)) return;
@@ -1835,19 +1832,19 @@ struct zipDriveImpl
 					if (MZ_READ_LE16(x) != 0x0001 || fieldEnd > xEnd) { x = fieldEnd; continue; } // Not Zip64 extended information extra field
 					if (decomp_size == 0xFFFFFFFF)
 					{
-						if (fieldEnd - field < sizeof(Bit64u)) goto invalid_cdh;
+						if (fieldEnd - field < (ptrdiff_t)sizeof(Bit64u)) goto invalid_cdh;
 						decomp_size = MZ_READ_LE64(field);
 						field += sizeof(Bit64u);
 					}
 					if (comp_size == 0xFFFFFFFF)
 					{
-						if (fieldEnd - field < sizeof(Bit64u)) goto invalid_cdh;
+						if (fieldEnd - field < (ptrdiff_t)sizeof(Bit64u)) goto invalid_cdh;
 						comp_size = MZ_READ_LE64(field);
 						field += sizeof(Bit64u);
 					}
 					if (local_header_ofs == 0xFFFFFFFF)
 					{
-						if (fieldEnd - field < sizeof(Bit64u)) goto invalid_cdh;
+						if (fieldEnd - field < (ptrdiff_t)sizeof(Bit64u)) goto invalid_cdh;
 						local_header_ofs = MZ_READ_LE64(field);
 						field += sizeof(Bit64u);
 					}
@@ -1892,7 +1889,7 @@ struct zipDriveImpl
 				{
 					Bit32u nlen = (Bit32u)(n - name), readlen = MZ_ZIP_LOCAL_DIR_HEADER_SIZE + nlen + 1; char ldh[MZ_ZIP_LOCAL_DIR_HEADER_SIZE + CROSS_LEN * 2], *ldhn = ldh + MZ_ZIP_LOCAL_DIR_HEADER_SIZE;
 					bool diff_long_name = child_impl->archive.Read((child_entry->IsFile() ? child_entry->AsFile()->data_ofs : child_entry->AsDirectory()->ofs), ldh, readlen) != readlen
-						|| memcmp(name, ldhn, nlen) || (Bit32u)MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) < nlen || (MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) != nlen && ldhn[nlen] != '/' && ldhn[nlen] != '\\');
+						|| memcmp(name, ldhn, nlen) || (Bit32u)MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) < nlen || ((Bit32u)MZ_READ_LE16(ldh + MZ_ZIP_LDH_FILENAME_LEN_OFS) != nlen && ldhn[nlen] != '/' && ldhn[nlen] != '\\');
 					if (!diff_long_name) break;
 					if (!parent->IncrementName(p_dos)) goto skip_zip_entry;
 				}

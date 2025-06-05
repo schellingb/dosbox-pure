@@ -44,7 +44,7 @@ using namespace std;
 #define MAX_FILENAME_LENGTH 256
 
 #ifdef C_DBP_SUPPORT_CDROM_MOUNT_DOSFILE
-CDROM_Interface_Image::TrackFile::TrackFile(const char *filename, bool &error, const char *relative_to) : dos_file(NULL), dos_end(0), dos_ofs(0)
+CDROM_Interface_Image::TrackFile::TrackFile(const char *filename, bool &error, const char *relative_to) : dos_file(NULL), dos_ofs(0), dos_end(0)
 {
 	dos_file = FindAndOpenDosFile(filename, NULL, NULL, relative_to);
 	if (!dos_file) { error = true; return; }

@@ -346,7 +346,7 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_CDPlayer,>=6); break;
 			case __LINE__: goto done; /*return;*/ default: continue;
 		}
-		size_t old_off = ar.GetOffset();
+		//size_t old_off = ar.GetOffset();
 		func(ar);
 		if (ar.had_error) return;
 		size_t off = ar.GetOffset(), offcheck = off;

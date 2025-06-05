@@ -194,8 +194,10 @@ public:
 			WriteOut(MSG_Get("PROGRAM_CONFIG_SECURE_DISALLOW"));
 			return;
 		}
+#ifdef C_DBP_NATIVE_CONFIGFILE
 		bool path_relative_to_last_config = false;
 		if (cmd->FindExist("-pr",true)) path_relative_to_last_config = true;
+#endif
 
 		/* Check for unmounting */
 		if (cmd->FindString("-u",umount,false)) {
@@ -1452,6 +1454,7 @@ public:
 		bool imgsizedetect = false;
 		
 		std::string str_size = "";
+#ifdef C_DBP_ENABLE_DRIVE_MANAGER
 		Bit8u mediaid = 0xF8;
 
 		if (type == "floppy") {
@@ -1461,6 +1464,11 @@ public:
 			mediaid = 0xF8;		
 			fstype = "iso";
 		}
+#else
+		if (type == "iso") {
+			fstype = "iso";
+		}
+#endif
 
 		cmd->FindString("-size",str_size,true);
 		if ((type=="hdd") && (str_size.size()==0)) {

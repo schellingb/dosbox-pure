@@ -896,7 +896,8 @@ static int tsf_decode_ogg(const tsf_u8 *pSmpl, const tsf_u8 *pSmplEnd, float** p
 		if (resNum > resMax)
 		{
 			do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
-			res = (float*)TSF_REALLOC((oldres = res), resMax * sizeof(float));
+			oldres = res;
+			res = (float*)TSF_REALLOC(res, resMax * sizeof(float));
 			if (!res) { TSF_FREE(oldres); stb_vorbis_close(v); return 0; }
 		}
 		TSF_MEMCPY(res + resNum - n_samples, outputs[0], n_samples * sizeof(float));
@@ -953,7 +954,8 @@ static int tsf_decode_sf3_samples(const void* rawBuffer, float** pFloatBuffer, u
 			if (resNum > resMax)
 			{
 				do { resMax += (resMax ? (resMax < 1048576 ? resMax : 1048576) : resInitial); } while (resNum > resMax);
-				res = (float*)TSF_REALLOC((oldres = res), resMax * sizeof(float));
+				oldres = res;
+				res = (float*)TSF_REALLOC(res, resMax * sizeof(float));
 				if (!res) { TSF_FREE(oldres); return 0; }
 			}
 
@@ -983,7 +985,8 @@ static int tsf_load_samples(void** pRawBuffer, float** pFloatBuffer, unsigned in
 	// Decode custom .sfo 'smpo' format where all samples are in a single ogg stream
 	resNum = resMax = 0;
 	if (!tsf_decode_ogg((tsf_u8*)*pRawBuffer, (tsf_u8*)*pRawBuffer + chunkSmpl->size, pFloatBuffer, &resNum, &resMax, 65536)) return 0;
-	if (!(*pFloatBuffer = (float*)TSF_REALLOC((oldres = *pFloatBuffer), resNum * sizeof(float)))) *pFloatBuffer = oldres;
+	oldres = *pFloatBuffer;
+	if (!(*pFloatBuffer = (float*)TSF_REALLOC(*pFloatBuffer, resNum * sizeof(float)))) *pFloatBuffer = oldres;
 	*pSmplCount = resNum;
 	return (*pFloatBuffer ? 1 : 0);
 	#else

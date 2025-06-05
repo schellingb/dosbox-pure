@@ -6543,13 +6543,13 @@ static void fastfill(voodoo_state *v)
 	/* fill in a block of extents */
 	extents[0].startx = sx;
 	extents[0].stopx = ex;
-	for (extnum = 1; extnum < ARRAY_LENGTH(extents); extnum++)
+	for (extnum = 1; extnum < (int)ARRAY_LENGTH(extents); extnum++)
 		extents[extnum] = extents[0];
 
 	/* iterate over blocks of extents */
 	for (y = sy; y < ey; y += ARRAY_LENGTH(extents))
 	{
-		int count = MIN(ey - y, ARRAY_LENGTH(extents));
+		int count = MIN(ey - y, (int)ARRAY_LENGTH(extents));
 		void *dest = drawbuf;
 		int startscanline = y;
 		int numscanlines = count;
@@ -7007,12 +7007,16 @@ static void register_w(UINT32 offset, UINT32 data) {
 				v->reg[regnum].u = data;
 				if (v->reg[hSync].u != 0 && v->reg[vSync].u != 0 && v->reg[videoDimensions].u != 0)
 				{
+#ifdef C_DBP_ENABLE_VOODOO_DEBUG
 					int htotal = ((v->reg[hSync].u >> 16) & 0x3ff) + 1 + (v->reg[hSync].u & 0xff) + 1;
+#endif
 					int vtotal = ((v->reg[vSync].u >> 16) & 0xfff) + (v->reg[vSync].u & 0xfff);
 					int hvis = v->reg[videoDimensions].u & 0x3ff;
 					int vvis = (v->reg[videoDimensions].u >> 16) & 0x3ff;
+#ifdef C_DBP_ENABLE_VOODOO_DEBUG
 					int hbp = (v->reg[backPorch].u & 0xff) + 2;
 					int vbp = (v->reg[backPorch].u >> 16) & 0xff;
+#endif
 					//attoseconds_t refresh = video_screen_get_frame_period(v->screen).attoseconds;
 					attoseconds_t refresh = 0;
 					attoseconds_t stdperiod, medperiod, vgaperiod;

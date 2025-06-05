@@ -141,6 +141,7 @@ static const uint8_t envelope[8][64] = {
 saa1099_device::saa1099_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, SAA1099, tag, owner, clock)
 	, device_sound_interface(mconfig, *this)
+	, sample_rate(clock / 256)
 	, m_stream(0)
 #if 0
 	, m_noise_params{ 0, 0 }
@@ -155,7 +156,6 @@ saa1099_device::saa1099_device(const machine_config &mconfig, const char *tag, d
 	, m_sync_state(0)
 	, m_selected_reg(0)
 	, m_sample_rate(0.0)
-	, sample_rate(clock / 256)
 {
 	FILL_ARRAY( m_noise_params );
 	FILL_ARRAY( m_env_enable );
