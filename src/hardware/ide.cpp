@@ -2950,7 +2950,7 @@ void IDE_RefreshCDROMs()
 			d->loading_mode = IDEATAPICDROMDevice::LOAD_INSERT_CD;
 			PIC_AddEvent(IDEATAPICDROMDevice::IDE_ATAPI_CDInsertion, atapi_cd_insertion_time/*ms*/, d->device_index);
 #else
-			d->loading_mode = (d->loading_mode = IDEATAPICDROMDevice::LOAD_EJECTING ? IDEATAPICDROMDevice::LOAD_INSERT_CD : IDEATAPICDROMDevice::LOAD_DISC_LOADING);
+			d->loading_mode = (d->loading_mode == IDEATAPICDROMDevice::LOAD_EJECTING ? IDEATAPICDROMDevice::LOAD_INSERT_CD : IDEATAPICDROMDevice::LOAD_DISC_LOADING);
 			d->atapi_add_pic_event(IDEATAPICDROMDevice::IDE_ATAPI_SpinUpComplete, atapi_spinup_time/*ms*/);
 #endif
 		}
