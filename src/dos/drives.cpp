@@ -633,6 +633,7 @@ bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
 {
 	if (!df) return false;
 	if (!df->refCtr) df->AddRef();
+	if (!maxsize) { df->Close(); delete df; return true; }
 	Bit32u curlen = (Bit32u)out.size(), filesize = 0;
 	df->Seek(&filesize, DOS_SEEK_END);
 	if (filesize > maxsize) { df->Close(); delete df; return false; }
