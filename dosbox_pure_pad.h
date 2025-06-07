@@ -436,7 +436,7 @@ struct DBP_PadMapping
 
 		static std::string YMLNames;
 		static std::vector<Bit8u> YMLMapping;
-		size_t appendName = (size_t)-1;
+		size_t appendName = (size_t)-1, overwriteIndex = 0;
 		for (const BindDecoder& it : BindDecoder(dbp_yml_mapping ? &YMLMapping[0] : NULL))
 		{
 			if (it.BtnID != btnID) continue;
@@ -447,12 +447,12 @@ struct DBP_PadMapping
 				for (int i = 0; i != it.KeyCount; i++)
 					maps[i * 2 + (int)(!analogpart)] = it.P[i * 2 + (int)(!analogpart)];
 			}
-			else if (iswheel && padwheelnum--) continue; // wrong wheel index
+			else if (iswheel && padwheelnum) { padwheelnum--; continue; } // wrong wheel index
 
 			// overwrite existing entry
 			const Bit8u* itStart = it.P - (it.HasActionName ? (it.NameOffset >= 2097152 ? 4 : it.NameOffset >= 16384 ? 3 : it.NameOffset >= 128 ? 2 : 1) : 0) - 1;
 			const Bit8u* itEnd = it.P + (it.KeyCount * (isAnalog ? 2 : 1));
-			YMLMapping.erase(YMLMapping.begin() + (itStart - &YMLMapping[0]), YMLMapping.begin() + (itEnd - &YMLMapping[0]));
+			YMLMapping.erase(YMLMapping.begin() + (overwriteIndex = (itStart - &YMLMapping[0])), YMLMapping.begin() + (itEnd - &YMLMapping[0]));
 			if (!(--YMLMapping[0])) { dbp_auto_mapping = NULL; dbp_yml_mapping = false; }
 			break;
 		}
@@ -469,10 +469,10 @@ struct DBP_PadMapping
 		const size_t nameofs = YMLNames.length();
 		const bool hasActionName = (name || appendName != (size_t)-1);
 		const int actionNameBytes = (hasActionName ? (nameofs >= 2097152 ? 4 : nameofs >= 16384 ? 3 : nameofs >= 128 ? 2 : 1) : 0);
-		const size_t ymlofs = YMLMapping.size();
+		const size_t ymlofs = (overwriteIndex ? overwriteIndex : YMLMapping.size());
 
 		YMLMapping[0]++;
-		YMLMapping.insert(YMLMapping.end(), 1 + actionNameBytes + keyCount * (isAnalog ? 2 : 1), 0);
+		YMLMapping.insert(YMLMapping.begin() + ymlofs, 1 + actionNameBytes + keyCount * (isAnalog ? 2 : 1), 0);
 		Bit8u* p = &YMLMapping[ymlofs];
 		*(p++) = (Bit8u)(((keyCount - 1) << 6) | (hasActionName ? 32 : 0) | btnID);
 		for (int i = actionNameBytes - 1; i != -1; i--)
