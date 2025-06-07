@@ -363,6 +363,7 @@ struct unionDriveImpl
 		if (!fsave)
 		{
 			LOG_MSG("[DOSBOX] Opening file %s for writing failed", impl->save_file.c_str());
+			reporterror:
 			static int reportcount;
 			if (reportcount++ < 3 || !(reportcount % 6))
 			{
@@ -393,7 +394,7 @@ struct unionDriveImpl
 			Bit32u size = sf.size;
 			char* path = sf.path;
 			sbuf.clear();
-			Bit8u* filedata;
+			Bit8u* filedata = NULL;
 			Bit16u pathLen = (Bit16u)(strlen(path) + (sf.is_dir ? 1 : 0));
 			if (size == (Bit32u)-1) // generate file modifications meta file
 			{
@@ -412,12 +413,12 @@ struct unionDriveImpl
 					df->AddRef();
 					df->Seek(&under_size, DOS_SEEK_END);
 					under_match_size = (under_size == size);
-					ReadAndClose(df, sbuf, (under_match_size ? 0xFFFFFFFF : 0));
+					ReadAndClose(df, sbuf, (under_match_size ? size : 0));
 				}
 
 				bool opened = over->FileOpen(&df, (char*)path, 0);
-				DBP_ASSERT(opened);
-				ReadAndClose(df, sbuf, 0xFFFFFFFF);
+				bool fullyread = ReadAndClose(df, sbuf, size);
+				DBP_ASSERT(opened && fullyread);
 				filedata = (Bit8u*)&sbuf[under_match_size ? size : 0];
 
 				// If content matches, don't store in save file
@@ -479,9 +480,10 @@ struct unionDriveImpl
 				Bit32u match_len = (size > 16 ? 16 : size);
 				Bit8u matchbuf[30 + DOS_PATHLENGTH + 8 + 16];
 				matches_existing = fread(matchbuf, lfhlen + match_len, 1, fsave) && !memcmp(lfh, matchbuf, lfhlen)
-					&& (!size || (!memcmp(filedata, matchbuf + lfhlen, match_len) && !fseek(fsave, (int)(size - match_len - match_len), SEEK_CUR)
-						&& fread(matchbuf, match_len, 1, fsave)
-						&& !memcmp(filedata + size - match_len, matchbuf, match_len)));
+					&& (!size || (!memcmp(filedata, matchbuf + lfhlen, match_len)
+						&& (size == match_len || (!fseek(fsave, (int)(size - match_len - match_len), SEEK_CUR)
+							&& fread(matchbuf, match_len, 1, fsave)
+							&& !memcmp(filedata + size - match_len, matchbuf, match_len)))));
 				if (!matches_existing) fseek(fsave, local_file_offset, SEEK_SET);
 			}
 
@@ -489,7 +491,6 @@ struct unionDriveImpl
 			{
 				// Write local file header followed by file data
 				failed |= !(fwrite(lfh, lfhlen, 1, fsave) && (!size || fwrite(filedata, size, 1, fsave)));
-				if (failed) break;
 			}
 
 			local_file_offset += (lfhlen + size);
@@ -517,20 +518,15 @@ struct unionDriveImpl
 			if (!matches_existing) fseek(fsave, local_file_offset, SEEK_SET);
 		}
 
-		if (!matches_existing && !failed)
+		if (!matches_existing)
 		{
 			failed |= !((!file_count || fwrite(&central_dir[0], central_dir.size(), 1, fsave)) && fwrite(eocd, 22, 1, fsave));
-			if (!failed && need_truncate)
+			if (need_truncate)
 				ftruncate(fileno(fsave), (local_file_offset + (Bit32u)central_dir.size() + 22));
 		}
 		fclose(fsave);
 
-		if (failed)
-		{
-			LOG_MSG("[DOSBOX] Error while writing file %s", impl->save_file.c_str());
-			impl->ScheduleSave(5000.f);
-			return;
-		}
+		if (failed) { LOG_MSG("[DOSBOX] Error while writing file %s", impl->save_file.c_str()); goto reporterror; }
 		impl->save_size = save_size;
 		impl->dirty = false;
 	}
