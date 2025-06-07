@@ -118,7 +118,8 @@ public:
 	bool ReadFromControlChannel(PhysPt bufptr,Bit16u size,Bit16u * retcode);
 	bool WriteToControlChannel(PhysPt /*bufptr*/,Bit16u /*size*/,Bit16u * /*retcode*/){return true;}
 private:
-	Bit8u cache;
+	//DBP: Removed unused field
+	//Bit8u cache;
 	bool is_emm386;
 };
 
@@ -1362,7 +1363,8 @@ private:
 	/* location in protected unfreeable memory where the ems name and callback are
 	 * stored  32 bytes.*/
 	static Bit16u ems_baseseg;
-	RealPt old4b_pointer,old67_pointer;
+	//DBP: Removed unused field
+	RealPt /*old4b_pointer,*/old67_pointer;
 	CALLBACK_HandlerObject call_vdma,call_vcpi,call_v86mon;
 	//DBP: Changed int67 to use a CALLBACK_HandlerObject so it doesn't leak callback allocations
 	#if 0

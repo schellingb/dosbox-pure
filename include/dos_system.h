@@ -252,7 +252,8 @@ private:
 
 	Bit16u		srchNr;
 	CFileInfo*	dirSearch			[MAX_OPENDIRS];
-	char		dirSearchName		[MAX_OPENDIRS];
+	//DBP: Removed unused field
+	//char		dirSearchName		[MAX_OPENDIRS];
 	CFileInfo*	dirFindFirst		[MAX_OPENDIRS];
 	Bit16u		nextFreeFindFirst;
 };

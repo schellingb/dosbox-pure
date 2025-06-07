@@ -870,7 +870,6 @@ struct DBP_MapperMenuState final : DBP_MenuState
 					if (list[sel].type != IT_NONE && !hide_sel && sel > ihdr && sel < inxt)
 						buf.AlphaBlendFillRect(l-97, y, 195, lh+xtra, buf.BGCOL_SELECTION | blend);
 					buf.Print(lh, l-84, y, list[ihdr].str.c_str(), buf.COL_HEADER);
-					ihdr = ihdr;
 				}
 				buf.Print(lh, l+100, y, list[i].str.c_str(), ((i == se || itype == IT_NONE) ? buf.COL_HIGHLIGHT : itype == IT_ADD ? buf.COL_DIM : buf.COL_NORMAL), maxw);
 				if (itype == IT_NONE && list[i].info == 2) // draw separator line

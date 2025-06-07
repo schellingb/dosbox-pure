@@ -482,7 +482,7 @@ static void DBP_ReportCoreMemoryMaps()
 	// [GAME] [OS] [EXPANDED MEMORY] so regardless of the size of the OS environment
 	// the game memory (below 640k) is always at the same (virtual) address.
 
-	struct retro_memory_descriptor mdescs[3] = { 0 }, *mdesc_expandedmem;
+	struct retro_memory_descriptor mdescs[3] = {{0}}, *mdesc_expandedmem;
 	if (!booted_os)
 	{
 		Bit16u seg_prog_start = (DOS_MEM_START + 2 + 5); // see mcb_sizes in DOS_SetupMemory
