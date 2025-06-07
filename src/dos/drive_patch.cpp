@@ -646,7 +646,7 @@ struct patchDriveImpl
 		else if (!is_dir)
 		{
 			// Ignore any overlay files existing in the layers above (but allow binary patches)
-			for (Patch_Layer* l = &layer; l <= self.layer_top; l++)
+			for (Patch_Layer* l = &layer + 1; l <= self.layer_top; l++)
 				if (l->under.FileStat(underpath, &dummystat))
 					return;
 		}
