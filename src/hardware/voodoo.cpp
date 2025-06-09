@@ -5471,6 +5471,7 @@ static void init_fbi(voodoo_state *v, fbi_state *f, int fbmem)
 	/* allocate frame buffer RAM and set pointers */
 	DBP_ASSERT(fbmem >= 1); //VOODOO: invalid frame buffer memory size requested
 	f->ram = (UINT8*)malloc(fbmem);
+	memset(f->ram, 0, fbmem);
 	f->mask = (UINT32)(fbmem - 1);
 	f->rgboffs[0] = f->rgboffs[1] = f->rgboffs[2] = 0;
 	f->auxoffs = (UINT32)(~0);
@@ -5552,6 +5553,7 @@ static void init_tmu(voodoo_state *v, tmu_state *t, voodoo_reg *reg, int tmem)
 	if (tmem <= 1) E_Exit("VOODOO: invalid texture buffer memory size requested");
 	/* allocate texture RAM */
 	t->ram = (UINT8*)malloc(tmem);
+	memset(t->ram, 0, tmem);
 	t->mask = (UINT32)(tmem - 1);
 	t->reg = reg;
 	t->regdirty = true;
