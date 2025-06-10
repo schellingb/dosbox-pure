@@ -2336,7 +2336,7 @@ static bool check_variables()
 		Section& sec_pci = *control->GetSection("pci");
 		DBP_Option::GetAndApply(sec_pci, "voodoo", DBP_Option::voodoo, true, true);
 		const char* voodoo_perf = DBP_Option::Get(DBP_Option::voodoo_perf);
-		DBP_Option::Apply(sec_pci, "voodoo_perf", (voodoo_perf[0] == 'a' ? "4" : voodoo_perf)); // "4" falls back to multi-threaded without OpenGL
+		DBP_Option::Apply(sec_pci, "voodoo_perf", ((voodoo_perf[0] == 'a' || voodoo_perf[0] == '4') ? (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE ? "1" : "4") : voodoo_perf));
 		if (dbp_hw_render.context_type == RETRO_HW_CONTEXT_NONE && (atoi(voodoo_perf) & 0x4))
 			retro_notify(0, RETRO_LOG_WARN, "To enable OpenGL hardware rendering, close and re-open.");
 		DBP_Option::GetAndApply(sec_pci, "voodoo_gamma", DBP_Option::voodoo_gamma);

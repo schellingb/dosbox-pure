@@ -3540,7 +3540,7 @@ void voodoo_ogl_initfailed()
 {
 	if (vogl) { vogl->Cleanup(); delete vogl; vogl = NULL; }
 	vogl_unavailable = true;
-	v_perf &= ~V_PERFFLAG_OPENGL;
+	v_perf = V_PERFFLAG_MULTITHREAD; // fall back
 }
 
 enum Voodoo_OGL_UsedBits : UINT32
@@ -8865,15 +8865,14 @@ void VOODOO_Init(Section* sec) {
 	Section_prop * section = static_cast<Section_prop *>(sec);
 	v_perf = (UINT8)section->Get_int("voodoo_perf");
 	voodoo_pci_sstdevice.gammafix = section->Get_int("voodoo_gamma")*.1f;
+	if (vogl_unavailable && (v_perf & V_PERFFLAG_OPENGL)) v_perf = V_PERFFLAG_MULTITHREAD;
 	voodoo_ogl_scale = ((v_perf & V_PERFFLAG_OPENGL) ? section->Get_int("voodoo_scale") : 1);
 	if (voodoo_ogl_scale < 1 || voodoo_ogl_scale > 16) voodoo_ogl_scale = 1;
-	if (v_perf == V_PERFFLAG_OPENGL) v_perf |= V_PERFFLAG_MULTITHREAD; // keep multithread as fallback
-	if (vogl_unavailable) v_perf &= ~V_PERFFLAG_OPENGL;
 
 	if (voodoo_pagehandler)
 	{
 		#ifdef C_DBP_ENABLE_VOODOO_OPENGL
-		if (vogl && v && v->active)
+		if (v && v->active)
 		{
 			if (vogl_active && !(v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Deactivate();
 			if (!vogl_active && (v_perf & V_PERFFLAG_OPENGL)) voodoo_ogl_state::Activate();
