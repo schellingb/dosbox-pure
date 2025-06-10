@@ -522,7 +522,7 @@ struct unionDriveImpl
 		{
 			failed |= !((!file_count || fwrite(&central_dir[0], central_dir.size(), 1, fsave)) && fwrite(eocd, 22, 1, fsave));
 			if (need_truncate)
-				ftruncate(fileno(fsave), (local_file_offset + (Bit32u)central_dir.size() + 22));
+				failed |= !!ftruncate(fileno(fsave), (local_file_offset + (Bit32u)central_dir.size() + 22));
 		}
 		fclose(fsave);
 
