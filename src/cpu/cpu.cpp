@@ -2557,6 +2557,8 @@ void CPU_ResetCPUDecoder(const std::string& core)
 			goto set_dynamic_cpudecoder;
 		} else {
 			CPU_AutoDetermineMode |= CPU_AUTODETERMINE_CORE;
+			if (CPU_CycleAutoAdjust)
+				goto set_dynamic_cpudecoder;
 		}
 	}
 	#endif
