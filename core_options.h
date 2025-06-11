@@ -109,20 +109,26 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 {
 	// Emulation
 	{
-		"dosbox_pure_force60fps",
+		"dosbox_pure_force60fps", // legacy name
 		"Force Output FPS", NULL,
-		"Enable this to force output at a fixed rate. Try 60 FPS if you encounter screen tearing or vsync issues.", NULL,
+		"Enable this to force output at a fixed rate. Try 60 FPS if you encounter screen tearing or vsync issues." "\n"
+		"Output will have frames skipped at lower rates and frames duplicated at higher rates.", NULL,
 		DBP_OptionCat::Emulation,
 		{
 			{ "false", "Off" },
+			{ "10",   "On (10 FPS)" },
+			{ "15",   "On (15 FPS)" },
+			{ "20",   "On (20 FPS)" },
+			{ "30",   "On (30 FPS)" },
+			{ "35",   "On (35 FPS)" },
+			{ "50",   "On (50 FPS)" },
 			{ "true", "On (60 FPS)" },
-			{ "50", "On (50 FPS)" },
-			{ "70", "On (70 FPS)" },
-			{ "90", "On (90 FPS)" },
-			{ "120", "On (120 FPS)" },
-			{ "144", "On (144 FPS)" },
-			{ "240", "On (240 FPS)" },
-			{ "360", "On (360 FPS)" },
+			{ "70",   "On (70 FPS)" },
+			{ "90",   "On (90 FPS)" },
+			{ "120",  "On (120 FPS)" },
+			{ "144",  "On (144 FPS)" },
+			{ "240",  "On (240 FPS)" },
+			{ "360",  "On (360 FPS)" },
 		},
 		"false"
 	},

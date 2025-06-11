@@ -648,7 +648,7 @@ void DBP_SetRealModeCycles()
 		CPU_CycleAutoAdjust = true;
 }
 
-static bool DBP_NeedFrameSkip(bool in_emulation)
+static int DBP_NeedFrameSkip(bool in_emulation)
 {
 	if ((in_emulation ? (dbp_throttle.rate > render.src.fps - 1) : (render.src.fps > dbp_throttle.rate - 1))
 		|| dbp_throttle.rate < 10
@@ -656,10 +656,11 @@ static bool DBP_NeedFrameSkip(bool in_emulation)
 		|| dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.mode == RETRO_THROTTLE_REWINDING) return false;
 	static float accum;
 	accum += (in_emulation ? (render.src.fps - dbp_throttle.rate) : (dbp_throttle.rate - render.src.fps));
-	if (accum < dbp_throttle.rate) return false;
-	//log_cb(RETRO_LOG_INFO, "%s AT %u\n", (in_emulation ? "[GFX_EndUpdate] EMULATING TWO FRAMES" : "[retro_run] SKIP EMULATING FRAME"), dbp_framecount);
-	accum -= dbp_throttle.rate;
-	return true;
+	if (accum < dbp_throttle.rate) return 0;
+	int res = (int)(accum / dbp_throttle.rate);
+	//log_cb(RETRO_LOG_INFO, "%s %d FRAME(S) AT %u\n", (in_emulation ? "[GFX_EndUpdate] SKIP RENDERING" : "[retro_run] SKIP EMULATING"), res, dbp_framecount);
+	accum -= dbp_throttle.rate * res;
+	return res;
 }
 
 bool DBP_Image_IsCD(const DBP_Image& image)
@@ -1542,7 +1543,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	// frameskip is best to be modified in this function (otherwise it can be off by one)
 	dbp_framecount += 1 + render.frameskip.max;
-	if (!dbp_last_fastforward) render.frameskip.max = (DBP_NeedFrameSkip(true) ? 1 : 0);
+	if (!dbp_last_fastforward) render.frameskip.max = DBP_NeedFrameSkip(true);
 
 	// handle frame skipping and CPU speed during fast forwarding
 	const float ffrate = (dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD ? 0.0f : (dbp_throttle.rate ? dbp_throttle.rate : -1.0f));
@@ -1639,9 +1640,6 @@ static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 		goto return_true;
 	}
 
-	if (finishedframes > 1)
-		goto return_true;
-
 	if (dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING || dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.mode == RETRO_THROTTLE_REWINDING)
 		goto return_true;
 
@@ -1655,6 +1653,9 @@ static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 	if ((St.HistoryCursor % HISTORY_STEP) == 0)
 	{
 		float absFrameTime = (1000000.0f / render.src.fps);
+		if (dbp_throttle.rate <= render.src.fps - 1)
+			absFrameTime *= render.src.fps / dbp_throttle.rate;
+
 		Bit32u frameTime = (Bit32u)(absFrameTime * (dbp_auto_target - 0.01f));
 
 		Bit32u frameThreshold = 0;
