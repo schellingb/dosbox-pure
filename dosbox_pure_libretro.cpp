@@ -78,8 +78,8 @@ static Bit16s dbp_content_year, dbp_forcefps;
 static Bit8u buffer_active, dbp_overscan;
 static bool dbp_doublescan, dbp_padding;
 static struct DBP_Buffer { Bit32u *video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
-enum { DBP_MAX_SAMPLES = 4096 }; // twice amount of mixer blocksize (96khz @ 30 fps max)
-static int16_t dbp_audio[DBP_MAX_SAMPLES * 2]; // stereo
+static struct DBP_Audio { int16_t* audio; Bit32u length; } dbp_audio[2];
+static Bit8u dbp_audio_active;
 static double dbp_audio_remain;
 static struct retro_hw_render_callback dbp_hw_render;
 static void (*dbp_opengl_draw)(const DBP_Buffer& buf);
@@ -246,7 +246,7 @@ static Bit32u dbp_wait_pause, dbp_wait_finish, dbp_wait_paused, dbp_wait_continu
 // PERF FPS COUNTERS
 //#define DBP_ENABLE_FPS_COUNTERS
 #ifdef DBP_ENABLE_FPS_COUNTERS
-static Bit32u dbp_lastfpstick, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fpscount_gfxend, dbp_fpscount_event;
+static Bit32u dbp_lastfpstick, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fpscount_gfxend, dbp_fpscount_event, dbp_fpscount_skip_run, dbp_fpscount_skip_render;
 #define DBP_FPSCOUNT(DBP_FPSCOUNT_VARNAME) DBP_FPSCOUNT_VARNAME++;
 #else
 #define DBP_FPSCOUNT(DBP_FPSCOUNT_VARNAME)
@@ -650,16 +650,27 @@ void DBP_SetRealModeCycles()
 
 static int DBP_NeedFrameSkip(bool in_emulation)
 {
-	if ((in_emulation ? (dbp_throttle.rate > render.src.fps - 1) : (render.src.fps > dbp_throttle.rate - 1))
-		|| dbp_throttle.rate < 10
-		|| dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING || dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD
-		|| dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.mode == RETRO_THROTTLE_REWINDING) return false;
+	float run_rate = dbp_throttle.rate, emu_rate = render.src.fps;
+	if (run_rate == 0)
+	{
+		if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD) return (in_emulation ? 8 : 0);
+		run_rate = (float)av_info.timing.fps;
+	}
+	else if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD || dbp_throttle.mode == RETRO_THROTTLE_SLOW_MOTION || dbp_throttle.mode == RETRO_THROTTLE_REWINDING)
+	{
+		emu_rate *= (run_rate / (float)av_info.timing.fps);
+	}
+
+	if ((in_emulation ? (run_rate > emu_rate - 1) : (emu_rate > run_rate - 1)) || run_rate < 5 || emu_rate < 5 || dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING) return 0;
 	static float accum;
-	accum += (in_emulation ? (render.src.fps - dbp_throttle.rate) : (dbp_throttle.rate - render.src.fps));
-	if (accum < dbp_throttle.rate) return 0;
-	int res = (int)(accum / dbp_throttle.rate);
+	accum += (in_emulation ? (emu_rate - run_rate) : (run_rate - emu_rate));
+	if (accum < run_rate) return 0;
+	int res = (in_emulation ? (int)(accum / run_rate) : 1);
+	#ifdef DBP_ENABLE_FPS_COUNTERS
+	(in_emulation ? dbp_fpscount_skip_render : dbp_fpscount_skip_run) += (Bit32u)res;
+	#endif
 	//log_cb(RETRO_LOG_INFO, "%s %d FRAME(S) AT %u\n", (in_emulation ? "[GFX_EndUpdate] SKIP RENDERING" : "[retro_run] SKIP EMULATING"), res, dbp_framecount);
-	accum -= dbp_throttle.rate * res;
+	accum -= run_rate * res;
 	return res;
 }
 
@@ -1543,7 +1554,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	// frameskip is best to be modified in this function (otherwise it can be off by one)
 	dbp_framecount += 1 + render.frameskip.max;
-	if (!dbp_last_fastforward) render.frameskip.max = DBP_NeedFrameSkip(true);
+	render.frameskip.max = DBP_NeedFrameSkip(true);
 
 	// handle frame skipping and CPU speed during fast forwarding
 	const float ffrate = (dbp_throttle.mode != RETRO_THROTTLE_FAST_FORWARD ? 0.0f : (dbp_throttle.rate ? dbp_throttle.rate : -1.0f));
@@ -1555,13 +1566,11 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		if (!dbp_last_fastforward) { old_max = CPU_CycleMax; old_pmode = cpu.pmode; }
 		if (ffrate > 0 && (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME))
 		{
-			// If fast forwarding at a desired rate, apply custom frameskip and max cycle rules
-			render.frameskip.max = (int)(ffrate / av_info.timing.fps * 1.5f + .4f);
+			// If fast forwarding at a desired rate, apply custom max cycle rules
 			CPU_CycleMax = (Bit32s)(old_max / (CPU_CycleAutoAdjust ? ffrate / av_info.timing.fps : 1.0f));
 		}
 		else
 		{
-			render.frameskip.max = 8;
 			CPU_CycleMax = (cpu.pmode ? 30000 : 10000);
 		}
 	}
@@ -1654,7 +1663,7 @@ static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 	{
 		float absFrameTime = (1000000.0f / render.src.fps);
 		if (dbp_throttle.rate <= render.src.fps - 1)
-			absFrameTime *= render.src.fps / dbp_throttle.rate;
+			absFrameTime *= render.src.fps / (dbp_throttle.rate + 1);
 
 		Bit32u frameTime = (Bit32u)(absFrameTime * (dbp_auto_target - 0.01f));
 
@@ -3282,13 +3291,13 @@ void retro_run(void)
 	#ifdef DBP_ENABLE_FPS_COUNTERS
 	DBP_FPSCOUNT(dbp_fpscount_retro)
 	uint32_t curTick = DBP_GetTicks();
-	if (curTick - dbp_lastfpstick >= 1000)
+	if (curTick - dbp_lastfpstick >= 1000 && !dbp_perf)
 	{
 		double fpsf = 1000.0 / (double)(curTick - dbp_lastfpstick), gfxf = fpsf * (render.frameskip.max < 1 ? 1 : render.frameskip.max);
 		log_cb(RETRO_LOG_INFO, "[DBP FPS] RETRO: %3.2f - GFXSTART: %3.2f - GFXEND: %3.2f - EVENT: %5.1f - EMULATED: %3.2f - CyclesMax: %d\n",
 			dbp_fpscount_retro * fpsf, dbp_fpscount_gfxstart * gfxf, dbp_fpscount_gfxend * gfxf, dbp_fpscount_event * fpsf, render.src.fps, CPU_CycleMax);
 		dbp_lastfpstick = (curTick - dbp_lastfpstick >= 1500 ? curTick : dbp_lastfpstick + 1000);
-		dbp_fpscount_retro = dbp_fpscount_gfxstart = dbp_fpscount_gfxend = dbp_fpscount_event = 0;
+		dbp_fpscount_retro = dbp_fpscount_gfxstart = dbp_fpscount_gfxend = dbp_fpscount_event = dbp_fpscount_skip_run = dbp_fpscount_skip_render = 0;
 	}
 	#endif
 
@@ -3321,8 +3330,10 @@ void retro_run(void)
 
 			// submit last frame
 			Bit32u numEmptySamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
-			memset(dbp_audio, 0, numEmptySamples * 4);
-			audio_batch_cb(dbp_audio, numEmptySamples);
+			DBP_Audio& aud = dbp_audio[dbp_audio_active ^= 1];
+			if (numEmptySamples > aud.length) { aud.audio = (int16_t*)realloc(aud.audio, numEmptySamples * 4); aud.length = numEmptySamples; }
+			memset(aud.audio, 0, numEmptySamples * 4);
+			audio_batch_cb(aud.audio, numEmptySamples);
 			if (dbp_opengl_draw)
 				dbp_opengl_draw(buf);
 			else
@@ -3462,12 +3473,13 @@ void retro_run(void)
 	else
 		numSamples = (av_info.timing.sample_rate / dbp_throttle.rate) + dbp_audio_remain;
 	if (fpsboost > 1) numSamples /= (fpsboost*.9); // Without *.9 audio can end up skipping
-	if (numSamples && haveSamples > numSamples * .99 && dbp_audio_remain != -1) // Allow 1 percent stretch on underrun
+	if (numSamples && haveSamples && dbp_audio_remain != -1) // stretch on underrun (allows frontend to catch up with the emulation)
 	{
 		mixSamples = (numSamples > haveSamples ? haveSamples : (Bit32u)numSamples);
 		dbp_audio_remain = ((numSamples <= mixSamples || numSamples > haveSamples) ? 0.0 : (numSamples - mixSamples));
-		if (mixSamples > DBP_MAX_SAMPLES) mixSamples = DBP_MAX_SAMPLES;
-		MIXER_CallBack(0, (Bit8u*)dbp_audio, mixSamples * 4);
+		DBP_Audio& aud = dbp_audio[dbp_audio_active ^= 1];
+		if (mixSamples > aud.length) { aud.audio = (int16_t*)realloc(aud.audio, mixSamples * 4); aud.length = mixSamples; }
+		MIXER_CallBack(0, (Bit8u*)aud.audio, mixSamples * 4);
 	}
 
 	// Read buffer_active before waking up emulation thread
@@ -3482,8 +3494,8 @@ void retro_run(void)
 	//log_cb(RETRO_LOG_INFO, "[retro_run] Submit %d samples (remain %f) - Had: %d - Left: %d\n", mixSamples, dbp_audio_remain, haveSamples, DBP_MIXER_DoneSamplesCount());
 	if (mixSamples)
 	{
-		if (dbp_swapstereo) for (int16_t *p = dbp_audio, *pEnd = p + mixSamples*2; p != pEnd; p += 2) std::swap(p[0], p[1]);
-		audio_batch_cb(dbp_audio, mixSamples);
+		if (dbp_swapstereo) for (int16_t *p = dbp_audio[dbp_audio_active].audio, *pEnd = p + mixSamples*2; p != pEnd; p += 2) std::swap(p[0], p[1]);
+		audio_batch_cb(dbp_audio[dbp_audio_active].audio, mixSamples);
 	}
 
 	if (tpfActual)
@@ -3494,14 +3506,23 @@ void retro_run(void)
 				#ifdef DBP_ENABLE_WAITSTATS
 				", Waits: p%u|f%u|z%u|c%u"
 				#endif
+				#ifdef DBP_ENABLE_FPS_COUNTERS
+				"\nRetro: %u, GfxStart: %u, GfxEnd: %u, Event: %u, SkipRun: %u, SkipRender: %u"
+				#endif
 				, ((float)tpfTarget / (float)tpfActual * 100), (int)render.src.width, (int)render.src.height, render.src.fps, (1000000.f / tpfActual), tpfDraws, CPU_CycleMax, DBP_CPU_GetDecoderName()
 				#ifdef DBP_ENABLE_WAITSTATS
 				, waitPause, waitFinish, waitPaused, waitContinue
+				#endif
+				#ifdef DBP_ENABLE_FPS_COUNTERS
+				, dbp_fpscount_retro, dbp_fpscount_gfxstart, dbp_fpscount_gfxend, dbp_fpscount_event, dbp_fpscount_skip_run, dbp_fpscount_skip_render
 				#endif
 				);
 		else
 			retro_notify(-1500, RETRO_LOG_INFO, "Emulation Speed: %4.1f%%",
 				((float)tpfTarget / (float)tpfActual * 100));
+		#ifdef DBP_ENABLE_FPS_COUNTERS
+		dbp_fpscount_retro = dbp_fpscount_gfxstart = dbp_fpscount_gfxend = dbp_fpscount_event = dbp_fpscount_skip_run = dbp_fpscount_skip_render = 0;
+		#endif
 	}
 
 	// handle video mode changes
@@ -3574,9 +3595,7 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 					retro_notify(0, RETRO_LOG_WARN, "Unable to load a save state while game the isn't running, start it first.");
 				else if (dbp_serializemode != DBPSERIALIZE_REWIND)
 					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s while %s %s not running."
-						#ifndef DBP_STANDALONE
 						"\nIf using rewind, make sure to modify the related core option."
-						#endif
 						"", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "),
 						(ar.mode == DBPArchive::MODE_LOAD ? "load state made" : "save state"),
 						(ar.had_error == DBPArchive::ERR_DOSNOTRUNNING ? "DOS" : "game"),
