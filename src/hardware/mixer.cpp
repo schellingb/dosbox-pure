@@ -75,6 +75,10 @@
 #define SDL_PauseAudio(a)
 #endif
 
+#ifdef C_DBP_LIBRETRO
+bool dbp_swapstereo;
+#endif
+
 
 static INLINE Bit16s MIXER_CLIP(Bits SAMP) {
 	if (SAMP < MAX_AUDIO) {
@@ -668,6 +672,13 @@ MIXER_CallBack(void * /*userdata*/, uint8_t *stream, int len) {
 			pos++;
 		}
 	}
+
+#ifdef C_DBP_LIBRETRO
+	if (dbp_swapstereo)
+	{
+		for (Bit16s *p = (Bit16s *)stream, *pEnd = p + (size_t)len/2; p != pEnd; p += 2) std::swap(p[0], p[1]);
+	}
+#endif
 }
 
 #undef INDEX_SHIFT_LOCAL
