@@ -1419,6 +1419,7 @@ static std::vector<std::string>& DBP_ScanSystem(bool force_midi_scan)
 	return dynstr;
 }
 
+#include "dosbox_pure_ver.h"
 #include "dosbox_pure_pad.h"
 #include "dosbox_pure_run.h"
 #include "dosbox_pure_osd.h"
@@ -2039,7 +2040,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 {
 	memset(info, 0, sizeof(*info));
 	info->library_name     = "DOSBox-pure";
-	info->library_version  = "1.0-preview1";
+	info->library_version  = DOSBOX_PURE_VERSION_STR;
 	info->need_fullpath    = true;
 	info->block_extract    = true;
 	info->valid_extensions = "zip|dosz|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf|/";
