@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2023 Bernhard Schelling
+ *  Copyright (C) 2023-2025 Bernhard Schelling
  *
  * Parts of this file (NE2000/ethernet code base) are:
  *  Copyright (C) 2002  MandrakeSoft S.A.
@@ -2978,3 +2978,6 @@ void DBP_Network_SetCallbacks(retro_environment_t envcb)
 	envcb(RETRO_ENVIRONMENT_SET_NETPACKET76_INTERFACE, (void*)&packet76_callback);
 #endif
 }
+
+#include <dbp_serialize.h>
+DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, network, DOSIPX::IPX_AES_EventHandler, NE2K::dosbox_tx_event);

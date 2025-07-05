@@ -648,6 +648,7 @@ void DBPSerialize_PIC(DBPArchive& ar)
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, IDEController);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, Voodoo);
 	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, zipDrive); // not stored
+	DBP_SERIALIZE_EXTERN_POINTER_LIST(PIC_EventHandler, network); // not stored (for now)
 
 	float pic_indices[PIC_QUEUESIZE];
 	Bitu pic_values[PIC_QUEUESIZE];
@@ -664,6 +665,9 @@ void DBPSerialize_PIC(DBPArchive& ar)
 			// skip storing state irrelevant union and zip drive events which keep a pointer in the value
 			if (it->pic_event == DBPSerializePIC_EventHandlerunionDrivePtrs[0]) continue;
 			if (it->pic_event == DBPSerializePIC_EventHandlerzipDrivePtrs[0]) continue;
+			// skip storing network events because network hardware state is not serialized
+			if (it->pic_event == DBPSerializePIC_EventHandlernetworkPtrs[0]) continue;
+			if (it->pic_event == DBPSerializePIC_EventHandlernetworkPtrs[1]) continue;
 			pic_indices[pic_count] = it->index;
 			pic_values[pic_count] = it->value;
 			pic_events[pic_count] = it->pic_event;
