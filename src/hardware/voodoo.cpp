@@ -4348,6 +4348,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 	// Reset GL states
 	GLERRORASSERT
 	if (last_use_blend == 1) { myglDisable(MYGL_BLEND); GLERRORASSERT }
+	if (last_use_depth_test == 1) { myglDisable(MYGL_DEPTH_TEST); GLERRORASSERT }
 	if (last_depth_masked == 0) { myglDepthMask(MYGL_TRUE); GLERRORASSERT }
 	if (!last_color_masked || !last_alpha_masked) { myglColorMask(MYGL_TRUE, MYGL_TRUE, MYGL_TRUE, MYGL_TRUE); GLERRORASSERT }
 	if (vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
