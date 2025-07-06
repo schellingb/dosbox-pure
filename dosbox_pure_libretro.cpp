@@ -61,7 +61,7 @@ static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOW
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
 static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save;
-static char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
+static signed char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_last_fastforward;
 static Bit32u dbp_lastmenuticks, dbp_framecount, dbp_emu_waiting, dbp_paused_work;
@@ -661,7 +661,7 @@ static int DBP_NeedFrameSkip(bool in_emulation)
 		emu_rate *= (run_rate / (float)av_info.timing.fps);
 	}
 
-	if ((in_emulation ? (run_rate > emu_rate - 1) : (emu_rate > run_rate - 1)) || run_rate < 5 || emu_rate < 5 || dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING) return 0;
+	if ((in_emulation ? (run_rate >= emu_rate - 0.001f) : (emu_rate >= run_rate - 0.001f)) || run_rate < 5 || emu_rate < 5 || dbp_throttle.mode == RETRO_THROTTLE_FRAME_STEPPING) return 0;
 	static float accum;
 	accum += (in_emulation ? (emu_rate - run_rate) : (run_rate - emu_rate));
 	if (accum < run_rate) return 0;
@@ -796,7 +796,7 @@ void DBP_Unmount(char drive)
 	mem_writeb(Real2Phys(dos.tables.mediaid)+(drive-'A')*9,0);
 
 	// Unmount anything that is a subst mirror of the drive that just got unmounted
-	for (Bit8u i = 0; i < DOS_DRIVES; i++)
+	for (Bit8u i = 0; drv && i < DOS_DRIVES; i++)
 		if ((tst = Drives[i]) != NULL && tst != drv && tst->GetShadow(0, false) == drv)
 			DBP_Unmount(i + 'A');
 }
@@ -1519,7 +1519,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 	else
 	{
 		// Use square pixels, if the correct aspect ratio is far off, we double or halve the aspect ratio
-		float sqr_ratio = ((float)srcw / srch), sqr_to_corr = (((srcw<<dblw) / ((srch<<dblh) * (float)render.src.ratio)) / sqr_ratio);
+		float sqr_ratio = ((float)buf.width / buf.height), sqr_to_corr = (((srcw<<dblw) / ((srch<<dblh) * (float)render.src.ratio)) / sqr_ratio);
 		buf.ratio = sqr_ratio * (sqr_to_corr > 1.66f ? 2.0f : (sqr_to_corr > 0.6f ? 1.0f : 0.5f));
 	}
 
@@ -1666,7 +1666,7 @@ static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 		if (dbp_throttle.rate <= render.src.fps - 1)
 			absFrameTime *= render.src.fps / (dbp_throttle.rate + 1);
 
-		Bit32u frameTime = (Bit32u)(absFrameTime * (dbp_auto_target - 0.01f));
+		Bit32u frameTime = (Bit32u)(absFrameTime * dbp_auto_target);
 
 		Bit32u frameThreshold = 0;
 		for (Bit32u f : St.HistoryFrame) frameThreshold += f;
@@ -2144,21 +2144,14 @@ bool DBP_Option::Apply(Section& section, const char* var_name, const char* new_v
 	if (!strcmp(new_value, (propVal.type == Value::V_STRING ? (const char*)propVal : propVal.ToString().c_str()))) return false;
 
 	bool reInitSection = (dbp_state != DBPSTATE_BOOT);
-	if (disallow_in_game && dbp_game_running)
+	if ((disallow_in_game && dbp_game_running) || (need_restart && reInitSection))
 	{
-		retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
+		if (disallow_in_game)
+			retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
+		else if (dbp_game_running || DBP_OSD.mode == DBPOSD_CLOSED || !DBP_FullscreenOSD)
+			retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
+		DBP_Run::startup.reboot = true;
 		reInitSection = false;
-		DBP_Run::startup.reboot = true;
-	}
-	if (need_restart && reInitSection && (dbp_game_running || DBP_OSD.mode == DBPOSD_CLOSED || !DBP_FullscreenOSD))
-	{
-		retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
-		reInitSection = false;
-		DBP_Run::startup.reboot = true;
-	}
-	else if (need_restart && reInitSection)
-	{
-		DBP_Run::startup.reboot = true;
 	}
 
 	//log_cb(RETRO_LOG_INFO, "[DOSBOX] variable %s::%s updated from %s to %s\n", section_name, var_name, old_val.c_str(), new_value);
@@ -2242,24 +2235,23 @@ static bool check_variables()
 	        &sec_speaker  = *control->GetSection("speaker"),  &sec_cpu = *control->GetSection("cpu"), &sec_render   = *control->GetSection("render"),
 	        &sec_sblaster = *control->GetSection("sblaster"), &sec_gus = *control->GetSection("gus"), &sec_joystick = *control->GetSection("joystick");
 
-	char dbp_mchar = (dbp_reboot_machine ? dbp_reboot_machine : DBP_Option::Get(DBP_Option::machine)[0]);
-	char db_mchar = (control ? *(const char*)control->GetProp("dosbox", "machine")->GetValue() : '\0');
-	int db_mch = (dbp_state != DBPSTATE_BOOT ? machine : -1);
-	bool machine_is_svga = ((db_mch == MCH_VGA && svgaCard != SVGA_None) || db_mchar == 's'), machine_is_cga = (db_mch == MCH_CGA || db_mchar == 'c'), machine_is_hercules = (db_mch == MCH_HERC || db_mchar == 'h');
-	const char* dbmachine = "svga_s3";
-	switch (dbp_mchar)
+	const char new_mchar = (dbp_reboot_machine ? dbp_reboot_machine : DBP_Option::Get(DBP_Option::machine)[0]), *new_machine = "svga_s3";
+	switch (new_mchar)
 	{
-		case 's': dbmachine = DBP_Option::Get(DBP_Option::svga); machine_is_svga = true; break;
-		case 'v': dbmachine = "vgaonly"; break;
-		case 'e': dbmachine = "ega"; break;
-		case 'c': dbmachine = "cga"; machine_is_cga = true; break;
-		case 't': dbmachine = "tandy"; break;
-		case 'h': dbmachine = "hercules"; machine_is_hercules = true; break;
-		case 'p': dbmachine = "pcjr"; break;
+		case 's': new_machine = DBP_Option::Get(DBP_Option::svga); break;
+		case 'v': new_machine = "vgaonly"; break;
+		case 'e': new_machine = "ega"; break;
+		case 'c': new_machine = "cga"; break;
+		case 't': new_machine = "tandy"; break;
+		case 'h': new_machine = "hercules"; break;
+		case 'p': new_machine = "pcjr"; break;
 	}
-	visibility_changed |= DBP_Option::Apply(sec_dosbox, "machine", dbmachine, false, true);
-	if (dbp_reboot_machine) dbp_reboot_machine = 0;
+	visibility_changed |= DBP_Option::Apply(sec_dosbox, "machine", new_machine, false, true);
 	DBP_Option::GetAndApply(sec_dosbox, "vmemsize", DBP_Option::svgamem, false, true);
+	if (dbp_reboot_machine) dbp_reboot_machine = 0;
+	const char cur_mchar = (dbp_state == DBPSTATE_BOOT ? '\0' : (machine == MCH_VGA && svgaCard != SVGA_None) ? 's' : machine == MCH_CGA ? 'c' : machine == MCH_HERC ? 'h' : '\0'); // need only these 3
+	const bool show_svga = (new_mchar == 's' || cur_mchar == 's'), show_cga = (new_mchar == 'c' || cur_mchar == 'c'), show_hercules = (new_mchar == 'h' || cur_mchar == 'h');
+	const char active_mchar = (dbp_state == DBPSTATE_BOOT ? new_mchar : cur_mchar);
 
 	bool mem_changed = false;
 	const char* mem = DBP_Option::Get(DBP_Option::memory_size, &mem_changed);
@@ -2325,25 +2317,25 @@ static bool check_variables()
 	}
 	visibility_changed |= DBP_Option::Apply(sec_cpu, "cycles", cycles, false, false, cycles_changed);
 
-	dbp_auto_target = 1.0f * (cycles_numeric ? 1.0f : (float)atof(DBP_Option::Get(DBP_Option::cycle_limit)));
+	dbp_auto_target = (1.0f * (cycles_numeric ? 1.0f : (float)atof(DBP_Option::Get(DBP_Option::cycle_limit)))) - 0.0075f; // was - 0.01f
 
 	extern const char* RunningProgram;
-	bool cpu_code_changed = false;
-	const char* cpu_core = ((!memcmp(RunningProgram, "BOOT", 5) && DBP_Option::Get(DBP_Option::bootos_forcenormal, &cpu_code_changed)[0] == 't') ? "normal" : DBP_Option::Get(DBP_Option::cpu_core, &cpu_code_changed));
-	DBP_Option::Apply(sec_cpu, "core", cpu_core, false, false, cpu_code_changed);
+	bool cpu_core_changed = false;
+	const char* cpu_core = ((!memcmp(RunningProgram, "BOOT", 5) && DBP_Option::Get(DBP_Option::bootos_forcenormal, &cpu_core_changed)[0] == 't') ? "normal" : DBP_Option::Get(DBP_Option::cpu_core, &cpu_core_changed));
+	DBP_Option::Apply(sec_cpu, "core", cpu_core, false, false, cpu_core_changed);
 	DBP_Option::GetAndApply(sec_cpu, "cputype", DBP_Option::cpu_type, true);
 
 	DBP_Option::SetDisplay(DBP_Option::modem, dbp_use_network);
 	if (dbp_use_network)
 		DBP_Option::Apply(*control->GetSection("serial"), "serial1", ((DBP_Option::Get(DBP_Option::modem)[0] == 'n') ? "libretro null" : "libretro"));
 
-	DBP_Option::SetDisplay(DBP_Option::svga, machine_is_svga);
-	DBP_Option::SetDisplay(DBP_Option::svgamem, machine_is_svga);
-	DBP_Option::SetDisplay(DBP_Option::voodoo, machine_is_svga);
-	DBP_Option::SetDisplay(DBP_Option::voodoo_perf, machine_is_svga);
-	DBP_Option::SetDisplay(DBP_Option::voodoo_gamma, machine_is_svga);
-	DBP_Option::SetDisplay(DBP_Option::voodoo_scale, machine_is_svga);
-	if (machine_is_svga)
+	DBP_Option::SetDisplay(DBP_Option::svga, show_svga);
+	DBP_Option::SetDisplay(DBP_Option::svgamem, show_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo, show_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo_perf, show_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo_gamma, show_svga);
+	DBP_Option::SetDisplay(DBP_Option::voodoo_scale, show_svga);
+	if (active_mchar == 's')
 	{
 		Section& sec_pci = *control->GetSection("pci");
 		DBP_Option::GetAndApply(sec_pci, "voodoo", DBP_Option::voodoo, true, true);
@@ -2355,8 +2347,8 @@ static bool check_variables()
 		DBP_Option::GetAndApply(sec_pci, "voodoo_scale", DBP_Option::voodoo_scale);
 	}
 
-	DBP_Option::SetDisplay(DBP_Option::cga, machine_is_cga);
-	if (machine_is_cga)
+	DBP_Option::SetDisplay(DBP_Option::cga, show_cga);
+	if (active_mchar == 'c')
 	{
 		const char* cga = DBP_Option::Get(DBP_Option::cga);
 		bool cga_new_model = false;
@@ -2366,8 +2358,8 @@ static bool check_variables()
 		DBP_CGA_SetModelAndComposite(cga_new_model, (!cga_mode || cga_mode[0] == 'a' ? 0 : ((cga_mode[0] == 'o' && cga_mode[1] == 'n') ? 1 : 2)));
 	}
 
-	DBP_Option::SetDisplay(DBP_Option::hercules, machine_is_hercules);
-	if (machine_is_hercules)
+	DBP_Option::SetDisplay(DBP_Option::hercules, show_hercules);
+	if (active_mchar == 'h')
 	{
 		const char herc_mode = DBP_Option::Get(DBP_Option::hercules)[0];
 		DBP_Hercules_SetPalette(herc_mode == 'a' ? 1 : (herc_mode == 'g' ? 2 : 0));
@@ -3030,6 +3022,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 					"}";
 
 				static const char* bind_attrs[] = { "a_position", "a_texcoord" };
+				if (myglGetError()) { DBP_ASSERT(0); goto gl_error; }
 				prog_dosboxbuffer = DBP_Build_GL_Program(1, &vertex_shader_src, 1, &fragment_shader_src, 2, bind_attrs);
 				if (myglGetError()) { DBP_ASSERT(0); goto gl_error; }
 
