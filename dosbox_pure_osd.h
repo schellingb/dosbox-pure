@@ -309,6 +309,14 @@ struct DBP_MenuState
 					case KBD_pagedown: sel_change +=    12; break;
 					case KBD_home:     sel_change -= 99999; break;
 					case KBD_end:      sel_change += 99999; break;
+					default: if (val <= KBD_m)
+					{
+						int lckey = (DBP_KBDNAMES[val][0] | 0x20), first = -1;
+						for (const Item& it : list)
+							if ((it.str.c_str()[0] | 0x20) == lckey)
+								{ int i = (int)(&it - &list[0]); if (i > sel) { sel_change = i - sel; break; } else if (first == -1) { first = i; } }
+						if (!sel_change && first != -1) sel_change = first - sel;
+					}
 				}
 				break;
 			case DBPET_KEYUP:
