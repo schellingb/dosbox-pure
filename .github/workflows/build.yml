@@ -4,6 +4,13 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      versionstring:
+        description: 'Version String'
+        default: ''
+        required: false
+        type: string
 
 jobs:
   build-win64-msvc:
@@ -11,7 +18,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: microsoft/setup-msbuild@v2
-    - run: MSBuild.exe dosbox_pure_libretro.vcxproj /p:Configuration=Release /p:Platform=x64
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+      shell: bash
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+      shell: bash
+    - run: echo "::add-matcher::.github/workflows/msvc-problem-matcher.json"
+    - name: Build
+      run: |
+        type dosbox_pure_ver.h
+        MSBuild.exe dosbox_pure_libretro.vcxproj /p:Configuration=Release /p:Platform=x64
     - uses: actions/upload-artifact@v4
       with:
         name: dosbox_pure_win64
@@ -22,7 +39,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: microsoft/setup-msbuild@v2
-    - run: MSBuild.exe dosbox_pure_libretro.vcxproj /p:Configuration=Release /p:Platform=Win32
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+      shell: bash
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+      shell: bash
+    - run: echo "::add-matcher::.github/workflows/msvc-problem-matcher.json"
+    - name: Build
+      run: |
+        type dosbox_pure_ver.h
+        MSBuild.exe dosbox_pure_libretro.vcxproj /p:Configuration=Release /p:Platform=Win32
     - uses: actions/upload-artifact@v4
       with:
         name: dosbox_pure_win32
@@ -32,17 +59,48 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-    - run: make "CXX=g++ -static"
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+      shell: bash
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+      shell: bash
+    - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+    - name: Build
+      run: |
+        type dosbox_pure_ver.h
+        make "CXX=g++ -static"
     - uses: actions/upload-artifact@v4
       with:
         name: dosbox_pure_win64_gcc
         path: dosbox_pure_libretro.dll
-        
+
   build-linux_x64:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - run: make -j4
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+    - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+    - name: Build
+      if: ${{ github.event.inputs.versionstring == '' }}
+      run: |
+        cat dosbox_pure_ver.h
+        make -j4
+    - name: Build for release
+      if: ${{ github.event.inputs.versionstring != '' }}
+      uses: addnab/docker-run-action@v3
+      with:
+        image: ubuntu:14.04 # use older distro for increased GLIBC compatibility
+        options: -v ${{ github.workspace }}:/work
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install git make g++
+          cd /work
+          cat dosbox_pure_ver.h
+          make -j4
     - uses: actions/upload-artifact@v4
       with:
         name: dosbox_pure_linux_x64
@@ -52,7 +110,28 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
     - uses: actions/checkout@v4
-    - run: make -j4
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+    - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+    - name: Build
+      if: ${{ github.event.inputs.versionstring == '' }}
+      run: |
+        cat dosbox_pure_ver.h
+        make -j4
+    - name: Build for release
+      if: ${{ github.event.inputs.versionstring != '' }}
+      uses: addnab/docker-run-action@v3
+      with:
+        image: ubuntu:14.04 # use older distro for increased GLIBC compatibility
+        options: -v ${{ github.workspace }}:/work
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install git make g++
+          cd /work
+          cat dosbox_pure_ver.h
+          make -j4
     - uses: actions/upload-artifact@v4
       with:
         name: dosbox_pure_linux_arm64
@@ -62,7 +141,15 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - run: make -j4
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+    - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+    - name: Build
+      run: |
+        cat dosbox_pure_ver.h
+        make -j4
     - uses: actions/upload-artifact@v4
       with:
         name: dosbox_pure_macos
@@ -75,9 +162,15 @@ jobs:
     - uses: nttld/setup-ndk@v1
       with:
         ndk-version: r20b
-        local-cache: true
-    - name: ndk-build
+        local-cache: false # see https://github.com/nttld/setup-ndk/issues/547
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+    - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+    - name: Build
       run: |
+        cat dosbox_pure_ver.h
         cd jni
         ndk-build -j4
         cp ../libs/armeabi-v7a/libretro.so ../libs/armeabi-v7a/dosbox_pure_libretro_android.so.20290101T$(echo 000000$GITHUB_RUN_NUMBER | tail -c 7).$(echo 000000000$GITHUB_RUN_NUMBER | tail -c 9).0.lcbk
