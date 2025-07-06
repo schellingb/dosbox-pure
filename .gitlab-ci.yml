@@ -71,6 +71,10 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/dingux-mips32.yml'
 
+  # OpenDingux (ARM)
+  - project: 'libretro-infrastructure/ci-templates'
+    file: '/dingux-arm32.yml'
+
   # tvOS (AppleTV)
   - project: 'libretro-infrastructure/ci-templates'
     file: '/tvos-arm64.yml'
@@ -209,3 +213,22 @@ libretro-build-dingux-odbeta-mips32:
   extends:
     - .libretro-dingux-odbeta-mips32-make-default
     - .core-defs
+
+# Miyoo
+libretro-build-miyoo-arm32:
+  extends:
+    - .libretro-miyoo-arm32-make-default
+    - .core-defs
+
+# RS90 and RetroFW fail with compile errors in risc_mipsel32.h so disable them
+## OpenDingux Beta
+#libretro-build-rs90-odbeta-mips32:
+#  extends:
+#    - .libretro-rs90-odbeta-mips32-make-default
+#    - .core-defs
+#
+## RetroFW
+#libretro-build-retrofw-mips32:
+#  extends:
+#    - .libretro-retrofw-mips32-make-default
+#    - .core-defs

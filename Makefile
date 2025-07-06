@@ -1,5 +1,5 @@
 #
-#  Copyright (C) 2020-2023 Bernhard Schelling
+#  Copyright (C) 2020-2025 Bernhard Schelling
 #
 #  This program is free software; you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -139,9 +139,23 @@ else ifeq ($(platform),gcw0)
   OUTNAME := dosbox_pure_libretro.so
   CXX     := /opt/gcw0-toolchain/usr/bin/mipsel-linux-g++
   LDFLAGS := -Wl,--gc-sections -fno-ident
-  CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers
+  CPUFLAGS := -ffast-math -march=mips32r2 -mtune=mips32r2 -mhard-float -fexpensive-optimizations -frename-registers -fPIC
   COMMONFLAGS += -pthread
   STRIPCMD := /opt/gcw0-toolchain/usr/mipsel-gcw0-linux-uclibc/bin/strip --strip-all
+else ifeq ($(platform),miyoo)
+  OUTNAME := dosbox_pure_libretro.so
+  CXX     := /opt/miyoo/usr/bin/arm-linux-g++
+  LDFLAGS := -Wl,--gc-sections -fno-ident
+  CPUFLAGS := -ffast-math -march=armv5te -mtune=arm926ej-s -fPIC
+  COMMONFLAGS += -pthread
+  STRIPCMD := /opt/miyoo/usr/arm-miyoo-linux-uclibcgnueabi/bin/strip --strip-all
+else ifeq ($(platform),retrofw)
+  OUTNAME := dosbox_pure_libretro.so
+  CXX     := /opt/retrofw-toolchain/usr/bin/mipsel-linux-g++
+  LDFLAGS := -Wl,--gc-sections -fno-ident
+  CPUFLAGS := -ffast-math -march=mips32 -mtune=mips32 -mhard-float -fexpensive-optimizations -frename-registers -fPIC
+  COMMONFLAGS += -pthread
+  STRIPCMD := /opt/retrofw-toolchain/usr/mipsel-RetroFW-linux-uclibc/bin/strip --strip-all
 else ifneq ($(findstring Haiku,$(shell uname -s)),)
   OUTNAME := dosbox_pure_libretro.so
   LDFLAGS := -Wl,--gc-sections -fno-ident -lroot -lnetwork
@@ -157,7 +171,7 @@ else
   COMMONFLAGS += -pthread
   ifeq ($(CPUFLAGS),)
     # ARM optimizations
-    UNAMEM := $(shell uname -m))
+    UNAMEM := $(shell uname -m)
     ifeq ($(UNAMEM),aarch64)
       CPUFLAGS := -DPAGESIZE=$(or $(shell getconf PAGESIZE),4096)
     else ifeq ($(UNAMEM),armv7l)
