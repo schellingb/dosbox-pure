@@ -1887,9 +1887,14 @@ static void DBP_PureMenuProgram(Program** make)
 			}
 
 			if (m == M_BOOT && runsoloexe && dbp_menu_time != (char)-1)
+			{
 				ms->DoInput(DBP_MenuState::RES_OK, ms->list[ms->sel].type, 0);
+				delete ms;
+			}
 			else if (m != M_BOOT || ms->exe_count != 0 || ms->fs_rows != 0 || patchDrive::variants.Len() || Drives['C'-'A'] || Drives['A'-'A'] || Drives['D'-'A'])
 				DBP_StartOSD(DBPOSD_MAIN, ms);
+			else
+				delete ms;
 		}
 	};
 	*make = new Menu;
