@@ -1886,7 +1886,7 @@ static void DBP_PureMenuProgram(Program** make)
 				m = M_NORMAL;
 			}
 
-			if (m == M_BOOT && runsoloexe && dbp_menu_time != (char)-1)
+			if (m == M_BOOT && runsoloexe && dbp_menu_time != (signed char)-1)
 			{
 				ms->DoInput(DBP_MenuState::RES_OK, ms->list[ms->sel].type, 0);
 				delete ms;
