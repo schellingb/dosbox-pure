@@ -49,7 +49,7 @@ namespace DBP_Option
 		menu_time,
 		menu_transparency,
 		// Input
-		on_screen_keyboard,
+		map_osd,
 		mouse_input,
 		mouse_wheel,
 		mouse_speed_factor,
@@ -189,7 +189,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	{
 		"dosbox_pure_menu_transparency",
 		"Advanced > Menu Transparency", NULL,
-		"Set the transparency level of the On Screen Keyboard and the Gamepad Mapper.", NULL,
+		"Set the transparency level of the Menu and the On Screen Keyboard.", NULL,
 		DBP_OptionCat::General,
 		{
 			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
@@ -199,9 +199,9 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 
 	// Input
 	{
-		"dosbox_pure_on_screen_keyboard",
-		"Enable On Screen Keyboard", NULL,
-		"Enable the On Screen Keyboard feature which can be activated with the L3 button on the controller.", NULL,
+		"dosbox_pure_on_screen_keyboard", // legacy name
+		"Use L3 Button to Show Menu", NULL,
+		"Always bind the L3 controller button to show the menu to swap CDs/Disks and use the On-Screen Keyboard.", NULL,
 		DBP_OptionCat::Input,
 		{ { "true", "On" }, { "false", "Off" } },
 		"true"
@@ -272,7 +272,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	},
 	{
 		"dosbox_pure_mouse_speed_factor_x",
-		"Advanced > Horizontal Mouse Sensitivity.", NULL,
+		"Advanced > Horizontal Mouse Sensitivity", NULL,
 		"Experiment with this value if the mouse is too fast/slow when moving left/right.", NULL,
 		DBP_OptionCat::Input,
 		{
@@ -311,7 +311,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	{
 		"dosbox_pure_keyboard_layout",
 		"Advanced > Keyboard Layout", NULL,
-		"Select the keyboard layout (will not change the On Screen Keyboard).", NULL,
+		"Select the keyboard layout (will not change the On-Screen Keyboard).", NULL,
 		DBP_OptionCat::Input,
 		{
 			{ "us",    "US (default)" },

@@ -2343,10 +2343,7 @@ public:
 
 		Prop_multival* p = section->Get_multival("cycles");
 		std::string type = p->GetSection()->Get_string("type");
-#ifdef C_DBP_LIBRETRO // use our custom cycle scaling
-		void DBP_CPU_ModifyCycles(const char*, const char*);
-		DBP_CPU_ModifyCycles(type.c_str(), p->GetSection()->Get_string("parameters"));
-#else
+#ifndef C_DBP_LIBRETRO // use our custom cycle scaling
 		std::string str ;
 		CommandLine cmd(0,p->GetSection()->Get_string("parameters"));
 		if (type=="max") {
@@ -2430,6 +2427,8 @@ public:
 		if (!firststartup && cpudecoder != CPU_Core_Simple_Run && core == "simple") core = "normal"; // simple can only be run from startup
 		void CPU_ResetCPUDecoder(const std::string& core);
 		CPU_ResetCPUDecoder(core);
+		void DBP_CPU_ModifyCycles(const char*, const char*);
+		DBP_CPU_ModifyCycles(type.c_str(), p->GetSection()->Get_string("parameters")); // call after CPU_AUTODETERMINE_CORE has been decided
 #else
 		cpudecoder=&CPU_Core_Normal_Run;
 		if (core == "normal") {
@@ -2585,6 +2584,16 @@ void CPU_ResetCPUDecoder(const std::string& core)
 	#endif
 }
 
+void DBP_CPU_AutoEnableDynamicCore()
+{
+	if (!(CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE) || (!cpu.pmode && !CPU_CycleAutoAdjust && CPU_CycleMax < 14000)) return;
+	#if (C_DYNAMIC_X86)
+	if (cpudecoder != &CPU_Core_Dyn_X86_Run) { CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = &CPU_Core_Dyn_X86_Run; }
+	#elif (C_DYNREC)
+	if (cpudecoder != &CPU_Core_Dynrec_Run) { CPU_Core_Dynrec_Cache_Init(true); cpudecoder = &CPU_Core_Dynrec_Run; }
+	#endif
+}
+
 //This function is safer than setting new cycle settings through config (can cause FPU overflow crashes)
 void DBP_CPU_ModifyCycles(const char* val, const char* params)
 {
@@ -2615,6 +2624,7 @@ void DBP_CPU_ModifyCycles(const char* val, const char* params)
 		if (CPU_CycleLimit < CPU_CYCLES_LOWER_LIMIT) CPU_CycleLimit = -1;
 	}
 	else CPU_CycleLimit = -1;
+	DBP_CPU_AutoEnableDynamicCore();
 }
 
 #include <dbp_serialize.h>

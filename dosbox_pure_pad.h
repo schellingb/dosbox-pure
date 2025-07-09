@@ -20,7 +20,7 @@ struct DBP_WheelItem { Bit8u port, key_count, k[4]; };
 static std::vector<DBP_WheelItem> dbp_wheelitems;
 static std::vector<Bit8u> dbp_custom_mapping;
 static Bit16s dbp_bind_mousewheel, dbp_yml_mousewheel;
-static bool dbp_on_screen_keyboard, dbp_analog_buttons;
+static bool dbp_map_osd, dbp_analog_buttons;
 static char dbp_mouse_input, dbp_auto_mapping_mode;
 static const Bit8u* dbp_auto_mapping;
 static const char *dbp_auto_mapping_names, *dbp_auto_mapping_title;
@@ -162,8 +162,8 @@ struct DBP_PadMapping
 		{
 			Bit8u bind_buf[4*2], bind_count = FillBinds(bind_buf, PortDeviceIndexIdForBtn(port, btn_id), (btn_id >= 16));
 
-			if (btn_id == RETRO_DEVICE_ID_JOYPAD_L3 && port == 0 && dbp_on_screen_keyboard && bind_buf[0] == DBP_SPECIALMAPPINGS_OSK && bind_count == 1) continue; // skip OSK bind
-			bool oskshift = (btn_id == RETRO_DEVICE_ID_JOYPAD_R3 && port == 0 && dbp_on_screen_keyboard); // handle shifting due to OSK with generic keyboard
+			if (btn_id == RETRO_DEVICE_ID_JOYPAD_L3 && port == 0 && dbp_map_osd && bind_buf[0] == DBP_SPECIALMAPPINGS_OSD && bind_count == 1) continue; // skip OSK bind
+			bool oskshift = (btn_id == RETRO_DEVICE_ID_JOYPAD_R3 && port == 0 && dbp_map_osd); // handle shifting due to OSK with generic keyboard
 
 			for (int n = nBegin; n != nEnd; n++)
 			{
@@ -339,12 +339,12 @@ struct DBP_PadMapping
 			int wkey2 = (mouse_wheel2 ? atoi(mouse_wheel2 + 1) : 0);
 			bind_mousewheel = (wkey1 > KBD_NONE && wkey1 < KBD_LAST && wkey2 > KBD_NONE && wkey2 < KBD_LAST ? DBP_MAPPAIR_MAKE(wkey1, wkey2) : 0);
 		}
-		bool on_screen_keyboard = (DBP_Option::Get(DBP_Option::on_screen_keyboard)[0] != 'f');
+		bool map_osd = (DBP_Option::Get(DBP_Option::map_osd)[0] != 'f');
 		char mouse_input = DBP_Option::Get(DBP_Option::mouse_input)[0];
 		if (mouse_input == 't' && dbp_yml_directmouse) mouse_input = 'd';
-		if (on_screen_keyboard != dbp_on_screen_keyboard || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
+		if (map_osd != dbp_map_osd || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 		{
-			dbp_on_screen_keyboard = on_screen_keyboard;
+			dbp_map_osd = map_osd;
 			dbp_mouse_input = mouse_input;
 			dbp_bind_mousewheel = bind_mousewheel;
 			if (dbp_state > DBPSTATE_SHUTDOWN) DBP_PadMapping::SetInputDescriptors(true);
@@ -565,7 +565,7 @@ private:
 			if (b.device == RETRO_DEVICE_JOYPAD && b.id <= RETRO_DEVICE_ID_JOYPAD_R3) bound_buttons[b.id] = true;
 			else if (b.device == RETRO_DEVICE_ANALOG) bound_buttons[DBP_ANALOGBINDID2(b.index,b.id)] = true;
 		}
-		bool bind_osd = (port == 0 && dbp_on_screen_keyboard && !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]);
+		bool bind_osd = (port == 0 && dbp_map_osd && !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]);
 		if (bind_osd && is_preset) bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3] = true;
 
 		for (size_t i = dbp_wheelitems.size(); i--;)
@@ -594,13 +594,13 @@ private:
 			for (int i = 0, istep = (it.IsAnalog ? 2 : 1), iend = it.KeyCount * istep; i != iend; i += istep)
 			{
 				if (!SetBindMetaFromPair(bnd, it.P[i], (it.IsAnalog ? it.P[i+1] : (Bit8u)0))) { DBP_ASSERT(0); goto err; }
-				if (bnd.evt == DBPET_ONSCREENKEYBOARD) bind_osd = false;
+				if (bnd.evt == DBPET_TOGGLEOSD) bind_osd = false;
 				InsertBind(bnd);
 			}
 		}
 
 		if (bind_osd && (is_preset || !bound_buttons[RETRO_DEVICE_ID_JOYPAD_L3]))
-			InsertBind({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_ONSCREENKEYBOARD });
+			InsertBind({ 0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, DBPET_TOGGLEOSD });
 
 		dbp_binds_changed |= (1 << port);
 		return mapping;

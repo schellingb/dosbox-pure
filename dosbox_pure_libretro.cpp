@@ -136,7 +136,7 @@ enum DBP_Event_Type : Bit8u
 	DBPET_JOY1DOWN, DBPET_JOY1UP,
 	DBPET_JOY2DOWN, DBPET_JOY2UP,
 	DBPET_KEYDOWN, DBPET_KEYUP,
-	DBPET_ONSCREENKEYBOARD, DBPET_ONSCREENKEYBOARDUP,
+	DBPET_TOGGLEOSD, DBPET_TOGGLEOSDUP,
 	DBPET_ACTIONWHEEL, DBPET_ACTIONWHEELUP,
 	DBPET_SHIFTPORT, DBPET_SHIFTPORTUP,
 
@@ -181,16 +181,16 @@ static const struct DBP_SpecialMapping { int16_t evt, meta; const char *dev, *na
 	{ DBPET_JOY2Y,          1, DBPDEV_Joystick, "Joy 2 Down",   "joy_2_down"         }, // 222
 	{ DBPET_JOY2X,         -1, DBPDEV_Joystick, "Joy 2 Left",   "joy_2_left"         }, // 223
 	{ DBPET_JOY2X,          1, DBPDEV_Joystick, "Joy 2 Right",  "joy_2_right"        }, // 224
-	{ DBPET_ONSCREENKEYBOARD, 0, NULL, "On Screen Keyboard"    }, // 225
-	{ DBPET_ACTIONWHEEL,      0, NULL, "Action Wheel", "wheel" }, // 226
-	{ DBPET_SHIFTPORT,        0, NULL, "Port #1 while holding" }, // 227
-	{ DBPET_SHIFTPORT,        1, NULL, "Port #2 while holding" }, // 228
-	{ DBPET_SHIFTPORT,        2, NULL, "Port #3 while holding" }, // 229
-	{ DBPET_SHIFTPORT,        3, NULL, "Port #4 while holding" }, // 230
+	{ DBPET_TOGGLEOSD,      0, NULL, "Open Menu / Keyboard"  }, // 225
+	{ DBPET_ACTIONWHEEL,    0, NULL, "Action Wheel", "wheel" }, // 226
+	{ DBPET_SHIFTPORT,      0, NULL, "Port #1 while holding" }, // 227
+	{ DBPET_SHIFTPORT,      1, NULL, "Port #2 while holding" }, // 228
+	{ DBPET_SHIFTPORT,      2, NULL, "Port #3 while holding" }, // 229
+	{ DBPET_SHIFTPORT,      3, NULL, "Port #4 while holding" }, // 230
 };
 #define DBP_SPECIALMAPPING(key) DBP_SpecialMappings[(key)-DBP_SPECIALMAPPINGS_KEY]
 enum { DBP_SPECIALMAPPINGS_KEY = 200, DBP_SPECIALMAPPINGS_MAX = 200+(sizeof(DBP_SpecialMappings)/sizeof(DBP_SpecialMappings[0])) };
-enum { DBP_SPECIALMAPPINGS_OSK = 225, DBP_SPECIALMAPPINGS_ACTIONWHEEL = 226 };
+enum { DBP_SPECIALMAPPINGS_OSD = 225, DBP_SPECIALMAPPINGS_ACTIONWHEEL = 226 };
 enum { DBP_EVENT_QUEUE_SIZE = 256, DBP_DOWN_COUNT_MASK = 127, DBP_DOWN_BY_KEYBOARD = 128 };
 static struct DBP_Event { DBP_Event_Type type; Bit8u port; int val, val2; } dbp_event_queue[DBP_EVENT_QUEUE_SIZE];
 static int dbp_event_queue_write_cursor;
@@ -329,20 +329,20 @@ static void DBP_QueueEvent(DBP_Event_Type type, Bit8u port, int val = 0, int val
 	{
 		case DBPET_KEYDOWN: DBP_ASSERT(val > KBD_NONE && val < KBD_LAST); goto check_down;
 		case DBPET_KEYUP:   DBP_ASSERT(val > KBD_NONE && val < KBD_LAST); goto check_up;
-		case DBPET_MOUSEDOWN:          DBP_ASSERT(val >= 0 && val < 3); downs += KBD_LAST +  0; goto check_down;
-		case DBPET_MOUSEUP:            DBP_ASSERT(val >= 0 && val < 3); downs += KBD_LAST +  0; goto check_up;
-		case DBPET_JOY1DOWN:           DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  3; goto check_down;
-		case DBPET_JOY1UP:             DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  3; goto check_up;
-		case DBPET_JOY2DOWN:           DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  5; goto check_down;
-		case DBPET_JOY2UP:             DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  5; goto check_up;
-		case DBPET_JOYHATSETBIT:       DBP_ASSERT(val >= 0 && val < 8); downs += KBD_LAST +  7; goto check_down;
-		case DBPET_JOYHATUNSETBIT:     DBP_ASSERT(val >= 0 && val < 8); downs += KBD_LAST +  7; goto check_up;
-		case DBPET_ONSCREENKEYBOARD:   DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 15; goto check_down;
-		case DBPET_ONSCREENKEYBOARDUP: DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 15; goto check_up;
-		case DBPET_ACTIONWHEEL:        DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 16; goto check_down;
-		case DBPET_ACTIONWHEELUP:      DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 16; goto check_up;
-		case DBPET_SHIFTPORT:          DBP_ASSERT(val >= 0 && val < 4); downs += KBD_LAST + 17; goto check_down;
-		case DBPET_SHIFTPORTUP:        DBP_ASSERT(val >= 0 && val < 4); downs += KBD_LAST + 17; goto check_up;
+		case DBPET_MOUSEDOWN:      DBP_ASSERT(val >= 0 && val < 3); downs += KBD_LAST +  0; goto check_down;
+		case DBPET_MOUSEUP:        DBP_ASSERT(val >= 0 && val < 3); downs += KBD_LAST +  0; goto check_up;
+		case DBPET_JOY1DOWN:       DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  3; goto check_down;
+		case DBPET_JOY1UP:         DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  3; goto check_up;
+		case DBPET_JOY2DOWN:       DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  5; goto check_down;
+		case DBPET_JOY2UP:         DBP_ASSERT(val >= 0 && val < 2); downs += KBD_LAST +  5; goto check_up;
+		case DBPET_JOYHATSETBIT:   DBP_ASSERT(val >= 0 && val < 8); downs += KBD_LAST +  7; goto check_down;
+		case DBPET_JOYHATUNSETBIT: DBP_ASSERT(val >= 0 && val < 8); downs += KBD_LAST +  7; goto check_up;
+		case DBPET_TOGGLEOSD:      DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 15; goto check_down;
+		case DBPET_TOGGLEOSDUP:    DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 15; goto check_up;
+		case DBPET_ACTIONWHEEL:    DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 16; goto check_down;
+		case DBPET_ACTIONWHEELUP:  DBP_ASSERT(val >= 0 && val < 1); downs += KBD_LAST + 16; goto check_up;
+		case DBPET_SHIFTPORT:      DBP_ASSERT(val >= 0 && val < 4); downs += KBD_LAST + 17; goto check_down;
+		case DBPET_SHIFTPORTUP:    DBP_ASSERT(val >= 0 && val < 4); downs += KBD_LAST + 17; goto check_up;
 
 		check_down:
 			if (((++downs[val]) & DBP_DOWN_COUNT_MASK) > 1) return;
@@ -427,7 +427,7 @@ static void DBP_ReleaseKeyEvents(bool onlyPhysicalKeys)
 		else if (i < KBD_LAST +  5) { val -=  KBD_LAST +  3; type = DBPET_JOY1UP; }
 		else if (i < KBD_LAST +  7) { val -=  KBD_LAST +  5; type = DBPET_JOY2UP; }
 		else if (i < KBD_LAST + 15) { val -=  KBD_LAST +  7; type = DBPET_JOYHATUNSETBIT; }
-		else if (i < KBD_LAST + 16) { val -=  KBD_LAST + 15; type = DBPET_ONSCREENKEYBOARDUP; }
+		else if (i < KBD_LAST + 16) { val -=  KBD_LAST + 15; type = DBPET_TOGGLEOSDUP; }
 		else if (i < KBD_LAST + 17) { val -=  KBD_LAST + 16; type = DBPET_ACTIONWHEELUP; }
 		else                        { val -=  KBD_LAST + 17; type = DBPET_SHIFTPORTUP; }
 		DBP_QueueEvent(type, DBP_NO_PORT, val);
@@ -625,16 +625,8 @@ static void DBP_SetCyclesByYear(int year, int year_max)
 {
 	DBP_ASSERT(year > 1970);
 	CPU_CycleMax = DBP_CyclesForYear(year, year_max);
-
-	// Also switch to dynamic core for newer real mode games
-	if (year >= 1990 && (CPU_AutoDetermineMode & CPU_AUTODETERMINE_CORE))
-	{
-		#if (C_DYNAMIC_X86)
-		if (cpudecoder != CPU_Core_Dyn_X86_Run) { void CPU_Core_Dyn_X86_Cache_Init(bool); CPU_Core_Dyn_X86_Cache_Init(true); cpudecoder = CPU_Core_Dyn_X86_Run; }
-		#elif (C_DYNREC)
-		if (cpudecoder != CPU_Core_Dynrec_Run)  { void CPU_Core_Dynrec_Cache_Init(bool);  CPU_Core_Dynrec_Cache_Init(true);  cpudecoder = CPU_Core_Dynrec_Run;  }
-		#endif
-	}
+	extern void DBP_CPU_AutoEnableDynamicCore();
+	DBP_CPU_AutoEnableDynamicCore();
 }
 
 void DBP_SetRealModeCycles()
@@ -1786,8 +1778,8 @@ void GFX_Events()
 				break;
 			case DBPET_KEYUP: KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
 
-			case DBPET_ONSCREENKEYBOARD: DBP_StartOSD(); break;
-			case DBPET_ONSCREENKEYBOARDUP: break;
+			case DBPET_TOGGLEOSD: DBP_StartOSD(); break;
+			case DBPET_TOGGLEOSDUP: break;
 
 			case DBPET_ACTIONWHEEL: DBP_WheelShiftOSD(e.port, true); break;
 			case DBPET_ACTIONWHEELUP: DBP_WheelShiftOSD(e.port, false); break;
@@ -2148,7 +2140,7 @@ bool DBP_Option::Apply(Section& section, const char* var_name, const char* new_v
 	{
 		if (disallow_in_game)
 			retro_notify(0, RETRO_LOG_WARN, "Unable to change value while game is running");
-		else if (dbp_game_running || DBP_OSD.mode == DBPOSD_CLOSED || !DBP_FullscreenOSD)
+		else if (dbp_game_running || DBP_OSD.ptr._all == NULL || !DBP_FullscreenOSD)
 			retro_notify(2000, RETRO_LOG_INFO, "Setting will be applied after restart");
 		DBP_Run::startup.reboot = true;
 		reInitSection = false;
