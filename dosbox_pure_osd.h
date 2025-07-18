@@ -2032,7 +2032,7 @@ static void DBP_WheelShiftOSD(Bit8u _port, bool _on, Bit8u _shift_port = (Bit8u)
 			if (Flags & FLAG_OPENWHEEL) { SetState(port, STATE_OPEN); Flags &= ~FLAG_OPENWHEEL; }
 			if (Flags & FLAG_CLOSEWHEEL) { SetState(port, STATE_CLOSING_PRESSED); Flags &= ~FLAG_CLOSEWHEEL; }
 			if (State == STATE_CLOSING_PRESSED && (DBP_GetTicks() - Tick) > 70) SetState(port, STATE_CLOSING_RELEASED);
-			if (State == STATE_CLOSING_RELEASED && (DBP_GetTicks() - Tick) > 250) SetState(port, STATE_CLOSED);
+			if (State == STATE_CLOSING_RELEASED && (DBP_GetTicks() - Tick) > 300) SetState(port, STATE_CLOSED);
 			if (State != STATE_OPEN && State != STATE_OPEN_PRESSED) return;
 
 			const Bit8u aw = dbp_actionwheel_inputs;
@@ -2090,7 +2090,10 @@ static void DBP_WheelShiftOSD(Bit8u _port, bool _on, Bit8u _shift_port = (Bit8u)
 				if (port == 0 && (dbp_actionwheel_inputs & 8)) dbp_mouse_input = 'f';
 			}
 			if (newstate == STATE_CLOSED && port == 0 && (dbp_actionwheel_inputs & 8))
+			{
 				dbp_mouse_input = DBP_Option::Get(DBP_Option::mouse_input)[0];
+				if (dbp_mouse_input == 't' && dbp_yml_directmouse) dbp_mouse_input = 'd';
+			}
 
 			if (newstate != STATE_CLOSING_PRESSED || State != STATE_OPEN_PRESSED)
 			{
@@ -2185,7 +2188,7 @@ static void DBP_WheelShiftOSD(Bit8u _port, bool _on, Bit8u _shift_port = (Bit8u)
 						if (aval) val = aval; else val = (val ? (Bit16s)32767 : (Bit16s)0); // old frontend fallback
 					}
 
-					if (val && (wheel.State == Wheel::STATE_OPEN || wheel.State == Wheel::STATE_OPEN_PRESSED || wheel.State == Wheel::STATE_CLOSING_PRESSED) && b.evt != DBPET_ACTIONWHEEL && (
+					if (val && (wheel.State == Wheel::STATE_OPEN || wheel.State == Wheel::STATE_OPEN_PRESSED || wheel.State == Wheel::STATE_CLOSING_PRESSED || wheel.State == Wheel::STATE_CLOSING_RELEASED) && b.evt != DBPET_ACTIONWHEEL && (
 						(b.device == RETRO_DEVICE_ANALOG && ((b.index == RETRO_DEVICE_INDEX_ANALOG_LEFT && (dbp_actionwheel_inputs&1)) || (b.index == RETRO_DEVICE_INDEX_ANALOG_RIGHT && (dbp_actionwheel_inputs&2))))  || 
 						(b.device == RETRO_DEVICE_JOYPAD && (b.id == RETRO_DEVICE_ID_JOYPAD_B || ((b.id == RETRO_DEVICE_ID_JOYPAD_UP || b.id == RETRO_DEVICE_ID_JOYPAD_DOWN || b.id == RETRO_DEVICE_ID_JOYPAD_LEFT || b.id == RETRO_DEVICE_ID_JOYPAD_RIGHT) && (dbp_actionwheel_inputs&4)))) || 
 						(b.device == RETRO_DEVICE_MOUSE && (dbp_actionwheel_inputs&8))))
