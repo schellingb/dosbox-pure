@@ -2959,7 +2959,7 @@ void IDE_RefreshCDROMs()
 
 void IDE_SetupControllers(char force_cd_drive_letter)
 {
-	DBP_ASSERT(!idecontroller[0] && !idecontroller[1]);
+	if (idecontroller[0]) return; // only setup once
 
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS; i++)
 		idecontroller[i] = new IDEController(i);

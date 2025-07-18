@@ -1088,6 +1088,17 @@ public:
 			WriteOut(MSG_Get("PROGRAM_BOOT_BOOT"), drive);
 			for(i=0;i<512;i++) real_writeb(0, 0x7c00 + i, bootarea.rawdata[i]);
 
+#ifdef C_DBP_ENABLE_IDE
+			// Also enable IDE CDROM when using boot from the command line (as opposed to using the Start Menu)
+			for (Bit8u i = 0; i != 4 /*MAX_IDE_CONTROLLERS*2*/; i++)
+			{
+				if (!Drives[i+2] || !dynamic_cast<isoDrive*>(Drives[i+2])) continue;
+				void IDE_SetupControllers(char);
+				IDE_SetupControllers(0);
+				break;
+			}
+#endif
+
 			/* create appearance of floppy drive DMA usage (Demon's Forge) */
 			if (!IS_TANDY_ARCH && floppysize!=0) GetDMAChannel(2)->tcount=true;
 
