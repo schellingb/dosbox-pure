@@ -1215,6 +1215,21 @@ void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bo
 	DBP_Mount(DBP_AppendImage(paths[0].c_str(), false));
 }
 
+void DBPSerialize_Mounts(DBPArchive& ar)
+{
+	const char* fname;
+	Bit32u mounthash[2] = { 0, 0 }; // remember max 2 mounted images (one floppy and cd)
+	if (ar.mode == DBPArchive::MODE_SAVE)
+		for (DBP_Image& i : dbp_images)
+			if (i.mounted && DBP_ExtractPathInfo(i.longpath.c_str(), &fname))
+				mounthash[mounthash[0] ? 1 : 0] = BaseStringToPointerHashMap::Hash(fname);
+	ar << mounthash[0] << mounthash[1];
+	if (ar.mode == DBPArchive::MODE_LOAD && mounthash[0])
+		for (DBP_Image& i : dbp_images)
+			if (DBP_ExtractPathInfo(i.longpath.c_str(), &fname) && (mounthash[0] == BaseStringToPointerHashMap::Hash(fname) || (mounthash[1] && mounthash[1] == BaseStringToPointerHashMap::Hash(fname))))
+				DBP_Mount((unsigned)(&i - &dbp_images[0]), true);
+}
+
 static void DBP_Shutdown()
 {
 	// to be called on the main thread

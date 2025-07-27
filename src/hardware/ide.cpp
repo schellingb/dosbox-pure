@@ -101,7 +101,7 @@ struct IDEController {
 	IO_ReadHandleObject ReadHandler[8], ReadHandlerAlt[2];
 	IO_WriteHandleObject WriteHandler[8], WriteHandlerAlt[2];
 	struct IDEDevice* device[2];  /* IDE devices (master, slave) */
-	Bitu select;                  /* which is selected */
+	uint8_t select;               /* which is selected */
 	bool interrupt_enable;        /* bit 1 of alt (0x3F6) */
 	bool host_reset;              /* bit 2 of alt */
 	bool irq_pending;
@@ -333,22 +333,22 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		LOAD_DISC_READIED, /* disc just "became ready" */
 		LOAD_READY
 	};
+	enum { SENSE_LENGTH = 18 };
 	CDROM_Interface* my_cdrom;
-	Bitu TransferLengthRemaining;
-	Bitu LBA, LBAnext, TransferLength;
-	Bitu TransferSectorSize;
-	Bitu host_maximum_byte_count; /* host maximum byte count during PACKET transfer */
-	Bitu sense_length;
-	Bitu sector_i, sector_total;
+	uint32_t TransferLengthRemaining;
+	uint32_t LBA, LBAnext, TransferLength;
+	uint16_t TransferSectorSize;
+	uint32_t host_maximum_byte_count; /* host maximum byte count during PACKET transfer */
+	uint32_t sector_i, sector_total;
 	LoadingMode loading_mode;
 	uint8_t TransferSectorType;
 	uint8_t TransferReadCD9;
 	bool atapi_to_host; /* if set, PACKET data transfer is to be read by host */
 	bool has_changed;
-	unsigned char sense[256];
-	unsigned char atapi_cmd[12];
-	unsigned char atapi_cmd_i, atapi_cmd_total;
-	unsigned char sector[512*128];
+	uint8_t sense[SENSE_LENGTH];
+	uint8_t atapi_cmd[12];
+	uint8_t atapi_cmd_i, atapi_cmd_total;
+	uint8_t sector[512*128];
 
 	IDEATAPICDROMDevice(IDEController *c, uint8_t device_index) : IDEDevice(c, device_index, IDE_TYPE_CDROM) {
 		my_cdrom = NULL;
@@ -704,32 +704,32 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		memcpy(sector+32, "0.83", 4); //id_mmc_product_rev 4 bytes, padded with space
 	}
 
-	void prepare_read(Bitu offset,Bitu size) {
+	void prepare_read(uint32_t size) {
 		/* I/O must be WORD ALIGNED */
-		DBP_ASSERT((offset&1) == 0);
+		//DBP_ASSERT((offset&1) == 0);
 		//assert((size&1) == 0);
 
-		sector_i = offset;
+		sector_i = 0; //offset;
 		sector_total = size;
 		DBP_ASSERT(sector_i <= sector_total);
 		DBP_ASSERT(sector_total <= sizeof(sector));
 	}
 
-	void prepare_write(Bitu offset,Bitu size) {
+	void prepare_write(uint32_t size) {
 		/* I/O must be WORD ALIGNED */
-		DBP_ASSERT((offset&1) == 0);
+		//DBP_ASSERT((offset&1) == 0);
 		//assert((size&1) == 0);
 
-		sector_i = offset;
+		sector_i = 0; //offset;
 		sector_total = size;
 		DBP_ASSERT(sector_i <= sector_total);
 		DBP_ASSERT(sector_total <= sizeof(sector));
 	}
 
 	void set_sense(unsigned char SK,unsigned char ASC=0,unsigned char ASCQ=0,unsigned int info=0) {
-		const unsigned int len = 18;
+		const unsigned int len = SENSE_LENGTH;
 		memset(sense,0,len);
-		sense_length = len;
+		//sense_length = len; // used to be variable
 
 		sense[0] = 0xF0;    /* RESPONSE CODE */
 		sense[2] = SK&0xF;  /* SENSE KEY */
@@ -1107,13 +1107,13 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 					 *      command at startup with transfer length == 0. If an error is returned, NT ignores the
 					 *      CD-ROM drive entirely and acts like it's in a perpetual error state. */
 					sector_total = (lba[1] & 0xFF) | ((lba[2] & 0xFF) << 8);
-					LBA = ((Bitu)atapi_cmd[2] << 24UL) |
-						((Bitu)atapi_cmd[3] << 16UL) |
-						((Bitu)atapi_cmd[4] << 8UL) |
-						((Bitu)atapi_cmd[5] << 0UL);
-					TransferLength = ((Bitu)atapi_cmd[6] << 16UL) |
-						((Bitu)atapi_cmd[7] << 8UL) |
-						((Bitu)atapi_cmd[8]);
+					LBA = ((uint32_t)atapi_cmd[2] << 24UL) |
+						((uint32_t)atapi_cmd[3] << 16UL) |
+						((uint32_t)atapi_cmd[4] << 8UL) |
+						((uint32_t)atapi_cmd[5] << 0UL);
+					TransferLength = ((uint32_t)atapi_cmd[6] << 16UL) |
+						((uint32_t)atapi_cmd[7] << 8UL) |
+						((uint32_t)atapi_cmd[8]);
 
 					/* Sector size? */
 					TransferSectorType = (atapi_cmd[1] >> 2) & 7u; /* RESERVED=[7:5] ExpectedSectorType=[4:2] RESERVED=[1:1] RELOAD=[0:0] */
@@ -1239,14 +1239,14 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 					/* FIXME: MSCDEX.EXE appears to test the drive by issuing READ(10) with transfer length == 0.
 					   This is all well and good but our response seems to cause a temporary 2-3 second
 					   pause for each attempt. Why? */
-					LBA = ((Bitu)atapi_cmd[2] << 24UL) |
-						((Bitu)atapi_cmd[3] << 16UL) |
-						((Bitu)atapi_cmd[4] << 8UL) |
-						((Bitu)atapi_cmd[5] << 0UL);
-					TransferLength = ((Bitu)atapi_cmd[6] << 24UL) |
-						((Bitu)atapi_cmd[7] << 16UL) |
-						((Bitu)atapi_cmd[8] << 8UL) |
-						((Bitu)atapi_cmd[9]);
+					LBA = ((uint32_t)atapi_cmd[2] << 24UL) |
+						((uint32_t)atapi_cmd[3] << 16UL) |
+						((uint32_t)atapi_cmd[4] << 8UL) |
+						((uint32_t)atapi_cmd[5] << 0UL);
+					TransferLength = ((uint32_t)atapi_cmd[6] << 24UL) |
+						((uint32_t)atapi_cmd[7] << 16UL) |
+						((uint32_t)atapi_cmd[8] << 8UL) |
+						((uint32_t)atapi_cmd[9]);
 
 					/* keep track of the original transfer length */
 					TransferLengthRemaining = TransferLength;
@@ -1299,12 +1299,12 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 					/* FIXME: MSCDEX.EXE appears to test the drive by issuing READ(10) with transfer length == 0.
 					   This is all well and good but our response seems to cause a temporary 2-3 second
 					   pause for each attempt. Why? */
-					LBA = ((Bitu)atapi_cmd[2] << 24UL) |
-						((Bitu)atapi_cmd[3] << 16UL) |
-						((Bitu)atapi_cmd[4] << 8UL) |
-						((Bitu)atapi_cmd[5] << 0UL);
-					TransferLength = ((Bitu)atapi_cmd[7] << 8) |
-						((Bitu)atapi_cmd[8]);
+					LBA = ((uint32_t)atapi_cmd[2] << 24UL) |
+						((uint32_t)atapi_cmd[3] << 16UL) |
+						((uint32_t)atapi_cmd[4] << 8UL) |
+						((uint32_t)atapi_cmd[5] << 0UL);
+					TransferLength = ((uint32_t)atapi_cmd[7] << 8) |
+						((uint32_t)atapi_cmd[8]);
 
 					/* keep track of the original transfer length */
 					TransferLengthRemaining = TransferLength;
@@ -1482,8 +1482,8 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 		switch (atapi_cmd[0]) {
 			case 0x03: /* REQUEST SENSE */
-				prepare_read(0,IDEMIN((unsigned int)sense_length,(unsigned int)host_maximum_byte_count));
-				memcpy(sector,sense,sense_length);
+				prepare_read(IDEMIN((unsigned int)SENSE_LENGTH,(unsigned int)host_maximum_byte_count));
+				memcpy(sector,sense,SENSE_LENGTH);
 				set_sense(0); /* clear sense data now after it has been copied */
 
 				feature = 0x00;
@@ -1514,7 +1514,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 				uint32_t sec = (leadOut.min*60u*75u)+(leadOut.sec*75u)+leadOut.fr - 150u;
 
-				prepare_read(0,IDEMIN((unsigned int)8,(unsigned int)host_maximum_byte_count));
+				prepare_read(IDEMIN((unsigned int)8,(unsigned int)host_maximum_byte_count));
 				sector[0] = sec >> 24u;
 				sector[1] = sec >> 16u;
 				sector[2] = sec >> 8u;
@@ -1562,7 +1562,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 			case 0x12: /* INQUIRY */
 				/* NTS: the state of atapi_to_host doesn't seem to matter. */
 				generate_mmc_inquiry();
-				prepare_read(0,IDEMIN((unsigned int)36,(unsigned int)host_maximum_byte_count));
+				prepare_read(IDEMIN((unsigned int)36,(unsigned int)host_maximum_byte_count));
 
 				feature = 0x00;
 				state = IDE_DEV_DATA_READ;
@@ -1598,7 +1598,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 						res = cdrom->ReadSectorsAtapi(sector, sizeof(sector), LBA, TransferLength, TransferSectorType, TransferSectorSize);
 
 					if (res == CDROM_Interface::ATAPI_OK) {
-						prepare_read(0,IDEMIN((unsigned int)(TransferLength*TransferSectorSize),(unsigned int)host_maximum_byte_count));
+						prepare_read(IDEMIN((unsigned int)(TransferLength*TransferSectorSize),(unsigned int)host_maximum_byte_count));
 						LBAnext = LBA + TransferLength;
 						feature = 0x00;
 						count = 0x02; /* data for computer */
@@ -1683,7 +1683,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 					lba[1] = x;
 
 					//LOG_MSG("MODE SELECT expecting %u bytes",x);
-					prepare_write(0,(x+1u)&(~1u));
+					prepare_write((x+1u)&(~1u));
 				}
 
 				feature = 0x00;
@@ -1757,7 +1757,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		//       booting the guest OS. If enabled, we should report each and
 		//       every ISO image like we're a CD changer. :)
 
-		prepare_read(0,IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count));
+		prepare_read(IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count));
 	}
 
 	void read_subchannel() {
@@ -1775,30 +1775,30 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		CDROM_Interface *cdrom = getMSCDEXDrive();
 		if (cdrom == NULL) {
 			LOG_MSG("WARNING: ATAPI READ TOC unable to get CDROM drive");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 
 		if (paramList == 0 || paramList > 3) {
 			LOG_MSG("ATAPI READ SUBCHANNEL unknown param list");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 		else if (paramList == 2) {
 			LOG_MSG("ATAPI READ SUBCHANNEL Media Catalog Number not supported");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 		else if (paramList == 3) {
 			LOG_MSG("ATAPI READ SUBCHANNEL ISRC not supported");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 
 		/* get current subchannel position */
 		if (!cdrom->GetAudioSub(attr,track,index,rel,abs)) {
 			LOG_MSG("ATAPI READ SUBCHANNEL unable to read current pos");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 
@@ -1855,7 +1855,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 			sector[3] = x;
 		}
 
-		prepare_read(0,IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count));
+		prepare_read(IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count));
 		#if 0
 		printf("SUBCH ");
 		for (size_t i=0;i < sector_total;i++) printf("%02x ",sector[i]);
@@ -2078,7 +2078,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		/* page length */
 		sector[8+1] = (unsigned int)(write-sector) - 2 - 8;
 
-		prepare_read(0,IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count));
+		prepare_read(IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count));
 
 		#if 0
 		printf("SENSE ");
@@ -2106,7 +2106,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		CDROM_Interface *cdrom = getMSCDEXDrive();
 		if (cdrom == NULL) {
 			LOG_MSG("WARNING: ATAPI READ TOC unable to get CDROM drive");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 
@@ -2114,7 +2114,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 		if (!cdrom->GetAudioTracks(first,last,leadOut)) {
 			LOG_MSG("WARNING: ATAPI READ TOC failed to get track info");
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 
@@ -2222,7 +2222,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 		}
 		else {
 			LOG_MSG("WARNING: ATAPI READ TOC Format=%u not supported",Format);
-			prepare_read(0,8);
+			prepare_read(8);
 			return;
 		}
 
@@ -2233,7 +2233,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 			sector[1] = x & 0xFF;
 		}
 
-		prepare_read(0,IDEMIN(IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count),AllocationLength));
+		prepare_read(IDEMIN(IDEMIN((unsigned int)(write-sector),(unsigned int)host_maximum_byte_count),AllocationLength));
 	}
 };
 
@@ -2391,7 +2391,7 @@ static void IDE_DelayedCommand(Bitu dev_idx/*which IDE device*/) {
 				/* NTS: The sector advance + count decrement is done in the I/O completion function */
 				dev->state = IDE_DEV_DATA_READ;
 				dev->status = IDE_STATUS_DRQ|IDE_STATUS_DRIVE_READY|IDE_STATUS_DRIVE_SEEK_COMPLETE;
-				ata->prepare_read(0,512);
+				ata->prepare_read(512);
 				dev->raise_irq();
 				break;
 
@@ -2538,7 +2538,7 @@ static void IDE_DelayedCommand(Bitu dev_idx/*which IDE device*/) {
 				/* NTS: The sector advance + count decrement is done in the I/O completion function */
 				dev->state = IDE_DEV_DATA_READ;
 				dev->status = IDE_STATUS_DRQ|IDE_STATUS_DRIVE_READY|IDE_STATUS_DRIVE_SEEK_COMPLETE;
-				ata->prepare_read(0,512*IDEMIN((Bitu)ata->multiple_sector_count,(Bitu)sectcount));
+				ata->prepare_read(512*IDEMIN((Bitu)ata->multiple_sector_count,(Bitu)sectcount));
 				dev->raise_irq();
 				break;
 
@@ -2630,7 +2630,7 @@ static void IDE_DelayedCommand(Bitu dev_idx/*which IDE device*/) {
 				dev->state = IDE_DEV_DATA_READ;
 				dev->status = IDE_STATUS_DRQ|IDE_STATUS_DRIVE_READY|IDE_STATUS_DRIVE_SEEK_COMPLETE;
 				ata->generate_identify_device();
-				ata->prepare_read(0,512);
+				ata->prepare_read(512);
 				dev->count = 0x01;
 				dev->lba[0] = 0x00;
 				dev->feature = 0x00;
@@ -2679,7 +2679,7 @@ static void IDE_DelayedCommand(Bitu dev_idx/*which IDE device*/) {
 					dev->state = IDE_DEV_DATA_READ;
 					dev->status = IDE_STATUS_DRQ|IDE_STATUS_DRIVE_READY|IDE_STATUS_DRIVE_SEEK_COMPLETE;
 					atapi->generate_identify_device();
-					atapi->prepare_read(0,512);
+					atapi->prepare_read(512);
 					dev->raise_irq();
 					break;
 				default:
@@ -2904,7 +2904,7 @@ static void ide_baseio_w(Bitu port,Bitu val,Bitu iolen) {
 				/* update select pointer if bit 4 changes.
 					also emulate IDE busy state when changing drives */
 				if (dev) dev->deselect();
-				ide->select = (val>>4)&1;
+				ide->select = (uint8_t)((val>>4)&1);
 				dev = ide->device[ide->select];
 				if (dev) dev->select((uint8_t)val,1);
 			}
@@ -2990,6 +2990,24 @@ DBP_SERIALIZE_SET_POINTER_LIST(PIC_EventHandler, IDEController, IDE_DelayedComma
 #ifdef C_DBP_ENABLE_IDE_CDINSERTION_DELAY
 #error make sure IDEATAPICDROMDevice::IDE_ATAPI_CDInsertion is added to the list above and loading compatibility versioning is added to DBPSerialize_PIC
 #endif
+
+void DBPSerialize_IDE(DBPArchive& ar_outer)
+{
+	if (DBPArchiveOptional(ar_outer, idecontroller[0]).IsSkip()) return; // without IDE controllers, don't do anything here
+	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS*2; i++)
+	{
+		IDEController* c = idecontroller[i>>1];
+		IDEATAPICDROMDevice* d = (c ? (IDEATAPICDROMDevice*)c->device[i&1] : NULL);
+		DBPArchiveOptional ar(ar_outer, d);
+		if (ar.IsSkip()) continue;
+		ar << c->select << c->interrupt_enable << c->host_reset << c->irq_pending
+			<< d->feature << d->count << d->lba[0] << d->lba[1] << d->lba[2] << d->command << d->drivehead << d->status << d->allow_writing << d->irq_signal << d->asleep << (uint8_t&)d->state
+			<< d->TransferLengthRemaining << d->LBA << d->LBAnext << d->TransferLength << d->TransferSectorSize << d->host_maximum_byte_count << d->sector_i << d->sector_total
+			<< (uint8_t&)d->loading_mode << d->TransferSectorType << d->TransferReadCD9 << d->atapi_to_host << d->has_changed;
+		ar.SerializeArray(d->sense).SerializeArray(d->atapi_cmd) << d->atapi_cmd_i << d->atapi_cmd_total;
+		ar.SerializeSparse(d->sector, sizeof(d->sector));
+	}
+}
 
 #ifdef C_DBP_ENABLE_IDE_ATA // Disabled ATA drive support because BIOS access covers most cases
 #include "bios_disk.h"

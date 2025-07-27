@@ -270,14 +270,14 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 	Bit64s from = __rdtsc();
 	#endif
 
-	ar.version = 7;
+	ar.version = 8;
 	if (ar.mode != DBPArchive::MODE_ZERO)
 	{
 		Bit32u magic = 0xD05B5747;
 		Bit8u invalid_state = (dos_running ? 0 : 1) | (game_running ? 0 : 2);
 		ar << magic << ar.version << invalid_state;
 		if (magic != 0xD05B5747) { ar.had_error = DBPArchive::ERR_LAYOUT; return; }
-		if (ar.version < 1 || ar.version > 7) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
+		if (ar.version < 1 || ar.version > 8) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
 		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
 		{
 			if (!dos_running  || (invalid_state & 1)) { ar.had_error = DBPArchive::ERR_DOSNOTRUNNING; return; }
@@ -308,6 +308,7 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 	{
 		switch (ln)
 		{
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Mounts,  >=8); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_DOS         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_CPU         ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_EMS         ); break;
@@ -344,6 +345,7 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_PCSPEAKER   ); break;
 			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Voodoo,  >=5); break;
 			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_CDPlayer,>=6); break;
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_IDE,     >=8); break;
 			case __LINE__: goto done; /*return;*/ default: continue;
 		}
 		//size_t old_off = ar.GetOffset();
