@@ -911,6 +911,19 @@ static void DBP_SetDriveLabelFromContentPath(DOS_Drive* drive, const char *path,
 	drive->label.SetLabel(lbl, (letter > 'C'), true);
 }
 
+static bool DBP_IsDiskCDISO(imageDisk* id)
+{
+	// Check if ISO (based on CDROM_Interface_Image::LoadIsoFile/CDROM_Interface_Image::CanReadPVD)
+	static const Bit32u pvdoffsets[] = { 32768, 32768+8, 37400, 37400+8, 37648, 37656, 37656+8 };
+	for (Bit32u pvdoffset : pvdoffsets)
+	{
+		Bit8u pvd[8];
+		if (id->Read_Raw(pvd, pvdoffset, 8) == 8 && (!memcmp(pvd, "\1CD001\1", 7) || !memcmp(pvd, "\1CDROM\1", 7)))
+			return true;
+	}
+	return false;
+}
+
 static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = true, char remount_letter = 0, const char* boot = NULL)
 {
 	DBP_Image* dbpimage = (!boot ? &dbp_images[image_index] : NULL);
@@ -979,14 +992,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 		}
 		else if (!fat->created_successfully)
 		{
-			// Check if ISO (based on CDROM_Interface_Image::LoadIsoFile/CDROM_Interface_Image::CanReadPVD)
-			static const Bit32u pvdoffsets[] = { 32768, 32768+8, 37400, 37400+8, 37648, 37656, 37656+8 };
-			for (Bit32u pvdoffset : pvdoffsets)
-			{
-				Bit8u pvd[8];
-				if (fat->loadedDisk->Read_Raw(pvd, pvdoffset, 8) == 8 && (!memcmp(pvd, "\1CD001\1", 7) || !memcmp(pvd, "\1CDROM\1", 7)))
-					goto FAT_TRY_ISO;
-			}
+			if (DBP_IsDiskCDISO(fat->loadedDisk)) goto FAT_TRY_ISO;
 			// Neither FAT nor ISO, just register with BIOS/CMOS for raw sector access and set media table byte
 			disk = fat->loadedDisk;
 			fat->loadedDisk = NULL; // don't want it deleted by ~fatDrive
@@ -2555,7 +2561,7 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 				if (isFS && !strncmp(fext, "IM", 2))
 				{
 					DOS_File *df;
-					if (size < 163840 || (size % 512)) isFS = false; // validate generic disk image
+					if (size < 163840 || ((size % 512) && (size % 2352))) isFS = false; // validate generic image (disk or cd)
 					else if (size < 2949120) // validate floppy images
 					{
 						for (Bit32u i = 0, dgsz;; i++) if ((dgsz = DiskGeometryList[i].ksize * 1024) == size || dgsz + 1024 == size) goto img_is_fs;
@@ -2563,12 +2569,12 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 						img_is_fs:;
 					}
 					else if (!Drives[data]->FileOpen(&df, (char*)path, OPEN_READ)) { DBP_ASSERT(0); isFS = false; }
-					else // validate mountable hard disk
+					else // validate mountable hard disk / cd
 					{
 						df->AddRef();
 						imageDisk* id = new imageDisk(df, "", (size / 1024), true);
-						id->Set_GeometryForHardDisk();
-						if (!id->sector_size || !id->heads || !id->cylinders ||!id->sectors) isFS = false;
+						Bit32u total_sectors = id->Set_GeometryForHardDisk();
+						if (!total_sectors || total_sectors * id->sector_size > size) isFS = DBP_IsDiskCDISO(id);
 						delete id; // closes and deletes df
 					}
 				}

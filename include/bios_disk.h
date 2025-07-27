@@ -71,7 +71,7 @@ public:
 	#endif
 	#ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
 	imageDisk(class DOS_Drive *useDrive, Bit32u freeSpaceMB = 0, const char* savePath = NULL, Bit32u driveSerial = 0, const StringToPointerHashMap<void>* fileFilter = NULL);
-	void Set_GeometryForHardDisk();
+	Bit32u Set_GeometryForHardDisk();
 	#endif
 
 	bool hardDrive;

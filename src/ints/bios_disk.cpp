@@ -1109,7 +1109,7 @@ imageDisk::imageDisk(class DOS_Drive *useDrive, Bit32u freeSpaceMB, const char* 
 	Set_GeometryForHardDisk();
 }
 
-void imageDisk::Set_GeometryForHardDisk()
+Bit32u imageDisk::Set_GeometryForHardDisk()
 {
 	sector_size = 512;
 	partTable mbrData;
@@ -1126,21 +1126,22 @@ void imageDisk::Set_GeometryForHardDisk()
 		Bit32u setHeads = bootbuffer.headcount;
 		Bit32u setCyl = (mbrData.pentry[m].absSectStart + mbrData.pentry[m].partSize + setSect * setHeads - 1) / (setSect * setHeads);
 		Set_Geometry(setHeads, setCyl, setSect, 512);
-		return;
+		return (setCyl * setHeads * setSect); /* correctly detected total sector count */
 	}
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	if (!dos_file) { DBP_ASSERT(false); return; }
+	if (!dos_file) { DBP_ASSERT(false); return 0; }
 	Bit64u diskimgsize = 0;
 	dos_file->Seek64(&diskimgsize, DOS_SEEK_END);
 	dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
 	#else
-	if (!diskimg) return;
+	if (!diskimg) return 0;
 	Bit32u diskimgsize;
 	fseek(diskimg,0,SEEK_END);
 	diskimgsize = (Bit32u)ftell(diskimg);
 	fseek(diskimg,current_fpos,SEEK_SET);
 	#endif
 	Set_Geometry(16, (Bit32u)(diskimgsize / (512 * 63 * 16)), 63, 512);
+	return 0;
 }
 #endif
 
