@@ -3147,7 +3147,7 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 			}
 		};
 
-		for (int test = -1; test != (voodoo_perf[0] == 'a' ? 0 : 5); test++)
+		for (int test = -1, testmax = (voodoo_perf[0] == 'a' ? 0 : 5); test != testmax; test++)
 		{
 			if (test < 0)
 			{
@@ -3155,6 +3155,9 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				if (!environ_cb(RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER, &preffered_hw_render)) continue;
 				if (preffered_hw_render == RETRO_HW_CONTEXT_NONE || preffered_hw_render >= RETRO_HW_CONTEXT_VULKAN) continue;
 				dbp_hw_render.context_type = (enum retro_hw_context_type)preffered_hw_render;
+				// RetroArch on Android will return RETRO_HW_CONTEXT_OPENGL even when only accepting a OPENGLES context.
+				// So we still try all the other tests in that case even when on auto.
+				if (preffered_hw_render == RETRO_HW_CONTEXT_OPENGL) testmax = 4;
 			}
 			else dbp_hw_render.context_type = (enum retro_hw_context_type)testhwcontexts[test];
 			dbp_hw_render.version_major = (dbp_hw_render.context_type >= RETRO_HW_CONTEXT_OPENGL_CORE ? 3 : 0);
