@@ -1111,6 +1111,23 @@ imageDisk::imageDisk(class DOS_Drive *useDrive, Bit32u freeSpaceMB, const char* 
 
 Bit32u imageDisk::Set_GeometryForHardDisk()
 {
+	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+	DBP_ASSERT(dos_file || ffdd);
+	Bit64u diskimgsize = 0;
+	if (dos_file)
+	{
+		dos_file->Seek64(&diskimgsize, DOS_SEEK_END);
+		dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
+	}
+	#else
+	Bit32u diskimgsize = 0;
+	if (diskimg)
+	{
+		fseek(diskimg,0,SEEK_END);
+		diskimgsize = (Bit32u)ftell(diskimg);
+		fseek(diskimg,current_fpos,SEEK_SET);
+	}
+	#endif
 	sector_size = 512;
 	partTable mbrData;
 	for (int m = (Read_AbsoluteSector(0, &mbrData) ? 0 : 4); m--;)
@@ -1119,7 +1136,9 @@ Bit32u imageDisk::Set_GeometryForHardDisk()
 		mbrData.pentry[m].absSectStart = var_read(&mbrData.pentry[m].absSectStart);
 		mbrData.pentry[m].partSize = var_read(&mbrData.pentry[m].partSize);
 		bootstrap bootbuffer;
-		if (Read_AbsoluteSector(mbrData.pentry[m].absSectStart, &bootbuffer)) continue;
+		if (diskimgsize && ((Bit64u)mbrData.pentry[m].absSectStart * sector_size) >= diskimgsize) continue; // partition start must be in image, partition end can be past end of image file
+		bootbuffer.sectorspertrack = bootbuffer.headcount = 0;
+		if (Read_AbsoluteSector(mbrData.pentry[m].absSectStart, &bootbuffer) || !bootbuffer.sectorspertrack || !bootbuffer.headcount) continue;
 		bootbuffer.sectorspertrack = var_read(&bootbuffer.sectorspertrack);
 		bootbuffer.headcount = var_read(&bootbuffer.headcount);
 		Bit32u setSect = bootbuffer.sectorspertrack;
@@ -1128,18 +1147,6 @@ Bit32u imageDisk::Set_GeometryForHardDisk()
 		Set_Geometry(setHeads, setCyl, setSect, 512);
 		return (setCyl * setHeads * setSect); /* correctly detected total sector count */
 	}
-	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
-	if (!dos_file) { DBP_ASSERT(false); return 0; }
-	Bit64u diskimgsize = 0;
-	dos_file->Seek64(&diskimgsize, DOS_SEEK_END);
-	dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
-	#else
-	if (!diskimg) return 0;
-	Bit32u diskimgsize;
-	fseek(diskimg,0,SEEK_END);
-	diskimgsize = (Bit32u)ftell(diskimg);
-	fseek(diskimg,current_fpos,SEEK_SET);
-	#endif
 	Set_Geometry(16, (Bit32u)(diskimgsize / (512 * 63 * 16)), 63, 512);
 	return 0;
 }

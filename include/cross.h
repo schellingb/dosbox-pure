@@ -119,7 +119,7 @@ public:
 	static bool IsPathAbsolute(std::string const& in);
 #else
 	static std::string& MakePathAbsolute(std::string& in);
-	static std::string& NormalizePath(std::string& in);
+	static std::string& NormalizePath(std::string& in, char sep = CROSS_FILESPLIT);
 #endif
 };
 

@@ -2922,6 +2922,7 @@ static void ide_baseio_w(Bitu port,Bitu val,Bitu iolen) {
 
 void IDE_RefreshCDROMs()
 {
+	if (!idecontroller[0]) return; // IDE_SetupControllers not yet called
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS*2; i++)
 	{
 		IDEController* c = idecontroller[i>>1];

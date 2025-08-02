@@ -1812,7 +1812,16 @@ public:
 			imageDisk * newImage = new imageDisk(newDisk, temp_line.c_str(), imagesize, hdd);
 
 			if (hdd) newImage->Set_Geometry(sizes[2],sizes[3],sizes[1],sizes[0]);
-			if(imageDiskList[drive - '0'] != NULL) delete imageDiskList[drive - '0'];
+			if(imageDiskList[drive - '0'] != NULL)
+			{
+				//DBP: Need to unmount fat drives using this image disk first
+				DBP_ASSERT(imageDiskList[drive - '0'] != newImage); // shouldn't be possible with fstype == "none"
+				for (Bit16u i=0;i<DOS_DRIVES;i++)
+					if (fatDrive* fat_drive = (Drives[i] ? dynamic_cast<fatDrive*>(Drives[i]) : NULL))
+						if (fat_drive->loadedDisk == imageDiskList[drive - '0'])
+							UnmountHelper('A' + (char)i);
+				delete imageDiskList[drive - '0'];
+			}
 			imageDiskList[drive - '0'] = newImage;
 			if ((drive == '2' || drive == '3') && hdd) updateDPT();
 			WriteOut(MSG_Get("PROGRAM_IMGMOUNT_MOUNT_NUMBER"),drive - '0',temp_line.c_str());

@@ -1134,11 +1134,8 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 		MSCDEX_AddDrive(letter, "", subUnit);
 	}
 
-	// Register CDROM with IDE controller only when running with 32MB or more RAM (used when booting an operating system)
-	if (cdrom && (MEM_TotalPages() / 256) >= 32)
-	{
-		IDE_RefreshCDROMs();
-	}
+	// Register CDROM with IDE controller (if IDE_SetupControllers was called)
+	if (cdrom) IDE_RefreshCDROMs();
 
 	if (path)
 	{
@@ -2573,8 +2570,7 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 					{
 						df->AddRef();
 						imageDisk* id = new imageDisk(df, "", (size / 1024), true);
-						Bit32u total_sectors = id->Set_GeometryForHardDisk();
-						if (!total_sectors || total_sectors * id->sector_size > size) isFS = DBP_IsDiskCDISO(id);
+						if (!id->Set_GeometryForHardDisk()) isFS = DBP_IsDiskCDISO(id);
 						delete id; // closes and deletes df
 					}
 				}

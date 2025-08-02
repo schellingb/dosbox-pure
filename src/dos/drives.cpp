@@ -599,6 +599,7 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	if (out_resolve_path) {
 		if (drv) { out_resolve_path->assign(1, '$').append(1, (char)('A'+drive)).append(":\\").append(drv_path); upcase(*out_resolve_path); }
 		else { out_resolve_path->assign(filename_s); }
+		Cross::NormalizePath(*out_resolve_path, '\\');
 		DBP_ASSERT(!out_resolve_path->empty());
 	}
 	return dos_file;

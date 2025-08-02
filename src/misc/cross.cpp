@@ -164,23 +164,23 @@ std::string& Cross::MakePathAbsolute(std::string& str)
 	#endif
 	return str;
 }
-std::string& Cross::NormalizePath(std::string& str) // strip ., .., repeated / and trailing / (unless root), standardize path separator
+std::string& Cross::NormalizePath(std::string& str, char sep) // strip ., .., repeated / and trailing / (unless root), standardize path separator
 {
 	if (!*str.c_str()) return str; // c_str guarantees \0 terminator afterwards
 	for (char *path = &str[0], *src = path, *dst = path, *root = src + (*src == '/' || *src == '\\'), c;;)
 	{
 		if ((c = *(src++)) != '.')
 		{
-			if (c == '\0') { str.resize(dst - (dst > root && dst[-1] == CROSS_FILESPLIT) - path); return str; }
+			if (c == '\0') { str.resize(dst - (dst > root && dst[-1] == sep) - path); return str; }
 			else if (c != '/' && c != '\\') *(dst++) = c;
 			#ifdef WIN32
 			else if (src - path == 1 && c == '\\' && *src == '\\') { src++; dst += 2; } // network path
 			#endif
-			else if (dst != root && !(dst > path && dst[-1] == CROSS_FILESPLIT)) { *(dst++) = CROSS_FILESPLIT; }
+			else if (dst != root && !(dst > path && dst[-1] == sep)) { *(dst++) = sep; }
 		}
-		else if ((dst == path || dst[-1] == CROSS_FILESPLIT) && (src[0] == '/' || src[0] == '\\' || src[0] == '\0')) src += 0 + (src[0] != '\0');
-		else if (dst == path || dst[-1] != CROSS_FILESPLIT || src[0] != '.' || (src[1] != '/' && src[1] != '\\' && src[1] != '\0') || (dst >= path + 3 && dst[-2] == '.' && dst[-3] == '.' && (dst == path + 3 || dst[-4] == CROSS_FILESPLIT))) *(dst++) = '.';
-		else { src += 1 + (src[1] != '\0'); if (dst > root) { for (dst--; dst[-1] != CROSS_FILESPLIT;) { if (--dst == root) break; } } }
+		else if ((dst == path || dst[-1] == sep) && (src[0] == '/' || src[0] == '\\' || src[0] == '\0')) src += 0 + (src[0] != '\0');
+		else if (dst == path || dst[-1] != sep || src[0] != '.' || (src[1] != '/' && src[1] != '\\' && src[1] != '\0') || (dst >= path + 3 && dst[-2] == '.' && dst[-3] == '.' && (dst == path + 3 || dst[-4] == sep))) *(dst++) = '.';
+		else { src += 1 + (src[1] != '\0'); if (dst > root) { for (dst--; dst[-1] != sep;) { if (--dst == root) break; } } }
 	}
 }
 #endif
