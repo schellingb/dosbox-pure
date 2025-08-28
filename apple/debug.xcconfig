@@ -1,0 +1,5 @@
+
+GCC_PREPROCESSOR_DEFINITIONS = DEBUG=1 _DEBUG=1 $(inherited)
+OTHER_CFLAGS = $(inherited) -ftrivial-auto-var-init=zero
+OTHER_CPLUSPLUSFLAGS = $(inherited) -g -O0 -ftrivial-auto-var-init=zero
+OTHER_LDFLAGS = $(inherited) -g -O0

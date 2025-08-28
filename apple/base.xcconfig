@@ -1,0 +1,31 @@
+// Definições comuns para todas as configs
+CLANG_CXX_LANGUAGE_STANDARD = gnu++11
+CLANG_CXX_LIBRARY = libc++
+GCC_C_LANGUAGE_STANDARD = gnu11
+IPHONEOS_DEPLOYMENT_TARGET = 12.0
+
+// Flags globais do Makefile
+OTHER_CPLUSPLUSFLAGS = $(inherited) \
+  -fomit-frame-pointer \
+  -fexceptions \
+  -fvisibility=hidden \
+  -ffunction-sections \
+  -fPIC \
+  -Wno-address-of-packed-member \
+  -Wno-format \
+  -Wno-switch \
+  -Wno-psabi \
+  -Wno-unknown-warning-option \
+  -Wno-deprecated-declarations \
+  -Wno-deprecated-volatile \
+  -Wno-comma \
+  -Wno-implicit-int-conversion \
+  -Wno-documentation
+
+// Defines globais
+GCC_PREPROCESSOR_DEFINITIONS = __LIBRETRO__=1 _FILE_OFFSET_BITS=64 DISABLE_DYNAREC=1 DBP_IOS=1 $(inherited)
+
+// Linker flags comuns
+OTHER_LDFLAGS = $(inherited) -Wl,-dead_strip -lpthread
+
+HEADER_SEARCH_PATHS = $(SRCROOT)/include $(SRCROOT)/libretro-common/include

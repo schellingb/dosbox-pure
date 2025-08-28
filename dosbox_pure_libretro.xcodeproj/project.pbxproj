@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		65FB497F2E6105E40028503E /* keyb2joypad.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 65FB48952E6105E40028503E /* keyb2joypad.cpp */; };
+		65FB49DB2E6105E40028503E /* dosbox_pure_libretro.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 65FB48642E6105E40028503E /* dosbox_pure_libretro.cpp */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXCopyFilesBuildPhase section */
 		65FB48532E6103B20028503E /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
@@ -20,7 +25,214 @@
 
 /* Begin PBXFileReference section */
 		65FB48552E6103B20028503E /* libdosbox_pure_libretro.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdosbox_pure_libretro.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		65FB48632E6105E40028503E /* core_options.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = core_options.h; sourceTree = "<group>"; };
+		65FB48642E6105E40028503E /* dosbox_pure_libretro.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = dosbox_pure_libretro.cpp; sourceTree = "<group>"; };
+		65FB48652E6105E40028503E /* dosbox_pure_osd.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dosbox_pure_osd.h; sourceTree = "<group>"; };
+		65FB48662E6105E40028503E /* dosbox_pure_pad.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dosbox_pure_pad.h; sourceTree = "<group>"; };
+		65FB48672E6105E40028503E /* dosbox_pure_run.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dosbox_pure_run.h; sourceTree = "<group>"; };
+		65FB48682E6105E40028503E /* dosbox_pure_ver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = dosbox_pure_ver.h; sourceTree = "<group>"; };
+		65FB48942E6105E40028503E /* keyb2joypad.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = keyb2joypad.h; sourceTree = "<group>"; };
+		65FB48952E6105E40028503E /* keyb2joypad.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = keyb2joypad.cpp; sourceTree = "<group>"; };
+		65FB49E82E6106210028503E /* dosbox_pure_libretro.info */ = {isa = PBXFileReference; lastKnownFileType = text; path = dosbox_pure_libretro.info; sourceTree = "<group>"; };
+		65FB49E92E6106210028503E /* DOSBOX-AUTHORS */ = {isa = PBXFileReference; lastKnownFileType = text; path = "DOSBOX-AUTHORS"; sourceTree = "<group>"; };
+		65FB49EA2E6106210028503E /* DOSBOX-THANKS */ = {isa = PBXFileReference; lastKnownFileType = text; path = "DOSBOX-THANKS"; sourceTree = "<group>"; };
+		65FB49F02E6106210028503E /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		65FB49F12E6106210028503E /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		654FCE782E610A6000604D3F /* Exceptions for "include" folder in "Static Library" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				bios_disk.h,
+				bios.h,
+				callback.h,
+				config.h,
+				control.h,
+				cpu.h,
+				cross.h,
+				dbp_network.h,
+				dbp_opengl.h,
+				dbp_serialize.h,
+				dbp_threads.h,
+				debug.h,
+				dma.h,
+				dos_inc.h,
+				dos_system.h,
+				dosbox.h,
+				fpu.h,
+				hardware.h,
+				inout.h,
+				ipx.h,
+				ipxserver.h,
+				joystick.h,
+				keyboard.h,
+				logging.h,
+				mapper.h,
+				mem.h,
+				midi.h,
+				mixer.h,
+				mouse.h,
+				paging.h,
+				pci_bus.h,
+				pic.h,
+				programs.h,
+				regs.h,
+				render.h,
+				serialport.h,
+				setup.h,
+				shell.h,
+				support.h,
+				timer.h,
+				vga.h,
+				video.h,
+			);
+			target = 65FB48542E6103B20028503E /* Static Library */;
+		};
+		654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "Static Library" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				include/retro_timers.h,
+				rthreads/ctr_pthread.h,
+				rthreads/gx_pthread.h,
+				rthreads/wiiu_pthread.h,
+			);
+			publicHeaders = (
+				include/libretro.h,
+			);
+			target = 65FB48542E6103B20028503E /* Static Library */;
+		};
+		654FCE7A2E610A6000604D3F /* Exceptions for "src" folder in "Static Library" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				cpu/core_dyn_x86/decoder.h,
+				cpu/core_dyn_x86/dyn_fpu_dh.h,
+				cpu/core_dyn_x86/dyn_fpu.h,
+				cpu/core_dyn_x86/helpers.h,
+				cpu/core_dyn_x86/risc_x64.h,
+				cpu/core_dyn_x86/risc_x86.h,
+				cpu/core_dyn_x86/string.h,
+				cpu/core_dynrec/decoder_basic.h,
+				cpu/core_dynrec/decoder_opcodes.h,
+				cpu/core_dynrec/decoder.h,
+				cpu/core_dynrec/dyn_fpu.h,
+				cpu/core_dynrec/operators.h,
+				"cpu/core_dynrec/risc_armv4le-common.h",
+				"cpu/core_dynrec/risc_armv4le-o3.h",
+				"cpu/core_dynrec/risc_armv4le-thumb-iw.h",
+				"cpu/core_dynrec/risc_armv4le-thumb-niw.h",
+				"cpu/core_dynrec/risc_armv4le-thumb.h",
+				cpu/core_dynrec/risc_armv4le.h,
+				cpu/core_dynrec/risc_armv8le.h,
+				cpu/core_dynrec/risc_mipsel32.h,
+				cpu/core_dynrec/risc_ppc.h,
+				cpu/core_dynrec/risc_x64.h,
+				cpu/core_dynrec/risc_x86.h,
+				cpu/core_full/ea_lookup.h,
+				cpu/core_full/load.h,
+				cpu/core_full/loadwrite.h,
+				cpu/core_full/op.h,
+				cpu/core_full/optable.h,
+				cpu/core_full/save.h,
+				cpu/core_full/string.h,
+				cpu/core_full/support.h,
+				cpu/core_normal/helpers.h,
+				cpu/core_normal/prefix_0f.h,
+				cpu/core_normal/prefix_66_0f.h,
+				cpu/core_normal/prefix_66.h,
+				cpu/core_normal/prefix_none.h,
+				cpu/core_normal/string.h,
+				cpu/core_normal/support.h,
+				cpu/core_normal/table_ea.h,
+				cpu/dyn_cache.h,
+				cpu/instructions.h,
+				cpu/lazyflags.h,
+				cpu/modrm.h,
+				dos/cdrom.h,
+				dos/dev_con.h,
+				dos/dos_codepages.h,
+				dos/dos_keyboard_layout_data.h,
+				dos/drives.h,
+				dos/scsidefs.h,
+				dos/wnaspi32.h,
+				fpu/fpu_instructions_x86.h,
+				fpu/fpu_instructions.h,
+				gui/midi_alsa.h,
+				gui/midi_coreaudio.h,
+				gui/midi_coremidi.h,
+				gui/midi_mt32.h,
+				gui/midi_opl.h,
+				gui/midi_oss.h,
+				gui/midi_retro.h,
+				gui/midi_tsf.h,
+				gui/midi_win32.h,
+				gui/mt32emu.h,
+				gui/render_glsl.h,
+				gui/render_loops.h,
+				gui/render_scalers.h,
+				gui/render_simple.h,
+				gui/render_templates_hq.h,
+				gui/render_templates_hq2x.h,
+				gui/render_templates_hq3x.h,
+				gui/render_templates_sai.h,
+				gui/render_templates.h,
+				gui/tsf.h,
+				hardware/adlib.h,
+				hardware/dbopl.h,
+				hardware/mame/emu.h,
+				hardware/mame/saa1099.h,
+				hardware/mame/sn76496.h,
+				hardware/nukedopl3.h,
+				hardware/pci_devices.h,
+				hardware/serialport/directserial.h,
+				hardware/serialport/libserial.h,
+				hardware/serialport/misc_util.h,
+				hardware/serialport/nullmodem.h,
+				hardware/serialport/serialdummy.h,
+				hardware/serialport/softmodem.h,
+				ints/int10.h,
+				ints/xms.h,
+			);
+			target = 65FB48542E6103B20028503E /* Static Library */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		65FB48932E6105E40028503E /* include */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				654FCE782E610A6000604D3F /* Exceptions for "include" folder in "Static Library" target */,
+			);
+			path = include;
+			sourceTree = "<group>";
+		};
+		65FB48A02E6105E40028503E /* libretro-common */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "Static Library" target */,
+			);
+			path = "libretro-common";
+			sourceTree = "<group>";
+		};
+		65FB49752E6105E40028503E /* src */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				654FCE7A2E610A6000604D3F /* Exceptions for "src" folder in "Static Library" target */,
+			);
+			path = src;
+			sourceTree = "<group>";
+		};
+		65FB49EF2E6106210028503E /* images */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = images;
+			sourceTree = "<group>";
+		};
+		65FB49F22E6106A20028503E /* apple */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = apple;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		65FB48522E6103B20028503E /* Frameworks */ = {
@@ -36,7 +248,10 @@
 		65FB484C2E6103B20028503E = {
 			isa = PBXGroup;
 			children = (
+				65FB49E72E6105F80028503E /* Doc */,
+				65FB48622E6104DC0028503E /* Source */,
 				65FB48562E6103B20028503E /* Products */,
+				65FB49F22E6106A20028503E /* apple */,
 			);
 			sourceTree = "<group>";
 		};
@@ -48,13 +263,55 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		65FB48622E6104DC0028503E /* Source */ = {
+			isa = PBXGroup;
+			children = (
+				65FB48632E6105E40028503E /* core_options.h */,
+				65FB48642E6105E40028503E /* dosbox_pure_libretro.cpp */,
+				65FB48652E6105E40028503E /* dosbox_pure_osd.h */,
+				65FB48662E6105E40028503E /* dosbox_pure_pad.h */,
+				65FB48672E6105E40028503E /* dosbox_pure_run.h */,
+				65FB48682E6105E40028503E /* dosbox_pure_ver.h */,
+				65FB48932E6105E40028503E /* include */,
+				65FB48942E6105E40028503E /* keyb2joypad.h */,
+				65FB48952E6105E40028503E /* keyb2joypad.cpp */,
+				65FB48A02E6105E40028503E /* libretro-common */,
+				65FB49752E6105E40028503E /* src */,
+			);
+			name = Source;
+			sourceTree = "<group>";
+		};
+		65FB49E72E6105F80028503E /* Doc */ = {
+			isa = PBXGroup;
+			children = (
+				65FB49E82E6106210028503E /* dosbox_pure_libretro.info */,
+				65FB49E92E6106210028503E /* DOSBOX-AUTHORS */,
+				65FB49EA2E6106210028503E /* DOSBOX-THANKS */,
+				65FB49EF2E6106210028503E /* images */,
+				65FB49F02E6106210028503E /* LICENSE */,
+				65FB49F12E6106210028503E /* README.md */,
+			);
+			name = Doc;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
+/* Begin PBXHeadersBuildPhase section */
+		654FCE772E610A6000604D3F /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
 /* Begin PBXNativeTarget section */
-		65FB48542E6103B20028503E /* dosbox_pure_libretro */ = {
+		65FB48542E6103B20028503E /* Static Library */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "dosbox_pure_libretro" */;
+			buildConfigurationList = 65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "Static Library" */;
 			buildPhases = (
+				654FCE772E610A6000604D3F /* Headers */,
 				65FB48512E6103B20028503E /* Sources */,
 				65FB48522E6103B20028503E /* Frameworks */,
 				65FB48532E6103B20028503E /* CopyFiles */,
@@ -63,7 +320,12 @@
 			);
 			dependencies = (
 			);
-			name = dosbox_pure_libretro;
+			fileSystemSynchronizedGroups = (
+				65FB48932E6105E40028503E /* include */,
+				65FB48A02E6105E40028503E /* libretro-common */,
+				65FB49752E6105E40028503E /* src */,
+			);
+			name = "Static Library";
 			packageProductDependencies = (
 			);
 			productName = dosbox_pure_libretro;
@@ -98,7 +360,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				65FB48542E6103B20028503E /* dosbox_pure_libretro */,
+				65FB48542E6103B20028503E /* Static Library */,
 			);
 		};
 /* End PBXProject section */
@@ -108,6 +370,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				65FB497F2E6105E40028503E /* keyb2joypad.cpp in Sources */,
+				65FB49DB2E6105E40028503E /* dosbox_pure_libretro.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -116,6 +380,8 @@
 /* Begin XCBuildConfiguration section */
 		65FB485D2E6103B20028503E /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
+			baseConfigurationReferenceRelativePath = base.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -167,7 +433,6 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -178,6 +443,8 @@
 		};
 		65FB485E2E6103B20028503E /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
+			baseConfigurationReferenceRelativePath = base.xcconfig;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -223,7 +490,6 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -234,11 +500,13 @@
 		};
 		65FB48602E6103B20028503E /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
+			baseConfigurationReferenceRelativePath = debug.xcconfig;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 3BM944F372;
 				OTHER_LDFLAGS = "-ObjC";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = dosbox_pure_libretro;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -246,11 +514,13 @@
 		};
 		65FB48612E6103B20028503E /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
+			baseConfigurationReferenceRelativePath = release.xcconfig;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 3BM944F372;
 				OTHER_LDFLAGS = "-ObjC";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = dosbox_pure_libretro;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -268,7 +538,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "dosbox_pure_libretro" */ = {
+		65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "Static Library" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				65FB48602E6103B20028503E /* Debug */,
