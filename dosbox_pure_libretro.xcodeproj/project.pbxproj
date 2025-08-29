@@ -6,6 +6,25 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXAggregateTarget section */
+		654FCE7D2E61E25000604D3F /* iOS XCFramework */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "iOS XCFramework" */;
+			buildPhases = (
+				654FCE882E61E5E900604D3F /* Reset Build folder */,
+				654FCE892E61E5EB00604D3F /* Archive Device Lib */,
+				654FCE8A2E61E5EE00604D3F /* Archive Simulator Lib */,
+				654FCE812E61E25700604D3F /* Create XCFramework */,
+			);
+			dependencies = (
+			);
+			name = "iOS XCFramework";
+			packageProductDependencies = (
+			);
+			productName = "iOS XCFramework";
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXBuildFile section */
 		65FB497F2E6105E40028503E /* keyb2joypad.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 65FB48952E6105E40028503E /* keyb2joypad.cpp */; };
 		65FB49DB2E6105E40028503E /* dosbox_pure_libretro.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 65FB48642E6105E40028503E /* dosbox_pure_libretro.cpp */; };
@@ -198,6 +217,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		654FCE832E61E2ED00604D3F /* build */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = build;
+			sourceTree = "<group>";
+		};
 		65FB48932E6105E40028503E /* include */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -248,10 +272,11 @@
 		65FB484C2E6103B20028503E = {
 			isa = PBXGroup;
 			children = (
+				65FB49F22E6106A20028503E /* apple */,
+				654FCE832E61E2ED00604D3F /* build */,
 				65FB49E72E6105F80028503E /* Doc */,
 				65FB48622E6104DC0028503E /* Source */,
 				65FB48562E6103B20028503E /* Products */,
-				65FB49F22E6106A20028503E /* apple */,
 			);
 			sourceTree = "<group>";
 		};
@@ -341,6 +366,9 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1640;
 				TargetAttributes = {
+					654FCE7D2E61E25000604D3F = {
+						CreatedOnToolsVersion = 16.4;
+					};
 					65FB48542E6103B20028503E = {
 						CreatedOnToolsVersion = 16.4;
 					};
@@ -361,9 +389,101 @@
 			projectRoot = "";
 			targets = (
 				65FB48542E6103B20028503E /* Static Library */,
+				654FCE7D2E61E25000604D3F /* iOS XCFramework */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		654FCE812E61E25700604D3F /* Create XCFramework */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive",
+				"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive",
+			);
+			name = "Create XCFramework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${SRCROOT}/build/${PROJECT_NAME}_ios.xcframework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nARCHIVE_DEV=\"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive\"\nARCHIVE_SIM=\"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive\"\nXCFRAMEWORK=\"${SRCROOT}/build/${PROJECT_NAME}_ios.xcframework\"\n\nrm -rf \"${XCFRAMEWORK}\"\n\n# Create XCFramework\nxcodebuild -create-xcframework \\\n -archive \"${ARCHIVE_DEV}\" -library lib${PROJECT_NAME}.a \\\n -archive \"${ARCHIVE_SIM}\" -library lib${PROJECT_NAME}.a \\\n -output \"${XCFRAMEWORK}\"\n";
+		};
+		654FCE882E61E5E900604D3F /* Reset Build folder */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Reset Build folder";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/build/*",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nBUILD_DIR=\"${SRCROOT}/build\"\n\n# rm -rf \"${BUILD_DIR}\"\n# mkdir -p \"$BUILD_DIR\"\n";
+		};
+		654FCE892E61E5EB00604D3F /* Archive Device Lib */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${SRCROOT}/src",
+				"$(SRCROOT)/libretro-common",
+				"$(SRCROOT)/include",
+				"$(SRCROOT)/*.h",
+				"$(SRCROOT)/*.cpp",
+			);
+			name = "Archive Device Lib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"Static Library\"\nARCHIVE_DEV=\"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive\"\n\nrm -rf \"${ARCHIVE_DEV}\"\n\n# iOS Device\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS\" \\\n -archivePath \"${ARCHIVE_DEV}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
+		};
+		654FCE8A2E61E5EE00604D3F /* Archive Simulator Lib */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${SRCROOT}/src",
+				"$(SRCROOT)/libretro-common",
+				"$(SRCROOT)/include",
+				"$(SRCROOT)/*.h",
+				"$(SRCROOT)/*.cpp",
+			);
+			name = "Archive Simulator Lib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"Static Library\"\nARCHIVE_SIM=\"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive\"\n\nrm -rf \"${ARCHIVE_SIM}\"\n\n# iOS Simulator\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS Simulator\" \\\n -archivePath \"${ARCHIVE_SIM}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		65FB48512E6103B20028503E /* Sources */ = {
@@ -378,6 +498,24 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		654FCE7F2E61E25000604D3F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 3BM944F372;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+			};
+			name = Debug;
+		};
+		654FCE802E61E25000604D3F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 3BM944F372;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+			};
+			name = Release;
+		};
 		65FB485D2E6103B20028503E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
@@ -529,6 +667,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "iOS XCFramework" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				654FCE7F2E61E25000604D3F /* Debug */,
+				654FCE802E61E25000604D3F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		65FB48502E6103B20028503E /* Build configuration list for PBXProject "dosbox_pure_libretro" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
