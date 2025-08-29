@@ -16,11 +16,20 @@ OTHER_CPLUSPLUSFLAGS = $(inherited) \
   -Wno-switch \
   -Wno-psabi \
   -Wno-unknown-warning-option \
+  -Wno-unreachable-code \
+  -Wno-sometimes-uninitialized \
+  -Wno-deprecated-anon-enum-enum-conversion
+
+OTHER_CFLAGS = $(inherited) \
   -Wno-deprecated-declarations \
   -Wno-deprecated-volatile \
   -Wno-comma \
   -Wno-implicit-int-conversion \
-  -Wno-documentation
+  -Wno-documentation \
+  -Wno-unused-variable \
+  -Wno-unused-function \
+  -Wno-conditional-uninitialized \
+  -Wno-strict-prototypes
 
 // Defines globais
 GCC_PREPROCESSOR_DEFINITIONS = __LIBRETRO__=1 _FILE_OFFSET_BITS=64 DISABLE_DYNAREC=1 DBP_IOS=1 $(inherited)
