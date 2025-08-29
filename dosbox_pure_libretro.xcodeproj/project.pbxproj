@@ -11,7 +11,6 @@
 			isa = PBXAggregateTarget;
 			buildConfigurationList = 654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "iOS XCFramework" */;
 			buildPhases = (
-				654FCE882E61E5E900604D3F /* Reset Build folder */,
 				654FCE892E61E5EB00604D3F /* Archive Device Lib */,
 				654FCE8A2E61E5EE00604D3F /* Archive Simulator Lib */,
 				654FCE812E61E25700604D3F /* Create XCFramework */,
@@ -416,25 +415,6 @@
 			shellPath = /bin/sh;
 			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nARCHIVE_DEV=\"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive\"\nARCHIVE_SIM=\"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive\"\nXCFRAMEWORK=\"${SRCROOT}/build/${PROJECT_NAME}_ios.xcframework\"\n\nrm -rf \"${XCFRAMEWORK}\"\n\n# Create XCFramework\nxcodebuild -create-xcframework \\\n -archive \"${ARCHIVE_DEV}\" -library lib${PROJECT_NAME}.a \\\n -archive \"${ARCHIVE_SIM}\" -library lib${PROJECT_NAME}.a \\\n -output \"${XCFRAMEWORK}\"\n";
 		};
-		654FCE882E61E5E900604D3F /* Reset Build folder */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Reset Build folder";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/build/*",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n\nBUILD_DIR=\"${SRCROOT}/build\"\n\n# rm -rf \"${BUILD_DIR}\"\n# mkdir -p \"$BUILD_DIR\"\n";
-		};
 		654FCE892E61E5EB00604D3F /* Archive Device Lib */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -446,8 +426,8 @@
 				"${SRCROOT}/src",
 				"$(SRCROOT)/libretro-common",
 				"$(SRCROOT)/include",
-				"$(SRCROOT)/*.h",
-				"$(SRCROOT)/*.cpp",
+				"$(SRCROOT)/dosbox_pure_ver.h",
+				"$(SRCROOT)/dosbox_pure_libretro.cpp",
 			);
 			name = "Archive Device Lib";
 			outputFileListPaths = (
@@ -470,8 +450,8 @@
 				"${SRCROOT}/src",
 				"$(SRCROOT)/libretro-common",
 				"$(SRCROOT)/include",
-				"$(SRCROOT)/*.h",
-				"$(SRCROOT)/*.cpp",
+				"$(SRCROOT)/dosbox_pure_ver.h",
+				"$(SRCROOT)/dosbox_pure_libretro.cpp",
 			);
 			name = "Archive Simulator Lib";
 			outputFileListPaths = (
