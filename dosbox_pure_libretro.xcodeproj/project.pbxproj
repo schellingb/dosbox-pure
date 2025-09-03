@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXAggregateTarget section */
-		654FCE7D2E61E25000604D3F /* iOS XCFramework */ = {
+		654FCE7D2E61E25000604D3F /* Static iOS XCFramework */ = {
 			isa = PBXAggregateTarget;
-			buildConfigurationList = 654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "iOS XCFramework" */;
+			buildConfigurationList = 654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "Static iOS XCFramework" */;
 			buildPhases = (
 				654FCE892E61E5EB00604D3F /* Archive Device Lib */,
 				654FCE8A2E61E5EE00604D3F /* Archive Simulator Lib */,
@@ -17,7 +17,7 @@
 			);
 			dependencies = (
 			);
-			name = "iOS XCFramework";
+			name = "Static iOS XCFramework";
 			packageProductDependencies = (
 			);
 			productName = "iOS XCFramework";
@@ -388,7 +388,7 @@
 			projectRoot = "";
 			targets = (
 				65FB48542E6103B20028503E /* Static Library */,
-				654FCE7D2E61E25000604D3F /* iOS XCFramework */,
+				654FCE7D2E61E25000604D3F /* Static iOS XCFramework */,
 			);
 		};
 /* End PBXProject section */
@@ -637,7 +637,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "iOS XCFramework" */ = {
+		654FCE7E2E61E25000604D3F /* Build configuration list for PBXAggregateTarget "Static iOS XCFramework" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				654FCE7F2E61E25000604D3F /* Debug */,
