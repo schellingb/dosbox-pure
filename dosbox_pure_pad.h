@@ -20,8 +20,8 @@ struct DBP_WheelItem { Bit8u port, key_count, k[4]; };
 static std::vector<DBP_WheelItem> dbp_wheelitems;
 static std::vector<Bit8u> dbp_custom_mapping;
 static Bit16s dbp_bind_mousewheel, dbp_yml_mousewheel;
-static bool dbp_map_osd, dbp_analog_buttons;
-static char dbp_mouse_input, dbp_auto_mapping_mode;
+static bool dbp_analog_buttons;
+static char dbp_map_osd, dbp_mouse_input, dbp_auto_mapping_mode;
 static const Bit8u* dbp_auto_mapping;
 static const char *dbp_auto_mapping_names, *dbp_auto_mapping_title;
 static bool dbp_yml_directmouse, dbp_yml_mapping;
@@ -339,9 +339,10 @@ struct DBP_PadMapping
 			int wkey2 = (mouse_wheel2 ? atoi(mouse_wheel2 + 1) : 0);
 			bind_mousewheel = (wkey1 > KBD_NONE && wkey1 < KBD_LAST && wkey2 > KBD_NONE && wkey2 < KBD_LAST ? DBP_MAPPAIR_MAKE(wkey1, wkey2) : 0);
 		}
-		bool map_osd = (DBP_Option::Get(DBP_Option::map_osd)[0] != 'f');
+		char map_osd = DBP_Option::Get(DBP_Option::map_osd)[0];
 		char mouse_input = DBP_Option::Get(DBP_Option::mouse_input)[0];
 		if (mouse_input == 't' && dbp_yml_directmouse) mouse_input = 'd';
+		if (map_osd == 'f') map_osd = 0; // "false" becomes 0
 		if (map_osd != dbp_map_osd || mouse_input != dbp_mouse_input || bind_mousewheel != dbp_bind_mousewheel)
 		{
 			dbp_map_osd = map_osd;

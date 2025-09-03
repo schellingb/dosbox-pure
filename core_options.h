@@ -189,7 +189,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	{
 		"dosbox_pure_menu_transparency",
 		"Advanced > Menu Transparency", NULL,
-		"Set the transparency level of the Menu and the On Screen Keyboard.", NULL,
+		"Set the transparency level of the Menu and the On-Screen Keyboard.", NULL,
 		DBP_OptionCat::General,
 		{
 			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
@@ -203,7 +203,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"Use L3 Button to Show Menu", NULL,
 		"Always bind the L3 controller button to show the menu to swap CDs/Disks and use the On-Screen Keyboard.", NULL,
 		DBP_OptionCat::Input,
-		{ { "true", "On" }, { "false", "Off" } },
+		{ { "true", "On (Default to Menu)" }, { "keyboard", "On (Default to On-Screen Keyboard)" }, { "false", "Off" } },
 		"true"
 	},
 	{
