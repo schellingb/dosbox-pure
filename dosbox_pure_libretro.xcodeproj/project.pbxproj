@@ -494,8 +494,6 @@
 		};
 		65FB485D2E6103B20028503E /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
-			baseConfigurationReferenceRelativePath = "project-debug.xcconfig";
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -553,8 +551,6 @@
 		};
 		65FB485E2E6103B20028503E /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
-			baseConfigurationReferenceRelativePath = "project-release.xcconfig";
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -609,7 +605,7 @@
 		65FB48602E6103B20028503E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
-			baseConfigurationReferenceRelativePath = "target-debug.xcconfig";
+			baseConfigurationReferenceRelativePath = debug.xcconfig;
 			buildSettings = {
 			};
 			name = Debug;
@@ -617,7 +613,7 @@
 		65FB48612E6103B20028503E /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
-			baseConfigurationReferenceRelativePath = "target-release.xcconfig";
+			baseConfigurationReferenceRelativePath = release.xcconfig;
 			buildSettings = {
 			};
 			name = Release;

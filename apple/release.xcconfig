@@ -1,4 +1,4 @@
-#include "project-base.xcconfig"
+#include "base.xcconfig"
 
 GCC_PREPROCESSOR_DEFINITIONS = NDEBUG=1 $(inherited)
 OTHER_CPLUSPLUSFLAGS = $(inherited) -O2
