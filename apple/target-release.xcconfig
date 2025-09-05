@@ -1,1 +1,1 @@
-PRODUCT_NAME = dosbox_pure_libretro
+#include "target-base.xcconfig"

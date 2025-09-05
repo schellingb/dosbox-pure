@@ -1,4 +1,4 @@
-#include "top-level-base.xcconfig"
+#include "project-base.xcconfig"
 
 GCC_PREPROCESSOR_DEFINITIONS = DEBUG=1 _DEBUG=1 $(inherited)
 OTHER_CFLAGS = $(inherited) -ftrivial-auto-var-init=zero
