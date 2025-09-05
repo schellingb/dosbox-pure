@@ -611,7 +611,6 @@
 			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
 			baseConfigurationReferenceRelativePath = "target-debug.xcconfig";
 			buildSettings = {
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -620,7 +619,6 @@
 			baseConfigurationReferenceAnchor = 65FB49F22E6106A20028503E /* apple */;
 			baseConfigurationReferenceRelativePath = "target-release.xcconfig";
 			buildSettings = {
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};

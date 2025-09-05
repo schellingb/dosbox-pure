@@ -1,5 +1,8 @@
-
+// Packaging
 PRODUCT_NAME = dosbox_pure_libretro
+
+// Deployment
+TARGETED_DEVICE_FAMILY = 1,2,3,4,6,7
 
 // Definições comuns para todas as configs
 CLANG_CXX_LANGUAGE_STANDARD = gnu++11
