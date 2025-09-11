@@ -10,6 +10,9 @@ SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES
 // Architectures
 SUPPORTED_PLATFORMS = xrsimulator xros watchsimulator watchos macosx iphonesimulator iphoneos driverkit appletvsimulator appletvos
 
+// Search paths
+ALWAYS_SEARCH_USER_PATHS = NO
+
 // Definições comuns para todas as configs
 CLANG_CXX_LANGUAGE_STANDARD = gnu++11
 CLANG_CXX_LIBRARY = libc++
