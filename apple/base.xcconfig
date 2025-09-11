@@ -3,6 +3,9 @@ PRODUCT_NAME = dosbox_pure_libretro
 
 // Deployment
 TARGETED_DEVICE_FAMILY = 1,2,3,4,6,7
+SUPPORTS_MACCATALYST = YES
+SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES
+SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES
 
 // Architectures
 SUPPORTED_PLATFORMS = xrsimulator xros watchsimulator watchos macosx iphonesimulator iphoneos driverkit appletvsimulator appletvos
