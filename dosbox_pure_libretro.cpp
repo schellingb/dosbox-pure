@@ -2493,7 +2493,7 @@ static void init_dosbox(bool newcontent, bool forcemenu = false, bool reinit = f
 	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
 	bool skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 4));
 	if (newcontent) dbp_biosreboot = false; // ignore this when switching content
-	if (newcontent) dbp_auto_mapping = NULL; // re-acquire when switching content
+	if (newcontent && !reinit) dbp_auto_mapping = NULL; // re-acquire when switching content
 	const bool force_puremenu = (dbp_biosreboot || forcemenu);
 	if (skip_c_mount && !dbconf)
 	{
