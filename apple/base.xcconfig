@@ -8,7 +8,7 @@ SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES
 SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES
 
 // Architectures
-SUPPORTED_PLATFORMS = xrsimulator xros watchsimulator watchos macosx iphonesimulator iphoneos driverkit appletvsimulator appletvos
+SUPPORTED_PLATFORMS = xrsimulator xros watchsimulator watchos macosx iphonesimulator iphoneos appletvsimulator appletvos
 
 // Search paths
 ALWAYS_SEARCH_USER_PATHS = NO
