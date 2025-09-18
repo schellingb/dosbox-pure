@@ -59,62 +59,8 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		654FCE782E610A6000604D3F /* Exceptions for "include" folder in "Static Library" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				bios_disk.h,
-				bios.h,
-				callback.h,
-				config.h,
-				control.h,
-				cpu.h,
-				cross.h,
-				dbp_network.h,
-				dbp_opengl.h,
-				dbp_serialize.h,
-				dbp_threads.h,
-				debug.h,
-				dma.h,
-				dos_inc.h,
-				dos_system.h,
-				dosbox.h,
-				fpu.h,
-				hardware.h,
-				inout.h,
-				ipx.h,
-				ipxserver.h,
-				joystick.h,
-				keyboard.h,
-				logging.h,
-				mapper.h,
-				mem.h,
-				midi.h,
-				mixer.h,
-				mouse.h,
-				paging.h,
-				pci_bus.h,
-				pic.h,
-				programs.h,
-				regs.h,
-				render.h,
-				serialport.h,
-				setup.h,
-				shell.h,
-				support.h,
-				timer.h,
-				vga.h,
-				video.h,
-			);
-			target = 65FB48542E6103B20028503E /* Static Library */;
-		};
 		654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "Static Library" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				include/retro_timers.h,
-				rthreads/ctr_pthread.h,
-				rthreads/gx_pthread.h,
-				rthreads/wiiu_pthread.h,
-			);
 			publicHeaders = (
 				include/libretro.h,
 			);
@@ -162,54 +108,6 @@
 				cpu/core_normal/string.h,
 				cpu/core_normal/support.h,
 				cpu/core_normal/table_ea.h,
-				cpu/dyn_cache.h,
-				cpu/instructions.h,
-				cpu/lazyflags.h,
-				cpu/modrm.h,
-				dos/cdrom.h,
-				dos/dev_con.h,
-				dos/dos_codepages.h,
-				dos/dos_keyboard_layout_data.h,
-				dos/drives.h,
-				dos/scsidefs.h,
-				dos/wnaspi32.h,
-				fpu/fpu_instructions_x86.h,
-				fpu/fpu_instructions.h,
-				gui/midi_alsa.h,
-				gui/midi_coreaudio.h,
-				gui/midi_coremidi.h,
-				gui/midi_mt32.h,
-				gui/midi_opl.h,
-				gui/midi_oss.h,
-				gui/midi_retro.h,
-				gui/midi_tsf.h,
-				gui/midi_win32.h,
-				gui/mt32emu.h,
-				gui/render_glsl.h,
-				gui/render_loops.h,
-				gui/render_scalers.h,
-				gui/render_simple.h,
-				gui/render_templates_hq.h,
-				gui/render_templates_hq2x.h,
-				gui/render_templates_hq3x.h,
-				gui/render_templates_sai.h,
-				gui/render_templates.h,
-				gui/tsf.h,
-				hardware/adlib.h,
-				hardware/dbopl.h,
-				hardware/mame/emu.h,
-				hardware/mame/saa1099.h,
-				hardware/mame/sn76496.h,
-				hardware/nukedopl3.h,
-				hardware/pci_devices.h,
-				hardware/serialport/directserial.h,
-				hardware/serialport/libserial.h,
-				hardware/serialport/misc_util.h,
-				hardware/serialport/nullmodem.h,
-				hardware/serialport/serialdummy.h,
-				hardware/serialport/softmodem.h,
-				ints/int10.h,
-				ints/xms.h,
 			);
 			target = 65FB48542E6103B20028503E /* Static Library */;
 		};
@@ -223,9 +121,6 @@
 		};
 		65FB48932E6105E40028503E /* include */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				654FCE782E610A6000604D3F /* Exceptions for "include" folder in "Static Library" target */,
-			);
 			path = include;
 			sourceTree = "<group>";
 		};
