@@ -59,14 +59,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "Static Library" target */ = {
+		654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "dosbox_pure_libretro static" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			publicHeaders = (
 				include/libretro.h,
 			);
-			target = 65FB48542E6103B20028503E /* Static Library */;
+			target = 65FB48542E6103B20028503E /* dosbox_pure_libretro static */;
 		};
-		654FCE7A2E610A6000604D3F /* Exceptions for "src" folder in "Static Library" target */ = {
+		654FCE7A2E610A6000604D3F /* Exceptions for "src" folder in "dosbox_pure_libretro static" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				cpu/core_dyn_x86/decoder.h,
@@ -109,7 +109,7 @@
 				cpu/core_normal/support.h,
 				cpu/core_normal/table_ea.h,
 			);
-			target = 65FB48542E6103B20028503E /* Static Library */;
+			target = 65FB48542E6103B20028503E /* dosbox_pure_libretro static */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -127,7 +127,7 @@
 		65FB48A02E6105E40028503E /* libretro-common */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "Static Library" target */,
+				654FCE792E610A6000604D3F /* Exceptions for "libretro-common" folder in "dosbox_pure_libretro static" target */,
 			);
 			path = "libretro-common";
 			sourceTree = "<group>";
@@ -135,7 +135,7 @@
 		65FB49752E6105E40028503E /* src */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				654FCE7A2E610A6000604D3F /* Exceptions for "src" folder in "Static Library" target */,
+				654FCE7A2E610A6000604D3F /* Exceptions for "src" folder in "dosbox_pure_libretro static" target */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -226,9 +226,9 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		65FB48542E6103B20028503E /* Static Library */ = {
+		65FB48542E6103B20028503E /* dosbox_pure_libretro static */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "Static Library" */;
+			buildConfigurationList = 65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "dosbox_pure_libretro static" */;
 			buildPhases = (
 				654FCE772E610A6000604D3F /* Headers */,
 				65FB48512E6103B20028503E /* Sources */,
@@ -244,7 +244,7 @@
 				65FB48A02E6105E40028503E /* libretro-common */,
 				65FB49752E6105E40028503E /* src */,
 			);
-			name = "Static Library";
+			name = "dosbox_pure_libretro static";
 			packageProductDependencies = (
 			);
 			productName = dosbox_pure_libretro;
@@ -282,7 +282,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				65FB48542E6103B20028503E /* Static Library */,
+				65FB48542E6103B20028503E /* dosbox_pure_libretro static */,
 				654FCE7D2E61E25000604D3F /* Static iOS XCFramework */,
 			);
 		};
@@ -297,18 +297,18 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive",
-				"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive",
+				"${SRCROOT}/build/${PROJECT_NAME}-static_ios_device.xcarchive",
+				"${SRCROOT}/build/${PROJECT_NAME}-static_ios_simulator.xcarchive",
 			);
 			name = "Create XCFramework";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"${SRCROOT}/build/${PROJECT_NAME}_ios.xcframework",
+				"${SRCROOT}/build/${PROJECT_NAME}_static_ios.xcframework",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nARCHIVE_DEV=\"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive\"\nARCHIVE_SIM=\"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive\"\nXCFRAMEWORK=\"${SRCROOT}/build/${PROJECT_NAME}_ios.xcframework\"\n\nrm -rf \"${XCFRAMEWORK}\"\n\n# Create XCFramework\nxcodebuild -create-xcframework \\\n -archive \"${ARCHIVE_DEV}\" -library lib${PROJECT_NAME}.a \\\n -archive \"${ARCHIVE_SIM}\" -library lib${PROJECT_NAME}.a \\\n -output \"${XCFRAMEWORK}\"\n";
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nLIB=\"lib${PROJECT_NAME}.a\"\nXCFRAMEWORK=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${XCFRAMEWORK}\"\n\n# Create XCFramework\nxcodebuild -create-xcframework \\\n -archive \"${SCRIPT_INPUT_FILE_0}\" -library ${LIB} \\\n -archive \"${SCRIPT_INPUT_FILE_1}\" -library ${LIB} \\\n -output \"${XCFRAMEWORK}\"\n";
 		};
 		654FCE892E61E5EB00604D3F /* Archive Device Lib */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -328,11 +328,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive",
+				"${SRCROOT}/build/${PROJECT_NAME}-static_ios_device.xcarchive",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"Static Library\"\nARCHIVE_DEV=\"${SRCROOT}/build/${PROJECT_NAME}-ios_device.xcarchive\"\n\nrm -rf \"${ARCHIVE_DEV}\"\n\n# iOS Device\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS\" \\\n -archivePath \"${ARCHIVE_DEV}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"${PROJECT_NAME} static\"\nARCHIVE_DEV=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${ARCHIVE_DEV}\"\n\n# iOS Device\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS\" \\\n -archivePath \"${ARCHIVE_DEV}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
 		};
 		654FCE8A2E61E5EE00604D3F /* Archive Simulator Lib */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -352,11 +352,11 @@
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive",
+				"${SRCROOT}/build/${PROJECT_NAME}-static_ios_simulator.xcarchive",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"Static Library\"\nARCHIVE_SIM=\"${SRCROOT}/build/${PROJECT_NAME}-ios_simulator.xcarchive\"\n\nrm -rf \"${ARCHIVE_SIM}\"\n\n# iOS Simulator\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS Simulator\" \\\n -archivePath \"${ARCHIVE_SIM}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"${PROJECT_NAME} static\"\nARCHIVE_SIM=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${ARCHIVE_SIM}\"\n\n# iOS Simulator\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS Simulator\" \\\n -archivePath \"${ARCHIVE_SIM}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -436,7 +436,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "Static Library" */ = {
+		65FB485F2E6103B20028503E /* Build configuration list for PBXNativeTarget "dosbox_pure_libretro static" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				65FB48602E6103B20028503E /* Debug */,
