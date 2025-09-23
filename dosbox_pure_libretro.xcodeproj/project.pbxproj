@@ -332,7 +332,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"${PROJECT_NAME} static\"\nARCHIVE_DEV=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${ARCHIVE_DEV}\"\n\n# iOS Device\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS\" \\\n -archivePath \"${ARCHIVE_DEV}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"${PROJECT_NAME} static\"\nARCHIVE_DEV=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${ARCHIVE_DEV}\"\n\n# iOS Device\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration ${CONFIGURATION} \\\n -destination \"generic/platform=iOS\" \\\n -archivePath \"${ARCHIVE_DEV}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
 		};
 		654FCE8A2E61E5EE00604D3F /* Archive Simulator Lib */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -356,7 +356,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"${PROJECT_NAME} static\"\nARCHIVE_SIM=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${ARCHIVE_SIM}\"\n\n# iOS Simulator\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration Release \\\n -destination \"generic/platform=iOS Simulator\" \\\n -archivePath \"${ARCHIVE_SIM}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
+			shellScript = "set -e\n\n# PROJECT_NAME=dosbox_pure_libretro\nSCHEME=\"${PROJECT_NAME} static\"\nARCHIVE_SIM=\"${SCRIPT_OUTPUT_FILE_0}\"\n\nrm -rf \"${ARCHIVE_SIM}\"\n\n# iOS Simulator\nxcodebuild archive \\\n -project ${PROJECT_NAME}.xcodeproj \\\n -scheme \"${SCHEME}\" \\\n -configuration ${CONFIGURATION} \\\n -destination \"generic/platform=iOS Simulator\" \\\n -archivePath \"${ARCHIVE_SIM}\" \\\n# -derivedDataPath /tmp/dd_dosbox_ios\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
