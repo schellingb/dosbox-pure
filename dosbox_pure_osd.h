@@ -1731,6 +1731,7 @@ struct DBP_MenuInterceptor : DBP_Interceptor
 struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 {
 	DBP_OSDMode mode;
+	char last_map, default_shown;
 	union { DBP_PureMenuState* main; DBP_OnScreenKeyboardState* osk; DBP_MapperMenuState* mapper; void* _all; } ptr;
 	DBP_MenuMouse mouse;
 
@@ -1742,8 +1743,9 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			case DBPOSD_OSK:      delete ptr.osk; break;
 			case DBPOSD_MAPPER:   delete ptr.mapper; break;
 		}
+		if (in_mode != _DBPOSD_OPEN && in_mode != _DBPOSD_CLOSE) { mode = in_mode; if (!ptr._all) default_shown = 0; }
+		else if (in_mode == _DBPOSD_OPEN && (!default_shown || last_map != dbp_map_osd)) { mode = ((last_map = dbp_map_osd) == 'k' ? DBPOSD_OSK : DBPOSD_MAIN); default_shown = true; }
 		ptr._all = NULL;
-		if (in_mode != _DBPOSD_OPEN && in_mode != _DBPOSD_CLOSE) mode = in_mode;
 		StartIntercept();
 		switch (in_mode == _DBPOSD_CLOSE ? _DBPOSD_CLOSE : mode)
 		{
