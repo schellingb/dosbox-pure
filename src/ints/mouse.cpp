@@ -1304,5 +1304,6 @@ void DBPSerialize_Mouse(DBPArchive& ar)
 			PIC_RemoveEvents(MOUSE_Limit_Events);
 			PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
 		}
+		INT10_SetCurMode(); // done here and not in DBPSerialize_INT10 because this must be called after DBPSerialize_Memory
 	}
 }
