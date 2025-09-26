@@ -349,7 +349,7 @@ struct DBP_Run
 		}
 
 		const Property* bootImgMachine = ((mode == RUN_BOOTIMG) ? control->GetProp("dosbox", "machine") : NULL);
-		if (startup.reboot || dbp_game_running || (from_osd && first_shell->bf && !first_shell->bf->IsAutoexec()) || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue()))
+		if (startup.reboot || dbp_game_running || !control || (from_osd && first_shell->bf && !first_shell->bf->IsAutoexec()) || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue()))
 		{
 			startup.reboot = false;
 			if (bootImgMachine) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());
