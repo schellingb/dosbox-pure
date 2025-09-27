@@ -94,6 +94,9 @@ There are two core options related to this feature:
   installed operating system, this option can be used to switch to a more compatible but slower
   mode. The option can be toggled on and off as needed.
 
+The operating system will detect a NE2000 networking card which will not be able to connect to the real internet.  
+To avoid slow boot times, make sure to configure it to use base address port set to 0x300 and base IRQ set to 10.
+
 It is also possible to create save states while running an installed operating system. This can be used
 to skip the startup sequence or even jump directly to the title screen of a game. Make sure to load the
 same operating system and do not modify the loaded ZIP file in any way otherwise the operating system
@@ -110,7 +113,8 @@ By pressing right multiple times, a number of frames can be specified that will 
 on start. This can be used to skip over loading screens or start-up sequences.  
 If there is only a single executable, the menu will not show and directly run the file.  
 To force the menu to be shown, hold shift on the keyboard or L2 or R2 on
-the gamepad while selecting `Restart` in the core menu.
+the gamepad while selecting `Restart` in the core menu. You can also always
+view the start menu by pressing L on the [On-screen keyboard](#on-screen-keyboard).
 
 ### Automated controller mappings
 When a game is loaded, DOSBox Pure will try to detect the game and apply a controller mapping.  
@@ -128,7 +132,7 @@ The X button is the middle mouse button and L2/R2 can be used to speed up or slo
 There is also the core option `Input > Mouse Sensitivity` to increase/decrease mouse movement speed.
 
 The behavior of a real mouse or touch screen can be controlled by the `Input > Mouse Input Mode` option.
-- Virtual mouse (default) (best used when the frontend [grabs the mouse input](#playing-with-keyboard-and-mouse))
+- Virtual mouse movement (best used when the frontend [grabs the mouse input](#playing-with-keyboard-and-mouse))
 - Direct controlled mouse (not supported by all games)
 - Touchpad mode (drag to move, tap to click, etc., best for touch screens)
 - Off (ignore mouse/touch inputs)
@@ -149,13 +153,13 @@ These can be assigned to any port and the button layout can be freely remapped.
 ### On-screen keyboard
 ![On-Screen Keyboard](images/onscreenkeyboard.png)
 
-By pressing L3 on the gamepad (usually by pushing in the left analog stick) the on-screen keyboard will open.
-The cursor can be controlled with the controller (or mouse or keyboard) and L2/R2 will speed up or slow down
-the move speed.  
-If the cursor is moved above the middle of the screen the keyboard will move to the top.
-The button can be remapped in the controls menu and there is also a core option to disable it entirely.
-
-The L3 button can be changed to a different button with the [Gamepad mapper](#gamepad-mapper).
+By pressing L3 on the gamepad (usually by pushing in the left analog stick) the menu will open.
+Then you can use the L and R buttons to switch to the On-screen keyboard tab. It is also possible to use the 
+`Input > Use L3 Button to Show Menu` option to default to the keyboard when first pressing L3.
+The cursor on the On-screen keyboard can be controlled with the controller (or mouse or keyboard)
+and L2/R2 will speed up or slow down the cursor speed.  
+If the cursor is moved above the middle of the screen, the keyboard will move to the top.
+The L3 button can be changed with the [Gamepad mapper](#gamepad-mapper) and there is also a core option to remove it.
 
 ### Gamepad mapper
 ![Gamepad mapper](images/padmapper.png)
@@ -174,16 +178,16 @@ The mapping is saved to a DOS file named "C:\PADMAP.DBP" which will be stored in
 ### 3dfx Voodoo Emulation
 The core includes emulation of a 3dfx Voodoo PCI card. Compatible DOS games should work out of the box. If running an
 [installed operating system](#installing-an-operating-system) like Windows 95 or Windows 98, you can get the required drivers
-from [this site](https://www.philscomputerlab.com/drivers-for-voodoo.html). Download and launch voodoo_graphics_driver_kit_version_3.01.00.zip
+from [this site](https://3dfxarchive.com/voodoo1.htm). Download "3dfx Voodoo1 V3.01.00" and launch voodoo1-30100.zip
 with the core, then run the operating system and install the driver via the control panel from the files on the D: drive.
 
 There are two core options related to this feature:
 
-- `Video > 3dfx Voodoo Emulation`: By default a 12 MB memory card with two texture mapping units is emulated.
-  It can be changed to a single TMU 4MB card or support can be disabled entirely.
-- `Video > 3dfx Voodoo Performance Settings`: Some options to modify the rendering behavior are available. Setting
-  it to 'low quality' only gives a small performance improvement. Disabling multi-threading is possible for example
-  if your device gets too hot while using it but in general is not recommended.
+- `Video > 3dfx Voodoo Emulation`: By default a compatible 8 MB memory card with one texture mapping units is emulated.
+  It can be changed to an experimental 12 MB dual TMU card, a 4 MB card or support can be disabled entirely.
+- `Video > 3dfx Voodoo Performance Settings`: By default the core will use fast OpenGL hardware acceleration to render 3dfx graphics.
+  This setting can be used to switch to software rendering with a more faithful emulation but at much higher CPU cost.
+- `Video > 3dfx Voodoo OpenGL Scaling`: Use this setting to increase the render resolution of the OpenGL rendering.
 
 ### Multiplayer
 The core emulates an IPX DOS driver and a serial modem (configurable to be a null modem or dial-up modem) as well as a
@@ -210,10 +214,10 @@ This can also be used to add controller rumble support to DOS games.
 The DOSBox Pure core fully supports libretro save states.  
 Make sure to test it in each game before using it. Complex late era DOS games might have problems.  
 Be aware that states saved with different video or cpu settings are not loadable.  
-Save states might not be compatible across different versions of DOSBox Pure.
+Before loading a state, you need to launch the same game that was running while it was saved.
 
 ### Rewind support
-Using the core option `Save States Support`, rewinding can be enabled.  
+If supported by your frontend, using the core option `Save States Support`, rewinding can be enabled.  
 Keep in mind that rewind support comes at a high performance cost.
 
 ### Shared system shells (like Windows 3)
@@ -269,6 +273,7 @@ This is especially useful for CD images in ZIP format which RetroArch refuses to
 ### Force opening the start menu
 If you have assigned an auto start item in the start menu but want to go back to it,
 hold shift on the keyboard or L2 or R2 on the gamepad while selecting `Restart` in the core menu.
+You can also always view the start menu by pressing L on the [On-screen keyboard](#on-screen-keyboard).
 
 ### Mount ZIP as A or D drive
 If you have a ZIP file you want to load as a fake floppy disk or fake CD-ROM, there are multiple options.  
@@ -283,7 +288,7 @@ Some games require a specific label on a floppy or a CD-ROM so DOSBox Pure offer
 to change the label of a mounted disk. For example, `LABEL C: HELLO` changes the label of the C: drive.  
 This label is not saved anywhere and needs to be reapplied on every launch so it's best to add the
 command in a startup batch file.
-You can run the `MOUNT` command to check all mounted disks and their disk label.  
+You can run the `MOUNT` command to check all mounted disks and their disk label.
 
 ### Keyboard layout defaults to US
 The keyboard layout defaults to the US Layout (QWERTY).  
@@ -297,6 +302,7 @@ Save files get re-written to disk a short while after a modification happens in 
 The bigger the save, the less often it will be written out.  
 Up to 1MB of total save data, it will be written out 2 seconds after the last file modification.
 Then gradually until at max 59MB and more, it will be written out 60 seconds after the last file modification.
+Of course upon shut down any yet unsaved changes are written out to disk.
 
 ### Reading large files in ZIPs
 When a DOS games opens a large file and wants to read some data from near the end of the file,
