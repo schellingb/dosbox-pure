@@ -2267,8 +2267,8 @@ static bool check_variables()
 	const char* mem = DBP_Option::Get(DBP_Option::memory_size, &mem_changed);
 	if (dbp_reboot_set64mem) mem = "64";
 	bool mem_use_extended = (atoi(mem) > 0);
-	DBP_Option::Apply(sec_dos, "xms", (mem_use_extended ? "true" : "false"), true, false, mem_changed);
-	DBP_Option::Apply(sec_dos, "ems", (mem_use_extended ? "true" : "false"), true, false, mem_changed);
+	DBP_Option::Apply(sec_dos, "xms", (mem_use_extended ? "true" : "false"), true);
+	DBP_Option::Apply(sec_dos, "ems", (mem_use_extended ? "true" : "false"), true);
 	DBP_Option::Apply(sec_dosbox, "memsize", (mem_use_extended ? mem : "16"), false, true, mem_changed);
 
 	bool audiorate_changed = false;
