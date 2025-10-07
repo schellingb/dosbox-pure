@@ -259,7 +259,7 @@ foundit:
 	var_write(&minfo.Reserved_page,0x1);
 	var_write(&minfo.XCharSize,mblock->cwidth);
 	var_write(&minfo.YCharSize,mblock->cheight);
-	if (!int10.vesa_nolfb) var_write(&minfo.PhysBasePtr,S3_LFB_BASE);
+	if (modeAttributes & 0x80) var_write(&minfo.PhysBasePtr,S3_LFB_BASE);
 
 	MEM_BlockWrite(buf,&minfo,sizeof(MODE_INFO));
 	return VESA_SUCCESS;
@@ -508,11 +508,12 @@ Bit8u VESA_GetDisplayStart(Bit16u & x,Bit16u & y) {
 	IO_Read(0x3da);              // reset attribute flipflop
 	IO_Write(0x3c0,0x13 | 0x20); // panning register, screen on
 	Bit8u panning = IO_Read(0x3c1);
+	if ((CurMode->type == M_TEXT) && (panning > 7)) panning = 0;
 
 	Bitu virtual_screen_width = vga.config.scan_len * pixels_per_offset;
 	Bitu start_pixel = vga.config.display_start * (pixels_per_offset/2) 
 		+ panning / panning_factor;
-	
+
 	y = start_pixel / virtual_screen_width;
 	x = start_pixel % virtual_screen_width;
 	return VESA_SUCCESS;

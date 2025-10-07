@@ -798,28 +798,29 @@ bool INT10_SetVideoMode(Bit16u mode) {
 	/* Program Sequencer */
 	Bit8u seq_data[SEQ_REGS];
 	memset(seq_data,0,SEQ_REGS);
-	seq_data[1]|=0x01;	//8 dot fonts by default
-	if (CurMode->special & _EGA_HALF_CLOCK) seq_data[1]|=0x08; //Check for half clock
-	if ((machine==MCH_EGA) && (CurMode->special & _EGA_HALF_CLOCK)) seq_data[1]|=0x02;
-	seq_data[4]|=0x02;	//More than 64kb
+	seq_data[1]|=0x01;					//8-dot fonts by default
+	if (CurMode->special & _EGA_HALF_CLOCK) {
+		seq_data[1]|=0x08;				//Double width
+		if (machine==MCH_EGA) seq_data[1]|=0x02;
+	}
+	seq_data[4]|=0x02;					//More than 64kb
 	switch (CurMode->type) {
 	case M_TEXT:
 		if (CurMode->cwidth==9) seq_data[1] &= ~1;
 		seq_data[2]|=0x3;				//Enable plane 0 and 1
-		seq_data[4]|=0x01;				//Alpanumeric
-		if (IS_VGA_ARCH) seq_data[4]|=0x04;				//odd/even enabled
+		seq_data[4]|=0x01;				//Alphanumeric
 		break;
 	case M_CGA2:
-		seq_data[2]|=0xf;				//Enable plane 0
-		if (machine==MCH_EGA) seq_data[4]|=0x04;		//odd/even enabled
+		seq_data[2]|=0x1;				//Enable plane 0
+		seq_data[4]|=0x04;				//odd/even disabled
 		break;
 	case M_CGA4:
-		if (machine==MCH_EGA) seq_data[2]|=0x03;		//Enable plane 0 and 1
+		seq_data[2]|=0x03;				//Enable plane 0 and 1
 		break;
 	case M_LIN4:
 	case M_EGA:
 		seq_data[2]|=0xf;				//Enable all planes for writing
-		if (machine==MCH_EGA) seq_data[4]|=0x04;		//odd/even enabled
+		seq_data[4]|=0x04;				//odd/even disabled
 		break;
 	case M_LIN8:						//Seems to have the same reg layout from testing
 	case M_LIN15:
@@ -827,7 +828,7 @@ bool INT10_SetVideoMode(Bit16u mode) {
 	case M_LIN32:
 	case M_VGA:
 		seq_data[2]|=0xf;				//Enable all planes for writing
-		seq_data[4]|=0xc;				//Graphics - odd/even - Chained
+		seq_data[4]|=0xc;				//Graphics - odd/even disabled - Chained
 		break;
 	}
 	for (Bit8u ct=0;ct<SEQ_REGS;ct++) {
