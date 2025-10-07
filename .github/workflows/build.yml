@@ -137,8 +137,8 @@ jobs:
         name: dosbox_pure_linux_arm64
         path: dosbox_pure_libretro.so
 
-  build-macos:
-    runs-on: macos-latest
+  build-macos-x64:
+    runs-on: macos-13
     steps:
     - uses: actions/checkout@v4
     - if: ${{ github.event.inputs.versionstring == '' }}
@@ -152,7 +152,25 @@ jobs:
         make -j4
     - uses: actions/upload-artifact@v4
       with:
-        name: dosbox_pure_macos
+        name: dosbox_pure_macos_x64
+        path: dosbox_pure_libretro.dylib
+
+  build-macos-arm:
+    runs-on: macos-14
+    steps:
+    - uses: actions/checkout@v4
+    - if: ${{ github.event.inputs.versionstring == '' }}
+      run: perl -i -pe "s/\"(.*)\"/\"\1-${GITHUB_SHA::7}\"/g" dosbox_pure_ver.h
+    - if: ${{ github.event.inputs.versionstring != '' }}
+      run: perl -i -pe "s/\".*\"/\"${{ github.event.inputs.versionstring }}\"/g" dosbox_pure_ver.h
+    - run: echo "::add-matcher::.github/workflows/gcc-problem-matcher.json"
+    - name: Build
+      run: |
+        cat dosbox_pure_ver.h
+        make -j4
+    - uses: actions/upload-artifact@v4
+      with:
+        name: dosbox_pure_macos_arm
         path: dosbox_pure_libretro.dylib
 
   build-android:
