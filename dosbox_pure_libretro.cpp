@@ -1278,7 +1278,7 @@ void DBP_Crash(const char* msg)
 	dbp_crash_message = msg;
 	if (!render.src.fps) { render.src = { 640, 0, 480, 32, 0, 0, 4.0/3, 70 }; } // crash before first frame
 	DBP_Buffer& buf = dbp_buffers[buffer_active];
-	if (!buf.video) { buf = { (Bit32u*)calloc(640*480, 4), 640, 480, 640*480*4, 0, 0, 0, 4.0/3 }; } // crash before first draw
+	if (!buf.video) { buf = { (Bit32u*)calloc(640*480, 4), 640, 480, 640*480*4, 0, 0, 0, 4.0f/3 }; } // crash before first draw
 	DBP_DOSBOX_ForceShutdown();
 }
 
