@@ -60,7 +60,7 @@ static retro_system_av_info av_info;
 static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_REBOOT, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
 static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
-static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_wasloaded;
+static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_wasloaded, dbp_skip_c_mount;
 static signed char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
 static float dbp_auto_target, dbp_last_fastforward;
@@ -2454,6 +2454,118 @@ static void init_dosbox_load_dosboxconf(const std::string& cfg, Section*& ref_au
 	}
 }
 
+static void init_dosbox_parse_drives()
+{
+	DBP_PadMapping::Load(); // if loaded don't show auto map notification
+
+	struct Local { static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
+	{
+		if (is_dir) return;
+		const char* lastslash = strrchr(path, '\\'), *fname = (lastslash ? lastslash + 1 : path);
+
+		// Check mountable disk images on drive C
+		const char* fext = (data == ('C'-'A') ? strrchr(fname, '.') : NULL);
+		if (fext++)
+		{
+			bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
+			if (isFS && !strncmp(fext, "IM", 2))
+			{
+				DOS_File *df;
+				if (size < 163840 || ((size % 512) && (size % 2352))) isFS = false; // validate generic image (disk or cd)
+				else if (size < 2949120) // validate floppy images
+				{
+					for (Bit32u i = 0, dgsz;; i++) if ((dgsz = DiskGeometryList[i].ksize * 1024) == size || dgsz + 1024 == size) goto img_is_fs;
+					isFS = false;
+					img_is_fs:;
+				}
+				else if (!Drives[data]->FileOpen(&df, (char*)path, OPEN_READ)) { DBP_ASSERT(0); isFS = false; }
+				else // validate mountable hard disk / cd
+				{
+					df->AddRef();
+					imageDisk* id = new imageDisk(df, "", (size / 1024), true);
+					if (!id->Set_GeometryForHardDisk()) isFS = DBP_IsDiskCDISO(id);
+					delete id; // closes and deletes df
+				}
+			}
+			if (isFS && !strcmp(fext, "INS"))
+			{
+				// Make sure this is an actual CUE file with an INS extension
+				Bit8u cmd[6];
+				if (size >= 16384 || DriveReadFileBytes(Drives[data], path, cmd, (Bit16u)sizeof(cmd)) != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) isFS = false;
+			}
+			if (isFS)
+			{
+				std::string entry;
+				entry.reserve(4 + (fext - path) + 4);
+				(entry += "$C:\\") += path; // the '$' is for FindAndOpenDosFile
+				DBP_AppendImage(entry.c_str(), true);
+			}
+		}
+
+		if (dbp_auto_mapping) return;
+		Bit32u hash = 0x811c9dc5;
+		for (const char* p = fname; *p; p++)
+			hash = ((hash * 0x01000193) ^ (Bit8u)*p);
+		hash ^= (size<<3);
+
+		for (Bit32u idx = hash;; idx++)
+		{
+			if (!map_keys[idx %= MAP_TABLE_SIZE]) break;
+			if (map_keys[idx] != hash) continue;
+
+			static std::vector<Bit8u> static_buf;
+			static std::string static_title;
+
+			const MAPBucket& idents_bk = map_buckets[idx % MAP_BUCKETS];
+
+			static_buf.resize(idents_bk.idents_size_uncompressed);
+			Bit8u* buf = &static_buf[0];
+			zipDrive::Uncompress(idents_bk.idents_compressed, idents_bk.idents_size_compressed, buf, idents_bk.idents_size_uncompressed);
+
+			const Bit8u* ident = buf + (idx / MAP_BUCKETS) * 5;
+			const MAPBucket& mappings_bk = map_buckets[ident[0] % MAP_BUCKETS];
+			const Bit16u map_offset = (ident[1]<<8) + ident[2];
+			const char* map_title = (char*)buf + (MAP_TABLE_SIZE/MAP_BUCKETS) * 5 + (ident[3]<<8) + ident[4];
+
+			dbp_content_year = (Bit16s)(1970 + (Bit8u)map_title[0]);
+			if (dbp_auto_mapping_mode == 'f')
+				return;
+
+			static_title = "Game: ";
+			static_title += map_title + 1;
+			dbp_auto_mapping_title = static_title.c_str();
+
+			static_buf.resize(mappings_bk.mappings_size_uncompressed);
+			buf = &static_buf[0];
+			zipDrive::Uncompress(mappings_bk.mappings_compressed, mappings_bk.mappings_size_compressed, buf, mappings_bk.mappings_size_uncompressed);
+
+			dbp_auto_mapping = buf + map_offset;
+			dbp_auto_mapping_names = (char*)buf + mappings_bk.mappings_action_offset;
+
+			if (dbp_auto_mapping_mode == 'n' && !dbp_custom_mapping.size()) //notify
+				retro_notify(0, RETRO_LOG_INFO, "Detected Automatic GamePad mappings for %s", static_title.c_str());
+			return;
+		}
+	}};
+
+	for (int i = 0; i != ('Z'-'A'); i++)
+		if (Drives[i])
+			DriveFileIterator(Drives[i], Local::FileIter, i);
+
+	for (size_t i = 0; i != dbp_images.size(); i++)
+	{
+		// Filter image files that have the same name as a cue file
+		const char *imgpath = dbp_images[i].path.c_str(), *imgext = imgpath + dbp_images[i].path.length() - 3;
+		if (strcmp(imgext, "CUE") && strcmp(imgext, "INS")) continue;
+		for (size_t j = dbp_images.size(); j--;)
+		{
+			if (i == j || memcmp(dbp_images[j].path.c_str(), imgpath, imgext - imgpath)) continue;
+			dbp_images.erase(dbp_images.begin() + j);
+			if (i > j) i--;
+		}
+	}
+}
+
 static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::string* dbconf = NULL)
 {
 	if (reinit)
@@ -2492,12 +2604,13 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 		dbp_content_name = std::string(path_file, path_namelen);
 	}
 	const int path_extlen = (path ? (int)((path_fragment ? path_fragment : path + dbp_content_path.length()) - path_ext) : 0);
-
-	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
-	bool newcontent = !dbp_wasloaded, skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 4)), force_puremenu = (dbp_biosreboot || forcemenu);
+	const bool newcontent = !dbp_wasloaded, force_puremenu = (dbp_biosreboot || forcemenu);
 	if (newcontent) dbp_biosreboot = false; // ignore this when switching content
 	if (newcontent && !reinit) dbp_auto_mapping = NULL; // re-acquire when switching content
-	if (skip_c_mount && !dbconf)
+
+	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
+	dbp_skip_c_mount = (path_extlen == 4 && !strncasecmp(path_ext, "conf", 4));
+	if (dbp_skip_c_mount && !dbconf)
 	{
 		std::string confcontent;
 		if (ReadAndClose(rawFile::TryOpen(path), confcontent))
@@ -2507,7 +2620,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 	control = new Config();
 	DOSBOX_Init();
 	Section* autoexec = control->GetSection("autoexec");
-	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec, force_puremenu, skip_c_mount);
+	if (dbconf) init_dosbox_load_dosboxconf(*dbconf, autoexec, force_puremenu, dbp_skip_c_mount);
 	DBP_Run::PreInit(newcontent && !reinit);
 	check_variables();
 	dbp_boot_time = time_cb();
@@ -2517,7 +2630,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 	PROGRAMS_MakeFile("REMOUNT.COM", DBP_PureRemountProgram);
 	PROGRAMS_MakeFile("XCOPY.COM", DBP_PureXCopyProgram);
 
-	if (!skip_c_mount)
+	if (!dbp_skip_c_mount)
 	{
 		dbp_legacy_save = false;
 		std::string save_file = DBP_GetSaveFile(SFT_GAMESAVE); // this can set dbp_legacy_save to true, needed by DBP_Mount
@@ -2545,117 +2658,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 	// Detect content year and auto mapping
 	if (newcontent && !reinit)
 	{
-		DBP_PadMapping::Load(); // if loaded don't show auto map notification
-
-		struct Local { static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u, Bit16u, Bit8u, Bitu data)
-		{
-			if (is_dir) return;
-			const char* lastslash = strrchr(path, '\\'), *fname = (lastslash ? lastslash + 1 : path);
-
-			// Check mountable disk images on drive C
-			const char* fext = (data == ('C'-'A') ? strrchr(fname, '.') : NULL);
-			if (fext++)
-			{
-				bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
-				if (isFS && !strncmp(fext, "IM", 2))
-				{
-					DOS_File *df;
-					if (size < 163840 || ((size % 512) && (size % 2352))) isFS = false; // validate generic image (disk or cd)
-					else if (size < 2949120) // validate floppy images
-					{
-						for (Bit32u i = 0, dgsz;; i++) if ((dgsz = DiskGeometryList[i].ksize * 1024) == size || dgsz + 1024 == size) goto img_is_fs;
-						isFS = false;
-						img_is_fs:;
-					}
-					else if (!Drives[data]->FileOpen(&df, (char*)path, OPEN_READ)) { DBP_ASSERT(0); isFS = false; }
-					else // validate mountable hard disk / cd
-					{
-						df->AddRef();
-						imageDisk* id = new imageDisk(df, "", (size / 1024), true);
-						if (!id->Set_GeometryForHardDisk()) isFS = DBP_IsDiskCDISO(id);
-						delete id; // closes and deletes df
-					}
-				}
-				if (isFS && !strcmp(fext, "INS"))
-				{
-					// Make sure this is an actual CUE file with an INS extension
-					Bit8u cmd[6];
-					if (size >= 16384 || DriveReadFileBytes(Drives[data], path, cmd, (Bit16u)sizeof(cmd)) != sizeof(cmd) || memcmp(cmd, "FILE \"", sizeof(cmd))) isFS = false;
-				}
-				if (isFS)
-				{
-					std::string entry;
-					entry.reserve(4 + (fext - path) + 4);
-					(entry += "$C:\\") += path; // the '$' is for FindAndOpenDosFile
-					DBP_AppendImage(entry.c_str(), true);
-				}
-			}
-
-			if (dbp_auto_mapping) return;
-			Bit32u hash = 0x811c9dc5;
-			for (const char* p = fname; *p; p++)
-				hash = ((hash * 0x01000193) ^ (Bit8u)*p);
-			hash ^= (size<<3);
-
-			for (Bit32u idx = hash;; idx++)
-			{
-				if (!map_keys[idx %= MAP_TABLE_SIZE]) break;
-				if (map_keys[idx] != hash) continue;
-
-				static std::vector<Bit8u> static_buf;
-				static std::string static_title;
-
-				const MAPBucket& idents_bk = map_buckets[idx % MAP_BUCKETS];
-
-				static_buf.resize(idents_bk.idents_size_uncompressed);
-				Bit8u* buf = &static_buf[0];
-				zipDrive::Uncompress(idents_bk.idents_compressed, idents_bk.idents_size_compressed, buf, idents_bk.idents_size_uncompressed);
-
-				const Bit8u* ident = buf + (idx / MAP_BUCKETS) * 5;
-				const MAPBucket& mappings_bk = map_buckets[ident[0] % MAP_BUCKETS];
-				const Bit16u map_offset = (ident[1]<<8) + ident[2];
-				const char* map_title = (char*)buf + (MAP_TABLE_SIZE/MAP_BUCKETS) * 5 + (ident[3]<<8) + ident[4];
-
-				dbp_content_year = (Bit16s)(1970 + (Bit8u)map_title[0]);
-				if (dbp_auto_mapping_mode == 'f')
-					return;
-
-				static_title = "Game: ";
-				static_title += map_title + 1;
-				dbp_auto_mapping_title = static_title.c_str();
-
-				static_buf.resize(mappings_bk.mappings_size_uncompressed);
-				buf = &static_buf[0];
-				zipDrive::Uncompress(mappings_bk.mappings_compressed, mappings_bk.mappings_size_compressed, buf, mappings_bk.mappings_size_uncompressed);
-
-				dbp_auto_mapping = buf + map_offset;
-				dbp_auto_mapping_names = (char*)buf + mappings_bk.mappings_action_offset;
-
-				if (dbp_auto_mapping_mode == 'n' && !dbp_custom_mapping.size()) //notify
-					retro_notify(0, RETRO_LOG_INFO, "Detected Automatic GamePad mappings for %s", static_title.c_str());
-				return;
-			}
-		}};
-
-		for (int i = 0; i != ('Z'-'A'); i++)
-			if (Drives[i])
-				DriveFileIterator(Drives[i], Local::FileIter, i);
-
-		if (dbp_images.size())
-		{
-			for (size_t i = 0; i != dbp_images.size(); i++)
-			{
-				// Filter image files that have the same name as a cue file
-				const char *imgpath = dbp_images[i].path.c_str(), *imgext = imgpath + dbp_images[i].path.length() - 3;
-				if (strcmp(imgext, "CUE") && strcmp(imgext, "INS")) continue;
-				for (size_t j = dbp_images.size(); j--;)
-				{
-					if (i == j || memcmp(dbp_images[j].path.c_str(), imgpath, imgext - imgpath)) continue;
-					dbp_images.erase(dbp_images.begin() + j);
-					if (i > j) i--;
-				}
-			}
-		}
+		init_dosbox_parse_drives();
 
 		if (!dbp_content_year && path)
 		{
@@ -2674,7 +2677,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 			return init_dosbox(forcemenu, true, dbconf);
 	}
 
-	if (DOS_Drive* drive_c = Drives['C'-'A']) // guaranteed not NULL unless skip_c_mount
+	if (DOS_Drive* drive_c = Drives['C'-'A']) // guaranteed not NULL unless dbp_skip_c_mount
 	{
 		if (dbp_conf_loading != 'f' && !reinit && !dbconf)
 		{
@@ -2713,7 +2716,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 
 	// Always switch to the C: drive directly (for puremenu, to run DOSBOX.BAT and to run the autoexec of the dosbox conf)
 	// For DBP we modified init_line to always run Z:\AUTOEXEC.BAT and not just any AUTOEXEC.BAT of the current drive/directory
-	if (DOS_SetDrive('C'-'A') && autoexec) // SetDrive will fail if skip_c_mount
+	if (DOS_SetDrive('C'-'A') && autoexec) // SetDrive will fail if dbp_skip_c_mount
 	{
 		bool auto_mount = true;
 		autoexec->ExecuteDestroy();
@@ -3468,8 +3471,12 @@ void retro_run(void)
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size())));
 		const char* midiarg, *midierr = DBP_MIDI_StartupError(control->GetSection("midi"), midiarg);
 		if (midierr) retro_notify(0, RETRO_LOG_ERROR, midierr, midiarg);
-		if (dbp_state == DBPSTATE_FIRST_FRAME)
-			dbp_state = DBPSTATE_RUNNING;
+		if (dbp_state == DBPSTATE_FIRST_FRAME) dbp_state = DBPSTATE_RUNNING;
+		if (dbp_skip_c_mount)
+		{
+			init_dosbox_parse_drives(); // parse things mounted by autoexec of .conf
+			if (dbp_auto_mapping || dbp_custom_mapping.size()) DBP_PadMapping::SetInputDescriptors(true); // refresh if now loaded
+		}
 	}
 
 	bool skip_emulate = (fpsboost > 1 && (((fpsboost_count++)%fpsboost)!=0)) || DBP_NeedFrameSkip(false);
