@@ -1119,7 +1119,7 @@ static INLINE INT64 fast_reciplog(INT64 value, INT32 *log2)
 	if (value & LONGTYPE(0xffff00000000))
 	{
 		temp = (UINT32)(value >> 16);
-		exp -= 16;
+		exp = -16;
 	}
 	else
 		temp = (UINT32)value;
@@ -2973,12 +2973,12 @@ template <typename TVal> struct GrowArray
 {
 	Bit32u num, cap;
 	TVal* data;
-	INLINE GrowArray() { memset(this, 0, sizeof(*this)); }
+	INLINE GrowArray() : num(0), cap(0), data(NULL) { }
 	INLINE ~GrowArray() { free(data); }
 	INLINE TVal& AddOne() { if ((++num) > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data[num - 1]; }
 	INLINE TVal* Add(UINT32 n) { num += n; while (num > cap) data = (TVal*)realloc(data, (cap = (cap < 16 ? 16 : cap * 2)) * sizeof(TVal)); return data + num - n; }
 	INLINE void Reset() { num = 0; }
-	INLINE void Free() { free(data); memset(this, 0, sizeof(*this)); }
+	INLINE void Free() { free(data); num = cap = 0; data = NULL; }
 	INLINE TVal* begin() { return data; }
 	INLINE TVal* end() { return data + num; }
 };

@@ -2292,6 +2292,7 @@ static bool check_variables()
 	// Emulation options
 	const char* forcefps = DBP_Option::Get(DBP_Option::forcefps);
 	dbp_forcefps = (Bit16s)(forcefps[0] == 'f' ? 0 : forcefps[0] == 't' ? 60 : atoi(forcefps));
+	if (dbp_forcefps < 0) dbp_forcefps = 0;
 
 	switch (DBP_Option::Get(DBP_Option::perfstats)[0])
 	{
@@ -2314,14 +2315,14 @@ static bool check_variables()
 	bool cycles_numeric = (cycles[0] >= '0' && cycles[0] <= '9');
 	int cycles_max = (cycles_numeric ? 0 : atoi(DBP_Option::Get(DBP_Option::cycles_max, &cycles_changed)));
 	DBP_Option::SetDisplay(DBP_Option::cycles_max, !cycles_numeric);
-	DBP_Option::SetDisplay(DBP_Option::cycles_scale, cycles_numeric || cycles_max);
+	DBP_Option::SetDisplay(DBP_Option::cycles_scale, cycles_numeric || cycles_max > 0);
 	DBP_Option::SetDisplay(DBP_Option::cycle_limit, !cycles_numeric);
 	if (cycles_numeric)
 	{
 		snprintf(buf, sizeof(buf), "%d", (int)(atoi(cycles) * (float)atof(DBP_Option::Get(DBP_Option::cycles_scale, &cycles_changed)) + .499));
 		cycles = buf;
 	}
-	else if (cycles_max)
+	else if (cycles_max > 0)
 	{
 		snprintf(buf, sizeof(buf), "%s limit %d", cycles, (int)(cycles_max * (float)atof(DBP_Option::Get(DBP_Option::cycles_scale, &cycles_changed)) + .499));
 		cycles = buf;

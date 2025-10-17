@@ -207,9 +207,15 @@ bool Value::set_int(string const &in) {
 }
 bool Value::set_double(string const &in) {
 	istringstream input(in);
+#ifdef C_DBP_LIBRETRO // fix infinity compile warning with Clang
+	double result = 0;
+	input >> result;
+	if(input.fail()) return false;
+#else
 	double result = std::numeric_limits<double>::infinity();
 	input >> result;
 	if(result == std::numeric_limits<double>::infinity()) return false;
+#endif
 	_double = result;
 	return true;
 }

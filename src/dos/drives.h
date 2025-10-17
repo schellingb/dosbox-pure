@@ -507,10 +507,10 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 
 template <typename TVal> struct BaseHashMap
 {
-	INLINE BaseHashMap() { memset(this, 0, sizeof(*this)); }
+	INLINE BaseHashMap() : len(0), maxlen(0), keys(NULL), vals(NULL) { }
 	INLINE ~BaseHashMap() { free(keys); free(vals); }
 
-	INLINE void Free() { this->~BaseHashMap(); memset(this, 0, sizeof(*this)); }
+	INLINE void Free() { this->~BaseHashMap(); len = maxlen = 0; keys = NULL; vals = NULL; }
 	INLINE void Clear() { if (maxlen) memset(keys, len = 0, (maxlen + 1) * sizeof(Bit32u)); }
 
 	INLINE Bit32u Len() const { return len; }
