@@ -1,5 +1,3 @@
-// Automatically generated from the Keyb2Joypad Project (by Jemy Murphy and bigjim)
-
 #include "include/config.h"
 
 struct MAPBucket
