@@ -20,7 +20,7 @@
 #define SEQ_MIDIPUTC    5
 
 #if defined(__GNUC__)
-#pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Wunused-result"
 #endif
 
 class MidiHandler_oss: public MidiHandler {
