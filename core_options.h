@@ -28,7 +28,11 @@ namespace DBP_OptionCat
 
 static retro_core_option_v2_category option_cats[] =
 {
+	#ifndef DBP_STANDALONE
 	{ DBP_OptionCat::General,     DBP_OptionCat::General,     "General settings (save states, start menu, fixed FPS)." },
+	#else
+	{ DBP_OptionCat::General,     DBP_OptionCat::General,     "General settings (hotkeys, start menu, fixed FPS)." },
+	#endif
 	{ DBP_OptionCat::Input,       DBP_OptionCat::Input,       "Keyboard, mouse and joystick settings." },
 	{ DBP_OptionCat::Performance, DBP_OptionCat::Performance, "Adjust the performance of the emulated CPU." },
 	{ DBP_OptionCat::Video,       DBP_OptionCat::Video,       "Settings for the emulated graphics card and aspect ratio." },
@@ -41,9 +45,20 @@ namespace DBP_Option
 {
 	enum Index
 	{
+		#ifdef DBP_STANDALONE
+		// Interface
+		_interface_hotkeymod,
+		_interface_speedtoggle,
+		_interface_fastrate,
+		_interface_slowrate,
+		_interface_systemhotkeys,
+		_interface_middlemouse,
+		#endif
 		// General
 		forcefps,
+		#ifndef DBP_STANDALONE
 		savestate,
+		#endif
 		strict_mode,
 		conf,
 		menu_time,
@@ -75,6 +90,15 @@ namespace DBP_Option
 		voodoo_perf,
 		voodoo_scale,
 		voodoo_gamma,
+		#ifdef DBP_STANDALONE
+		interface_scaling,
+		interface_crtfilter,
+		interface_crtscanline,
+		interface_crtblur,
+		interface_crtmask,
+		interface_crtcurvature,
+		interface_crtcorner,
+		#endif
 		aspect_correction,
 		overscan,
 		// System
@@ -86,7 +110,11 @@ namespace DBP_Option
 		bootos_dfreespace,
 		bootos_forcenormal,
 		// Audio
+		#ifndef DBP_STANDALONE
 		audiorate,
+		#else
+		_interface_audiolatency,
+		#endif
 		sblaster_conf,
 		midi,
 		sblaster_type,
@@ -108,6 +136,90 @@ namespace DBP_Option
 static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 {
 	// General
+	#ifdef DBP_STANDALONE
+	{
+		"interface_hotkeymod",
+		"Hotkey Modifier", NULL,
+		"Set which modifier keys need to be held to use hotkeys." "\n"
+			"   F1  - Pause/Resume (F12 to step a frame while paused)" "\n"
+			"   F2  - Slow Motion (toggle/while holding)" "\n"
+			"   F3  - Fast Forward (toggle/while holding)" "\n"
+			"   F5  - Quick Save" "\n"
+			"   F7  - Full Screen/Window" "\n"
+			"   F9  - Quick Load" "\n"
+			"   F11 - Lock Mouse" "\n"
+			"   F12 - Toggle On-Screen Menu", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "1", "CTRL" },
+			{ "2", "ALT" },
+			{ "4", "SHIFT" },
+			{ "3", "CTRL+ALT" },
+			{ "5", "CTRL+SHIFT" },
+			{ "6", "ALT+SHIFT" },
+			{ "7", "CTRL+ALT+SHIFT" },
+			{ "8", "WIN" },
+			{ "16", "MENU" },
+			{ "0", "None" },
+		},
+		"1"
+	},
+	{
+		"interface_speedtoggle",
+		"Fast Forward/Slow Motion Mode", NULL,
+		"Set if fast forward and slow motion is a toggle or hold.", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "toggle", "Toggle" },
+			{ "hold", "Hold" },
+		},
+		"toggle"
+	},
+	{
+		"interface_fastrate",
+		"Fast Forward Limit", NULL,
+		"Set the limit of fast forwarding.", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "1.1" , "110%" }, { "1.2" , "120%" }, { "1.3" , "130%" }, { "1.5" , "150%" }, { "1.75" , "175%" }, { "2" , "200%" }, { "2.5" , "250%" }, { "3" , "300%" },
+			{ "4" , "400%" }, { "5" , "500%" }, { "6" , "600%" }, { "7" , "700%" }, { "8" , "800%" }, { "9" , "900%" }, { "10" , "1000%" }, { "0" , "As fast as possible" }, 
+		},
+		"5"
+	},
+	{
+		"interface_slowrate",
+		"Slow Motion Rate", NULL,
+		"Set the speed while slow motion is active.", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "0.1", "10%" }, { "0.2", "20%" }, { "0.3", "30%" }, { "0.4", "40%" }, { "0.5", "50%" }, { "0.6", "60%" }, 
+			{ "0.7", "70%" }, { "0.75", "75%" }, { "0.8", "80%" }, { "0.85", "85%" }, { "0.9", "90%" }, { "0.95", "95%" },
+		},
+		"0.3"
+	},
+	{
+		"interface_systemhotkeys",
+		"Always Enable System Hotkeys", NULL,
+		"Set if ALT+F4 (Quit) and ALT+Enter (Full Screen) are handled even while a game is running.", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "false", "Off" },
+			{ "true", "On" },
+		},
+		"true"
+	},
+	{
+		"interface_middlemouse",
+		"Middle Mouse Button Open Menu", NULL,
+		"If enabled the middle mouse button will open/close the On-Screen Menu.", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "false", "Off" },
+			{ "true", "On" },
+		},
+		"false"
+	},
+	#endif
 	{
 		"dosbox_pure_force60fps", // legacy name
 		"Force Output FPS", NULL,
@@ -132,6 +244,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		},
 		"false"
 	},
+	#ifndef DBP_STANDALONE
 	{
 		"dosbox_pure_savestate",
 		"Save States Support", NULL,
@@ -146,6 +259,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		},
 		"on"
 	},
+	#endif
 	{
 		"dosbox_pure_strict_mode",
 		"Advanced > Use Strict Mode", NULL,
@@ -546,14 +660,22 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	{
 		"dosbox_pure_voodoo_perf",
 		"3dfx Voodoo Performance", NULL,
+		#ifndef DBP_STANDALONE
 		"Options to tweak the behavior of the 3dfx Voodoo emulation." "\n"
 		"Switching to OpenGL requires a restart." "\n"
 		"If OpenGL is available, host-side 3D acceleration is used which can make 3D rendering much faster.\n"
 		"Auto will use OpenGL if it is the active video driver in the frontend.", NULL,
+		#else
+		"Options to tweak the behavior of the 3dfx Voodoo emulation.", NULL,
+		#endif
 		DBP_OptionCat::Video,
 		{
+			#ifndef DBP_STANDALONE
 			{ "auto", "Auto (default)" },
 			{ "4", "Hardware OpenGL" },
+			#else
+			{ "auto", "Hardware OpenGL" },
+			#endif
 			{ "1", "Software Multi Threaded" },
 			{ "3", "Software Multi Threaded, low quality" },
 			{ "2", "Software Single Threaded, low quality" },
@@ -584,6 +706,109 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		},
 		"-2",
 	},
+	#ifdef DBP_STANDALONE
+	{
+		"interface_scaling",
+		"Scaling", NULL,
+		"Choose how to scale the game display to the window/fullscreen resolution. Integer scaling will enforce all pixels to be the same size but may add a border.", NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "default", "Sharp Scaling (default)" },
+			{ "nearest", "Simple Scaling (nearest neighbor)" },
+			{ "bilinear", "Bilinear Scaling" },
+			{ "integer", "Integer Scaling" },
+		},
+		"default"
+	},
+	{
+		"interface_crtfilter",
+		"CRT Filter", NULL,
+		"Enable CRT filter effect on displayed screen (works best on high resolution displays and without integer scaling).", NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "false", "Off" },
+			{ "1", "Only Scanlines" },
+			{ "2", "TV style phosphors" },
+			{ "3", "Aperture-grille phosphors" },
+			{ "4", "Stretched VGA style phosphors" },
+			{ "5", "VGA style phosphors" },
+		},
+		"false"
+	},
+	{
+		"interface_crtscanline",
+		"CRT Filter Scanline Intensity", NULL,
+		NULL, NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "0", "No scanline gaps" },
+			{ "1", "Weaker gaps" },
+			{ "2", "Weak gaps" },
+			{ "3", "Normal gaps" },
+			{ "4", "Strong gaps" },
+			{ "5", "Stronger gaps" },
+			{ "8", "Strongest gaps" },
+		},
+		"2"
+	},
+	{
+		"interface_crtblur",
+		"CRT Filter Blur/Sharpness", NULL,
+		NULL, NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "0", "Blurry" },
+			{ "1", "Smooth" },
+			{ "2", "Default" },
+			{ "3", "Pixely" },
+			{ "4", "Sharper" },
+			{ "7", "Sharpest" },
+		},
+		"2"
+	},
+	{
+		"interface_crtmask",
+		"CRT Filter Phosphor Mask Strength", NULL,
+		NULL, NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "0", "Disabled" },
+			{ "1", "Weak" },
+			{ "2", "Default" },
+			{ "3", "Strong" },
+			{ "4", "Very Strong" },
+		},
+		"2"
+	},
+	{
+		"interface_crtcurvature",
+		"CRT Filter Curvature", NULL,
+		NULL, NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "0", "Disabled" },
+			{ "1", "Weak" },
+			{ "2", "Default" },
+			{ "3", "Strong" },
+			{ "4", "Very Strong" },
+		},
+		"2"
+	},
+	{
+		"interface_crtcorner",
+		"CRT Filter Rounded Corner", NULL,
+		NULL, NULL,
+		DBP_OptionCat::Video,
+		{
+			{ "0", "Disabled" },
+			{ "1", "Weak" },
+			{ "2", "Default" },
+			{ "3", "Strong" },
+			{ "4", "Very Strong" },
+		},
+		"2"
+	},
+	#endif
 	{
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
@@ -719,6 +944,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	},
 
 	// Audio
+	#ifndef DBP_STANDALONE
 	{
 		"dosbox_pure_audiorate",
 		"Audio Sample Rate (restart required)", NULL,
@@ -739,6 +965,19 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		},
 		DBP_DEFAULT_SAMPLERATE_STRING
 	},
+	#else
+	{
+		"interface_audiolatency",
+		"Audio Latency", NULL,
+		"If set too low, audio dropouts can occur. Value is for internal processing and the actually perceived latency will be higher.", NULL,
+		DBP_OptionCat::Audio,
+		{
+			{ "10", "10 ms" }, { "15", "15 ms" }, { "20", "20 ms" }, { "25", "25 ms" }, { "30", "30 ms" }, { "35", "35 ms" }, { "40", "40 ms" }, { "45", "45 ms" }, { "50", "50 ms" },
+			{ "55", "55 ms" }, { "60", "60 ms" }, { "65", "65 ms" }, { "70", "70 ms" }, { "75", "75 ms" }, { "80", "80 ms" }, { "85", "85 ms" }, { "90", "90 ms" }, { "95", "95 ms" }, { "100", "100 ms" },
+		},
+		"25"
+	},
+	#endif
 	{
 		"dosbox_pure_sblaster_conf",
 		"SoundBlaster Settings", NULL,
@@ -763,8 +1002,12 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"dosbox_pure_midi",
 		"MIDI Output", NULL,
 		"Select the .SF2 SoundFont file, .ROM file or interface used for MIDI output." "\n"
+		#ifndef DBP_STANDALONE
 		"To add SoundFonts or ROM files, copy them into the 'system' directory of the frontend." "\n"
 		"To use the frontend MIDI driver, make sure it's set up correctly."
+		#else
+		"To add SoundFonts or ROM files, copy them into the 'system' directory of DOSBox Pure." "\n"
+		#endif
 		"\n\n", NULL, //end of Audio section
 		DBP_OptionCat::Audio,
 		{

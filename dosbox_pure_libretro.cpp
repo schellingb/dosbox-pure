@@ -78,8 +78,10 @@ static Bit16s dbp_content_year, dbp_forcefps;
 static Bit8u buffer_active, dbp_overscan;
 static bool dbp_doublescan, dbp_padding;
 static struct DBP_Buffer { Bit32u *video, width, height, cap, pad_x, pad_y, border_color; float ratio; } dbp_buffers[3];
+#ifndef DBP_STANDALONE
 static struct DBP_Audio { int16_t* audio; Bit32u length; } dbp_audio[2];
 static Bit8u dbp_audio_active;
+#endif
 static double dbp_audio_remain;
 static struct retro_hw_render_callback dbp_hw_render;
 static void (*dbp_opengl_draw)(const DBP_Buffer& buf);
@@ -1546,9 +1548,16 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 
 	if (dbp_intercept_next && dbp_intercept_next->usegfx())
 	{
+		#ifdef DBP_STANDALONE
+		DBP_Buffer& osdbf = dbp_osdbuf[(buffer_active + 1) % 3];
+		if (!osdbf.video) osdbf.video = (Bit32u*)malloc(DBPS_OSD_WIDTH*DBPS_OSD_HEIGHT*4);
+		memset(osdbf.video, 0, DBPS_OSD_WIDTH*DBPS_OSD_HEIGHT*4);
+		dbp_intercept_next->gfx(osdbf);
+		#else
 		if (dbp_opengl_draw && voodoo_ogl_is_showing()) // zero all including alpha because we'll blend the OSD after displaying voodoo
 			memset(buf.video, 0, buf.width * buf.height * 4);
 		dbp_intercept_next->gfx(buf);
+		#endif
 		buf.border_color = 0xDEADBEEF; // force redraw
 	}
 
@@ -1806,6 +1815,9 @@ void GFX_Events()
 
 			case DBPET_MOUSEMOVE:
 			{
+				#ifdef DBP_STANDALONE
+				if (dbp_mouse_input != 'p') DBPS_GetMouse(dbp_mouse_x, dbp_mouse_y, false);
+				#endif
 				float mx = e.val*dbp_mouse_speed*dbp_mouse_speed_x, my = e.val2*dbp_mouse_speed; // good for 320x200?
 				Mouse_CursorMoved(mx, my, (dbp_mouse_x+0x7fff)/(float)0xFFFE, (dbp_mouse_y+0x7fff)/(float)0xFFFE, (dbp_mouse_input != 'd'));
 				break;
@@ -1859,6 +1871,13 @@ void GFX_Events()
 			my *= dbp_mouse_speed;
 			Mouse_CursorMoved(mx, my, 0, 0, true);
 		}
+		#ifdef DBP_STANDALONE
+		if (dbps_emu_thread_func)
+		{
+			dbps_emu_thread_func();
+			dbps_emu_thread_func = NULL;
+		}
+		#endif
 	}
 
 	GFX_EVENTS_RECURSIVE = false;
@@ -2074,8 +2093,12 @@ static void set_variables(bool force_midi_scan = false)
 	for (size_t f = 0; f != numfiles; f += 2)
 		if (((&dynstr[f].back())[-1]|0x20) != 'f') // .ROM extension munt rom
 			def.values[i++] = { dynstr[f].c_str(), dynstr[f+1].c_str() };
-	def.values[i++] = { "disabled", "Disabled" };
+	#ifndef DBP_STANDALONE
 	def.values[i++] = { "frontend", "Frontend MIDI driver" };
+	#else
+	def.values[i++] = { "system", "System MIDI driver" };
+	#endif
+	def.values[i++] = { "disabled", "Disabled" };
 	if (dbp_system_cached)
 		def.values[i++] = { "scan", (!strcmp(DBP_Option::Get(DBP_Option::midi), "scan") ? "System directory scan finished" : "Scan System directory for soundfonts (open this menu again after)") };
 	def.values[i] = { 0, 0 };
@@ -2232,6 +2255,15 @@ static bool check_variables()
 	if (environ_cb) environ_cb(RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION, &options_ver);
 	bool visibility_changed = false;
 
+	#ifdef DBP_STANDALONE
+	int interface_crtfilter = atoi(DBP_Option::Get(DBP_Option::interface_crtfilter));
+	DBP_Option::SetDisplay(DBP_Option::interface_crtscanline, !!interface_crtfilter);
+	DBP_Option::SetDisplay(DBP_Option::interface_crtblur, !!interface_crtfilter);
+	DBP_Option::SetDisplay(DBP_Option::interface_crtmask, !!interface_crtfilter);
+	DBP_Option::SetDisplay(DBP_Option::interface_crtcurvature, !!interface_crtfilter);
+	DBP_Option::SetDisplay(DBP_Option::interface_crtcorner, !!interface_crtfilter);
+	#endif
+
 	dbp_actionwheel_inputs = (Bit8u)atoi(DBP_Option::Get(DBP_Option::actionwheel_inputs));
 	dbp_auto_mapping_mode = DBP_Option::Get(DBP_Option::auto_mapping)[0];
 
@@ -2272,7 +2304,11 @@ static bool check_variables()
 	DBP_Option::Apply(sec_dosbox, "memsize", (mem_use_extended ? mem : "16"), false, true, mem_changed);
 
 	bool audiorate_changed = false;
+	#ifndef DBP_STANDALONE
 	const char* audiorate = DBP_Option::Get(DBP_Option::audiorate, &audiorate_changed);
+	#else
+	const char* audiorate = "44100";
+	#endif
 	DBP_Option::Apply(sec_mixer, "rate", audiorate, false, true, audiorate_changed);
 	DBP_Option::GetAndApply(sec_mixer, "swapstereo", DBP_Option::swapstereo);
 	extern bool dbp_swapstereo;
@@ -2300,12 +2336,14 @@ static bool check_variables()
 		case 'd': dbp_perf = DBP_PERF_DETAILED; break;
 		default:  dbp_perf = DBP_PERF_NONE; break;
 	}
+	#ifndef DBP_STANDALONE
 	switch (DBP_Option::Get(DBP_Option::savestate)[0])
 	{
 		case 'd': dbp_serializemode = DBPSERIALIZE_DISABLED; break;
 		case 'r': dbp_serializemode = DBPSERIALIZE_REWIND; break;
 		default: dbp_serializemode = DBPSERIALIZE_STATES; break;
 	}
+	#endif
 	DBPArchive::accomodate_delta_encoding = (dbp_serializemode == DBPSERIALIZE_REWIND);
 	dbp_conf_loading = DBP_Option::Get(DBP_Option::conf)[0];
 	dbp_menu_time = (char)atoi(DBP_Option::Get(DBP_Option::menu_time));
@@ -2400,9 +2438,9 @@ static bool check_variables()
 
 	std::string soundfontpath;
 	if (!*midi || !strcmp(midi, "disabled") || !strcasecmp(midi, "none")) midi = "";
-	else if (strcmp(midi, "frontend") && strcmp(midi, "scan"))
+	else if (strcmp(midi, "frontend") && strcmp(midi, "scan") && strcmp(midi, "system"))
 		midi = (soundfontpath = DBP_GetSaveFile(SFT_SYSTEMDIR)).append(midi).c_str();
-	DBP_Option::Apply(sec_midi, "midiconfig", midi, false, false, midi_changed);
+	DBP_Option::Apply(sec_midi, "midiconfig", (strcmp(midi, "system") ? midi : ""), false, false, midi_changed);
 	DBP_Option::Apply(sec_midi, "mpu401", (*midi ? "intelligent" : "none"), false, false, midi_changed);
 
 	DBP_Option::GetAndApply(sec_sblaster, "sbtype",  DBP_Option::sblaster_type);
@@ -2603,6 +2641,9 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 	if (path && DBP_ExtractPathInfo(path, &path_file, &path_namelen, &path_ext, &path_fragment) && !dbp_wasloaded)
 	{
 		dbp_content_name = std::string(path_file, path_namelen);
+		#ifdef DBP_STANDALONE
+		DBPS_OnContentLoad(dbp_content_name.c_str(), path, (path_file > path ? (size_t)(path_file - path - 1) : 0));
+		#endif
 	}
 	const int path_extlen = (path ? (int)((path_fragment ? path_fragment : path + dbp_content_path.length()) - path_ext) : 0);
 	const bool newcontent = !dbp_wasloaded, force_puremenu = (dbp_biosreboot || forcemenu);
@@ -2961,6 +3002,7 @@ void retro_init(void) //#3
 
 bool retro_load_game(const struct retro_game_info *info) //#4
 {
+	#ifndef DBP_STANDALONE
 	enum retro_pixel_format pixel_format = RETRO_PIXEL_FORMAT_XRGB8888;
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &pixel_format))
 	{
@@ -2969,6 +3011,9 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 	}
 
 	const char* voodoo_perf = DBP_Option::Get(DBP_Option::voodoo_perf);
+	#else
+	const char* voodoo_perf = "auto"; // standalone always uses OpenGL rendering
+	#endif
 	if (voodoo_perf[0] == 'a' || voodoo_perf[0] == '4') // 3dfx wants to use OpenGL, request hardware render context
 	{
 		static struct sglproc { retro_proc_address_t* ptr; const char* name; bool required; } glprocs[] = { MYGL_FOR_EACH_PROC(MYGL_MAKEPROCARRENTRY) };
@@ -3127,7 +3172,11 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				if (is_voodoo_display)
 					myglDrawArrays(MYGL_TRIANGLE_STRIP, 4, 4);
 
+				#ifndef DBP_STANDALONE
 				if (!is_voodoo_display || dbp_intercept_next)
+				#else
+				if (!is_voodoo_display)
+				#endif
 				{
 					myglBindTexture(MYGL_TEXTURE_2D, tex);
 					myglTexSubImage2D(MYGL_TEXTURE_2D, 0, 0, 0, buf.width, buf.height, MYGL_RGBA, MYGL_UNSIGNED_BYTE, buf.video);
@@ -3450,16 +3499,26 @@ void retro_run(void)
 				}
 				if (dbp_intercept_next)
 				{
+					#ifndef DBP_STANDALONE
 					dbp_intercept_next->gfx(buf);
+					#else
+					DBP_Buffer& osdbf = dbp_osdbuf[(buffer_active + 1) % 3];
+					if (!osdbf.video) osdbf.video = (Bit32u*)malloc(DBPS_OSD_WIDTH*DBPS_OSD_HEIGHT*4);
+					memset(osdbf.video, 0, DBPS_OSD_WIDTH*DBPS_OSD_HEIGHT*4);
+					dbp_intercept_next->gfx(osdbf);
+					DBPS_SubmitOSDFrame(osdbf.video, osdbf.width, osdbf.height);
+					#endif
 				}
 			}
 
 			// submit last frame
+			#ifndef DBP_STANDALONE
 			Bit32u numEmptySamples = (Bit32u)(av_info.timing.sample_rate / av_info.timing.fps);
 			DBP_Audio& aud = dbp_audio[dbp_audio_active ^= 1];
 			if (numEmptySamples > aud.length) { aud.audio = (int16_t*)realloc(aud.audio, numEmptySamples * 4); aud.length = numEmptySamples; }
 			memset(aud.audio, 0, numEmptySamples * 4);
 			audio_batch_cb(aud.audio, numEmptySamples);
+			#endif
 			if (dbp_opengl_draw)
 				dbp_opengl_draw(buf);
 			else
@@ -3499,6 +3558,7 @@ void retro_run(void)
 		dbp_perf_uniquedraw = dbp_perf_count = dbp_perf_totaltime = 0;
 	}
 
+	#ifndef DBP_STANDALONE
 	// mix audio
 	Bit32u haveSamples = DBP_MIXER_DoneSamplesCount(), mixSamples = 0; double numSamples;
 	if (dbp_throttle.mode == RETRO_THROTTLE_FAST_FORWARD && dbp_throttle.rate < 1)
@@ -3516,6 +3576,7 @@ void retro_run(void)
 		if (mixSamples > aud.length) { aud.audio = (int16_t*)realloc(aud.audio, mixSamples * 4); aud.length = mixSamples; }
 		MIXER_CallBack(0, (Bit8u*)aud.audio, mixSamples * 4);
 	}
+	#endif
 
 	// Read buffer_active before waking up emulation thread
 	const DBP_Buffer& buf = dbp_buffers[buffer_active];
@@ -3525,10 +3586,12 @@ void retro_run(void)
 
 	DBP_ThreadControl(skip_emulate ? TCM_RESUME_FRAME : TCM_NEXT_FRAME);
 
+	#ifndef DBP_STANDALONE
 	// submit audio
 	//log_cb(RETRO_LOG_INFO, "[retro_run] Submit %d samples (remain %f) - Had: %d - Left: %d\n", mixSamples, dbp_audio_remain, haveSamples, DBP_MIXER_DoneSamplesCount());
 	if (mixSamples)
 		audio_batch_cb(dbp_audio[dbp_audio_active].audio, mixSamples);
+	#endif
 
 	if (tpfActual)
 	{
@@ -3592,6 +3655,14 @@ void retro_run(void)
 		dbp_opengl_draw(buf);
 	else
 		video_cb(buf.video, view_width, view_height, view_width * 4);
+
+	#ifdef DBP_STANDALONE
+	if (dbp_intercept && dbp_osdbuf[&buf - dbp_buffers].video)
+	{
+		DBP_Buffer& osdbf = dbp_osdbuf[&buf - dbp_buffers];
+		DBPS_SubmitOSDFrame(osdbf.video, osdbf.width, osdbf.height);
+	}
+	#endif
 }
 
 static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
@@ -3627,7 +3698,9 @@ static bool retro_serialize_all(DBPArchive& ar, bool unlock_thread)
 					retro_notify(0, RETRO_LOG_WARN, "Unable to load a save state while game the isn't running, start it first.");
 				else if (dbp_serializemode != DBPSERIALIZE_REWIND)
 					retro_notify(0, RETRO_LOG_ERROR, "%sUnable to %s while %s %s not running."
+						#ifndef DBP_STANDALONE
 						"\nIf using rewind, make sure to modify the related core option."
+						#endif
 						"", (ar.mode == DBPArchive::MODE_LOAD ? "Load State Error: " : "Save State Error: "),
 						(ar.mode == DBPArchive::MODE_LOAD ? "load state made" : "save state"),
 						(ar.had_error == DBPArchive::ERR_DOSNOTRUNNING ? "DOS" : "game"),
