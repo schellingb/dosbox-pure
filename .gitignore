@@ -16,3 +16,5 @@ libs/
 *.so
 *.dylib
 jni/*.bat
+.DS_Store
+xcuserdata
