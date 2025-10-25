@@ -2646,7 +2646,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 		#endif
 	}
 	const int path_extlen = (path ? (int)((path_fragment ? path_fragment : path + dbp_content_path.length()) - path_ext) : 0);
-	const bool newcontent = !dbp_wasloaded, force_puremenu = (dbp_biosreboot || forcemenu);
+	const bool newcontent = !dbp_wasloaded, force_puremenu = forcemenu || (dbp_biosreboot && dbp_wasloaded);
 	if (newcontent) dbp_biosreboot = false; // ignore this when switching content
 	if (newcontent && !reinit) dbp_auto_mapping = NULL; // re-acquire when switching content
 
