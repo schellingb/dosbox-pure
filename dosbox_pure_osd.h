@@ -301,14 +301,13 @@ struct DBP_MenuState
 {
 	enum ItemType : Bit8u { IT_NONE, _IT_CUSTOM, };
 	enum Result : Bit8u { RES_NONE, RES_OK, RES_CANCEL, RES_CLOSESCREENKEYBOARD, RES_CHANGEMOUNTS, RES_REFRESHSYSTEM };
-	bool refresh_mousesel, scroll_unlocked, hide_sel, show_popup;
 	int sel, scroll, joyx, joyy, scroll_jump, mouse_sel, click_sel;
-	Bit32u open_ticks;
-	DBP_Event_Type held_event; KBD_KEYS held_key; Bit32u held_ticks;
+	bool refresh_mousesel, scroll_unlocked, hide_sel, show_popup, toggleosd_down;
+	DBP_Event_Type held_event; KBD_KEYS held_key; Bit32u held_ticks, open_ticks;
 	struct Item { Bit8u type, pad; Bit16s info; std::string str; INLINE Item() {} INLINE Item(Bit8u t, Bit16s i = 0, const char* s = "") : type(t), info(i), str(s) {} };
 	std::vector<Item> list;
 
-	DBP_MenuState() : refresh_mousesel(true), scroll_unlocked(false), hide_sel(false), show_popup(false), sel(0), scroll(-1), joyx(0), joyy(0), scroll_jump(0), mouse_sel(-1), click_sel(-1), open_ticks(DBP_GetTicks()), held_event(_DBPET_MAX) { }
+	DBP_MenuState() : sel(0), scroll(-1), joyx(0), joyy(0), scroll_jump(0), mouse_sel(-1), click_sel(-1), refresh_mousesel(true), scroll_unlocked(false), hide_sel(false), show_popup(false), toggleosd_down(false), held_event(_DBPET_MAX), open_ticks(DBP_GetTicks()) { }
 
 	void Input(DBP_Event_Type type, int val, int val2)
 	{
@@ -345,7 +344,8 @@ struct DBP_MenuState
 				}
 				if (held_event == DBPET_KEYDOWN) held_event = _DBPET_MAX;
 				break;
-			case DBPET_TOGGLEOSDUP: res = RES_CLOSESCREENKEYBOARD; break;
+			case DBPET_TOGGLEOSD: toggleosd_down = true; break;
+			case DBPET_TOGGLEOSDUP: if (toggleosd_down) { res = RES_CLOSESCREENKEYBOARD; toggleosd_down = false; } break;
 			case DBPET_CHANGEMOUNTS: res = RES_CHANGEMOUNTS; break;
 			case DBPET_REFRESHSYSTEM: res = RES_REFRESHSYSTEM; break;
 			case DBPET_MOUSEMOVE:
