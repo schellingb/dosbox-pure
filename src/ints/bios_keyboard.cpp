@@ -244,8 +244,8 @@ void BIOS_SetKeyboardLEDOverwrite(KBD_KEYS event_key, KBD_LEDS leds) {
 	biosKeyLEDOverwriteMask |= (Bit8u)leds;
 	biosKeyLEDOverwrite = leds;
 	if (event_key == KBD_scrolllock || event_key == KBD_numlock || event_key == KBD_capslock) return; // let IRQ1_Handler or booted OS deal with it
-	mem_writeb(BIOS_KEYBOARD_FLAGS1, (mem_readb(BIOS_KEYBOARD_FLAGS1) & ~(biosKeyLEDOverwriteMask<<4)) | ((Bit8u)leds<<4));
-	mem_writeb(BIOS_KEYBOARD_LEDS, (mem_readb(BIOS_KEYBOARD_LEDS) & ~biosKeyLEDOverwriteMask) | (Bit8u)leds);
+	phys_writeb(BIOS_KEYBOARD_FLAGS1, (phys_readb(BIOS_KEYBOARD_FLAGS1) & ~(biosKeyLEDOverwriteMask<<4)) | ((Bit8u)leds<<4));
+	phys_writeb(BIOS_KEYBOARD_LEDS, (phys_readb(BIOS_KEYBOARD_LEDS) & ~biosKeyLEDOverwriteMask) | (Bit8u)leds);
 }
 #endif
 
