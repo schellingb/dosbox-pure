@@ -1330,7 +1330,16 @@ bool PAGING_MakePhysPage(Bitu & page) {
 		// check the page table entry
 		X86PageEntry tbl_entry;
 		tbl_entry.load = phys_readd(GetPageTableEntryAddr(page<<12, dir_entry));
+#ifndef C_DBP_PAGE_FAULT_QUEUE_WIPE
 		if (!tbl_entry.block.p) return false;
+#else
+		if (!tbl_entry.block.p) {
+			// During page fault wipe this can fail but we still return true to avoid a crash caused by MakeCodePage failing with "DYNX86:Can't find physpage" due to this.
+			// This is fine because the page fault wipe will revert state back to what it was during the page fault anyway.
+			if (!DOSBOX_IsWipingPageFaultQueue)
+				return false;
+		}
+#endif
 
 		// return it
 		page = tbl_entry.block.base;
