@@ -812,7 +812,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 	{
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
-		"Adjust the core's aspect ratio to approximate what a CRT monitor would display (works best on high resolution displays and without integer scaling).", NULL,
+		"Adjust the aspect ratio to approximate what a CRT monitor would display (works best on high resolution displays and without integer scaling).", NULL,
 		DBP_OptionCat::Video,
 		{
 			{ "false", "Off (default)" },
@@ -820,6 +820,9 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 			{ "doublescan", "On (double-scan when applicable)" },
 			{ "padded", "Padded to 4:3 (single-scan)" },
 			{ "padded-doublescan", "Padded to 4:3 (double-scan when applicable)" },
+			#ifdef DBP_STANDALONE
+			{ "fill", "Stretch the display to fill the window, ignoring any content aspect ratio" },
+			#endif
 		},
 		"false"
 	},
