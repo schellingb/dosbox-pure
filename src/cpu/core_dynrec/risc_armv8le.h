@@ -1137,6 +1137,13 @@ static void gen_fill_function_ptr(const Bit8u * pos,void* fct_ptr,Bitu flags_typ
 #endif
 
 
+#ifdef _MSC_VER
+static HANDLE hProcess = GetCurrentProcess();
+static void cache_block_closing(const Bit8u* block_start,Bitu block_size) {
+	//flush cache
+	FlushInstructionCache(hProcess, block_start, block_size);
+}
+#else
 static void cache_flush(char* start, char* end)
 {
     // Don't rely on GCC's __clear_cache implementation, as it caches
@@ -1174,6 +1181,7 @@ static void cache_block_closing(const Bit8u* block_start,Bitu block_size) {
 	//flush cache
 	cache_flush((char *)block_start, (char *)(block_start+block_size));
 }
+#endif
 
 static void cache_block_before_close(void) { }
 
