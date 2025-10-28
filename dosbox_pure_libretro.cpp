@@ -1933,6 +1933,11 @@ void DBP_ShowSlowLoading()
 	GFX_AdvanceFrame(false, true); // can't auto adjust CPU_CycleMax because we're not inside GFX_Events
 }
 
+bool DBP_UseDirectMouse()
+{
+	return (dbp_mouse_input == 'd');
+}
+
 static void DBP_PureLabelProgram(Program** make)
 {
 	struct LabelProgram : Program

@@ -96,7 +96,10 @@ static void KEYBOARD_AddBuffer(Bit8u data) {
 }
 
 
-static Bitu read_p60(Bitu /*port*/,Bitu /*iolen*/) {
+static Bitu read_p60(Bitu /*port*/,Bitu iolen) {
+	extern bool mouse_vmware_usep60; extern uint32_t Mouse_VMWare_KeyboardReadP60();
+	if (iolen == IO_MD && mouse_vmware_usep60) return Mouse_VMWare_KeyboardReadP60();
+
 	keyb.p60changed = false;
 	if (!keyb.scheduled && keyb.used) {
 		keyb.scheduled = true;
@@ -195,7 +198,10 @@ static Bitu read_p62(Bitu /*port*/,Bitu /*iolen*/) {
 	return ret;
 }
 
-static void write_p64(Bitu /*port*/,Bitu val,Bitu /*iolen*/) {
+static void write_p64(Bitu /*port*/,Bitu val,Bitu iolen) {
+	extern bool Mouse_VMWare_KeyboardWriteP64(Bitu val);
+	if (iolen == IO_MD && Mouse_VMWare_KeyboardWriteP64(val)) return;
+
 	switch (val) {
 	case 0xae:		/* Activate keyboard */
 		keyb.active=true;
@@ -232,7 +238,10 @@ static void write_p64(Bitu /*port*/,Bitu val,Bitu /*iolen*/) {
 	}
 }
 
-static Bitu read_p64(Bitu /*port*/,Bitu /*iolen*/) {
+static Bitu read_p64(Bitu /*port*/,Bitu iolen) {
+	extern bool mouse_vmware_usep60; extern uint32_t Mouse_VMWare_KeyboardReadP64();
+	if (iolen == IO_MD && mouse_vmware_usep60) return Mouse_VMWare_KeyboardReadP64();
+
 	Bit8u status = 0x1c | (keyb.p60changed ? 0x1 : 0x0);
 	return status;
 }
@@ -401,12 +410,12 @@ static void KEYBOARD_TickHandler(void) {
 
 void KEYBOARD_Init(Section* /*sec*/) {
 	IO_RegisterWriteHandler(0x60,write_p60,IO_MB);
-	IO_RegisterReadHandler(0x60,read_p60,IO_MB);
+	IO_RegisterReadHandler(0x60,read_p60,IO_MB|IO_MD);
 	IO_RegisterWriteHandler(0x61,write_p61,IO_MB);
 	IO_RegisterReadHandler(0x61,read_p61,IO_MB);
 	if (machine == MCH_CGA || machine == MCH_HERC) IO_RegisterReadHandler(0x62,read_p62,IO_MB);
-	IO_RegisterWriteHandler(0x64,write_p64,IO_MB);
-	IO_RegisterReadHandler(0x64,read_p64,IO_MB);
+	IO_RegisterWriteHandler(0x64,write_p64,IO_MB|IO_MD);
+	IO_RegisterReadHandler(0x64,read_p64,IO_MB|IO_MD);
 	TIMER_AddTickHandler(&KEYBOARD_TickHandler);
 	write_p61(0,0,0);
 	/* Init the keyb struct */
