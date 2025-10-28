@@ -2652,7 +2652,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 	}
 	const int path_extlen = (path ? (int)((path_fragment ? path_fragment : path + dbp_content_path.length()) - path_ext) : 0);
 	const bool newcontent = !dbp_wasloaded, force_puremenu = forcemenu || (dbp_biosreboot && dbp_wasloaded);
-	if (newcontent) dbp_biosreboot = false; // ignore this when switching content
+	if (newcontent) dbp_biosreboot = dbp_reboot_set64mem = false; // ignore this when switching content
 	if (newcontent && !reinit) dbp_auto_mapping = NULL; // re-acquire when switching content
 
 	// Loading a .conf file behaves like regular DOSBox (no union drive mounting, save file, start menu, etc.)
