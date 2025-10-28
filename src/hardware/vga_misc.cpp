@@ -52,6 +52,9 @@ Bitu vga_read_p3da(Bitu /*port*/,Bitu /*iolen*/) {
 			retval |= 1;
 		}
 	}
+	//DBP: Added TSENG fixes (https://github.com/joncampbell123/dosbox-x/commit/199c065)
+	if ((svgaCard == SVGA_TsengET3K || svgaCard == SVGA_TsengET4K) && IS_VGA_ARCH)
+		retval ^= ((retval & 8u) ^ 8u) << 4u;
 	return retval;
 }
 

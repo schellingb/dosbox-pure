@@ -84,7 +84,8 @@ void write_p3d5_et4k(Bitu reg,Bitu val,Bitu /*iolen*/) {
 		// 0-1 Display Start Address bits 16-17
 		// 2-3 Cursor start address bits 16-17
 		// Used by standard Tseng ID scheme
-		et4k.store_3d4_33 = val;
+		//DBP: Added TSENG fixes (https://github.com/joncampbell123/dosbox-x/commit/199c065)
+		et4k.store_3d4_33 = val & 0x0F;
 		vga.config.display_start = (vga.config.display_start & 0xffff) | ((val & 0x03)<<16);
 		vga.config.cursor_start = (vga.config.cursor_start & 0xffff) | ((val & 0x0c)<<14);
 		break;
