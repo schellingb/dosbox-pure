@@ -120,12 +120,6 @@ struct DBP_Run
 			return true;
 		}
 
-		static bool HaveCDImage()
-		{
-			for (DBP_Image& i : dbp_images) if (DBP_Image_IsCD(i)) return true;
-			return false;
-		}
-
 		static bool MountOSIMG(char drive, const char* path, const char* type, bool needwritable, bool complainnotfound)
 		{
 			FILE* raw_file_h = NULL;
@@ -168,7 +162,7 @@ struct DBP_Run
 
 			// If there is no mounted hard disk image but a D: drive, setup the CDROM IDE controller
 			if (!imageDiskList['C'-'A'] && Drives['D'-'A'])
-				IDE_SetupControllers(BatchFileBoot::HaveCDImage() ? 'D' : 0);
+				IDE_SetupControllers(true);
 
 			// Install the NE2000 network card
 			NET_SetupEthernet();
@@ -221,11 +215,10 @@ struct DBP_Run
 			dbp_osimages.emplace_back(filename);
 		}
 
-		const bool have_cd_image = BatchFileBoot::HaveCDImage();
 		if (!path.empty())
 		{
 			// When booting an external disk image as C:, use whatever is C: in DOSBox DOS as the second hard disk in the booted OS (it being E: in Drives[] doesn't matter)
-			char newC = ((have_cd_image || DBP_IsMounted('D')) ? 'E' : 'D'); // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
+			char newC = 'E'; // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
 			if (imageDiskList['C'-'A'])
 				imageDiskList[newC-'A'] = imageDiskList['C'-'A'];
 			else if (!BatchFileBoot::MountOSIMG(newC, (dbp_content_path + ".img").c_str(), "D: drive image", true, false) && Drives['C'-'A'])
@@ -267,8 +260,8 @@ struct DBP_Run
 			//DriveCreateFile(Drives['A'-'A'], "AUTOEXEC.BAT", (const Bit8u*)"DIR\r\n", 5);
 		}
 
-		// Setup IDE controllers for the hard drives and one CDROM drive (if any CDROM image is mounted)
-		IDE_SetupControllers(have_cd_image ? 'D' : 0);
+		// Setup IDE controllers for the CDROM drive
+		IDE_SetupControllers(true);
 
 		// Install the NE2000 network card
 		NET_SetupEthernet();

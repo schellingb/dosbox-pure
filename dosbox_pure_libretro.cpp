@@ -319,7 +319,7 @@ bool MSCDEX_HasDrive(char driveLetter);
 int MSCDEX_AddDrive(char driveLetter, const char* physicalPath, Bit8u& subUnit);
 int MSCDEX_RemoveDrive(char driveLetter);
 void IDE_RefreshCDROMs();
-void IDE_SetupControllers(char force_cd_drive_letter = 0);
+void IDE_SetupControllers(bool alwaysHaveCDROM);
 void NET_SetupEthernet();
 bool MIDI_TSF_SwitchSF(const char*);
 const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg);

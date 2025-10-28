@@ -1093,8 +1093,8 @@ public:
 			for (Bit8u i = 0; i != 4 /*MAX_IDE_CONTROLLERS*2*/; i++)
 			{
 				if (!Drives[i+2] || !dynamic_cast<isoDrive*>(Drives[i+2])) continue;
-				void IDE_SetupControllers(char);
-				IDE_SetupControllers(0);
+				void IDE_SetupControllers(bool alwaysHaveCDROM);
+				IDE_SetupControllers(false);
 				break;
 			}
 #endif

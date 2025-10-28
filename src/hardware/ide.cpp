@@ -2958,13 +2958,14 @@ void IDE_RefreshCDROMs()
 	}
 }
 
-void IDE_SetupControllers(char force_cd_drive_letter)
+void IDE_SetupControllers(bool alwaysHaveCDROM)
 {
 	if (idecontroller[0]) return; // only setup once
 
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS; i++)
 		idecontroller[i] = new IDEController(i);
 
+	bool have_cd_controller = false;
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS*2; i++)
 	{
 		IDEController* c = idecontroller[i>>1];
@@ -2973,9 +2974,13 @@ void IDE_SetupControllers(char force_cd_drive_letter)
 			c->device[i&1] = new IDEATADevice(c, i, i+2);
 		else
 		#endif
-		if ((Drives[i+2] && dynamic_cast<isoDrive*>(Drives[i+2])) || (force_cd_drive_letter-'A') == (i+2))
-			c->device[i&1] = new IDEATAPICDROMDevice(c, i);
+		if (Drives[i+2] && dynamic_cast<isoDrive*>(Drives[i+2]))
+			{ c->device[i&1] = new IDEATAPICDROMDevice(c, i); have_cd_controller = true; }
 	}
+
+	// If there are no CD drives, enforce second device to always be a CD so discs can be mounted afterwards
+	if (!have_cd_controller && alwaysHaveCDROM)
+		idecontroller[0]->device[1] = new IDEATAPICDROMDevice(idecontroller[0], 1);
 
 	IDE_RefreshCDROMs();
 }
