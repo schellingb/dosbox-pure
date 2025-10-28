@@ -1857,7 +1857,7 @@ struct DBP_PureMenuState final : DBP_MenuState
 					DBP_Mount(DBP_AppendImage(imgpath.c_str(), false));
 					RefreshList(IT_MAINMENU);
 				}
-				else if (item.info != 6 && !dbp_content_name.empty() && (fext = strrchr(fname, '.'))++ && (!strcasecmp(fext, "ISO") || !strcasecmp(fext, "CHD") || !strcasecmp(fext, "CUE") || !strcasecmp(fext, "INS") || !strcasecmp(fext, "IMG") || !strcasecmp(fext, "IMA") || !strcasecmp(fext, "VHD") || !strcasecmp(fext, "JRC") || !strcasecmp(fext, "TC")))
+				else if (item.info != 6 && !dbp_content_name.empty() && (fext = strrchr(fname, '.'))++ && (!strcasecmp(fext, "ISO") || !strcasecmp(fext, "CHD") || !strcasecmp(fext, "CUE") || !strcasecmp(fext, "INS") || !strcasecmp(fext, "IMG") || !strcasecmp(fext, "IMA") || !strcasecmp(fext, "VHD") || !strcasecmp(fext, "JRC")))
 				{
 					std::string fname; fname.swap(item.str);
 					list.clear();

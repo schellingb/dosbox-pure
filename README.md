@@ -28,7 +28,7 @@ Changes made to a loaded ZIP file will be stored as a separate ZIP file into the
 If a game is loaded directly without using a container like ZIP or ISO the saves directory is not used.
 
 ### Mount Disk Images from Inside ZIP Files
-CD images (ISO or CUE) and floppy disk images (IMG/IMA/VHD/JRC/TC) can be mounted directly from inside ZIP files.  
+CD images (ISO or CUE) and floppy disk images (IMG/IMA/VHD/JRC) can be mounted directly from inside ZIP files.  
 The system will automatically mount the first found disk image as the A: or D: drive.  
 Additional disks can be loaded or swapped by using the `Disc Control` menu in RetroArch.  
 The start menu also offers the option to mount or unmount an image.
@@ -139,11 +139,16 @@ There are two core options related to this feature:
 The operating system will detect a NE2000 networking card which will not be able to connect to the real internet.  
 To avoid slow boot times, make sure to configure it to use base address port set to 0x300 and base IRQ set to 10.
 
+In Windows 95 or 98, the keyboard gets detected as "PC/AT Keyboard (84-Key)" which can lead to some issues with arrow
+keys and others. To fix it open the "Device Manager", go to the keyboard and run "Update Driver". Then by using
+"Display a list of all the drivers" and "Show all hardware" you can find and install the full keyboard driver
+"Standard 101/102-Key or Microsoft Natural Keyboard" which is compatible. Make sure to reboot after installing it.
+
 It is also possible to create save states while running an installed operating system. This can be used
 to skip the startup sequence or even jump directly to the title screen of a game. Make sure to load the
 same operating system and do not modify the loaded ZIP file in any way otherwise the operating system
 will be very confused and most likely crash. To make things easier, set the operating system to
-[auto start](#auto-start) so it starts together with the content and skipping the start menu.
+[auto start](#auto-start) so it starts together with the content, skipping the start menu.
 
 ### 3dfx Voodoo Emulation
 The core includes emulation of a 3dfx Voodoo PCI card. Compatible DOS games should work out of the box. If running an
@@ -228,7 +233,7 @@ not cause retro pad button presses (which could cause multiple keys to be presse
 ### Loading a dosbox.conf File
 If a .conf file gets loaded as the content, DOSBox Pure will mount the directory of that file as the C: drive and then use it.
 
-Alternatively, a .conf file can get loaded automatically depending on the 'Emulation > Loading of dosbox.conf' core option. There are two modes that can be enabled:
+Alternatively, a .conf file can get loaded automatically depending on the `Emulation > Loading of dosbox.conf` core option. There are two modes that can be enabled:
 - "Try 'dosbox.conf' in the loaded content (ZIP or folder)" - Will load C:\DOSBOX.CONF automatically if it exists in the mounted ZIP or path
 - "Try '.conf' with same name as loaded content (next to ZIP or folder)" - Will automatically load GAME.conf next to GAME.zip if it exists.
 
@@ -275,7 +280,7 @@ Then gradually until at max 59MB and more, it will be written out 60 seconds aft
 Of course upon shutdown any yet unsaved changes are written out to disk.
 
 ### Reading Large Files in ZIPs
-When a DOS games opens a large file and wants to read some data from near the end of the file,
+When a DOS game opens a large file and wants to read some data from near the end of the file,
 DOSBox Pure needs to decompress the entire file to do that. This can be most noticeable when mounting
 CD-ROM images from inside ZIP files. Afterwards there is an index buffer which will be used to decompress
 random locations of the file and file access will be much faster. This index buffer is stored into the

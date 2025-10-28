@@ -985,7 +985,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
 		if (boot && letter == 'C') return drive;
 	}
-	else if (!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC") || !strcasecmp(ext, "TC"))
+	else if (!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC"))
 	{
 		fatDrive* fat = new fatDrive(path, 512, 0, 0, 0, 0);
 		if (!fat->loadedDisk || (!fat->created_successfully && letter >= 'A'+MAX_DISK_IMAGES))
@@ -2076,7 +2076,7 @@ void retro_get_system_info(struct retro_system_info *info) // #1
 	info->library_version  = DOSBOX_PURE_VERSION_STR;
 	info->need_fullpath    = true;
 	info->block_extract    = true;
-	info->valid_extensions = "zip|dosz|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|tc|m3u|m3u8|conf|/";
+	info->valid_extensions = "zip|dosz|exe|com|bat|iso|chd|cue|ins|img|ima|vhd|jrc|m3u|m3u8|conf|/";
 }
 
 void retro_set_environment(retro_environment_t cb) //#2
@@ -2511,7 +2511,7 @@ static void init_dosbox_parse_drives()
 		const char* fext = (data == ('C'-'A') ? strrchr(fname, '.') : NULL);
 		if (fext++)
 		{
-			bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC") || !strcmp(fext, "TC"));
+			bool isFS = (!strcmp(fext, "ISO") || !strcmp(fext, "CHD") || !strcmp(fext, "CUE") || !strcmp(fext, "INS") || !strcmp(fext, "IMG") || !strcmp(fext, "IMA") || !strcmp(fext, "VHD") || !strcmp(fext, "JRC"));
 			if (isFS && !strncmp(fext, "IM", 2))
 			{
 				DOS_File *df;
