@@ -53,6 +53,7 @@ namespace DBP_Option
 		_interface_slowrate,
 		_interface_systemhotkeys,
 		_interface_middlemouse,
+		_interface_lockmouse,
 		#endif
 		// General
 		forcefps,
@@ -212,6 +213,17 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"interface_middlemouse",
 		"Middle Mouse Button Open Menu", NULL,
 		"If enabled the middle mouse button will open/close the On-Screen Menu.", NULL,
+		DBP_OptionCat::General,
+		{
+			{ "false", "Off" },
+			{ "true", "On" },
+		},
+		"false"
+	},
+	{
+		"interface_lockmouse",
+		"Mouse Lock Default Status", NULL,
+		"Will have the mouse locked at program start if enabled.", NULL,
 		DBP_OptionCat::General,
 		{
 			{ "false", "Off" },
