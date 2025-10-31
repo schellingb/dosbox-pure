@@ -334,6 +334,7 @@ struct DBP_MenuState
 								{ int i = (int)(&it - &list[0]); if (i > sel) { sel_change = i - sel; break; } else if (first == -1) { first = i; } }
 						if (!sel_change && first != -1) sel_change = first - sel;
 						type = _DBPET_MAX; // prevent held
+						hide_sel = false; // show immediately
 					}
 				}
 				break;
