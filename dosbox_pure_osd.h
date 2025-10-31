@@ -333,6 +333,7 @@ struct DBP_MenuState
 							if ((it.str.c_str()[0] | 0x20) == lckey)
 								{ int i = (int)(&it - &list[0]); if (i > sel) { sel_change = i - sel; break; } else if (first == -1) { first = i; } }
 						if (!sel_change && first != -1) sel_change = first - sel;
+						type = _DBPET_MAX; // prevent held
 					}
 				}
 				break;
@@ -377,7 +378,7 @@ struct DBP_MenuState
 		if (res && (DBP_GetTicks() - open_ticks) < 200U)
 			res = RES_NONE; // ignore already pressed buttons when opening
 
-		if (sel_change || x_change)
+		if ((sel_change || x_change) && type != _DBPET_MAX)
 		{
 			if (held_event == _DBPET_MAX) { held_event = type; held_ticks = DBP_GetTicks() + 300; }
 			if      (sel_change ==  -1) held_key = KBD_up;
@@ -387,12 +388,12 @@ struct DBP_MenuState
 			else if (x_change   ==  -1) held_key = KBD_left;
 			else if (x_change   ==   1) held_key = KBD_right;
 			else held_event = _DBPET_MAX;
-			scroll_unlocked = false;
 		}
 
 		DBP_ASSERT(list.size());
 		for (int count = (int)list.size(); !res && sel_change && !show_popup;)
 		{
+			scroll_unlocked = false;
 			if (hide_sel) { hide_sel = false; if (list[sel].type != RES_NONE) { break; } }
 			sel += sel_change;
 			if (sel >= 0 && sel < count) { }
@@ -417,33 +418,32 @@ struct DBP_MenuState
 
 	virtual void DoInput(Result res, Bit8u ok_type, int x_change) = 0;
 
-	int DrawMenuBase(DBP_BufferDrawing& buf, Bit32u blend, int lh, int rows, const DBP_MenuMouse& m, bool mouseMoved, int menul, int menur, int menuu, bool centerv = false)
+	int DrawMenuBase(DBP_BufferDrawing& buf, Bit32u blend, const int lh, const int rows, const DBP_MenuMouse& m, bool mouseMoved, int menul, int menur, int menuu, bool centerv = false)
 	{
-		int count = (int)list.size(), xtra = (lh == 8 ? 0 : 1), scrx = menur - 11, menuh = rows * lh + xtra;
-		bool scrollbar = (count > rows);
+		const int count = (int)list.size(), xtra = (lh == 8 ? 0 : 1), scrx = menur - 11, menuh = rows * lh + xtra;
+		const bool scrollbar = (count > rows);
 		int listu = menuu + ((centerv && rows > count) ? ((rows - count) * lh) / 3 : 0);
 
 		// Update Scroll
-		if (count <= rows) scroll = 0;
-		else if (scroll == -1)
+		if (scroll == -1)
 		{
 			scroll = sel - rows/2;
-			scroll = (scroll < 0 ? 0 : scroll > count - rows ? count - rows : scroll);
+			scroll = ((scroll < 0 || count <= rows) ? 0 : scroll > count - rows ? count - rows : scroll);
+			if (!show_popup && m.realmouse) mouseMoved = refresh_mousesel; // refresh when switching tab
 		}
+		else if (count <= rows) scroll = 0;
 
 		if (!show_popup)
 		{
-			if (scrollbar && m.left_pressed && (m.x >= scrx || click_sel == -2) && m.y >= menuu && m.y < menuu+menuh && scroll != -1)
+			if (scrollbar)
 			{
-				int scrollh = menuh * rows / count / 2;
-				scroll_jump = (((count - rows) * ((int)m.y - menuu - scrollh) / (menuh-scrollh-scrollh)) - scroll);
-				click_sel = -2;
-			}
+				if (m.left_pressed && (m.x >= scrx || click_sel == -2) && m.y >= menuu && m.y < menuu+menuh && scroll != -1)
+				{
+					int scrollh = menuh * rows / count / 2;
+					scroll_jump = (((count - rows) * ((int)m.y - menuu - scrollh) / (menuh-scrollh-scrollh)) - scroll);
+					click_sel = -2;
+				}
 
-			if (scroll == -1 && m.realmouse) mouseMoved = refresh_mousesel; // refresh when switching tab
-
-			if (count > rows)
-			{
 				if (m.realmouse && m.y >= menuu && m.y < menuu+menuh)
 				{
 					if (m.wheel_up)   { scroll_unlocked = true; scroll_jump -= 4; }
@@ -482,7 +482,7 @@ struct DBP_MenuState
 
 		buf.DrawBox(menul, menuu - 3, menur - menul, menuh + 6, buf.BGCOL_MENU | blend, buf.COL_LINEBOX);
 
-		if (list[sel].type != IT_NONE && !hide_sel)
+		if (list[sel].type != IT_NONE && !hide_sel && sel >= scroll && (sel - scroll) < rows)
 			buf.AlphaBlendFillRect(menul+3, listu + (sel - scroll)*lh, menur - menul - 6 - (scrollbar ? 10 : 0), lh + xtra, buf.BGCOL_SELECTION | blend);
 
 		if (scrollbar)
@@ -572,7 +572,7 @@ struct DBP_SystemMenuState final : DBP_MenuState
 			}
 		}
 		curmenu = menu_type;
-		ResetSel(setsel);
+		ResetSel(setsel, (menu_type == IT_CATEGORIES));
 	};
 
 	virtual void DoInput(Result res, Bit8u ok_type, int x_change)
@@ -1712,7 +1712,7 @@ struct DBP_PureMenuState final : DBP_MenuState
 			if (DBPS_BrowsePath.length() == 1 && *DBPS_BrowsePath.c_str() == '$') // Windows drive selection
 			{
 				char drvpath[4] = { 'C', ':', '\\', 0 };
-				for (unsigned drives   = GetLogicalDrives(); *drvpath <= 'Z'; (*drvpath)++)
+				for (unsigned drives = GetLogicalDrives(); *drvpath <= 'Z'; (*drvpath)++)
 				{
 					if (!(drives & (1 << (*drvpath - 'A')))) continue;
 					list.emplace_back(IT_FILEBROWSE, -2); list.back().str.assign(drvpath, 2);
@@ -1838,6 +1838,7 @@ struct DBP_PureMenuState final : DBP_MenuState
 			#ifdef WIN32
 			if      (item.info == -1) DBPS_BrowsePath.assign("$"); // Windows drive selection
 			else if (item.info == -2) DBPS_BrowsePath.assign(item.str); // Windows drive root
+			else if (item.info == 1 && DBPS_BrowsePath.length() == 2 && DBPS_BrowsePath[1] == ':') DBPS_BrowsePath.assign("$"); // Root of mapped network drive
 			else
 			#endif
 			if      (item.info == 1) // parent dir
