@@ -2652,7 +2652,7 @@ void DBPS_OpenContent(const char* path)
 
 void DBPS_AddDisc(const char* path)
 {
-	DBP_Mount(DBP_AppendImage(path, false));
+	DBP_Mount(DBP_AppendImage(path, false), false);
 }
 
 const std::string& DBPS_GetContentName()

@@ -1026,7 +1026,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 				return fat;
 			}
 		}
-		if (!letter) letter = (disk->hardDrive ? 'D' : 'A');
+		if (!letter) letter = (disk->hardDrive ? (drive ? 'D' : 'E') : 'A');
 		media_byte = (disk->hardDrive ? 0xF8 : (disk->active ? disk->GetBiosType() : 0));
 	}
 	else if (!strcasecmp(ext, "ISO") || !strcasecmp(ext, "CHD") || !strcasecmp(ext, "CUE") || !strcasecmp(ext, "INS"))

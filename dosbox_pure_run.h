@@ -217,10 +217,10 @@ struct DBP_Run
 
 		if (!path.empty())
 		{
-			// When booting an external disk image as C:, use whatever is C: in DOSBox DOS as the second hard disk in the booted OS (it being E: in Drives[] doesn't matter)
-			char newC = 'E'; // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
-			if (imageDiskList['C'-'A'])
-				imageDiskList[newC-'A'] = imageDiskList['C'-'A'];
+			// When booting an external disk image as C:, use whatever is C: or D: in DOSBox DOS as the third IDE drive in the booted OS
+			const char newC = 'E'; // Third IDE drive (if it were D: the IDE CD-ROM drive wouldn't show up in Windows 9x)
+			if      (imageDiskList['C'-'A']) std::swap(imageDiskList['C'-'A'], imageDiskList[newC-'A']); // Loaded content is FAT12/FAT16 disk image
+			else if (imageDiskList['E'-'A'] && dbp_content_path == imageDiskList['E'-'A']->diskname) {}  // Loaded content is FAT32/other disk image
 			else if (!BatchFileBoot::MountOSIMG(newC, (dbp_content_path + ".img").c_str(), "D: drive image", true, false) && Drives['C'-'A'])
 			{
 				Bit32u save_hash = 0;
