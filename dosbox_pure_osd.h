@@ -19,7 +19,7 @@
 #ifndef DBP_STANDALONE
 enum DBP_OSDMode { DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, _DBPOSD_COUNT, _DBPOSD_OPEN, _DBPOSD_CLOSE };
 #else
-enum DBP_OSDMode { DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, DBPOSD_SYSTEM, _DBPOSD_COUNT, _DBPOSD_OPEN, _DBPOSD_CLOSE };
+enum DBP_OSDMode { DBPOSD_MAIN, DBPOSD_OSK, DBPOSD_MAPPER, DBPOSD_SETTINGS, _DBPOSD_COUNT, _DBPOSD_OPEN, _DBPOSD_CLOSE };
 #include "dosbox_pure_sta.h"
 static void (*dbps_emu_thread_func)();
 static DBP_Buffer dbp_osdbuf[3] = {{0,DBPS_OSD_WIDTH,DBPS_OSD_HEIGHT,0,0,0,0,(float)DBPS_OSD_WIDTH/DBPS_OSD_HEIGHT},{0,DBPS_OSD_WIDTH,DBPS_OSD_HEIGHT,0,0,0,0,(float)DBPS_OSD_WIDTH/DBPS_OSD_HEIGHT},{0,DBPS_OSD_WIDTH,DBPS_OSD_HEIGHT,0,0,0,0,(float)DBPS_OSD_WIDTH/DBPS_OSD_HEIGHT}};
@@ -517,11 +517,11 @@ struct DBP_MenuState
 };
 
 #ifdef DBP_STANDALONE
-struct DBP_SystemMenuState final : DBP_MenuState
+struct DBP_SettingsMenuState final : DBP_MenuState
 {
 	enum ItemType : Bit8u { IT_CANCEL = _IT_CUSTOM, IT_CATEGORIES, IT_CATEGORY, IT_OPTION, IT_TOGGLE, IT_VALUE };
 	Bit8u curmenu;
-	DBP_SystemMenuState() { menu(IT_CATEGORIES); }
+	DBP_SettingsMenuState() { menu(IT_CATEGORIES); }
 
 	void menu(Bit8u menu_type)
 	{
@@ -636,7 +636,7 @@ struct DBP_SystemMenuState final : DBP_MenuState
 		int hdr = lh*2, rows = (h - hdr - ftr) / lh, count = (int)list.size(), l = 30, r = w-30;
 		if (l < 0) { l = 0, r = w; }
 		buf.DrawBox(l + 60, hdr-6-lh, r-l-120, lh+4, buf.BGCOL_HEADER | blend, buf.COL_LINEBOX);
-		buf.PrintCenteredOutlined(lh, 0, w, hdr-lh-4, "DOSBox Pure System Menu", buf.COL_MENUTITLE);
+		buf.PrintCenteredOutlined(lh, 0, w, hdr-lh-4, "DOSBox Pure Settings Menu", buf.COL_MENUTITLE);
 		
 		DrawMenuBase(buf, blend, lh, rows, m, mouseMoved, l, r, hdr);
 		for (int i = scroll, maxw = r-l-27; i != count && i != (scroll + rows); i++)
@@ -2118,7 +2118,7 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 	#ifndef DBP_STANDALONE
 	union { DBP_PureMenuState* main; DBP_OnScreenKeyboardState* osk; DBP_MapperMenuState* mapper; void* _all; } ptr;
 	#else
-	union { DBP_PureMenuState* main; DBP_OnScreenKeyboardState* osk; DBP_MapperMenuState* mapper; DBP_SystemMenuState* system; void* _all; } ptr;
+	union { DBP_PureMenuState* main; DBP_OnScreenKeyboardState* osk; DBP_MapperMenuState* mapper; DBP_SettingsMenuState* settings; void* _all; } ptr;
 	#endif
 	DBP_MenuMouse mouse;
 
@@ -2130,7 +2130,7 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			case DBPOSD_OSK:      delete ptr.osk; break;
 			case DBPOSD_MAPPER:   delete ptr.mapper; break;
 			#ifdef DBP_STANDALONE
-			case DBPOSD_SYSTEM:   delete ptr.system; break;
+			case DBPOSD_SETTINGS: delete ptr.settings; break;
 			#endif
 		}
 		if (in_mode != _DBPOSD_OPEN && in_mode != _DBPOSD_CLOSE) { mode = in_mode; if (!ptr._all) default_shown = 0; }
@@ -2146,7 +2146,7 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			case DBPOSD_OSK: ptr.osk = new DBP_OnScreenKeyboardState(); break;
 			case DBPOSD_MAPPER: ptr.mapper = new DBP_MapperMenuState(); break;
 			#ifdef DBP_STANDALONE
-			case DBPOSD_SYSTEM: ptr.system = new DBP_SystemMenuState(); break;
+			case DBPOSD_SETTINGS: ptr.settings = new DBP_SettingsMenuState(); break;
 			#endif
 			case _DBPOSD_CLOSE:
 				EndIntercept();
@@ -2170,7 +2170,7 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			Bit8u orgrealmouse = mouse.realmouse;
 			mouse.realmouse |= isOSK; // allow button presses with joystick in OSK
 			if (DBP_FullscreenOSD) buf.FillRect(0, 0, w, h, buf.BGCOL_STARTMENU);
-			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, 8, 30, false,                   mouse, "L",                                         txtblend) && mouse.click) evnt(DBPET_KEYUP, KBD_grave, 0);
+			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, 8, 30, false,                 mouse, "L",                                           txtblend) && mouse.click) evnt(DBPET_KEYUP, KBD_grave, 0);
 			#ifndef DBP_STANDALONE
 			int osk = (int)(first_shell && !DBP_FullscreenOSD), mpr = (int)!!first_shell, n = 1+osk+mpr;
 			if (       buf.DrawButton(btnblend, btny, lh,   0, 1, n, btnmrgn, mode == DBPOSD_MAIN,   mouse, (w < 500 ? "START"    : "START MENU"),         txtblend) && mouse.click) SetMode(DBPOSD_MAIN);
@@ -2178,12 +2178,12 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			if (mpr && buf.DrawButton(btnblend, btny, lh, n-1, n, n, btnmrgn, mode == DBPOSD_MAPPER, mouse, (w < 500 ? "CONTROLS" : "CONTROLLER MAPPER"),  txtblend) && mouse.click) SetMode(DBPOSD_MAPPER);
 			#else
 			int osk = 3*(int)(first_shell && !DBP_FullscreenOSD), mpr = 3*(int)!!first_shell, n = 4+osk+mpr;
-			if (       buf.DrawButton(btnblend, btny, lh,   0,   2, n, btnmrgn, mode == DBPOSD_MAIN,   mouse, "START MENU",                                txtblend) && mouse.click) SetMode(DBPOSD_MAIN);
-			if (osk && buf.DrawButton(btnblend, btny, lh,   2,   5, n, btnmrgn, mode == DBPOSD_OSK,    mouse, "ON-SCREEN KEYBOARD",                        txtblend) && mouse.click) SetMode(DBPOSD_OSK);
-			if (mpr && buf.DrawButton(btnblend, btny, lh, n-5, n-2, n, btnmrgn, mode == DBPOSD_MAPPER, mouse, "CONTROLLER MAPPER",                         txtblend) && mouse.click) SetMode(DBPOSD_MAPPER);
-			if (       buf.DrawButton(btnblend, btny, lh, n-2, n  , n, btnmrgn, mode == DBPOSD_SYSTEM, mouse, "SYSTEM",                                    txtblend) && mouse.click) SetMode(DBPOSD_SYSTEM);
+			if (       buf.DrawButton(btnblend, btny, lh,   0,   2, n, btnmrgn, mode == DBPOSD_MAIN,     mouse, "START MENU",                              txtblend) && mouse.click) SetMode(DBPOSD_MAIN);
+			if (osk && buf.DrawButton(btnblend, btny, lh,   2,   5, n, btnmrgn, mode == DBPOSD_OSK,      mouse, "ON-SCREEN KEYBOARD",                      txtblend) && mouse.click) SetMode(DBPOSD_OSK);
+			if (mpr && buf.DrawButton(btnblend, btny, lh, n-5, n-2, n, btnmrgn, mode == DBPOSD_MAPPER,   mouse, "CONTROLLER MAPPER",                       txtblend) && mouse.click) SetMode(DBPOSD_MAPPER);
+			if (       buf.DrawButton(btnblend, btny, lh, n-2, n  , n, btnmrgn, mode == DBPOSD_SETTINGS, mouse, "SETTINGS",                                txtblend) && mouse.click) SetMode(DBPOSD_SETTINGS);
 			#endif
-			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, w-30, w-8, false,               mouse, "R",                                         txtblend) && mouse.click) evnt(DBPET_KEYUP, KBD_tab, 0);
+			if (w >= 296 && buf.DrawButtonAt(btnblend, btny, lh, 4, 4, w-30, w-8, false,             mouse, "R",                                           txtblend) && mouse.click) evnt(DBPET_KEYUP, KBD_tab, 0);
 			if (mouse.y >= btny && (mouse.wheel_up || mouse.wheel_down)) evnt(DBPET_KEYUP, (mouse.wheel_down ? KBD_grave : KBD_tab), 0);
 			mouse.realmouse = orgrealmouse;
 		}
@@ -2195,7 +2195,7 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			case DBPOSD_OSK:      ptr.osk->GFX(buf, mouse); break;
 			case DBPOSD_MAPPER:   ptr.mapper->DrawMenu(buf, menublend, lh, w, h, ftr, mouseMoved, mouse); break;
 			#ifdef DBP_STANDALONE
-			case DBPOSD_SYSTEM:   ptr.system->DrawMenu(buf, menublend, lh, w, h, ftr, mouseMoved, mouse); break;
+			case DBPOSD_SETTINGS: ptr.settings->DrawMenu(buf, menublend, lh, w, h, ftr, mouseMoved, mouse); break;
 			#endif
 		}
 
@@ -2211,7 +2211,7 @@ struct DBP_OnScreenDisplay : DBP_MenuInterceptor
 			case DBPOSD_OSK:      ptr.osk->Input(type, val, val2); break;
 			case DBPOSD_MAPPER:   ptr.mapper->Input(type, val, val2); break;
 			#ifdef DBP_STANDALONE
-			case DBPOSD_SYSTEM:   ptr.system->Input(type, val, val2); break;
+			case DBPOSD_SETTINGS: ptr.settings->Input(type, val, val2); break;
 			#endif
 		}
 		if (type == DBPET_KEYUP && ((KBD_KEYS)val == KBD_tab || (KBD_KEYS)val == KBD_grave))
