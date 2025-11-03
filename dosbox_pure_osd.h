@@ -1305,7 +1305,7 @@ struct DBP_PureMenuState final : DBP_MenuState
 	#ifndef DBP_STANDALONE
 	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, _IT_NO_AUTOBOOT, IT_MAINMENU, IT_COMMANDLINE, IT_CLOSEOSD, IT_VARIANTLIST, IT_VARIANTTOGGLE, IT_VARIANTRUN, IT_VARIANTRUN_RESET_CONFLICTS, IT_VARIANTRUN_KEEP_CONFLICTS, IT_SYSTEMREFRESH };
 	#else
-	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, _IT_NO_AUTOBOOT, IT_MAINMENU, IT_COMMANDLINE, IT_CLOSEOSD, IT_VARIANTLIST, IT_VARIANTTOGGLE, IT_VARIANTRUN, IT_VARIANTRUN_RESET_CONFLICTS, IT_VARIANTRUN_KEEP_CONFLICTS, IT_SYSTEMREFRESH, IT_FILEBROWSE, IT_SAVELOAD };
+	enum ItemType : Bit8u { IT_RUN = _IT_CUSTOM, IT_MOUNT, IT_BOOTIMG, IT_BOOTIMG_MACHINE, IT_BOOTOSLIST, IT_BOOTOS, IT_INSTALLOSSIZE, IT_INSTALLOS, IT_SHELLLIST, IT_RUNSHELL, _IT_NO_AUTOBOOT, IT_MAINMENU, IT_COMMANDLINE, IT_CLOSEOSD, IT_VARIANTLIST, IT_VARIANTTOGGLE, IT_VARIANTRUN, IT_VARIANTRUN_RESET_CONFLICTS, IT_VARIANTRUN_KEEP_CONFLICTS, IT_SYSTEMREFRESH, IT_FILEBROWSE, IT_SAVELOAD, IT_EXITDBPS };
 	#endif
 	enum { INFO_HEADER = 0x0A, INFO_WARN = 0x0B, INFO_DIM = 0xC };
 
@@ -1423,6 +1423,11 @@ struct DBP_PureMenuState final : DBP_MenuState
 			int halfw = w/2, boxw = (w < 640 ? halfw-16 : halfw/2+8);
 			buf.DrawBox(halfw-boxw, h/2-lh*3, boxw*2, lh*6+8, buf.BGCOL_HEADER | 0xFF000000, buf.COL_LINEBOX);
 			buf.PrintCenteredOutlined(lh, 0, w, h/2-lh*2, (w < 320 ? "Reset DOS to" : "Are you sure you want to reset DOS"), buf.COL_BTNTEXT);
+			#ifdef DBP_STANDALONE
+			if (list[sel].type == IT_EXITDBPS)
+				buf.PrintCenteredOutlined(lh, 0, w, h/2-lh+2, (w < 320 ? "exit DOSBox?" : "and shut down DOSBox Pure?"), buf.COL_BTNTEXT);
+			else
+			#endif
 			buf.PrintCenteredOutlined(lh, 0, w, h/2-lh+2, (w < 320 ? "start this?" : "to start the selected application?"), buf.COL_BTNTEXT);
 			if (m.realmouse) popupsel = 0;
 			if (buf.DrawButton(0x80000000, h/2+lh*1, lh, 1, 2, 4, 0, !m.realmouse && popupsel == 1, m, "OK"))     popupsel = 1;
@@ -1537,6 +1542,11 @@ struct DBP_PureMenuState final : DBP_MenuState
 			if (!dbp_strict_mode) list.emplace_back(IT_COMMANDLINE, 0, "Go to Command Line");
 			if (!DBP_FullscreenOSD) list.emplace_back(IT_CLOSEOSD, 0, "Close Menu");
 			if (list.back().type == IT_NONE) list.pop_back();
+
+			#ifdef DBP_STANDALONE
+			list.emplace_back(IT_NONE);
+			list.emplace_back(IT_EXITDBPS, 0, "Exit DOSBox Pure");
+			#endif
 		}
 		else if (mode == IT_BOOTIMG)
 		{
@@ -1700,8 +1710,10 @@ struct DBP_PureMenuState final : DBP_MenuState
 			list.emplace_back(IT_NONE);
 			list.emplace_back(IT_MAINMENU, 0, "Run Other Program");
 			list.emplace_back(IT_NONE);
-			list.emplace_back(IT_NONE, INFO_DIM, "The configuration can be switched with the On-Screen Keyboard");
+			list.emplace_back(IT_NONE, INFO_DIM, "The configuration can be switched with the On-Screen Menu");
+			#ifndef DBP_STANDALONE
 			list.emplace_back(IT_NONE, INFO_DIM, "or by holding shift or L2/R2 when restarting the core");
+			#endif
 		}
 		#ifdef DBP_STANDALONE
 		else if (mode == IT_FILEBROWSE)
@@ -1898,6 +1910,11 @@ struct DBP_PureMenuState final : DBP_MenuState
 		{
 			DBPS_SaveSlotIndex = (DBPS_SaveSlotIndex + 10000 + auto_change) % 10;
 			RefreshList(IT_SAVELOAD, true);
+		}
+		else if (ok_type == IT_EXITDBPS)
+		{
+			if (!show_popup && (dbp_game_running || (first_shell->bf && !first_shell->bf->IsAutoexec()))) { popupsel = 0; show_popup = true; return; } // confirm
+			DBP_DOSBOX_ForceShutdown();
 		}
 		#endif
 		else if (ok_type == IT_BOOTIMG)
