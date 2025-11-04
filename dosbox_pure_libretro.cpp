@@ -3480,6 +3480,9 @@ void retro_run(void)
 				DBP_ForceReset();
 			else if (dbp_state == DBPSTATE_EXITED) // expected shutdown
 			{
+				#ifdef DBP_STANDALONE
+				environ_cb(RETRO_ENVIRONMENT_SHUTDOWN, 0);
+				#else
 				// On statically linked platforms shutdown would exit the frontend, so don't do that. Just tint the screen red and sleep
 				#ifndef STATIC_LINKING
 				if (dbp_menu_time >= 0 && dbp_menu_time < 99) // only auto shut down for users that want auto shut down in general
@@ -3492,6 +3495,7 @@ void retro_run(void)
 					for (Bit8u *p = (Bit8u*)buf.video, *pEnd = p + buf.width * buf.height * 4; p < pEnd; p += 56) p[2] = 255;
 					retro_sleep(10);
 				}
+				#endif
 			}
 			else if (dbp_state == DBPSTATE_SHUTDOWN)
 			{
