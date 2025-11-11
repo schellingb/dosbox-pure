@@ -271,11 +271,10 @@ struct DBP_MenuMouse
 		// Draw white mouse cursor with black outline
 		click = right_up = wheel_up = wheel_down = false;
 		if (!realmouse && !joykbd) return;
-		for (Bit32u thick = buf.GetThickness(), midc = 6*thick, maxc = 8*thick, *v = buf.video, w = buf.width, h = buf.height, i = 0; i != 9; i++)
+		for (Bit32u thick = buf.GetThickness(), midc = 6*thick, maxc = 8*thick, *v = buf.video, w = buf.width, h = buf.height, *pendy = v + w * h, i = 0; i != 9; i++)
 		{
-			Bit32u n = (i < 4 ? i : (i < 8 ? i+1 : 4)), px = (Bit32u)x + (n%3)-1, py = (Bit32u)y + (n/3)-1, ccol = (n == 4 ? 0xFFFFFFFF : 0xFF000000);
-			Bit32u *pp, *p = v + py * w + px, *pendx = p - px + w, *pendy = v + w * h;
-			for (Bit32u c = 0; c != maxc; c++)
+			Bit32u n = (i < 4 ? i : (i < 8 ? i+1 : 4)), px = (Bit32u)x + (n%3)-1, py = (Bit32u)y + (n/3)-1, ccol = (n == 4 ? 0xFFFFFFFF : 0xFF000000), *p = v + py * w + px;
+			if (p < pendy) for (Bit32u *pp, *pendx = p - px + w, c = 0; c != maxc; c++)
 			{
 				if (c < midc && (pp = (p + c * w)) < pendy) *pp = ccol; // line down
 				if ((pp = (p + c)) < pendx)
