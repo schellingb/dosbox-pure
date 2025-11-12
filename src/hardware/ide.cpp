@@ -26,6 +26,7 @@
 #ifdef C_DBP_ENABLE_IDE
 #include "inout.h"
 #include "pic.h"
+#include "bios_disk.h"
 #include "../dos/drives.h"
 #include "../dos/cdrom.h"
 
@@ -2980,15 +2981,15 @@ void IDE_SetupControllers(bool alwaysHaveCDROM)
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS; i++)
 		idecontroller[i] = new IDEController(i);
 
+	DBP_STATIC_ASSERT(MAX_HDD_IMAGES == MAX_IDE_CONTROLLERS*2);
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS*2; i++)
 	{
 		IDEController* c = idecontroller[i>>1];
 		#ifdef C_DBP_ENABLE_IDE_ATA
-		if (i < MAX_HDD_IMAGES && imageDiskList[i+2])
+		if (imageDiskList[i+2])
 			c->device[i&1] = new IDEATADevice(c, i, i+2);
-		else
 		#endif
-		if (numCDROMDevices && numCDROMDevices--)
+		if (!imageDiskList[i+2] && numCDROMDevices && numCDROMDevices--)
 			c->device[i&1] = new IDEATAPICDROMDevice(c, i);
 	}
 
@@ -3026,8 +3027,6 @@ void DBPSerialize_IDE(DBPArchive& ar_outer)
 }
 
 #ifdef C_DBP_ENABLE_IDE_ATA // Disabled ATA drive support because BIOS access covers most cases
-#include "bios_disk.h"
-
 static inline bool is_power_of_2(Bitu val) {
 	return (val != 0) && ((val&(val-1)) == 0);
 }
