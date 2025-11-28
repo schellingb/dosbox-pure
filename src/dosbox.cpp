@@ -127,6 +127,9 @@ static LoopHandler * loop;
 #ifdef C_DBP_USE_SDL
 bool SDLNetInited;
 #endif
+#ifdef C_DBP_LIBRETRO
+bool DOSBox_Boot;
+#endif
 
 #ifndef C_DBP_CUSTOMTIMING
 static Bit32u ticksRemain;
@@ -523,6 +526,9 @@ void DOSBOX_Init(void) {
 
 #ifdef C_DBP_USE_SDL
 	SDLNetInited = false;
+#endif
+#ifdef C_DBP_LIBRETRO
+	DOSBox_Boot = false;
 #endif
 
 	// Some frequently used option sets

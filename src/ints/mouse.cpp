@@ -474,6 +474,10 @@ void DrawCursor() {
 	RestoreVgaRegisters();
 }
 
+//DBP: Do not access real-mode data areas if CPU is in non-virtual 8086 protected mode or the DOS kernel has been shut down by booting into a guest OS (fix page faults in Win9x)
+//     Source: https://github.com/joncampbell123/dosbox-x/commit/aa8d1f8
+#define AllowINT33RMAccess() (!DOSBox_Boot && (!cpu.pmode || GETFLAG(VM)))
+
 void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 	float dx = xrel * mouse.pixelPerMickey_x;
 	float dy = yrel * mouse.pixelPerMickey_y;
@@ -492,7 +496,7 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 		mouse.x += dx;
 		mouse.y += dy;
 	} else {
-		if (CurMode->type == M_TEXT) {
+		if (CurMode && CurMode->type == M_TEXT && AllowINT33RMAccess()) {
 			mouse.x = x*real_readw(BIOSMEM_SEG,BIOSMEM_NB_COLS)*8;
 			mouse.y = y*(IS_EGAVGA_ARCH?(real_readb(BIOSMEM_SEG,BIOSMEM_NB_ROWS)+1):25)*8;
 		} else if ((mouse.max_x < 2048) || (mouse.max_y < 2048) || (mouse.max_x != mouse.max_y)) {
@@ -535,13 +539,15 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 		else if (mouse.y <= -32769.0) mouse.y += 65536.0;
 	}
 	Mouse_AddEvent(MOUSE_HAS_MOVED);
-	DrawCursor();
+	//DBP: Moved call to DrawCursor to INT74_Handler
+	//DrawCursor();
 }
 
 void Mouse_CursorSet(float x,float y) {
 	mouse.x=x;
 	mouse.y=y;
-	DrawCursor();
+	//DBP: Moved call to DrawCursor to INT74_Handler
+	//DrawCursor();
 }
 
 void Mouse_ButtonPressed(Bit8u button) {
@@ -1182,8 +1188,17 @@ static Bitu MOUSE_BD_Handler(void) {
 static Bitu INT74_Handler(void) {
 	if (mouse.events>0 && !mouse.in_UIR) {
 		mouse.events--;
+
+		/* INT 33h emulation: HERE within the IRQ 12 handler is the appropriate place to
+		 * redraw the cursor. OSes like Windows 3.1 expect real-mode code to do it in
+		 * response to IRQ 12, not "out of the blue" from the SDL event handler like
+		 * the original DOSBox code did it. Doing this allows the INT 33h emulation
+		 * to draw the cursor while not causing Windows 3.1 to crash or behave
+		 * erratically. */
+		if (AllowINT33RMAccess()) DrawCursor();
+
 		/* Check for an active Interrupt Handler that will get called */
-		if (mouse.sub_mask & mouse.event_queue[mouse.events].type) {
+		if ((mouse.sub_mask & mouse.event_queue[mouse.events].type) && AllowINT33RMAccess()) {
 			reg_ax=mouse.event_queue[mouse.events].type;
 			reg_bx=mouse.event_queue[mouse.events].buttons;
 			reg_cx=POS_X;

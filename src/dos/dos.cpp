@@ -1406,8 +1406,7 @@ void DBPSerialize_DOS(DBPArchive& ar)
 
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
-		extern const char* RunningProgram;
-		if (strcmp(RunningProgram, "BOOT"))
+		if (!DOSBox_Boot)
 		{
 			if (old_dos_memseg != dos_memseg) ar.warnings |= DBPArchive::WARN_WRONGPROGRAM;
 			if (old_info_seg != dos_infoblock.seg) ar.warnings |= DBPArchive::WARN_WRONGPROGRAM;

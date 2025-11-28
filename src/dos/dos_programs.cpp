@@ -879,6 +879,10 @@ public:
 			return;
 		}
 
+#ifdef C_DBP_LIBRETRO
+		DOSBox_Boot = true;
+#endif
+
 		bootSector bootarea;
 		imageDiskList[drive-65]->Read_Sector(0,0,1,(Bit8u *)&bootarea);
 		if ((bootarea.rawdata[0]==0x50) && (bootarea.rawdata[1]==0x43) && (bootarea.rawdata[2]==0x6a) && (bootarea.rawdata[3]==0x72)) {

@@ -477,7 +477,6 @@ void DBP_InputBind::Update(Bit16s val, bool is_analog_button)
 static void DBP_ReportCoreMemoryMaps()
 {
 	extern const char* RunningProgram;
-	const bool booted_os = !strcmp(RunningProgram, "BOOT");
 	const size_t conventional_end = 640 * 1024, memtotal = (MEM_TotalPages() * 4096);
 
 	// Give access to entire memory to frontend (cheat and achievements support)
@@ -486,7 +485,7 @@ static void DBP_ReportCoreMemoryMaps()
 	// the game memory (below 640k) is always at the same (virtual) address.
 
 	struct retro_memory_descriptor mdescs[3] = {{0}}, *mdesc_expandedmem;
-	if (!booted_os)
+	if (!DOSBox_Boot)
 	{
 		Bit16u seg_prog_start = (DOS_MEM_START + 2 + 5); // see mcb_sizes in DOS_SetupMemory
 		while (DOS_MCB(seg_prog_start).GetPSPSeg() == 0x40) // tempmcb2 from DOS_SetupMemory and "memlimit" dos config
@@ -516,10 +515,10 @@ static void DBP_ReportCoreMemoryMaps()
 	mdesc_expandedmem->ptr   = MemBase + conventional_end;
 
 	#ifndef NDEBUG
-	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] ReportCoreMemoryMaps - Program: %s - Booted OS: %d - Program Memory: %d KB\n", RunningProgram, (int)booted_os, (mdescs[0].len / 1024));
+	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] ReportCoreMemoryMaps - Program: %s - Booted OS: %d - Program Memory: %d KB\n", RunningProgram, (int)DOSBox_Boot, (mdescs[0].len / 1024));
 	#endif
 
-	struct retro_memory_map mmaps = { mdescs, (unsigned)(!booted_os ? 3 : 2) };
+	struct retro_memory_map mmaps = { mdescs, (unsigned)(!DOSBox_Boot ? 3 : 2) };
 	environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &mmaps);
 	dbp_refresh_memmaps = false;
 }
@@ -1320,8 +1319,7 @@ void DBP_EnableNetwork()
 	if (dbp_use_network) return;
 	dbp_use_network = true;
 
-	extern const char* RunningProgram;
-	bool running_dos_game = (dbp_had_game_running && strcmp(RunningProgram, "BOOT"));
+	bool running_dos_game = (dbp_had_game_running && !DOSBox_Boot);
 	if (running_dos_game && DBP_GetTicks() < 10000) { DBP_ForceReset(); return; }
 	DBP_Option::SetDisplay(DBP_Option::modem, true);
 
@@ -1889,7 +1887,7 @@ void GFX_SetTitle(Bit32s cycles, int frameskip, bool paused)
 	bool was_game_running = dbp_game_running;
 	dbp_had_game_running |= (dbp_game_running = (strcmp(RunningProgram, "DOSBOX") && strcmp(RunningProgram, "PUREMENU")));
 	log_cb(RETRO_LOG_INFO, "[DOSBOX STATUS] Program: %s - Cycles: %d - Frameskip: %d - Paused: %d\n", RunningProgram, cycles, frameskip, paused);
-	if (was_game_running != dbp_game_running && !strcmp(RunningProgram, "BOOT")) dbp_refresh_memmaps = true;
+	if (was_game_running != dbp_game_running && DOSBox_Boot) dbp_refresh_memmaps = true;
 	if (cpu.pmode && CPU_CycleAutoAdjust && CPU_OldCycleMax == 3000 && CPU_CycleMax == 3000)
 	{
 		// Choose a reasonable base rate when switching to protected mode
@@ -2374,9 +2372,8 @@ static bool check_variables()
 
 	dbp_auto_target = (1.0f * (cycles_numeric ? 1.0f : (float)atof(DBP_Option::Get(DBP_Option::cycle_limit)))) - 0.0075f; // was - 0.01f
 
-	extern const char* RunningProgram;
 	bool cpu_core_changed = false;
-	const char* cpu_core = ((!memcmp(RunningProgram, "BOOT", 5) && DBP_Option::Get(DBP_Option::bootos_forcenormal, &cpu_core_changed)[0] == 't') ? "normal" : DBP_Option::Get(DBP_Option::cpu_core, &cpu_core_changed));
+	const char* cpu_core = ((DOSBox_Boot && DBP_Option::Get(DBP_Option::bootos_forcenormal, &cpu_core_changed)[0] == 't') ? "normal" : DBP_Option::Get(DBP_Option::cpu_core, &cpu_core_changed));
 	DBP_Option::Apply(sec_cpu, "core", cpu_core, false, false, cpu_core_changed);
 	DBP_Option::GetAndApply(sec_cpu, "cputype", DBP_Option::cpu_type, true);
 

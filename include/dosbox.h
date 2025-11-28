@@ -65,6 +65,9 @@ extern MachineType machine;
 #ifdef C_DBP_USE_SDL
 extern bool SDLNetInited;
 #endif
+#ifdef C_DBP_LIBRETRO
+extern bool DOSBox_Boot;
+#endif
 
 #define IS_TANDY_ARCH ((machine==MCH_TANDY) || (machine==MCH_PCJR))
 #define IS_EGAVGA_ARCH ((machine==MCH_EGA) || (machine==MCH_VGA))

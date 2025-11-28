@@ -1608,10 +1608,9 @@ struct DBP_PureMenuState final : DBP_MenuState
 			}
 			list.emplace_back(IT_NONE);
 			const char* dfreespace = DBP_Option::Get(DBP_Option::bootos_dfreespace); // can also be "discard" or "hide"
-			extern const char* RunningProgram;
 			bool mountedHDIMage = false;
 			for (DBP_Image& i : dbp_images) { if (!DBP_Image_IsCD(i)) { mountedHDIMage = true; break; } }
-			if (mountedHDIMage && (imageDiskList['D'-'A'] || imageDiskList['E'-'A'] || (strcmp(RunningProgram, "BOOT") && imageDiskList['C'-'A'])))
+			if (mountedHDIMage && (imageDiskList['D'-'A'] || imageDiskList['E'-'A'] || (!DOSBox_Boot && imageDiskList['C'-'A'])))
 				list.emplace_back(IT_NONE, INFO_WARN, "D: will be based on the loaded .IMG file");
 			else if (atoi(dfreespace))
 			{
