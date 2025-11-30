@@ -24,6 +24,10 @@
 
 #include "dyn_fpu.h"
 
+#if C_MMX
+#include "dyn_mmx.h"
+#endif
+
 /*
 	The function CreateCacheBlock translates the instruction stream
 	until either an unhandled instruction is found, the maximum
@@ -239,6 +243,10 @@ restart_prefix:
 				// sign-extending moves
 				case 0xbe:dyn_movx_ev_gb(true);break;
 				case 0xbf:dyn_movx_ev_gw(true);break;
+
+#if C_MMX
+				dynrec_mmx_ops
+#endif
 
 				default:
 #if DYN_LOG

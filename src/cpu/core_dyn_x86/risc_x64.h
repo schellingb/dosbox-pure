@@ -1202,6 +1202,31 @@ static void gen_load_flags(DynReg * dynreg) {
 	opcode(FindDynReg(dynreg)->index).setea(4,-1,0,CALLSTACK).Emit8(0x89); // mov [rsp+8/40],reg32
 }
 
+#if C_MMX
+static void gen_save_host(void* data, DynReg* dr1, Bitu size, Bitu di1 = 0)
+{
+	int idx = FindDynReg(dr1)->index;
+	opcode op;
+	uint8_t tmp;
+	switch (size) {
+	case 1:
+		op.setreg(idx, di1);
+		tmp = 0x88; // mov [], r8
+		break;
+	case 2:
+		op.setword(); // mov [], r16
+		/* fall through */
+	case 4:
+		op.setreg(idx);
+		tmp = 0x89; // mov [], r32
+		break;
+	default: IllegalOption("gen_save_host");
+	}
+	op.setabsaddr(data).Emit8(tmp);
+	dr1->flags |= DYNFLG_CHANGED;
+}
+#endif
+
 static void gen_save_host_direct(void *data,Bitu imm) {
 	if ((Bit32s)imm != (Bits)imm) {
 		opcode(0).setimm(imm,4).setabsaddr(data).Emit8(0xC7); // mov dword[], imm32 (low dword)

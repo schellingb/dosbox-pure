@@ -2196,6 +2196,10 @@ static void dyn_larlsl(bool islar) {
 #endif
 #include "dyn_fpu.h"
 
+#if C_MMX
+#include "dyn_mmx.h"
+#endif
+
 static CacheBlock * CreateCacheBlock(CodePageHandler * codepage,PhysPt start,Bitu max_opcodes) {
 	Bits i;
 /* Init a load of variables */
@@ -2316,6 +2320,10 @@ restart_prefix:
 			/* MOVSX Gv,Eb/Ew */
 			case 0xbe:dyn_mov_ev_gb(true);break;
 			case 0xbf:dyn_mov_ev_gw(true);break;
+
+#if C_MMX
+			dyn_x86_mmx_ops
+#endif
 
 			default:
 #if DYN_LOG

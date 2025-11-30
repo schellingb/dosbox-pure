@@ -49,6 +49,9 @@
 #define CPU_ARCHTYPE_486OLDSLOW		0x40
 #define CPU_ARCHTYPE_486NEWSLOW		0x45
 #define CPU_ARCHTYPE_PENTIUMSLOW	0x50
+#if C_MMX
+#define CPU_ARCHTYPE_PENTIUM_MMX	0x55
+#endif
 
 /* CPU Cycle Timing */
 extern Bit32s CPU_Cycles;

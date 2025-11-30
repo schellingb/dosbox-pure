@@ -899,6 +899,9 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 			{ "386_prefetch", "386 (prefetch) - With prefetch queue emulation (only on 'auto' and 'normal' core)" },
 			{ "486_slow", "486 (slow) - 486 instruction set with memory privilege checks" },
 			{ "pentium_slow", "Pentium (slow) - 586 instruction set with memory privilege checks" },
+			#if C_MMX
+			{ "pentium_mmx", "Pentium MMX (slow) - 586 instruction set with MMX extension" },
+			#endif
 		},
 		"auto"
 	},

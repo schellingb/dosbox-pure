@@ -1082,6 +1082,22 @@ static void gen_load_flags(DynReg * dynreg) {
 	cache_addb(0x50+genreg->index);		//PUSH 32
 }
 
+#if C_MMX
+static void gen_save_host(void* data, DynReg* dr1, Bitu size, Bitu di1 = 0)
+{
+	GenReg* gr1 = FindDynReg(dr1);
+	switch (size) {
+	case 1: cache_addb(0x88); break; // mov byte
+	case 2: cache_addb(0x66);        // mov word
+	case 4: cache_addb(0x89); break; // mov
+	default: IllegalOption("gen_save_host");
+	}
+	cache_addb(0x5 + ((gr1->index + di1) << 3));
+	cache_addd((uintptr_t)data);
+	dr1->flags |= DYNFLG_CHANGED;
+}
+#endif
+
 static void gen_save_host_direct(void * data,Bits imm) {
 	cache_addw(0x05c7);		//MOV [],dword
 	cache_addd((Bit32u)data);

@@ -50,6 +50,17 @@
 #define SaveMd(off,val)	mem_writed_inline(off,val)
 #endif
 
+#if C_MMX
+#include "mmx.h"
+#if (!C_CORE_INLINE)
+#define LoadMq(off) ((Bit64u)((Bit64u)mem_readd(off+4)<<32 | (Bit64u)mem_readd(off)))
+#define SaveMq(off,val) {mem_writed(off,val&0xffffffff);mem_writed(off+4,(val>>32)&0xffffffff);}
+#else
+#define LoadMq(off) mem_readq_inline(off)
+#define SaveMq(off,val) mem_writeq_inline(off,val)
+#endif
+#endif
+
 extern Bitu cycle_count;
 
 #if C_FPU

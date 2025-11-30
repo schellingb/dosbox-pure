@@ -269,7 +269,11 @@ struct DBP_Run
 		// Switch cputype to highest feature set (needed for Windows 9x) and increase real mode CPU cycles
 		Section* section = control->GetSection("cpu");
 		section->ExecuteDestroy(false);
+		#if C_MMX
+		section->HandleInputline("cputype=pentium_mmx");
+		#else
 		section->HandleInputline("cputype=pentium_slow");
+		#endif
 		if (DBP_Option::Get(DBP_Option::bootos_forcenormal)[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
 		section->GetProp("cputype")->MarkFixed();
@@ -503,7 +507,11 @@ struct DBP_Run
 			{
 				case 'c':
 					return (0
+						#if C_MMX
+						||Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "generic_pentium_mmx","pentium_mmx" , "")
+						#else
 						||Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
+						#endif
 						||ParseCPU("cpu_cycles")||ParseCPU("cpu_hz")||ParseCPU("cpu_year")||ParseCPU("cpu_max_cycles")||ParseCPU("cpu_max_hz")||ParseCPU("cpu_max_year")
 					);
 				case 'm':

@@ -299,6 +299,14 @@ static INLINE Bit32u mem_readd_inline(PhysPt address) {
 	} else return mem_unalignedreadd(address);
 }
 
+static INLINE Bit64u mem_readq_inline(PhysPt address) {
+	if ((address & 0xfff)<0xff9) {
+		HostPt tlb_addr=get_tlb_read(address);
+		if (tlb_addr) return ((Bit64u)host_readd(tlb_addr+address)|((Bit64u)host_readd(tlb_addr+address+4)<<32));
+		else { PageHandler* ph = get_tlb_readhandler(address); return ((Bit64u)ph->readd(address)|((Bit64u)ph->readd(address+4)<<32)); }
+	} else return ((Bit64u)mem_unalignedreadd(address)|((Bit64u)mem_unalignedreadd(address+4)<<32));
+}
+
 static INLINE void mem_writeb_inline(PhysPt address,Bit8u val) {
 	HostPt tlb_addr=get_tlb_write(address);
 	if (tlb_addr) host_writeb(tlb_addr+address,val);
@@ -319,6 +327,14 @@ static INLINE void mem_writed_inline(PhysPt address,Bit32u val) {
 		if (tlb_addr) host_writed(tlb_addr+address,val);
 		else (get_tlb_writehandler(address))->writed(address,val);
 	} else mem_unalignedwrited(address,val);
+}
+
+static INLINE void mem_writeq_inline(PhysPt address,Bit64u val) {
+	if ((address & 0xfff)<0xff9) {
+		HostPt tlb_addr=get_tlb_write(address);
+		if (tlb_addr) { host_writed(tlb_addr+address,(Bit32u)val); host_writed(tlb_addr+address+4,(Bit32u)(val>>32)); }
+		else { PageHandler* ph = get_tlb_writehandler(address); ph->writed(address,(Bit32u)val); ph->writed(address+4,(Bit32u)(val>>32)); }
+	} else { mem_unalignedwrited(address,(Bit32u)val); mem_unalignedwrited(address+4,(Bit32u)(val>>32)); }
 }
 
 

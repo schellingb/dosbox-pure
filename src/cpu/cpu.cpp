@@ -2146,6 +2146,13 @@ bool CPU_CPUID(void) {
 			reg_ebx=0;			/* Not Supported */
 			reg_ecx=0;			/* No features */
 			reg_edx=0x00000011;	/* FPU+TimeStamp/RDTSC */
+#if C_MMX
+		} else if (CPU_ArchitectureType==CPU_ARCHTYPE_PENTIUM_MMX) {
+			reg_eax=0x543;		/* intel pentium mmx (PMMX) */
+			reg_ebx=0;			/* Not Supported */
+			reg_ecx=0;			/* No features */
+			reg_edx=0x00800011;	/* FPU+TimeStamp/RDTSC+MMX */
+#endif
 		} else {
 			return false;
 		}
@@ -2377,6 +2384,75 @@ void CPU_Reset_AutoAdjust(void) {
 }
 #endif
 
+#if C_MMX
+#include "mmx.h"
+#include "fpu.h"
+
+MMX_reg *reg_mmx[8] = {
+	&fpu.regs[0].reg_mmx,
+	&fpu.regs[1].reg_mmx,
+	&fpu.regs[2].reg_mmx,
+	&fpu.regs[3].reg_mmx,
+	&fpu.regs[4].reg_mmx,
+	&fpu.regs[5].reg_mmx,
+	&fpu.regs[6].reg_mmx,
+	&fpu.regs[7].reg_mmx,
+};
+
+MMX_reg * lookupRMregMM[256]={
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+};
+
+void setFPUTagEmpty() {
+	FPU_SetCW(0x37F);
+	fpu.sw = 0;
+	TOP = FPU_GET_TOP();
+	fpu.tags[0] = TAG_Empty;
+	fpu.tags[1] = TAG_Empty;
+	fpu.tags[2] = TAG_Empty;
+	fpu.tags[3] = TAG_Empty;
+	fpu.tags[4] = TAG_Empty;
+	fpu.tags[5] = TAG_Empty;
+	fpu.tags[6] = TAG_Empty;
+	fpu.tags[7] = TAG_Empty;
+	fpu.tags[8] = TAG_Valid; // is only used by us
+}
+#endif
+
 class CPU: public Module_base {
 private:
 	static bool inited;
@@ -2420,7 +2496,11 @@ public:
 			cpu.drx[i]=0;
 			cpu.trx[i]=0;
 		}
+#if !C_MMX
 		if (CPU_ArchitectureType==CPU_ARCHTYPE_PENTIUMSLOW) {
+#else
+		if (CPU_ArchitectureType>=CPU_ARCHTYPE_PENTIUMSLOW) {
+#endif
 			cpu.drx[6]=0xffff0ff0;
 		} else {
 			cpu.drx[6]=0xffff1ff0;
@@ -2612,6 +2692,10 @@ public:
 			}
 		} else if (cputype == "pentium_slow") {
 			CPU_ArchitectureType = CPU_ARCHTYPE_PENTIUMSLOW;
+#if C_MMX
+		} else if (cputype == "pentium_mmx") {
+			CPU_ArchitectureType = CPU_ARCHTYPE_PENTIUM_MMX;
+#endif
 		}
 
 		if (CPU_ArchitectureType>=CPU_ARCHTYPE_486NEWSLOW) CPU_extflags_toggle=(FLAG_ID|FLAG_AC);
