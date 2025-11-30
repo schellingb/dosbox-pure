@@ -403,18 +403,10 @@ struct GuestPageFaultException : std::exception {
 		goto restartloop2; \
 	}
 
-#define REWIND_ESP_ON_PAEGFAULT_START \
-	{ \
-		Bitu old_esp = reg_esp; \
-		try {
+#define PAGE_FAULT_CLEANUP_SETUP(...) __VA_ARGS__
+#define PAGE_FAULT_CLEANUP_TRY(...) { __VA_ARGS__ try {
+#define PAGE_FAULT_CLEANUP_CATCH(...) } catch (GuestPageFaultException&) { __VA_ARGS__ throw; } }
 
-#define REWIND_ESP_ON_PAGEFAULT_END \
-		} \
-		catch (GuestPageFaultException&) { \
-			reg_esp = old_esp; \
-			throw; \
-		} \
-	}
 #else // use C longjmp (incomplete)
 #include <csetjmp>
 extern Bitu pagefault_faultcode;
@@ -434,15 +426,7 @@ extern Bit32u pagefault_old_esp;
 		paging_prevent_exception_jump = false; \
 	}
 
-#define PAGE_FAULT_CATCH
-
-#define REWIND_ESP_ON_PAEGFAULT_START \
-	{ \
-		pagefault_old_esp = reg_esp;
-
-#define REWIND_ESP_ON_PAGEFAULT_END \
-		pagefault_old_esp = 0; \
-	}
+#define PAGE_FAULT_CATCH TODO
 #endif
 
 #endif

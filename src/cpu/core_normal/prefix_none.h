@@ -216,18 +216,18 @@
 		reg_di=Pop_16();break;
 	CASE_W(0x60)												/* PUSHA */
 		{
-			REWIND_ESP_ON_PAEGFAULT_START
+			PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 			Bit16u old_sp=reg_sp;
 			Push_16(reg_ax);Push_16(reg_cx);Push_16(reg_dx);Push_16(reg_bx);
 			Push_16(old_sp);Push_16(reg_bp);Push_16(reg_si);Push_16(reg_di);
-			REWIND_ESP_ON_PAGEFAULT_END
+			PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 		}
 		break;
 	CASE_W(0x61)												/* POPA */
-		REWIND_ESP_ON_PAEGFAULT_START
+		PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 		reg_di=Pop_16();reg_si=Pop_16();reg_bp=Pop_16();Pop_16();//Don't save SP
 		reg_bx=Pop_16();reg_dx=Pop_16();reg_cx=Pop_16();reg_ax=Pop_16();
-		REWIND_ESP_ON_PAGEFAULT_END
+		PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 		break;
 	CASE_W(0x62)												/* BOUND */
 		{
@@ -529,12 +529,12 @@
 		}							
 	CASE_W(0x8f)												/* POP Ew */
 		{
-			REWIND_ESP_ON_PAEGFAULT_START
+			PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 			Bit16u val=Pop_16();
 			GetRM;
 			if (rm >= 0xc0 ) {GetEArw;*earw=val;}
 			else {GetEAa;SaveMw(eaa,val);}
-			REWIND_ESP_ON_PAGEFAULT_END
+			PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 			break;
 		}
 	CASE_B(0x90)												/* NOP */
@@ -688,12 +688,12 @@
 		GRP2W(Fetchb());break;
 	CASE_W(0xc2)												/* RETN Iw */
 		{
-			REWIND_ESP_ON_PAEGFAULT_START
+			PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 			/* this is structured either to complete RET or leave registers unmodified if interrupted by page fault */
 			Bit32u new_eip = Pop_16();
 			reg_esp+=Fetchw();
 			reg_eip=new_eip;
-			REWIND_ESP_ON_PAGEFAULT_END
+			PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 		}
 		continue;
 	CASE_W(0xc3)												/* RETN */
@@ -739,11 +739,11 @@
 		}
 		break;
 	CASE_W(0xc9)												/* LEAVE */
-		REWIND_ESP_ON_PAEGFAULT_START
+		PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 		reg_esp&=cpu.stack.notmask;
 		reg_esp|=(reg_ebp&cpu.stack.mask);
 		reg_bp=Pop_16();
-		REWIND_ESP_ON_PAGEFAULT_END
+		PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 		break;
 	CASE_W(0xca)												/* RETF Iw */
 		{

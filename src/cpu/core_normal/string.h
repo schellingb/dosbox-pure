@@ -47,7 +47,7 @@ static void DoString(STRING_OP type) {
 	}
 	//DBP: Added implementation of accuracy improvements and page fault handling from DOSBox-X by Jonathan Campbell
 	//     Source: https://github.com/joncampbell123/dosbox-x/commit/59bcdd3
-	if (count) { try { switch (type) {
+	if (count) { PAGE_FAULT_CLEANUP_TRY() switch (type) {
 	case R_OUTSB:
 		do {
 			IO_WriteB(reg_dx,LoadMb(si_base+si_index));
@@ -252,7 +252,7 @@ static void DoString(STRING_OP type) {
 				}
 			}
 		}
-	}} catch (GuestPageFaultException&) {
+	} PAGE_FAULT_CLEANUP_CATCH({
 		/* Clean up after certain amount of instructions */
 		reg_esi&=(~add_mask);
 		reg_esi|=(si_index & add_mask);
@@ -268,6 +268,5 @@ static void DoString(STRING_OP type) {
 		 *       when the guest OS has finished handling the page fault the instruction
 		 *       pointer will come right back to the string op that caused the fault
 		 *       and the string op will restart where it left off. */
-		throw;
-	}}
+	})}
 }
