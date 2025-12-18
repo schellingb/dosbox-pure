@@ -65,6 +65,7 @@ namespace DBP_Option
 		menu_time,
 		menu_transparency,
 		// Input
+		map_osd_hotkey,
 		map_osd,
 		mouse_input,
 		mouse_wheel,
@@ -325,11 +326,31 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 
 	// Input
 	{
-		"dosbox_pure_on_screen_keyboard", // legacy name
-		"Use L3 Button to Show Menu", NULL,
-		"Always bind the L3 controller button to show the menu to swap CDs/Disks and use the On-Screen Keyboard.", NULL,
+		"dosbox_pure_menu_action",
+		"Menu Activation Inputs", NULL,
+		"Choose whether the DOSBox Pure menu can be opened using the L3 button, Ctrl+Home hotkey, both, or neither.", NULL,
 		DBP_OptionCat::Input,
-		{ { "true", "On (Default to Menu)" }, { "keyboard", "On (Default to On-Screen Keyboard)" }, { "false", "Off" } },
+		{
+			{ "true",   "L3 and Ctrl+Home (default)" },
+			{ "L3",     "L3 button only" },
+			{ "hotkey", "Ctrl+Home only" },
+			{ "false",  "Off (disable both inputs)" },
+		},
+		"true"
+	},
+	{
+		"dosbox_pure_on_screen_keyboard", // legacy name
+		"Menu Behavior for L3 Button & Hotkey", NULL,
+		"Select which menu is opened by the L3 controller button and Ctrl+Home keyboard hotkey." "\n"
+		"The default setting reopens the previously viewed menu. You can swap CDs/disks on the Start Menu." "\n"
+		"The On-Screen Keyboard is for controllers and touchscreens. Gamepad Mapper can setup controller mapping.", NULL,
+		DBP_OptionCat::Input,
+		{
+			{ "true",      "Open previous menu (default)" },
+			{ "startmenu", "Always open Start Menu (swap CDs/discs)" },
+			{ "keyboard",  "Always open On-Screen Keyboard" },
+			{ "mapper",    "Always open Gamepad Mapper" },
+		},
 		"true"
 	},
 	{

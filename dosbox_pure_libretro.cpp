@@ -94,6 +94,8 @@ static StringToPointerHashMap<void> dbp_vdisk_filter;
 static unsigned dbp_image_index;
 
 // DOSBOX INPUT
+static bool dbp_hotkey_handled = false;
+static char dbp_menu_action[8] = "true";
 struct DBP_InputBind
 {
 	Bit8u port, device, index, id;
@@ -139,6 +141,8 @@ enum DBP_Event_Type : Bit8u
 	DBPET_JOY2DOWN, DBPET_JOY2UP,
 	DBPET_KEYDOWN, DBPET_KEYUP,
 	DBPET_TOGGLEOSD, DBPET_TOGGLEOSDUP,
+	DBPET_OPENOSD_PREVIOUS, DBPET_OPENOSD_MAIN,
+	DBPET_OPENOSD_OSK, DBPET_OPENOSD_MAPPER,
 	DBPET_ACTIONWHEEL, DBPET_ACTIONWHEELUP,
 	DBPET_SHIFTPORT, DBPET_SHIFTPORTUP,
 
@@ -1786,6 +1790,12 @@ void GFX_Events()
 	static int mouse_joy_x, mouse_joy_y, hatbits;
 	while (dbp_event_queue_read_cursor != dbp_event_queue_write_cursor)
 	{
+		// Read the "Menu Activation Inputs" option and determine which inputs (L3 / Ctrl+Home) are enabled
+		const char* menu_action = retro_get_variable("dosbox_pure_menu_action", "true");
+
+		const bool allow_l3     = (menu_action[0] == 't' || menu_action[0] == 'L'); // "t" = L3 + Ctrl+Home, "L" = L3 only
+		const bool allow_hotkey = (menu_action[0] == 't' || menu_action[0] == 'h'); // "t" = L3 + Ctrl+Home, "h" = Ctrl+Home only
+
 		DBP_Event e = dbp_event_queue[dbp_event_queue_read_cursor];
 		dbp_event_queue_read_cursor = ((dbp_event_queue_read_cursor + 1) % DBP_EVENT_QUEUE_SIZE);
 		//log_cb(RETRO_LOG_INFO, "[DOSBOX EVENT] [%4d@%6d] %s %08x%s\n", dbp_framecount, DBP_GetTicks(), (e.type > _DBPET_MAX ? "SPECIAL" : DBP_Event_Type_Names[(int)e.type]), (unsigned)e.val, (dbp_intercept_next ? " [INTERCEPTED]" : ""));
@@ -1802,8 +1812,23 @@ void GFX_Events()
 				break;
 			case DBPET_KEYUP: KEYBOARD_AddKey((KBD_KEYS)e.val, false); break;
 
-			case DBPET_TOGGLEOSD: DBP_StartOSD(); break;
-			case DBPET_TOGGLEOSDUP: break;
+			case DBPET_TOGGLEOSD:
+			if (!allow_l3 && e.port < DBP_MAX_PORTS) break;
+
+			if (dbp_map_osd == 't')      { DBP_QueueEvent(DBPET_OPENOSD_PREVIOUS, e.port, 0); } // Open previous menu (default)
+			else if (dbp_map_osd == 's') { DBP_QueueEvent(DBPET_OPENOSD_MAIN,     e.port, 0); } // Always open Start Menu
+			else if (dbp_map_osd == 'k') { DBP_QueueEvent(DBPET_OPENOSD_OSK,      e.port, 0); } // Always open On-Screen Keyboard
+			else if (dbp_map_osd == 'm') { DBP_QueueEvent(DBPET_OPENOSD_MAPPER,   e.port, 0); } // Always open Gamepad Mapper
+			break;
+
+			case DBPET_TOGGLEOSDUP:
+			break;
+
+			// Ctrl+Home hotkey opens the OSD using the same logic as the L3 button
+			case DBPET_OPENOSD_MAIN:     DBP_StartOSD(DBPOSD_MAIN);   break;
+			case DBPET_OPENOSD_OSK:      DBP_StartOSD(DBPOSD_OSK);    break;
+			case DBPET_OPENOSD_MAPPER:   DBP_StartOSD(DBPOSD_MAPPER); break;
+			case DBPET_OPENOSD_PREVIOUS: DBP_StartOSD(_DBPOSD_OPEN);  break;
 
 			case DBPET_ACTIONWHEEL: DBP_WheelShiftOSD(e.port, true); break;
 			case DBPET_ACTIONWHEELUP: DBP_WheelShiftOSD(e.port, false); break;
@@ -2859,6 +2884,13 @@ void retro_init(void) //#3
 		{
 			// This can be called from another thread. Hopefully we can get away without a mutex in DBP_QueueEvent.
 			if (keycode >= RETROK_LAST) return;
+
+			// The Home key must be suppressed during Ctrl+Home so that the OSD menu does not receive unintended input
+			if ((key_modifiers & RETROKMOD_CTRL) && keycode == RETROK_HOME)
+			{
+				return;
+			}
+
 			int val = dbp_keymap_retro2dos[keycode];
 			if (!val) return;
 			if (down && !dbp_keys_down[val])
@@ -3407,6 +3439,44 @@ void retro_run(void)
 	input_poll_cb();
 	//input_state_cb(0, RETRO_DEVICE_NONE, 0, 0); // poll keys? 
 	//input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_SPACE); // get latest keyboard callbacks?
+
+	// This section is for the Ctrl+Home hotkey. It uses the same logic as the L3 button (this way is stable)
+	const char* hotkey_ctrlhome = DBP_Option::Get(DBP_Option::map_osd_hotkey);
+	const char* menu_action = retro_get_variable("dosbox_pure_menu_action", "true");
+
+	// Determine which inputs (L3 / Ctrl+Home) are enabled
+	const bool allow_l3     = (menu_action[0] == 't' || menu_action[0] == 'L');
+	const bool allow_hotkey = (menu_action[0] == 't' || menu_action[0] == 'h');
+
+	bool ctrlhome_down = (hotkey_ctrlhome[0] != 'f' &&
+	(input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_LCTRL) ||
+	input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_RCTRL)) &&
+	input_state_cb(0, RETRO_DEVICE_KEYBOARD, 0, RETROK_HOME) );
+
+	/* Mark this press as handled so the action only fires once per key-press,
+	even if the user holds Ctrl+Home or repeatedly spams it */
+	if (allow_hotkey && ctrlhome_down && !dbp_hotkey_handled)
+	{
+		dbp_hotkey_handled = true;
+		static bool dbp_osd_busy = false; // Guard against entering OSD logic twice in the same press
+		if (!dbp_osd_busy)
+		{
+			dbp_osd_busy = true;
+			if (dbp_intercept) { DBP_SetIntercept(NULL); }
+			else {
+				char mode = hotkey_ctrlhome[0], prev_osd_map = dbp_map_osd; // Store the current L3 setting
+				dbp_map_osd = mode; 										// Change the L3 setting to what Ctrl+Home is set to
+				DBP_QueueEvent(DBPET_TOGGLEOSD, DBP_MAX_PORTS, 0); 			// Open the OSD using the same logic as L3
+				dbp_map_osd = prev_osd_map; 								// Restore original L3 setting
+			}
+			dbp_osd_busy = false;
+		}
+	}
+	else if (!ctrlhome_down && dbp_hotkey_handled)
+	{
+		dbp_hotkey_handled = false;
+		DBP_QueueEvent(DBPET_TOGGLEOSDUP, DBP_MAX_PORTS, 0);
+	}
 
 	// query mouse movement before querying mouse buttons
 	if (dbp_mouse_input != 'f')
