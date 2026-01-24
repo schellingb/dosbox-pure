@@ -55,7 +55,8 @@ void DOS_SetDefaultDrive(Bit8u drive) {
 	if (drive<DOS_DRIVES && ((drive<2) || Drives[drive])) {dos.current_drive = drive; DOS_SDA(DOS_SDA_SEG,DOS_SDA_OFS).SetDrive(drive);}
 }
 
-bool DOS_MakeName(char const * const name,char * const fullname,Bit8u * drive) {
+//DBP: Pass volume search attr to keep all characters allowed in a DOS volume label
+bool DOS_MakeName(char const * const name,char * const fullname,Bit8u * drive,bool volume) {
 	if(!name || *name == 0 || *name == ' ') {
 		/* Both \0 and space are seperators and
 		 * empty filenames report file not found */
@@ -81,7 +82,7 @@ bool DOS_MakeName(char const * const name,char * const fullname,Bit8u * drive) {
 	while (name_int[r]!=0 && (r<DOS_PATHLENGTH)) {
 		c=name_int[r++];
 		if ((c>='a') && (c<='z')) c-=32;
-		else if (c==' ') continue; /* should be separator */
+		else if (c==' ' && !volume) continue; /* should be separator */
 		else if (c=='/') c='\\';
 		upname[w++]=c;
 	}
@@ -172,6 +173,7 @@ bool DOS_MakeName(char const * const name,char * const fullname,Bit8u * drive) {
 				case 0xe5:	case 0xbd:	case 0x9d:
 					break;
 				default:
+					if (volume) break; // allow all characters when called via DOS_FindFirst for DOS_ATTR_VOLUME
 					LOG(LOG_FILES,LOG_NORMAL)("Makename encountered an illegal char %c hex:%X in %s!",c,c,name);
 					DOS_SetError(DOSERR_PATH_NOT_FOUND);return false;
 					break;
@@ -333,7 +335,8 @@ bool DOS_FindFirst(char * search,Bit16u attr,bool fcb_findfirst) {
 		DOS_SetError(DOSERR_NO_MORE_FILES);
 		return false;
 	}
-	if (!DOS_MakeName(search,fullsearch,&drive)) return false;
+	//DBP: Pass volume search attr to keep all characters allowed in a DOS volume label
+	if (!DOS_MakeName(search,fullsearch,&drive,((attr&DOS_ATTR_VOLUME)!=0))) return false;
 	//Check for devices. FindDevice checks for leading subdir as well
 	bool device = (DOS_FindDevice(search) != DOS_DEVICES);
 

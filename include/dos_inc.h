@@ -133,7 +133,7 @@ bool DOS_CreateTempFile(char * const name,Bit16u * entry);
 bool DOS_FileExists(char const * const name);
 
 /* Helper Functions */
-bool DOS_MakeName(char const * const name,char * const fullname,Bit8u * drive);
+bool DOS_MakeName(char const * const name,char * const fullname,Bit8u * drive,bool volume = false);
 /* Drive Handing Routines */
 Bit8u DOS_GetDefaultDrive(void);
 void DOS_SetDefaultDrive(Bit8u drive);
