@@ -203,7 +203,8 @@ void MixerChannel::Mix(Bitu _needed) {
 		Bitu left = (needed - done);
 		left *= freq_add;
 		left  = (left >> FREQ_SHIFT) + ((left & FREQ_MASK)!=0);
-		DBP_ASSERT(left <= MIXER_BUFSIZE);
+		// DBP: Added to avoid potential overflow of MixTemp
+		if (left > (MIXER_BUFSIZE/4)) left = (MIXER_BUFSIZE/4);
 		handler(left);
 	}
 }
@@ -908,3 +909,138 @@ DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar_outer, MixerChannel* chan)
 		mixer.needed = mixer.min_needed+1;
 	}
 }
+
+#ifdef DBP_STANDALONE
+static SpinLock EmuMixerLock;
+static volatile bool emulation_sleeping;
+
+void DBPS_MIXER_AroundEmulationWait(bool start_wait)
+{
+	EmuMixerLock.Lock();
+	emulation_sleeping = start_wait;
+	EmuMixerLock.Unlock();
+}
+
+float DBPS_AudioMix(short* buffer, Bit32u samples, float speed, int max_wait)
+{
+	//static Bitu mixer_debug_output, mixer_debug_generated;
+	const Bitu want = (speed == 1.0f ? (Bitu)samples : (speed > 999999.0f ? (Bitu)mixer.done : (Bitu)(samples * speed)));
+	if (want > mixer.done)
+	{
+		extern Bit64s dbp_cpu_features_get_time_usec(void);
+		const Bit64s usec = dbp_cpu_features_get_time_usec(), ms = (Bit64s)max_wait, midusec = usec+ms*500, maxusec = usec+ms*2000, limitusec = usec+ms*1000;
+
+		// First wait a bit for the emulation to naturally generate audio (unless running in aggressive mode)
+		static Bit8u aggressive;
+		while (!aggressive && want > mixer.done)
+		{
+			retro_sleep(0);
+			if ((dbp_cpu_features_get_time_usec()) > midusec) break;
+		}
+		if (aggressive) aggressive--;
+
+		// Then if not yet enough audio data exists, increase mixer.needed to the amount we want to output and try have it force generated
+		Callback_LockAudio();
+		const Bitu forcegen = (want > mixer.needed ? (want - mixer.needed) : 0), newneeded = mixer.needed + forcegen; //, olddone = mixer.done;
+		mixer.needed = newneeded;
+		Callback_UnlockAudio();
+		while (want > mixer.done)
+		{
+			EmuMixerLock.Lock();
+			if (emulation_sleeping) { MIXER_Mix(); EmuMixerLock.Unlock(); continue; } // force mix while emulation sleeps
+			EmuMixerLock.Unlock();
+			retro_sleep(0);
+			if ((dbp_cpu_features_get_time_usec()) > maxusec) break; // emulation lagging (or crashed)
+		}
+		//if (mixer.done < want) printf("[DBMIXER] Failed to force generate %u samples (only got %u)\n", (unsigned)forcegen, (unsigned)(mixer.done - olddone));
+		//mixer_debug_generated += (mixer.done - olddone);
+
+		// If mixer.needed increased since before, it was naturally done by the emulation so we can try to subtract some of our forced amount again
+		if (forcegen && mixer.needed > newneeded)
+		{
+			Callback_LockAudio();
+			const Bitu natural_increase = (mixer.needed - newneeded), reduce_generated = (natural_increase > forcegen ? forcegen : natural_increase);
+			mixer.needed -= reduce_generated;
+			if (mixer.needed < mixer.done) mixer.needed = mixer.done; // needed can't go lower than done
+			Callback_UnlockAudio();
+			//mixer_debug_generated -= reduce_generated;
+		}
+
+		// We allow audio generation to wait a bit longer than the audio latency because some audio drivers can deal with it for 1 frame (but if it happens once we enable aggressive mode)
+		if (dbp_cpu_features_get_time_usec() > limitusec)
+		{
+			aggressive = 5;
+			//printf("[DBMIXER] Took %u musec (beyond allowed %u)\n", (unsigned)(dbp_cpu_features_get_time_usec() - usec), (unsigned)((Bit64s)maxwait * 1000));
+		}
+	}
+
+	Bitu have = mixer.done, use;
+	if (have == 0)
+	{
+		memset(buffer, 0, samples * 4);
+		return 1.0f;
+	}
+
+	double audio_stretch = 1.0;
+	if (want == samples && have >= want)
+	{
+		use = want;
+		MIXER_CallBack(NULL, (unsigned char*)buffer,  (int)(want * 4));
+	}
+	else
+	{
+		enum { UI_MAX_SAMPLES = 4096*4 };
+		static short stretchbuf[UI_MAX_SAMPLES * 2]; // stereo
+
+		if (speed == 0.0f) use = (have < samples ? have : (Bitu)samples);
+		else               use = (have < want    ? have : want);
+
+		if (use > UI_MAX_SAMPLES) use = UI_MAX_SAMPLES;
+		audio_stretch = ((speed == 0.0f) ? 1.0 : (double)use / samples); // don't stretch during frame stepping (speed 0)
+		MIXER_CallBack(NULL, (unsigned char*)stretchbuf, (int)(use* 4));
+		//printf("[DBMIXER] Stretch %d (of %d available total) into %d (factor %f)\n", (int)use, (int)have, (int)samples, (float)audio_stretch);
+
+		if (0)
+		{
+			for (Bitu i = 0; i != samples*2; i++, buffer++) // repeat samples
+			{
+				buffer[0] = stretchbuf[i < (use*2) ? i : (use*2) - (i % (use*2))];
+			}
+		}
+		else
+		{
+			for (Bitu i = 0, jMax = use - 1; i != samples; i++, buffer += 2) // linear interpolation
+			{
+				const double src_pos_float = i * audio_stretch;
+				const Bitu j0 = (Bitu)src_pos_float, j1 = j0 + (Bitu)(j0 != jMax);
+				const double frac = src_pos_float - j0;
+				buffer[0] = (short)((1.0 - frac) * stretchbuf[j0 * 2 + 0] + frac * stretchbuf[j1 * 2 + 0]); // stretchbuf[j0 * 2 + 0] // simple nearest
+				buffer[1] = (short)((1.0 - frac) * stretchbuf[j0 * 2 + 1] + frac * stretchbuf[j1 * 2 + 1]); // stretchbuf[j0 * 2 + 1] // simple nearest
+			}
+		}
+
+		if (speed == 0.0f && use < samples) { memset(buffer - (samples - use) * 2, 0, (samples - use) * 4); }
+	}
+
+	// The mixer.tick_add should always be at the default value after running MIXER_CallBack (due to Mixer_irq_important always returning false)
+	DBP_ASSERT(mixer.tick_add == calc_tickadd(mixer.freq));
+	if (have > (use + 600) && have > (want + 600))
+	{
+		mixer.tick_add /= 2;
+		//printf("[DBMIXER] Throttle due to having %d samples buffered\n", (int)have);
+	}
+
+	// Log statistics every 1 real-time second passed
+	//const Bitu oldout = mixer_debug_output;
+	//mixer_debug_output += ((Bitu)want << TICK_SHIFT);
+	//if ((oldout / ((Bitu)44100 << TICK_SHIFT)) != (mixer_debug_output / ((Bitu)44100 << TICK_SHIFT)))
+	//{
+	//	printf("[DBMIXER] Output: %d - Generated: %d - Curblock: %d\n", (int)(mixer_debug_output >> TICK_SHIFT), (int)mixer_debug_generated, (int)samples);
+	//	mixer_debug_output -= ((Bitu)44100 << TICK_SHIFT);
+	//	mixer_debug_generated = 0;
+	//}
+
+	return (float)audio_stretch;
+}
+
+#endif

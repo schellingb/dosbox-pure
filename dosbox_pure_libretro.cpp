@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2025 Bernhard Schelling
+ *  Copyright (C) 2020-2026 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -572,7 +572,14 @@ static void DBP_ThreadControl(DBP_ThreadCtlMode m)
 		case TCM_ON_FINISH_FRAME:
 			semDidPause.Post();
 			emuWaitTimeStart = time_cb();
+			#ifndef DBP_STANDALONE
 			semDoContinue.Wait();
+			#else
+			extern void DBPS_MIXER_AroundEmulationWait(bool start_wait);
+			DBPS_MIXER_AroundEmulationWait(true);
+			semDoContinue.Wait();
+			DBPS_MIXER_AroundEmulationWait(false);
+			#endif
 			dbp_emu_waiting += (Bit32u)(time_cb() - emuWaitTimeStart);
 			#ifdef DBP_ENABLE_WAITSTATS
 			dbp_wait_continue += (Bit32u)(time_cb() - emuWaitTimeStart);
