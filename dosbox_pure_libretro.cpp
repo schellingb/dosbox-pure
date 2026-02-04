@@ -1326,6 +1326,7 @@ void DBP_EnableNetwork()
 {
 	if (dbp_use_network) return;
 	dbp_use_network = true;
+	if (!control) return; // wait for init_dosbox
 
 	bool running_dos_game = (dbp_had_game_running && !DOSBox_Boot);
 	if (running_dos_game && DBP_GetTicks() < 10000) { DBP_ForceReset(); return; }
@@ -1684,7 +1685,7 @@ static bool GFX_AdvanceFrame(bool force_skip, bool force_no_auto_adjust)
 	St.HistoryFrame[hc] = (Bit32u)(time_after - time_last);
 	St.HistoryCursor++;
 
-	if ((St.HistoryCursor % HISTORY_STEP) == 0)
+	if ((St.HistoryCursor % HISTORY_STEP) == 0 || (time_after - time_last) > 500000)
 	{
 		float absFrameTime = (1000000.0f / render.src.fps);
 		if (dbp_throttle.rate <= render.src.fps - 1)
