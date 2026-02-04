@@ -3232,7 +3232,9 @@ bool retro_load_game(const struct retro_game_info *info) //#4
 				dbp_hw_render.context_type = (enum retro_hw_context_type)preffered_hw_render;
 				// RetroArch on Android will return RETRO_HW_CONTEXT_OPENGL even when only accepting a OPENGLES context.
 				// So we still try all the other tests in that case even when on auto.
+				#ifdef ANDROID
 				if (preffered_hw_render == RETRO_HW_CONTEXT_OPENGL) testmax = 4;
+				#endif
 			}
 			else dbp_hw_render.context_type = (enum retro_hw_context_type)testhwcontexts[test];
 			dbp_hw_render.version_major = (dbp_hw_render.context_type >= RETRO_HW_CONTEXT_OPENGL_CORE ? 3 : 0);
