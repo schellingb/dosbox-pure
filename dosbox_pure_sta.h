@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2025 Bernhard Schelling
+ *  Copyright (C) 2020-2026 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -32,5 +32,9 @@ bool DBPS_HaveJoy();
 bool DBPS_GetJoyBind(unsigned port, unsigned device, unsigned index, unsigned id, bool axispos, std::string& outJoyName, std::string& outBind, const char* prefix);
 void DBPS_RequestSaveLoad(bool save, bool load);
 bool DBPS_HaveSaveSlot();
+bool DBPS_ApplyConfigOverrides(const std::string& json);
+bool DBPS_IsConfigOverride(const char* key);
+void DBPS_ToggleConfigOverride(const char* key, const char* defaultval);
+std::string DBPS_GetConfigOverrideJSON();
 const std::string& DBPS_GetContentName();
 retro_time_t dbp_cpu_features_get_time_usec(void);

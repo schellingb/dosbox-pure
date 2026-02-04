@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2025 Bernhard Schelling
+ *  Copyright (C) 2020-2026 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -518,7 +518,7 @@ struct DBP_MenuState
 #ifdef DBP_STANDALONE
 struct DBP_SettingsMenuState final : DBP_MenuState
 {
-	enum ItemType : Bit8u { IT_CANCEL = _IT_CUSTOM, IT_CATEGORIES, IT_CATEGORY, IT_OPTION, IT_TOGGLE, IT_VALUE };
+	enum ItemType : Bit8u { IT_CANCEL = _IT_CUSTOM, IT_CATEGORIES, IT_CATEGORY, IT_OPTION, IT_TOGGLE, IT_VALUE, IT_OVERRIDE };
 	Bit8u curmenu;
 	DBP_SettingsMenuState() { menu(IT_CATEGORIES); }
 
@@ -550,7 +550,8 @@ struct DBP_SettingsMenuState final : DBP_MenuState
 				if (od.category_key != oc.key || DBP_Option::GetHidden(od)) continue;
 				if ((Bit16s)(&od - option_defs) == (curmenu == IT_CATEGORIES ? 0 : secondinfo)) setsel = (int)(list.size() + 1);
 				list.emplace_back(IT_NONE);
-				list.emplace_back((od.values[2].value ? IT_OPTION : IT_TOGGLE), (Bit16s)(&od - option_defs), od.desc);
+				list.emplace_back((od.values[2].value ? IT_OPTION : IT_TOGGLE), (Bit16s)(&od - option_defs), (DBPS_IsConfigOverride(od.key) ? "\x6 " : "  "));
+				list.back().str.append(od.desc);
 				if (od.info) AddWrappedText(66, "  ", od.info);
 			}
 			if (curmenu == IT_CATEGORY) setsel = sel;
@@ -561,12 +562,13 @@ struct DBP_SettingsMenuState final : DBP_MenuState
 			list.emplace_back(IT_NONE, topinfo, od.desc);
 			if (od.info) AddWrappedText(66, "  ", od.info, selinfo);
 			list.emplace_back(IT_NONE, selinfo);
-			retro_variable var = { od.key, od.default_value };
-			environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+			list.emplace_back(IT_OVERRIDE, selinfo, "[ ] Set Setting Override For Loaded Game"); list.back().str[1] = (DBPS_IsConfigOverride(od.key) ? '\x6' : ' ');
+			list.emplace_back(IT_NONE, selinfo);
+			const char* var_value = retro_get_variable(od.key, od.default_value);
 			for (const retro_core_option_value& ov : od.values)
 			{
 				if (!ov.value) break;
-				if (!strcmp(var.value, ov.value)) setsel = (int)list.size();
+				if (!strcmp(var_value, ov.value)) setsel = (int)list.size();
 				list.emplace_back(IT_VALUE, (Bit16s)(&ov - od.values), (setsel != (int)list.size() ? "( ) " : "(\x7) "));
 				list.back().str.append(ov.label ? ov.label : ov.value);
 			}
@@ -584,13 +586,13 @@ struct DBP_SettingsMenuState final : DBP_MenuState
 		{
 			if (ok_type == IT_TOGGLE) x_change = 1;
 			const retro_core_option_v2_definition& od = option_defs[list[sel].info];
-			retro_variable var = { od.key, od.default_value };
-			environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+			const char* var_value = retro_get_variable(od.key, od.default_value);
 			for (const retro_core_option_value& ov : od.values)
 			{
-				if (ov.value) { if (!strcmp(var.value, ov.value)) { x_change += (int)(&ov - od.values); } continue; }
-				var.value = (x_change < 0 ? (&ov)[-1] : od.values[(od.values + x_change) >= &ov ? 0 : x_change]).value;
-				if (!strcmp(var.value, od.default_value)) var.value = NULL;
+				if (ov.value) { if (!strcmp(var_value, ov.value)) { x_change += (int)(&ov - od.values); } continue; }
+				var_value = (x_change < 0 ? (&ov)[-1] : od.values[(od.values + x_change) >= &ov ? 0 : x_change]).value;
+				if (!strcmp(var_value, od.default_value)) var_value = NULL;
+				retro_variable var = { od.key, var_value };
 				environ_cb(RETRO_ENVIRONMENT_SET_VARIABLE, &var);
 				break;
 			}
@@ -605,6 +607,14 @@ struct DBP_SettingsMenuState final : DBP_MenuState
 			for (Item& it : list)
 				if (it.type == IT_VALUE)
 					it.str[1] = (it.info == itsel.info ? '\x7' : ' ');
+			if (DBPS_IsConfigOverride(od.key)) SaveConfigOverride();
+		}
+		else if (ok_type == IT_OVERRIDE)
+		{
+			const retro_core_option_v2_definition& od = option_defs[list[1].info];
+			DBPS_ToggleConfigOverride(od.key, od.default_value);
+			SaveConfigOverride();
+			menu(IT_OPTION);
 		}
 		else if (ok_type == IT_CANCEL && curmenu == IT_OPTION) menu(IT_CATEGORY);
 		else if (ok_type == IT_CANCEL && curmenu == IT_CATEGORY) menu(IT_CATEGORIES);
@@ -612,6 +622,28 @@ struct DBP_SettingsMenuState final : DBP_MenuState
 		{
 			DBP_CloseOSD();
 		}
+	}
+
+	void SaveConfigOverride()
+	{
+		std::string json = DBPS_GetConfigOverrideJSON();
+		if (json.empty())
+		{
+			if (Drives['C'-'A']) Drives['C'-'A']->FileUnlink((char*)"FRONTEND.DBP");
+			return;
+		}
+		DOS_File *frontend = nullptr;
+		if (!Drives['C'-'A'] || !Drives['C'-'A']->FileCreate(&frontend, (char*)"FRONTEND.DBP", DOS_ATTR_ARCHIVE))
+		{
+			retro_notify(0, RETRO_LOG_ERROR, "Unable to write config override %c:\\%s", 'C', "PADMAP.DBP");
+			DBP_ASSERT(0);
+			return;
+		}
+		frontend->AddRef();
+		Bit8u *p = (Bit8u*)&json[0], *pEnd = p + json.length();
+		for (Bit16u len; p != pEnd; p += len) frontend->Write(p, &(len = (Bit16u)((pEnd - p) > 0xFFFF ? 0xFFFF : (pEnd - p))));
+		frontend->Close();
+		delete frontend;
 	}
 
 	void DrawMenu(DBP_BufferDrawing& buf, Bit32u blend, int lh, int w, int h, int ftr, bool mouseMoved, const DBP_MenuMouse& m)
@@ -644,12 +676,11 @@ struct DBP_SettingsMenuState final : DBP_MenuState
 			if (itype == IT_OPTION || itype == IT_TOGGLE)
 			{
 				const retro_core_option_v2_definition& od = option_defs[list[i].info];
-				retro_variable var = { od.key, od.default_value };
-				environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var);
+				const char* var_value = retro_get_variable(od.key, od.default_value);
 				for (const retro_core_option_value& ov : od.values)
 				{
 					if (!ov.value) break;
-					if (strcmp(var.value, ov.value)) continue;
+					if (strcmp(var_value, ov.value)) continue;
 					buf.Print(lh, l+16 + maxw-130, hdr + (i - scroll)*lh, "\x1D", buf.COL_HEADER, 120);
 					buf.Print(lh, l+16 + maxw-120, hdr + (i - scroll)*lh, ov.label, buf.COL_NORMAL, 120);
 					break;

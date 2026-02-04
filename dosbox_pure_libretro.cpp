@@ -854,6 +854,7 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 			{
 				dbp_vdisk_filter.Put("AUTOBOOT.DBP", (void*)(size_t)true);
 				dbp_vdisk_filter.Put("PADMAP.DBP", (void*)(size_t)true);
+				dbp_vdisk_filter.Put("FRONTEND.DBP", (void*)(size_t)true);
 				dbp_vdisk_filter.Put("DOSBOX~1.CON", (void*)(size_t)true);
 				dbp_vdisk_filter.Put("DOSBOX.CON", (void*)(size_t)true);
 				for (const DBP_Image& i : dbp_images) if (i.path[0] == '$' && i.path[1] == 'C')
@@ -2730,6 +2731,15 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 
 	if (DOS_Drive* drive_c = Drives['C'-'A']) // guaranteed not NULL unless dbp_skip_c_mount
 	{
+		#ifdef DBP_STANDALONE
+		if (drive_c->FileExists(("$C:\\FRONTEND.DBP")+4))
+		{
+			DOS_File* conffile = FindAndOpenDosFile("$C:\\FRONTEND.DBP"); std::string confcontent;
+			if (conffile && ReadAndClose(conffile, confcontent) && DBPS_ApplyConfigOverrides(confcontent))
+				return init_dosbox(forcemenu, true, dbconf);
+		}
+		#endif
+
 		if (dbp_conf_loading != 'f' && !reinit && !dbconf)
 		{
 			DOS_File* conffile = NULL; std::string strconfpath, confcontent;
