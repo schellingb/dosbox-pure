@@ -89,6 +89,7 @@ static Mutex DBP_AudioMutex;
 
 #ifdef C_DBP_LIBRETRO
 bool dbp_swapstereo;
+float dbp_volume_sb = 1, dbp_volume_midi = 1, dbp_volume_adlib = 1, dbp_volume_speaker = 1, dbp_volume_cdrom = 1, dbp_volume_other = 1;
 #endif
 
 
@@ -160,8 +161,30 @@ void MIXER_DelChannel(MixerChannel* delchan) {
 }
 
 void MixerChannel::UpdateVolume(void) {
+#ifndef C_DBP_LIBRETRO
 	volmul[0]=(Bits)((1 << MIXER_VOLSHIFT)*scale*volmain[0]*mixer.mastervol[0]);
 	volmul[1]=(Bits)((1 << MIXER_VOLSHIFT)*scale*volmain[1]*mixer.mastervol[1]);
+#else
+	DBP_ASSERT(!strcmp(name, "SB") || !strcmp(name, "CMS") || !strcmp(name, "TSF") || !strcmp(name, "MT32") || !strcmp(name, "FM") || !strcmp(name, "SPKR") || !strcmp(name, "CDAUDIO") || !strcmp(name, "TANDY") || !strcmp(name, "TANDYDAC") || !strcmp(name, "GUS") || !strcmp(name, "DISNEY"));
+	float vol = 1;
+	switch ((name[0]<<8) | name[1])
+	{
+		case (('S'<<8) | 'B'): vol = dbp_volume_sb;      break; // "SB"
+		case (('C'<<8) | 'M'): vol = dbp_volume_sb;      break; // "CMS"
+		case (('T'<<8) | 'S'): vol = dbp_volume_midi;    break; // "TSF"
+		case (('M'<<8) | 'T'): vol = dbp_volume_midi;    break; // "MT32"
+		case (('F'<<8) | 'M'): vol = dbp_volume_adlib;   break; // "FM"
+		case (('S'<<8) | 'P'): vol = dbp_volume_speaker; break; // "SPKR"
+		case (('C'<<8) | 'D'): vol = dbp_volume_cdrom;   break; // "CDAUDIO"
+		case (('T'<<8) | 'A'): vol = dbp_volume_other;   break; // "TANDY" / "TANDYDAC"
+		case (('G'<<8) | 'U'): vol = dbp_volume_other;   break; // "GUS"
+		case (('D'<<8) | 'I'): vol = dbp_volume_other;   break; // "DISNEY"
+		default: DBP_ASSERT(0); break;
+	}
+	vol = (vol < 1.0f ? powf(10.0f,(vol-1.0f)*2.0f) : vol*vol);
+	volmul[0]=(Bits)((1 << MIXER_VOLSHIFT)*scale*volmain[0]*mixer.mastervol[0]*vol);
+	volmul[1]=(Bits)((1 << MIXER_VOLSHIFT)*scale*volmain[1]*mixer.mastervol[1]*vol);
+#endif
 }
 
 void MixerChannel::SetVolume(float _left,float _right) {
@@ -866,6 +889,11 @@ void DBP_MIXER_ScrapAudio()
 	Bit8u dummy[64 * MIXER_SSIZE];
 	while (mixer.done > 100)
 		MIXER_CallBack(0, dummy, (mixer.done > 164 ? 64 : mixer.done - 100) * MIXER_SSIZE);
+}
+
+void DBP_MIXER_ApplyVolumes()
+{
+	for (MixerChannel* chan = mixer.channels; chan; chan = chan->next) chan->UpdateVolume();
 }
 
 #include <dbp_serialize.h>

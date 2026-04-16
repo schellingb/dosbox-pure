@@ -118,6 +118,12 @@ namespace DBP_Option
 		#endif
 		sblaster_conf,
 		midi,
+		volume_sb,
+		volume_midi,
+		volume_adlib,
+		volume_speaker,
+		volume_cdrom,
+		volume_other,
 		sblaster_type,
 		sblaster_adlib_mode,
 		sblaster_adlib_emu,
@@ -236,7 +242,11 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"dosbox_pure_force60fps", // legacy name (now forcefps)
 		"Force Output FPS", NULL,
 		"Enable this to force output at a fixed rate. Try 60 FPS if you encounter screen tearing or vsync issues." "\n"
-		"Output will have frames skipped at lower rates and frames duplicated at higher rates.", NULL,
+		"Output will have frames skipped at lower rates and frames duplicated at higher rates."
+		#ifdef DBP_STANDALONE
+		"\n\n" //end of General section
+		#endif
+		"", NULL,
 		DBP_OptionCat::General,
 		{
 			{ "false", "Off" },
@@ -262,7 +272,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"Save States Support", NULL,
 		"Make sure to test it in each game before using it. Complex late era DOS games might have problems." "\n"
 		"Be aware that states saved with different video, CPU or memory settings are not loadable." "\n"
-		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer.", NULL,
+		"Rewind support comes at a high performance cost and needs at least 40MB of rewind buffer." "\n\n", NULL, //end of General section
 		DBP_OptionCat::General,
 		{
 			{ "on",       "Enable save states" },
@@ -1024,7 +1034,7 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		"To add SoundFonts or ROM files, copy them into the 'system' directory of the frontend." "\n"
 		"To use the frontend MIDI driver, make sure it's set up correctly."
 		#else
-		"To add SoundFonts or ROM files, copy them into the 'system' directory of DOSBox Pure." "\n"
+		"To add SoundFonts or ROM files, copy them into the 'system' directory of DOSBox Pure."
 		#endif
 		"\n\n", NULL, //end of Audio section
 		DBP_OptionCat::Audio,
@@ -1033,6 +1043,67 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		},
 		"disabled"
 	},
+	{
+		"dosbox_pure_volume_sb",
+		"Volume > Sound Blaster", NULL,
+		"Sets the volume of Sound Blaster output (including Creative Music System / GameBlaster).", NULL,
+		DBP_OptionCat::Audio,
+		{
+			{ "0.05",   "5%" }, { "0.1",  "10%" }, { "0.15",  "15%" }, { "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" }, { "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" }, { "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.1" , "110%" }, { "1.2", "120%" }, { "1.3" , "130%" }, { "1.4", "140%" }, { "1.5" , "150%" }, { "1.6", "160%" }, { "1.7" , "170%" }, { "1.8", "180%" }, { "1.9" , "190%" }, { "2.0", "200%" }, { "2.25" , "225%" }, { "2.5", "250%" }, { "2.75" , "275%" }, { "3.0" , "300%" }, { "3.25", "325%" }, { "3.5" , "350%" }, { "3.75", "375%" }, { "4.0", "400%" }, { "4.25" , "425%" }, { "4.5", "450%" }, { "4.75", "475%" }, { "5.0",  "500%" },
+		},
+		"1.0"
+	},
+	{
+		"dosbox_pure_volume_midi",
+		"Volume > MIDI Synthesizer", NULL,
+		"Sets the volume of MIDI output (SoundFont or MT-32).", NULL,
+		DBP_OptionCat::Audio,
+		{
+			{ "0.05",   "5%" }, { "0.1",  "10%" }, { "0.15",  "15%" }, { "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" }, { "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" }, { "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.1" , "110%" }, { "1.2", "120%" }, { "1.3" , "130%" }, { "1.4", "140%" }, { "1.5" , "150%" }, { "1.6", "160%" }, { "1.7" , "170%" }, { "1.8", "180%" }, { "1.9" , "190%" }, { "2.0", "200%" }, { "2.25" , "225%" }, { "2.5", "250%" }, { "2.75" , "275%" }, { "3.0" , "300%" }, { "3.25", "325%" }, { "3.5" , "350%" }, { "3.75", "375%" }, { "4.0", "400%" }, { "4.25" , "425%" }, { "4.5", "450%" }, { "4.75", "475%" }, { "5.0",  "500%" },
+		},
+		"1.0"
+	},
+	{
+		"dosbox_pure_volume_adlib",
+		"Volume > Adlib", NULL,
+		"Sets the volume of Adlib music (FM/OPL).", NULL,
+		DBP_OptionCat::Audio,
+		{
+			{ "0.05",   "5%" }, { "0.1",  "10%" }, { "0.15",  "15%" }, { "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" }, { "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" }, { "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.1" , "110%" }, { "1.2", "120%" }, { "1.3" , "130%" }, { "1.4", "140%" }, { "1.5" , "150%" }, { "1.6", "160%" }, { "1.7" , "170%" }, { "1.8", "180%" }, { "1.9" , "190%" }, { "2.0", "200%" }, { "2.25" , "225%" }, { "2.5", "250%" }, { "2.75" , "275%" }, { "3.0" , "300%" }, { "3.25", "325%" }, { "3.5" , "350%" }, { "3.75", "375%" }, { "4.0", "400%" }, { "4.25" , "425%" }, { "4.5", "450%" }, { "4.75", "475%" }, { "5.0",  "500%" },
+		},
+		"1.0"
+	},
+	{
+		"dosbox_pure_volume_speaker",
+		"Volume > PC-Speaker", NULL,
+		"Sets the volume of the PC-Speaker.", NULL,
+		DBP_OptionCat::Audio,
+		{
+			{ "0.05",   "5%" }, { "0.1",  "10%" }, { "0.15",  "15%" }, { "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" }, { "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" }, { "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.1" , "110%" }, { "1.2", "120%" }, { "1.3" , "130%" }, { "1.4", "140%" }, { "1.5" , "150%" }, { "1.6", "160%" }, { "1.7" , "170%" }, { "1.8", "180%" }, { "1.9" , "190%" }, { "2.0", "200%" }, { "2.25" , "225%" }, { "2.5", "250%" }, { "2.75" , "275%" }, { "3.0" , "300%" }, { "3.25", "325%" }, { "3.5" , "350%" }, { "3.75", "375%" }, { "4.0", "400%" }, { "4.25" , "425%" }, { "4.5", "450%" }, { "4.75", "475%" }, { "5.0",  "500%" },
+		},
+		"1.0"
+	},
+	{
+		"dosbox_pure_volume_cdrom",
+		"Volume > CD-ROM Audio", NULL,
+		"Sets the volume of CD-ROM Audio output.", NULL,
+		DBP_OptionCat::Audio,
+		{
+			{ "0.05",   "5%" }, { "0.1",  "10%" }, { "0.15",  "15%" }, { "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" }, { "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" }, { "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.1" , "110%" }, { "1.2", "120%" }, { "1.3" , "130%" }, { "1.4", "140%" }, { "1.5" , "150%" }, { "1.6", "160%" }, { "1.7" , "170%" }, { "1.8", "180%" }, { "1.9" , "190%" }, { "2.0", "200%" }, { "2.25" , "225%" }, { "2.5", "250%" }, { "2.75" , "275%" }, { "3.0" , "300%" }, { "3.25", "325%" }, { "3.5" , "350%" }, { "3.75", "375%" }, { "4.0", "400%" }, { "4.25" , "425%" }, { "4.5", "450%" }, { "4.75", "475%" }, { "5.0",  "500%" },
+		},
+		"1.0"
+	},
+	{
+		"dosbox_pure_volume_other",
+		"Volume > Other Devices", NULL,
+		"Sets the volume of Tandy Sound System, Gravis Ultra Sound output and Disney Sound Source." "\n\n", NULL, //end of Volume section
+		DBP_OptionCat::Audio,
+		{
+			{ "0.05",   "5%" }, { "0.1",  "10%" }, { "0.15",  "15%" }, { "0.2",  "20%" }, { "0.25",  "25%" }, { "0.3",  "30%" }, { "0.35",  "35%" }, { "0.4",  "40%" }, { "0.45",  "45%" }, { "0.5",  "50%" }, { "0.55",  "55%" }, { "0.6",  "60%" }, { "0.65",  "65%" }, { "0.7",  "70%" }, { "0.75",  "75%" }, { "0.8",  "80%" }, { "0.85",  "85%" }, { "0.9",  "90%" }, { "0.95",  "95%" }, { "1.0", "100%" }, { "1.1" , "110%" }, { "1.2", "120%" }, { "1.3" , "130%" }, { "1.4", "140%" }, { "1.5" , "150%" }, { "1.6", "160%" }, { "1.7" , "170%" }, { "1.8", "180%" }, { "1.9" , "190%" }, { "2.0", "200%" }, { "2.25" , "225%" }, { "2.5", "250%" }, { "2.75" , "275%" }, { "3.0" , "300%" }, { "3.25", "325%" }, { "3.5" , "350%" }, { "3.75", "375%" }, { "4.0", "400%" }, { "4.25" , "425%" }, { "4.5", "450%" }, { "4.75", "475%" }, { "5.0",  "500%" },
+		},
+		"1.0"
+	},
+
 	{
 		"dosbox_pure_sblaster_type",
 		"Advanced > SoundBlaster Type", NULL,

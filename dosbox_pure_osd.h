@@ -508,7 +508,6 @@ struct DBP_MenuState
 		for (const char* line = str, *p, *pmax, *lastspace; *line; line = (*lastspace ? lastspace + 1 : lastspace))
 		{
 			for (lastspace = NULL, p = line, pmax = p + lineLength; *p && p != pmax;) { if (*(++p) <= ' ' && *(lastspace = p) == '\n') break; }
-			if (*line == '\n' && !line[1]) break;
 			list.emplace_back(IT_NONE, info, prefix);
 			list.back().str.append(line, (size_t)(*line == '\n' ? 0 : (lastspace - line)));
 		}
