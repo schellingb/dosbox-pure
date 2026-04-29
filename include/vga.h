@@ -417,7 +417,7 @@ void Herc_Palette(void);
 void VGA_SetMode(VGAModes mode);
 void VGA_DetermineMode(void);
 void VGA_SetupHandlers(void);
-void VGA_StartResize(Bitu delay=50);
+void VGA_StartResize(float delay=-1.0f);
 void VGA_SetupDrawing(Bitu val);
 void VGA_CheckScanLength(void);
 void VGA_ChangedBank(void);

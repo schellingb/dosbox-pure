@@ -87,7 +87,15 @@ void VGA_DetermineMode(void) {
 	}
 }
 
-void VGA_StartResize(Bitu delay /*=50*/) {
+//DBP: Incorporate "Resize VGA within half the current frame-time" patch from DOSBox Staging by kcgen
+//     Source: https://github.com/dosbox-staging/dosbox-staging/commit/d88230b
+void VGA_StartResize(float delay) {
+	if (delay<0) {
+		delay = (float)vga.draw.delay.vtotal * 0.5f;
+		if (delay < (500.0f /*ms*/ / 120 /*Hz*/)) delay = (500.0f /*ms*/ / 120 /*Hz*/);
+		//if (delay > (500.0f /*ms*/ /  50 /*Hz*/)) delay = (500.0f /*ms*/ /  50 /*Hz*/); // max suggested by patch
+		if (delay > 50.0f /* ms */) delay = 50.0f /* ms */; // use original DOSBox default as max
+	}
 	if (!vga.draw.resizing) {
 		vga.draw.resizing=true;
 		if (vga.mode==M_ERROR) delay = 5;

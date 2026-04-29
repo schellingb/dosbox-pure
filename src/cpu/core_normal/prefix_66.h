@@ -148,17 +148,17 @@
 		reg_edi=Pop_32();break;
 	CASE_D(0x60)												/* PUSHAD */
 	{
-		REWIND_ESP_ON_PAEGFAULT_START
+		PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 		Bitu tmpesp = reg_esp;
 		Push_32(reg_eax);Push_32(reg_ecx);Push_32(reg_edx);Push_32(reg_ebx);
 		Push_32(tmpesp);Push_32(reg_ebp);Push_32(reg_esi);Push_32(reg_edi);
-		REWIND_ESP_ON_PAGEFAULT_END
+		PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 	}; break;
 	CASE_D(0x61)												/* POPAD */
-		REWIND_ESP_ON_PAEGFAULT_START
+		PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 		reg_edi=Pop_32();reg_esi=Pop_32();reg_ebp=Pop_32();Pop_32();//Don't save ESP
 		reg_ebx=Pop_32();reg_edx=Pop_32();reg_ecx=Pop_32();reg_eax=Pop_32();
-		REWIND_ESP_ON_PAGEFAULT_END
+		PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 		break;
 	CASE_D(0x62)												/* BOUND Ed */
 		{
@@ -357,12 +357,12 @@
 		}
 	CASE_D(0x8f)												/* POP Ed */
 		{
-			REWIND_ESP_ON_PAEGFAULT_START
+			PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 			Bit32u val=Pop_32();
 			GetRM;
 			if (rm >= 0xc0 ) {GetEArd;*eard=val;}
 			else {GetEAa;SaveMd(eaa,val);}
-			REWIND_ESP_ON_PAGEFAULT_END
+			PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 			break;
 		}
 	CASE_D(0x91)												/* XCHG ECX,EAX */
@@ -463,12 +463,12 @@
 		GRP2D(Fetchb());break;
 	CASE_D(0xc2)												/* RETN Iw */
 		{
-			REWIND_ESP_ON_PAEGFAULT_START
+			PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 			/* this is structured either to complete RET or leave registers unmodified if interrupted by page fault */
 			Bit32u new_eip=Pop_32();
 			reg_esp+=Fetchw();
 			reg_eip=new_eip;
-			REWIND_ESP_ON_PAGEFAULT_END
+			PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 			continue;
 		}
 	CASE_D(0xc3)												/* RETN */
@@ -507,11 +507,11 @@
 		}
 		break;
 	CASE_D(0xc9)												/* LEAVE */
-		REWIND_ESP_ON_PAEGFAULT_START
+		PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp;)
 		reg_esp&=cpu.stack.notmask;
 		reg_esp|=(reg_ebp&cpu.stack.mask);
 		reg_ebp=Pop_32();
-		REWIND_ESP_ON_PAGEFAULT_END
+		PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp;)
 		break;
 	CASE_D(0xca)												/* RETF Iw */
 		{ 

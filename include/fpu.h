@@ -28,6 +28,10 @@
 #include "mem.h"
 #endif
 
+#if C_MMX
+#include "mmx.h"
+#endif
+
 void FPU_ESC0_Normal(Bitu rm);
 void FPU_ESC0_EA(Bitu func,PhysPt ea);
 void FPU_ESC1_Normal(Bitu rm);
@@ -60,6 +64,9 @@ typedef union {
     } l;
 #endif
     Bit64s ll;
+#if C_MMX
+    MMX_reg reg_mmx;
+#endif
 } FPU_Reg;
 
 typedef struct {

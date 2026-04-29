@@ -128,10 +128,10 @@ static struct {
 	Bit16s gran_x,gran_y;
 } mouse;
 
-static struct {
-	float x, y;
-	bool updated;
-} mouse_vmware;
+static float mouse_vmware_x, mouse_vmware_y;
+static Bit8u mouse_vmware_cursor;
+static bool mouse_vmware_updated;
+bool mouse_vmware_usep60;
 
 bool Mouse_SetPS2State(bool use) {
 	if (use && (!ps2callbackinit)) {
@@ -218,7 +218,10 @@ INLINE void Mouse_AddEvent(Bit8u type) {
 	if (mouse.events<QUEUE_SIZE) {
 		if (mouse.events>0) {
 			/* Skip duplicate events */
-			if (type==MOUSE_HAS_MOVED) return;
+			if (type==MOUSE_HAS_MOVED) {
+				mouse_vmware_updated = true;
+				return;
+			}
 			/* Always put the newest element in the front as that the events are 
 			 * handled backwards (prevents doubleclicks while moving)
 			 */
@@ -234,7 +237,7 @@ INLINE void Mouse_AddEvent(Bit8u type) {
 		PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
 		PIC_ActivateIRQ(MOUSE_IRQ);
 	}
-	mouse_vmware.updated = true;
+	mouse_vmware_updated = true;
 }
 
 // ***************************************************************************
@@ -471,6 +474,10 @@ void DrawCursor() {
 	RestoreVgaRegisters();
 }
 
+//DBP: Do not access real-mode data areas if CPU is in non-virtual 8086 protected mode or the DOS kernel has been shut down by booting into a guest OS (fix page faults in Win9x)
+//     Source: https://github.com/joncampbell123/dosbox-x/commit/aa8d1f8
+#define AllowINT33RMAccess() (!DOSBox_Boot && (!cpu.pmode || GETFLAG(VM)))
+
 void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 	float dx = xrel * mouse.pixelPerMickey_x;
 	float dy = yrel * mouse.pixelPerMickey_y;
@@ -489,7 +496,7 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 		mouse.x += dx;
 		mouse.y += dy;
 	} else {
-		if (CurMode->type == M_TEXT) {
+		if (CurMode && CurMode->type == M_TEXT && AllowINT33RMAccess()) {
 			mouse.x = x*real_readw(BIOSMEM_SEG,BIOSMEM_NB_COLS)*8;
 			mouse.y = y*(IS_EGAVGA_ARCH?(real_readb(BIOSMEM_SEG,BIOSMEM_NB_ROWS)+1):25)*8;
 		} else if ((mouse.max_x < 2048) || (mouse.max_y < 2048) || (mouse.max_x != mouse.max_y)) {
@@ -515,8 +522,8 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 #endif
 		}
 	}
-	mouse_vmware.x = x;
-	mouse_vmware.y = y;
+	mouse_vmware_x = x;
+	mouse_vmware_y = y;
 
 	/* ignore constraints if using PS2 mouse callback in the bios */
 
@@ -532,13 +539,15 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 		else if (mouse.y <= -32769.0) mouse.y += 65536.0;
 	}
 	Mouse_AddEvent(MOUSE_HAS_MOVED);
-	DrawCursor();
+	//DBP: Moved call to DrawCursor to INT74_Handler
+	//DrawCursor();
 }
 
 void Mouse_CursorSet(float x,float y) {
 	mouse.x=x;
 	mouse.y=y;
-	DrawCursor();
+	//DBP: Moved call to DrawCursor to INT74_Handler
+	//DrawCursor();
 }
 
 void Mouse_ButtonPressed(Bit8u button) {
@@ -752,45 +761,37 @@ static void Mouse_Used(void) {
 
 //DBP: Added VMware mouse protocol support from DOSBox Staging by FeralChild64
 //     Source: https://github.com/FeralChild64/dosbox-staging/commit/d183abd
+//     Update: https://github.com/FeralChild64/dosbox-staging/commit/c030162
 static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
 	//LOG_MSG("VMWARE: Port Read %x - Len: %u - 0x%08x - %x", (int)port, (int)iolen, reg_eax, reg_ebx);
-	if (reg_eax != 0x564D5868u) // magic number for all VMware calls
+	extern bool DBP_UseDirectMouse();
+	if (!DBP_UseDirectMouse() || reg_eax != 0x564D5868u) // magic number for all VMware calls
 		return 0;
 
 	switch (reg_cx)
 	{
 		case 10: //CMD_GETVERSION:
-			reg_eax = 0x3442554a; // FIXME: should we respond with something resembling VMware?
-			reg_ebx = 0x564D5868;
+			reg_eax = 0x3442554a; // VMWare version id
+			reg_ebx = 0x564D5868; // VMWare Magic
 			break;
 		case 39: //CMD_ABSPOINTER_DATA:
 			reg_eax = ((mouse.buttons & 1) ? 0x20 : 0) | ((mouse.buttons & 2) ? 0x10 : 0) | ((mouse.buttons & 4) ? 0x08 : 0);
-			reg_ebx = (Bit32u)(mouse_vmware.x * 0xFFFF);
-			reg_ecx = (Bit32u)(mouse_vmware.y * 0xFFFF);
-			reg_edx = 0;//(mouse_wheel >= 0) ? mouse_wheel : 256 + mouse_wheel;
-			//mouse_wheel = 0;
+			reg_ebx = (Bit32u)(mouse_vmware_x * 0xFFFF);
+			reg_ecx = (Bit32u)(mouse_vmware_y * 0xFFFF);
+			reg_edx = 0; //(mouse_wheel >= 0) ? mouse_wheel : 256 + mouse_wheel; mouse_wheel = 0;
+			mouse_vmware_updated = false;
 			break;
 		case 40: //CMD_ABSPOINTER_STATUS:
-			reg_eax = mouse_vmware.updated ? 4 : 0;
-			mouse_vmware.updated = false;
+			reg_eax = (mouse_vmware_updated ? 4 : 0);
 			break;
 		case 41: //CMD_ABSPOINTER_COMMAND:
 			switch (reg_ebx)
 			{
-				case 0x45414552: //ABSPOINTER_ENABLE:
-					// can be safely ignored
-					break;
-				case 0xF5: //ABSPOINTER_RELATIVE:
-					//vmware_mouse = false;
-					//if (!MOUSE_IsLocked()) SDL_ShowCursor(SDL_ENABLE);
-					break;
-				case 0x53424152: //ABSPOINTER_ABSOLUTE:
-					//vmware_mouse = true;
-					//if (!MOUSE_IsLocked()) SDL_ShowCursor(SDL_DISABLE);
-					break;
-				default:
-					LOG_MSG("VMWARE: unknown mouse subcommand 0x%08x", reg_ebx);
-					break;
+				// For the standard VMware port interface we need regular PS/2 auxilary (mouse) interrupt handling
+				case 0x45414552: mouse_vmware_usep60 = false; mouse_vmware_cursor = 0; break; // ABSPOINTER_ENABLE
+				case 0xF5:       mouse_vmware_usep60 = false; mouse_vmware_cursor = 0; break; // ABSPOINTER_DISABLE
+				case 0x53424152: break; // ABSPOINTER_ABSOLUTE
+				default: LOG_MSG("VMWARE: unknown mouse subcommand 0x%08x", reg_ebx); break;
 			}
 			break;
 		default:
@@ -798,6 +799,58 @@ static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
 			break;
 	}
 	return reg_ax;
+}
+
+bool Mouse_VMWare_KeyboardWriteP64(Bitu val)
+{
+	extern bool DBP_UseDirectMouse();
+	if (!DBP_UseDirectMouse()) return false;
+
+	switch (val)
+	{
+		// For the keyboard VMware port interface we need special interrupt handling
+		case 0x45414552: mouse_vmware_usep60 = true;  mouse_vmware_cursor = 0; return true; // ABSPOINTER_ENABLE
+		case 0xF5:       mouse_vmware_usep60 = false; mouse_vmware_cursor = 0; return true; // ABSPOINTER_DISABLE
+		case 0x53424152: return true; // ABSPOINTER_ABSOLUTE
+		case 0x4c455252: return true; // ABSPOINTER_RELATIVE
+		default: LOG_MSG("VMWARE: unknown mouse subcommand 0x%08x", (Bit32u)val); return false;
+	}
+}
+
+uint32_t Mouse_VMWare_KeyboardReadP64()
+{
+	// Port 0x64 read handler (remaining events)
+	DBP_ASSERT(mouse_vmware_usep60);
+	switch (mouse_vmware_cursor)
+	{
+		case 0: return (mouse_vmware_updated ? 5 : 1);
+		case 1: return (mouse_vmware_updated ? 4 : 0);
+		case 2: return (mouse_vmware_updated ? 7 : 3);
+		case 3: return (mouse_vmware_updated ? 6 : 2);
+		case 4: return (mouse_vmware_updated ? 5 : 1);
+	}
+	DBP_ASSERT(false);
+	return 0;
+}
+
+uint32_t Mouse_VMWare_KeyboardReadP60()
+{
+	// Port 0x60 read handler (return one event)
+	DBP_ASSERT(mouse_vmware_usep60);
+	switch (mouse_vmware_cursor)
+	{
+		case 0: mouse_vmware_cursor = 1; return 0x3442554a; // VMWare version id
+		case 1:
+			if (!mouse_vmware_updated) { return 0; }
+			mouse_vmware_updated = false;
+			mouse_vmware_cursor = 2;
+			return ((mouse.buttons & 1) ? 0x20 : 0) | ((mouse.buttons & 2) ? 0x10 : 0) | ((mouse.buttons & 4) ? 0x08 : 0); // buttons
+		case 2: mouse_vmware_cursor = 3; return (Bit32u)(mouse_vmware_x * 0xFFFF); // x
+		case 3: mouse_vmware_cursor = 4; return (Bit32u)(mouse_vmware_y * 0xFFFF); // y
+		case 4: mouse_vmware_cursor = 1; return 0; // wheel
+	}
+	DBP_ASSERT(false);
+	return 0;
 }
 
 static Bitu INT33_Handler(void) {
@@ -1135,8 +1188,17 @@ static Bitu MOUSE_BD_Handler(void) {
 static Bitu INT74_Handler(void) {
 	if (mouse.events>0 && !mouse.in_UIR) {
 		mouse.events--;
+
+		/* INT 33h emulation: HERE within the IRQ 12 handler is the appropriate place to
+		 * redraw the cursor. OSes like Windows 3.1 expect real-mode code to do it in
+		 * response to IRQ 12, not "out of the blue" from the SDL event handler like
+		 * the original DOSBox code did it. Doing this allows the INT 33h emulation
+		 * to draw the cursor while not causing Windows 3.1 to crash or behave
+		 * erratically. */
+		if (AllowINT33RMAccess()) DrawCursor();
+
 		/* Check for an active Interrupt Handler that will get called */
-		if (mouse.sub_mask & mouse.event_queue[mouse.events].type) {
+		if ((mouse.sub_mask & mouse.event_queue[mouse.events].type) && AllowINT33RMAccess()) {
 			reg_ax=mouse.event_queue[mouse.events].type;
 			reg_bx=mouse.event_queue[mouse.events].buttons;
 			reg_cx=POS_X;

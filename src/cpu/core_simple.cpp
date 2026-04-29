@@ -41,6 +41,12 @@
 #define SaveMw(off,val)	mem_writew(off,val)
 #define SaveMd(off,val)	mem_writed(off,val)
 
+#if C_MMX
+#include "mmx.h"
+#define LoadMq(off) ((Bit64u)((Bit64u)mem_readd(off+4)<<32 | (Bit64u)mem_readd(off)))
+#define SaveMq(off,val) {mem_writed(off,val&0xffffffff);mem_writed(off+4,(val>>32)&0xffffffff);}
+#endif
+
 extern Bitu cycle_count;
 
 #if C_FPU

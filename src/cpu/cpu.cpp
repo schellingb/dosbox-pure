@@ -616,7 +616,7 @@ void CPU_Interrupt(Bitu num,Bitu type,Bitu oldeip) {
 			return;
 		}
 
-
+		//PAGE_FAULT_CLEANUP_TRY(Bit32u old_esp = reg_esp; Bit16u old_ss = SegValue(ss); Bitu old_cpl = cpu.cpl;)
 		switch (gate.Type()) {
 		case DESC_286_INT_GATE:		case DESC_386_INT_GATE:
 		case DESC_286_TRAP_GATE:	case DESC_386_TRAP_GATE:
@@ -770,6 +770,7 @@ do_interrupt:
 		default:
 			E_Exit("Illegal descriptor type %" sBitfs(X) " for int %" sBitfs(X),gate.Type(),num);
 		}
+		//PAGE_FAULT_CLEANUP_CATCH(CPU_SetSegGeneral(ss,old_ss);reg_esp = old_esp;CPU_SetCPL(old_cpl);)
 	}
 	assert(1);
 	return ; // make compiler happy
@@ -777,6 +778,7 @@ do_interrupt:
 
 
 void CPU_IRET(bool use32,Bitu oldeip) {
+	//PAGE_FAULT_CLEANUP_SETUP(Bit32u orig_esp = reg_esp;)
 	if (!cpu.pmode) {					/* RealMode IRET */
 		if (use32) {
 			reg_eip=CPU_Pop32();
@@ -797,6 +799,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 				CPU_Exception(EXCEPTION_GP,0);
 				return;
 			} else {
+				//PAGE_FAULT_CLEANUP_TRY()
 				if (use32) {
 					Bit32u new_eip=mem_readd(SegPhys(ss) + (reg_esp & cpu.stack.mask));
 					Bit32u tempesp=(reg_esp&cpu.stack.notmask)|((reg_esp+4)&cpu.stack.mask);
@@ -822,6 +825,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 					/* IOPL can not be modified in v86 mode by IRET */
 					CPU_SetFlags(new_flags,FMASK_NORMAL|FLAG_NT);
 				}
+				//PAGE_FAULT_CLEANUP_CATCH(reg_esp = orig_esp;)
 				cpu.code.big=false;
 				DestroyConditionFlags();
 				return;
@@ -852,6 +856,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 
 			if ((n_flags & FLAG_VM) && (cpu.cpl==0)) {
 				// commit point
+				//PAGE_FAULT_CLEANUP_TRY()
 				reg_esp=tempesp;
 				reg_eip=n_eip & 0xffff;
 				Bitu n_ss,n_esp,n_es,n_ds,n_fs,n_gs;
@@ -876,6 +881,7 @@ void CPU_IRET(bool use32,Bitu oldeip) {
 				SegSet16(cs,n_cs_sel);
 				LOG(LOG_CPU,LOG_NORMAL)("IRET:Back to V86: CS:%X IP %X SS:%X SP %X FLAGS:%X",SegValue(cs),reg_eip,SegValue(ss),reg_esp,reg_flags);	
 				return;
+				//PAGE_FAULT_CLEANUP_CATCH(reg_esp = orig_esp;)
 			}
 			if (n_flags & FLAG_VM) E_Exit("IRET from pmode to v86 with CPL!=0");
 		} else {
@@ -1071,6 +1077,74 @@ CODE_jmp:
 			LOG(LOG_CPU,LOG_NORMAL)("JMP:TSS to %X",selector);
 			CPU_SwitchTask(selector,TSwitch_JMP,oldeip);
 			break;
+		//------------------------------------------------------------------------------------------------------------
+		//DBP: Add support for 286/386 CALL gates via the JMP instruction from DOSBox-X by Jonathan Campbell
+		//     Source: https://github.com/joncampbell123/dosbox-x/commit/ce3da73
+		case DESC_386_CALL_GATE: /* CAUTION: Copy-pasta from CPU_CALL() with stack switching removed */
+		case DESC_286_CALL_GATE:
+		case DESC_TASK_GATE:
+			{
+				CPU_CHECK_COND(desc.DPL()<cpu.cpl,
+					"JMP:Gate:Gate DPL<CPL",
+					EXCEPTION_GP,selector & 0xfffc)
+				CPU_CHECK_COND(desc.DPL()<rpl,
+					"JMP:Gate:Gate DPL<RPL",
+					EXCEPTION_GP,selector & 0xfffc)
+				CPU_CHECK_COND(!desc.saved.seg.p,
+					"JMP:Gate:Segment not present",
+					EXCEPTION_NP,selector & 0xfffc)
+				Descriptor n_cs_desc;
+				Bitu n_cs_sel=desc.GetSelector();
+
+				CPU_CHECK_COND((n_cs_sel & 0xfffc)==0,
+					"JMP:Gate:CS selector zero",
+					EXCEPTION_GP,0)
+				CPU_CHECK_COND(!cpu.gdt.GetDescriptor(n_cs_sel,n_cs_desc),
+					"JMP:Gate:CS beyond limits",
+					EXCEPTION_GP,n_cs_sel & 0xfffc)
+				Bitu n_cs_dpl	= n_cs_desc.DPL();
+				CPU_CHECK_COND(n_cs_dpl>cpu.cpl,
+					"JMP:Gate:CS DPL>CPL",
+					EXCEPTION_GP,n_cs_sel & 0xfffc)
+
+				CPU_CHECK_COND(!n_cs_desc.saved.seg.p,
+					"JMP:Gate:CS not present",
+					EXCEPTION_NP,n_cs_sel & 0xfffc)
+
+				Bitu n_eip		= desc.GetOffset();
+				switch (n_cs_desc.Type()) {
+				case DESC_386_TSS_A:
+					CPU_CHECK_COND(n_cs_desc.DPL()<cpu.cpl,
+						"JMP:TSS:dpl<cpl",
+						EXCEPTION_GP,n_cs_sel & 0xfffc)
+					CPU_CHECK_COND(n_cs_desc.DPL()<rpl,
+						"JMP:TSS:dpl<rpl",
+						EXCEPTION_GP,n_cs_sel & 0xfffc)
+					LOG(LOG_CPU,LOG_NORMAL)("JMP:TSS to %X",n_cs_sel);
+					CPU_SwitchTask(n_cs_sel,TSwitch_JMP,oldeip);
+					break;
+				case DESC_CODE_N_NC_A:case DESC_CODE_N_NC_NA:
+				case DESC_CODE_R_NC_A:case DESC_CODE_R_NC_NA:
+					CPU_CHECK_COND(n_cs_dpl != cpu.cpl, "JMP:Gate:NC CS DPL!=CPL",
+									EXCEPTION_GP, n_cs_sel & 0xfffc)
+					/* fall through */
+				case DESC_CODE_N_C_A:case DESC_CODE_N_C_NA:
+				case DESC_CODE_R_C_A:case DESC_CODE_R_C_NA:
+					// zrdx extender
+
+					/* Switch to new CS:EIP */
+					Segs.phys[cs]	= n_cs_desc.GetBase();
+					Segs.val[cs]	= (uint16_t)((n_cs_sel & 0xfffc) | cpu.cpl);
+					cpu.code.big	= n_cs_desc.Big()>0;
+					reg_eip			= (Bit32u)n_eip;
+					if (!use32)	reg_eip&=0xffff;
+					break;
+				default:
+					E_Exit("JMP:GATE:CS no executable segment");
+				}
+			}			/* Call Gates */
+			break;
+		//------------------------------------------------------------------------------------------------------------
 		default:
 			E_Exit("JMP Illegal descriptor type %" sBitfs(X),desc.Type());
 		}
@@ -1080,7 +1154,9 @@ CODE_jmp:
 
 
 void CPU_CALL(bool use32,Bitu selector,Bitu offset,Bitu oldeip) {
+	//PAGE_FAULT_CLEANUP_SETUP(Bit32u old_esp = reg_esp, old_eip = reg_eip;)
 	if (!cpu.pmode || (reg_flags & FLAG_VM)) {
+		//PAGE_FAULT_CLEANUP_TRY()
 		if (!use32) {
 			CPU_Push16(SegValue(cs));
 			CPU_Push16(oldeip);
@@ -1090,6 +1166,7 @@ void CPU_CALL(bool use32,Bitu selector,Bitu offset,Bitu oldeip) {
 			CPU_Push32(oldeip);
 			reg_eip=offset;
 		}
+		//PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp; reg_eip = old_eip;)
 		cpu.code.big=false;
 		SegSet16(cs,selector);
 		return;
@@ -1127,6 +1204,7 @@ call_code:
 				return;
 			}
 			// commit point
+			//PAGE_FAULT_CLEANUP_TRY()
 			if (!use32) {
 				CPU_Push16(SegValue(cs));
 				CPU_Push16(oldeip);
@@ -1136,12 +1214,16 @@ call_code:
 				CPU_Push32(oldeip);
 				reg_eip=offset;
 			}
+			//PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp; reg_eip = old_eip;)
 			Segs.phys[cs]=call.GetBase();
 			cpu.code.big=call.Big()>0;
 			Segs.val[cs]=(selector & 0xfffc) | cpu.cpl;
 			return;
 		case DESC_386_CALL_GATE: 
 		case DESC_286_CALL_GATE:
+		//DBP: fix call/jmp not support task gate type selector from DOSBox-X by nowaits
+		//     Source: https://github.com/joncampbell123/dosbox-x/commit/7ab23b7
+		case DESC_TASK_GATE:
 			{
 				CPU_CHECK_COND(call.DPL()<cpu.cpl,
 					"CALL:Gate:Gate DPL<CPL",
@@ -1172,6 +1254,18 @@ call_code:
 
 				Bitu n_eip		= call.GetOffset();
 				switch (n_cs_desc.Type()) {
+				//DBP: fix call/jmp not support task gate type selector from DOSBox-X by nowaits
+				//     Source: https://github.com/joncampbell123/dosbox-x/commit/7ab23b7
+				case DESC_386_TSS_A:
+					CPU_CHECK_COND(n_cs_desc.DPL()<cpu.cpl,
+						"CALL:TSS:dpl<cpl",
+						EXCEPTION_GP,n_cs_sel & 0xfffc)
+					CPU_CHECK_COND(n_cs_desc.DPL()<rpl,
+						"CALL:TSS:dpl<rpl",
+						EXCEPTION_GP,n_cs_sel & 0xfffc)
+					LOG(LOG_CPU,LOG_NORMAL)("CALL:TSS to %X",n_cs_sel);
+					CPU_SwitchTask(n_cs_sel,TSwitch_CALL_INT,oldeip);
+					break;
 				case DESC_CODE_N_NC_A:case DESC_CODE_N_NC_NA:
 				case DESC_CODE_R_NC_A:case DESC_CODE_R_NC_NA:
 					/* Check if we goto inner priviledge */
@@ -1268,6 +1362,7 @@ call_code:
 				case DESC_CODE_R_C_A:case DESC_CODE_R_C_NA:
 					// zrdx extender
 
+					//PAGE_FAULT_CLEANUP_TRY()
 					if (call.Type()==DESC_386_CALL_GATE) {
 						CPU_Push32(SegValue(cs));
 						CPU_Push32(oldeip);
@@ -1275,6 +1370,7 @@ call_code:
 						CPU_Push16(SegValue(cs));
 						CPU_Push16(oldeip);
 					}
+					//PAGE_FAULT_CLEANUP_CATCH(reg_esp = old_esp; reg_eip = old_eip;)
 
 					/* Switch to new CS:EIP */
 					Segs.phys[cs]	= n_cs_desc.GetBase();
@@ -1316,7 +1412,9 @@ call_code:
 
 
 void CPU_RET(bool use32,Bitu bytes,Bitu oldeip) {
+	//PAGE_FAULT_CLEANUP_SETUP(Bit32u orig_esp = reg_esp;)
 	if (!cpu.pmode || (reg_flags & FLAG_VM)) {
+		//PAGE_FAULT_CLEANUP_TRY()
 		Bitu new_ip,new_cs;
 		if (!use32) {
 			new_ip=CPU_Pop16();
@@ -1330,6 +1428,7 @@ void CPU_RET(bool use32,Bitu bytes,Bitu oldeip) {
 		reg_eip=new_ip;
 		cpu.code.big=false;
 		return;
+		//PAGE_FAULT_CLEANUP_CATCH(reg_esp = orig_esp;)
 	} else {
 		Bitu offset,selector;
 		if (!use32) selector	= mem_readw(SegPhys(ss) + (reg_esp & cpu.stack.mask) + 2);
@@ -1365,6 +1464,10 @@ void CPU_RET(bool use32,Bitu bytes,Bitu oldeip) {
 					"RET to C segment of higher privilege",
 					EXCEPTION_GP,selector & 0xfffc)
 				break;
+			//DBP: fix crash in DirectX diagnostic program (dxdiag) from DOSBox-X by nowaits
+			//     Source: https://github.com/joncampbell123/dosbox-x/commit/e601a94
+			case 0:
+				break;
 			default:
 				E_Exit("RET from illegal descriptor type %" sBitfs(X),desc.Type());
 			}
@@ -1376,6 +1479,7 @@ RET_same_level:
 			}
 
 			// commit point
+			//PAGE_FAULT_CLEANUP_TRY()
 			if (!use32) {
 				offset=CPU_Pop16();
 				selector=CPU_Pop16();
@@ -1383,6 +1487,7 @@ RET_same_level:
 				offset=CPU_Pop32();
 				selector=CPU_Pop32() & 0xffff;
 			}
+			//PAGE_FAULT_CLEANUP_CATCH(reg_esp = orig_esp;)
 
 			Segs.phys[cs]=desc.GetBase();
 			cpu.code.big=desc.Big()>0;
@@ -1410,6 +1515,10 @@ RET_same_level:
 					"RET to outer C segment with DPL>RPL",
 					EXCEPTION_GP,selector & 0xfffc)
 				break;
+			//DBP: fix crash in DirectX diagnostic program (dxdiag) from DOSBox-X by nowaits
+			//     Source: https://github.com/joncampbell123/dosbox-x/commit/e601a94
+			case 0:
+				break;
 			default:
 				E_Exit("RET from illegal descriptor type %" sBitfs(X),desc.Type());		// or #GP(selector)
 			}
@@ -1420,6 +1529,7 @@ RET_same_level:
 
 			// commit point
 			Bitu n_esp,n_ss;
+			//PAGE_FAULT_CLEANUP_TRY()
 			if (use32) {
 				offset=CPU_Pop32();
 				selector=CPU_Pop32() & 0xffff;
@@ -1433,6 +1543,7 @@ RET_same_level:
 				n_esp = CPU_Pop16();
 				n_ss = CPU_Pop16();
 			}
+			//PAGE_FAULT_CLEANUP_CATCH(reg_esp = orig_esp;)
 
 			CPU_CHECK_COND((n_ss & 0xfffc)==0,
 				"RET to outer level with SS selector zero",
@@ -2035,6 +2146,13 @@ bool CPU_CPUID(void) {
 			reg_ebx=0;			/* Not Supported */
 			reg_ecx=0;			/* No features */
 			reg_edx=0x00000011;	/* FPU+TimeStamp/RDTSC */
+#if C_MMX
+		} else if (CPU_ArchitectureType==CPU_ARCHTYPE_PENTIUM_MMX) {
+			reg_eax=0x543;		/* intel pentium mmx (PMMX) */
+			reg_ebx=0;			/* Not Supported */
+			reg_ecx=0;			/* No features */
+			reg_edx=0x00800011;	/* FPU+TimeStamp/RDTSC+MMX */
+#endif
 		} else {
 			return false;
 		}
@@ -2266,6 +2384,75 @@ void CPU_Reset_AutoAdjust(void) {
 }
 #endif
 
+#if C_MMX
+#include "mmx.h"
+#include "fpu.h"
+
+MMX_reg *reg_mmx[8] = {
+	&fpu.regs[0].reg_mmx,
+	&fpu.regs[1].reg_mmx,
+	&fpu.regs[2].reg_mmx,
+	&fpu.regs[3].reg_mmx,
+	&fpu.regs[4].reg_mmx,
+	&fpu.regs[5].reg_mmx,
+	&fpu.regs[6].reg_mmx,
+	&fpu.regs[7].reg_mmx,
+};
+
+MMX_reg * lookupRMregMM[256]={
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+
+	reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],reg_mmx[0],
+	reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],reg_mmx[1],
+	reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],reg_mmx[2],
+	reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],reg_mmx[3],
+	reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],reg_mmx[4],
+	reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],reg_mmx[5],
+	reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],reg_mmx[6],
+	reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],reg_mmx[7],
+};
+
+void setFPUTagEmpty() {
+	FPU_SetCW(0x37F);
+	fpu.sw = 0;
+	TOP = FPU_GET_TOP();
+	fpu.tags[0] = TAG_Empty;
+	fpu.tags[1] = TAG_Empty;
+	fpu.tags[2] = TAG_Empty;
+	fpu.tags[3] = TAG_Empty;
+	fpu.tags[4] = TAG_Empty;
+	fpu.tags[5] = TAG_Empty;
+	fpu.tags[6] = TAG_Empty;
+	fpu.tags[7] = TAG_Empty;
+	fpu.tags[8] = TAG_Valid; // is only used by us
+}
+#endif
+
 class CPU: public Module_base {
 private:
 	static bool inited;
@@ -2309,7 +2496,11 @@ public:
 			cpu.drx[i]=0;
 			cpu.trx[i]=0;
 		}
+#if !C_MMX
 		if (CPU_ArchitectureType==CPU_ARCHTYPE_PENTIUMSLOW) {
+#else
+		if (CPU_ArchitectureType>=CPU_ARCHTYPE_PENTIUMSLOW) {
+#endif
 			cpu.drx[6]=0xffff0ff0;
 		} else {
 			cpu.drx[6]=0xffff1ff0;
@@ -2501,6 +2692,10 @@ public:
 			}
 		} else if (cputype == "pentium_slow") {
 			CPU_ArchitectureType = CPU_ARCHTYPE_PENTIUMSLOW;
+#if C_MMX
+		} else if (cputype == "pentium_mmx") {
+			CPU_ArchitectureType = CPU_ARCHTYPE_PENTIUM_MMX;
+#endif
 		}
 
 		if (CPU_ArchitectureType>=CPU_ARCHTYPE_486NEWSLOW) CPU_extflags_toggle=(FLAG_ID|FLAG_AC);

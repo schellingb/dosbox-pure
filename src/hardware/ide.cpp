@@ -26,6 +26,7 @@
 #ifdef C_DBP_ENABLE_IDE
 #include "inout.h"
 #include "pic.h"
+#include "bios_disk.h"
 #include "../dos/drives.h"
 #include "../dos/cdrom.h"
 
@@ -345,6 +346,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 	uint8_t TransferReadCD9;
 	bool atapi_to_host; /* if set, PACKET data transfer is to be read by host */
 	bool has_changed;
+	uint8_t DOSDriveIndex;
 	uint8_t sense[SENSE_LENGTH];
 	uint8_t atapi_cmd[12];
 	uint8_t atapi_cmd_i, atapi_cmd_total;
@@ -369,6 +371,7 @@ struct IDEATAPICDROMDevice : public IDEDevice {
 
 		loading_mode = LOAD_NO_DISC;
 		has_changed = false;
+		DOSDriveIndex = 0;
 	}
 
 	inline CDROM_Interface *getMSCDEXDrive() {
@@ -2923,7 +2926,7 @@ static void ide_baseio_w(Bitu port,Bitu val,Bitu iolen) {
 void IDE_RefreshCDROMs()
 {
 	if (!idecontroller[0]) return; // IDE_SetupControllers not yet called
-	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS*2; i++)
+	for (Bit8u i = 0, dosDriveIndex = (Bit8u)('D'-'A'); i != MAX_IDE_CONTROLLERS*2; i++)
 	{
 		IDEController* c = idecontroller[i>>1];
 		if (!c) continue;
@@ -2931,8 +2934,17 @@ void IDE_RefreshCDROMs()
 		IDEATAPICDROMDevice* d = (IDEATAPICDROMDevice*)c->device[i&1];
 		if (!d || d->type != IDE_TYPE_CDROM) continue;
 
-		DOS_Drive* drive = Drives[i+2];
-		CDROM_Interface* cdrom = (drive && dynamic_cast<isoDrive*>(drive) ? ((isoDrive*)drive)->GetInterface() : NULL);
+		CDROM_Interface* cdrom;
+		if (d->DOSDriveIndex >= dosDriveIndex)
+		{
+			DOS_Drive* drive = Drives[(dosDriveIndex = d->DOSDriveIndex)++];
+			cdrom = (drive && dynamic_cast<isoDrive*>(drive) ? ((isoDrive*)drive)->GetInterface() : NULL);
+		}
+		else
+		{
+			while (dosDriveIndex != DOS_DRIVES && (!Drives[dosDriveIndex] || !dynamic_cast<isoDrive*>(Drives[dosDriveIndex]))) dosDriveIndex++;
+			cdrom = (dosDriveIndex != DOS_DRIVES ? ((isoDrive*)Drives[d->DOSDriveIndex = dosDriveIndex++])->GetInterface() : NULL);
+		}
 		if (cdrom == d->my_cdrom) continue;
 
 		d->my_cdrom = cdrom;
@@ -2958,22 +2970,26 @@ void IDE_RefreshCDROMs()
 	}
 }
 
-void IDE_SetupControllers(char force_cd_drive_letter)
+void IDE_SetupControllers(bool alwaysHaveCDROM)
 {
 	if (idecontroller[0]) return; // only setup once
+
+	Bit8u numCDROMDevices = 0;
+	for (DOS_Drive* drv : Drives) { if (drv && dynamic_cast<isoDrive*>(drv)) { numCDROMDevices++; } }
+	if (!numCDROMDevices && alwaysHaveCDROM) numCDROMDevices = 1; // Enforce CD-ROM so discs can be mounted afterwards
 
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS; i++)
 		idecontroller[i] = new IDEController(i);
 
+	DBP_STATIC_ASSERT(MAX_HDD_IMAGES == MAX_IDE_CONTROLLERS*2);
 	for (Bit8u i = 0; i != MAX_IDE_CONTROLLERS*2; i++)
 	{
 		IDEController* c = idecontroller[i>>1];
 		#ifdef C_DBP_ENABLE_IDE_ATA
-		if (i < MAX_HDD_IMAGES && imageDiskList[i+2])
+		if (imageDiskList[i+2])
 			c->device[i&1] = new IDEATADevice(c, i, i+2);
-		else
 		#endif
-		if ((Drives[i+2] && dynamic_cast<isoDrive*>(Drives[i+2])) || (force_cd_drive_letter-'A') == (i+2))
+		if (!imageDiskList[i+2] && numCDROMDevices && numCDROMDevices--)
 			c->device[i&1] = new IDEATAPICDROMDevice(c, i);
 	}
 
@@ -3011,8 +3027,6 @@ void DBPSerialize_IDE(DBPArchive& ar_outer)
 }
 
 #ifdef C_DBP_ENABLE_IDE_ATA // Disabled ATA drive support because BIOS access covers most cases
-#include "bios_disk.h"
-
 static inline bool is_power_of_2(Bitu val) {
 	return (val != 0) && ((val&(val-1)) == 0);
 }

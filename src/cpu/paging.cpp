@@ -936,6 +936,9 @@ static INLINE bool InitPage_CheckUseraccess(Bitu u1,Bitu u2) {
 	case CPU_ARCHTYPE_486OLDSLOW:
 	case CPU_ARCHTYPE_486NEWSLOW:
 	case CPU_ARCHTYPE_PENTIUMSLOW:
+#if C_MMX
+	case CPU_ARCHTYPE_PENTIUM_MMX:
+#endif
 		return ((u1)==0) || ((u2)==0);
 	}
 }
@@ -1041,6 +1044,9 @@ public:
 					case CPU_ARCHTYPE_486OLDSLOW:
 					case CPU_ARCHTYPE_486NEWSLOW:
 					case CPU_ARCHTYPE_PENTIUMSLOW:
+#if C_MMX
+					case CPU_ARCHTYPE_PENTIUM_MMX:
+#endif
 						priv_check=1;
 						break;
 					}
@@ -1059,6 +1065,9 @@ public:
 					case CPU_ARCHTYPE_486OLDSLOW:
 					case CPU_ARCHTYPE_486NEWSLOW:
 					case CPU_ARCHTYPE_PENTIUMSLOW:
+#if C_MMX
+					case CPU_ARCHTYPE_PENTIUM_MMX:
+#endif
 						priv_check=2;
 						break;
 					}
@@ -1325,12 +1334,30 @@ bool PAGING_MakePhysPage(Bitu & page) {
 		// check the page directory entry for this address
 		X86PageEntry dir_entry;
 		dir_entry.load = phys_readd(GetPageDirectoryEntryAddr(page<<12));
+#ifndef C_DBP_PAGE_FAULT_QUEUE_WIPE
 		if (!dir_entry.block.p) return false;
+#else
+		if (!dir_entry.block.p) {
+			// During page fault wipe this can fail but we still return true to avoid a crash caused by MakeCodePage failing with "DYNX86:Can't find physpage" due to this.
+			// This is fine because the page fault wipe will revert state back to what it was during the page fault anyway.
+			if (!DOSBOX_IsWipingPageFaultQueue)
+				return false;
+		}
+#endif
 
 		// check the page table entry
 		X86PageEntry tbl_entry;
 		tbl_entry.load = phys_readd(GetPageTableEntryAddr(page<<12, dir_entry));
+#ifndef C_DBP_PAGE_FAULT_QUEUE_WIPE
 		if (!tbl_entry.block.p) return false;
+#else
+		if (!tbl_entry.block.p) {
+			// During page fault wipe this can fail but we still return true to avoid a crash caused by MakeCodePage failing with "DYNX86:Can't find physpage" due to this.
+			// This is fine because the page fault wipe will revert state back to what it was during the page fault anyway.
+			if (!DOSBOX_IsWipingPageFaultQueue)
+				return false;
+		}
+#endif
 
 		// return it
 		page = tbl_entry.block.base;

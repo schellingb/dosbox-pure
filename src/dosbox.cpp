@@ -127,6 +127,9 @@ static LoopHandler * loop;
 #ifdef C_DBP_USE_SDL
 bool SDLNetInited;
 #endif
+#ifdef C_DBP_LIBRETRO
+bool DOSBox_Boot;
+#endif
 
 #ifndef C_DBP_CUSTOMTIMING
 static Bit32u ticksRemain;
@@ -524,6 +527,9 @@ void DOSBOX_Init(void) {
 #ifdef C_DBP_USE_SDL
 	SDLNetInited = false;
 #endif
+#ifdef C_DBP_LIBRETRO
+	DOSBox_Boot = false;
+#endif
 
 	// Some frequently used option sets
 	const char *rates[] = {  "44100", "48000", "32000","22050", "16000", "11025", "8000", "49716", 0 };
@@ -642,7 +648,11 @@ void DOSBOX_Init(void) {
 	Pstring->Set_help("CPU Core used in emulation. auto will switch to dynamic if available and\n"
 		"appropriate.");
 
+#if !C_MMX
 	const char* cputype_values[] = { "auto", "386", "386_slow", "486_slow", "pentium_slow", "386_prefetch", 0};
+#else
+	const char* cputype_values[] = { "auto", "386", "386_slow", "486_slow", "pentium_slow", "pentium_mmx", "386_prefetch", 0};
+#endif
 	Pstring = secprop->Add_string("cputype",Property::Changeable::Always,"auto");
 	Pstring->Set_values(cputype_values);
 	Pstring->Set_help("CPU Type used in emulation. auto is the fastest choice.");

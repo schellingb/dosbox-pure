@@ -130,7 +130,8 @@ void DOS_Drive_Cache::SetBaseDir(const char* baseDir, DOS_Label& label) {
 	if (strlen(baseDir) == 0) return;
 
 	Bit16u id;
-	strcpy(basePath,baseDir);
+	if (basePath != baseDir) //DBP: Fix compiler warning on EmptyCache who inlines this in a way that baseDir is basePath
+		strcpy(basePath,baseDir);
 	if (OpenDir(baseDir,id)) {
 		char* result = 0;
 		ReadDir(id,result);

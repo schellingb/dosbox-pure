@@ -879,6 +879,10 @@ public:
 			return;
 		}
 
+#ifdef C_DBP_LIBRETRO
+		DOSBox_Boot = true;
+#endif
+
 		bootSector bootarea;
 		imageDiskList[drive-65]->Read_Sector(0,0,1,(Bit8u *)&bootarea);
 		if ((bootarea.rawdata[0]==0x50) && (bootarea.rawdata[1]==0x43) && (bootarea.rawdata[2]==0x6a) && (bootarea.rawdata[3]==0x72)) {
@@ -1090,11 +1094,11 @@ public:
 
 #ifdef C_DBP_ENABLE_IDE
 			// Also enable IDE CDROM when using boot from the command line (as opposed to using the Start Menu)
-			for (Bit8u i = 0; i != 4 /*MAX_IDE_CONTROLLERS*2*/; i++)
+			for (Bit8u i = (Bit8u)('D'-'A'); i != DOS_DRIVES; i++)
 			{
-				if (!Drives[i+2] || !dynamic_cast<isoDrive*>(Drives[i+2])) continue;
-				void IDE_SetupControllers(char);
-				IDE_SetupControllers(0);
+				if (!Drives[i] || !dynamic_cast<isoDrive*>(Drives[i])) continue;
+				void IDE_SetupControllers(bool alwaysHaveCDROM);
+				IDE_SetupControllers(false);
 				break;
 			}
 #endif

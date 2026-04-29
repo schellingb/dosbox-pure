@@ -1085,20 +1085,18 @@ bool unionDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster
 	Bit16u over_bytes_sector;  Bit8u over_sectors_cluster;  Bit16u over_total_clusters;  Bit16u over_free_clusters;
 	impl->under->AllocationInfo(&under_bytes_sector, &under_sectors_cluster, &under_total_clusters, &under_free_clusters);
 	impl->over->AllocationInfo( &over_bytes_sector,  &over_sectors_cluster,  &over_total_clusters,  &over_free_clusters );
-	Bit32u under_bytes = under_total_clusters * under_sectors_cluster * under_bytes_sector;
-	Bit32u over_bytes  = over_total_clusters  * over_sectors_cluster  * over_bytes_sector;
-	Bit32u free_bytes  = over_free_clusters   * over_sectors_cluster  * over_bytes_sector;
 	*_bytes_sector    = (under_bytes_sector    > over_bytes_sector    ? under_bytes_sector    : over_bytes_sector   );
 	*_sectors_cluster = (under_sectors_cluster > over_sectors_cluster ? under_sectors_cluster : over_sectors_cluster);
-	if (impl->free_bytes > free_bytes)
-	{
-		free_bytes = impl->free_bytes;
-		Bit8u need_sectors_cluster = (Bit8u)(free_bytes > (32<<24) ? (free_bytes>>29<<5): 32);
-		if (need_sectors_cluster > *_sectors_cluster) *_sectors_cluster = need_sectors_cluster;
-	}
+	Bit32u under_used = (under_total_clusters - under_free_clusters) * under_sectors_cluster * under_bytes_sector;
+	Bit32u over_used  = (over_total_clusters  -  over_free_clusters) * over_sectors_cluster  * over_bytes_sector;
+	Bit64u used = (Bit64u)under_used + over_used, avail = over_free_clusters * over_sectors_cluster * over_bytes_sector;
+	if (avail < impl->free_bytes) avail = impl->free_bytes;
+	Bit64u sum = (used + avail), total = (sum < (0xffffffff-(512*224-1)) ? sum : (0xffffffff-(512*224-1)));
+	Bit8u need_sectors = (Bit8u)(total > (32<<24) ? (total>>29<<5) : 32);
+	if (need_sectors > *_sectors_cluster) *_sectors_cluster = need_sectors;
 	Bit32u cluster_div = (*_bytes_sector && *_sectors_cluster ? *_bytes_sector * *_sectors_cluster : 1);
-	*_total_clusters = (under_bytes > over_bytes ? under_bytes : over_bytes) / cluster_div;
-	*_free_clusters  = free_bytes / cluster_div;
+	*_total_clusters = (Bit16u)(total / cluster_div);
+	*_free_clusters  = (Bit16u)(avail / cluster_div);
 	return true;
 }
 

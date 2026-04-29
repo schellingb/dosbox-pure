@@ -412,11 +412,21 @@ bool memoryDrive::GetFileAttr(char * name, Bit16u * attr)
 
 bool memoryDrive::AllocationInfo(Bit16u * _bytes_sector, Bit8u * _sectors_cluster, Bit16u * _total_clusters, Bit16u * _free_clusters)
 {
-	// return dummy numbers (not above 0x7FFF which seems to be needed for some games)
+	// For less than 512 MB stay under 0x7FFF which seems to be needed for some games
+	Bit64u used = 0;
+	for (Bit32s d = -1, dMax = impl->directories.Capacity(); d != dMax; d++)
+	{
+		Memory_Directory* dir = (d < 0 ? &impl->root : impl->directories.GetAtIndex(d));
+		for (Bit32u e = 0, eMax = (dir ? dir->entries.Capacity() : 0); e != eMax; e++)
+			if (Memory_Entry* entry = dir->entries.GetAtIndex(e))
+				if (entry && entry->IsFile()) used += entry->AsFile()->Size();
+	}
+	Bit64u avail = (250*1024*1024), sum = (used + avail), total = (sum < (0xffffffff-(512*224-1)) ? sum : (0xffffffff-(512*224-1)));
+	Bit8u sectors = (Bit8u)(total > (32<<24) ? (total>>29<<5) : 32);
 	*_bytes_sector = 512;
-	*_sectors_cluster = 32;
-	*_total_clusters = 32765; // 512MB
-	*_free_clusters = 16000; // 250MB
+	*_sectors_cluster = sectors;
+	*_total_clusters = (Bit16u)((total + (512 * sectors - 1)) / (512 * sectors));
+	*_free_clusters = (Bit16u)((avail + (512 * sectors - 1)) / (512 * sectors));
 	return true;
 }
 

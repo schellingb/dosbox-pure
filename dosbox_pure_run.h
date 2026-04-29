@@ -120,12 +120,6 @@ struct DBP_Run
 			return true;
 		}
 
-		static bool HaveCDImage()
-		{
-			for (DBP_Image& i : dbp_images) if (DBP_Image_IsCD(i)) return true;
-			return false;
-		}
-
 		static bool MountOSIMG(char drive, const char* path, const char* type, bool needwritable, bool complainnotfound)
 		{
 			FILE* raw_file_h = NULL;
@@ -168,7 +162,7 @@ struct DBP_Run
 
 			// If there is no mounted hard disk image but a D: drive, setup the CDROM IDE controller
 			if (!imageDiskList['C'-'A'] && Drives['D'-'A'])
-				IDE_SetupControllers(BatchFileBoot::HaveCDImage() ? 'D' : 0);
+				IDE_SetupControllers(true);
 
 			// Install the NE2000 network card
 			NET_SetupEthernet();
@@ -221,13 +215,12 @@ struct DBP_Run
 			dbp_osimages.emplace_back(filename);
 		}
 
-		const bool have_cd_image = BatchFileBoot::HaveCDImage();
 		if (!path.empty())
 		{
-			// When booting an external disk image as C:, use whatever is C: in DOSBox DOS as the second hard disk in the booted OS (it being E: in Drives[] doesn't matter)
-			char newC = ((have_cd_image || DBP_IsMounted('D')) ? 'E' : 'D'); // alternative would be to do DBP_Remount('D', 'E'); and always use 'D'
-			if (imageDiskList['C'-'A'])
-				imageDiskList[newC-'A'] = imageDiskList['C'-'A'];
+			// When booting an external disk image as C:, use whatever is C: or D: in DOSBox DOS as the third IDE drive in the booted OS
+			const char newC = 'E'; // Third IDE drive (if it were D: the IDE CD-ROM drive wouldn't show up in Windows 9x)
+			if      (imageDiskList['C'-'A']) std::swap(imageDiskList['C'-'A'], imageDiskList[newC-'A']); // Loaded content is FAT12/FAT16 disk image
+			else if (imageDiskList['E'-'A'] && dbp_content_path == imageDiskList['E'-'A']->diskname) {}  // Loaded content is FAT32/other disk image
 			else if (!BatchFileBoot::MountOSIMG(newC, (dbp_content_path + ".img").c_str(), "D: drive image", true, false) && Drives['C'-'A'])
 			{
 				Bit32u save_hash = 0;
@@ -267,8 +260,8 @@ struct DBP_Run
 			//DriveCreateFile(Drives['A'-'A'], "AUTOEXEC.BAT", (const Bit8u*)"DIR\r\n", 5);
 		}
 
-		// Setup IDE controllers for the hard drives and one CDROM drive (if any CDROM image is mounted)
-		IDE_SetupControllers(have_cd_image ? 'D' : 0);
+		// Setup IDE controllers for the CDROM drive
+		IDE_SetupControllers(true);
 
 		// Install the NE2000 network card
 		NET_SetupEthernet();
@@ -276,7 +269,11 @@ struct DBP_Run
 		// Switch cputype to highest feature set (needed for Windows 9x) and increase real mode CPU cycles
 		Section* section = control->GetSection("cpu");
 		section->ExecuteDestroy(false);
+		#if C_MMX
+		section->HandleInputline("cputype=pentium_mmx");
+		#else
 		section->HandleInputline("cputype=pentium_slow");
+		#endif
 		if (DBP_Option::Get(DBP_Option::bootos_forcenormal)[0] == 't') section->HandleInputline("core=normal");
 		section->ExecuteInit(false);
 		section->GetProp("cputype")->MarkFixed();
@@ -349,7 +346,7 @@ struct DBP_Run
 		}
 
 		const Property* bootImgMachine = ((mode == RUN_BOOTIMG) ? control->GetProp("dosbox", "machine") : NULL);
-		if (startup.reboot || dbp_game_running || (from_osd && first_shell->bf && !first_shell->bf->IsAutoexec()) || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue()))
+		if (startup.reboot || dbp_game_running || !control || (from_osd && first_shell->bf && !first_shell->bf->IsAutoexec()) || (bootImgMachine && info && info != *(const char*)bootImgMachine->GetValue()))
 		{
 			startup.reboot = false;
 			if (bootImgMachine) dbp_reboot_machine = (info ? (char)info : *(const char*)bootImgMachine->GetValue());
@@ -510,7 +507,11 @@ struct DBP_Run
 			{
 				case 'c':
 					return (0
+						#if C_MMX
+						||Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "generic_pentium_mmx","pentium_mmx" , "")
+						#else
 						||Parse("cpu_type", "cpu", "cputype" , "auto","auto" , "generic_386","386" , "generic_486","486_slow" , "generic_pentium","pentium_slow" , "")
+						#endif
 						||ParseCPU("cpu_cycles")||ParseCPU("cpu_hz")||ParseCPU("cpu_year")||ParseCPU("cpu_max_cycles")||ParseCPU("cpu_max_hz")||ParseCPU("cpu_max_year")
 					);
 				case 'm':
