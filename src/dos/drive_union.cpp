@@ -149,6 +149,7 @@ struct unionDriveImpl
 	StringToPointerHashMap<Union_Modification> modifications;
 	std::vector<Union_Search> searches;
 	std::vector<Bit16u> free_search_ids;
+	std::vector<Bit32u> dirty_paths;
 	std::string save_file;
 	Bit32u save_size, free_bytes;
 	bool writable, autodelete_under, autodelete_over, dirty;
@@ -370,7 +371,7 @@ struct unionDriveImpl
 				extern void emuthread_notify(int duration, LOG_SEVERITIES lvl, char const* format,...);
 				emuthread_notify(2000, LOG_ERROR, "Error while writing game save file '%s'!", impl->save_file.c_str());
 			}
-			impl->ScheduleSave(5000.f);
+			impl->ScheduleSave(NULL, 5000.f);
 			return;
 		}
 
@@ -388,47 +389,46 @@ struct unionDriveImpl
 		std::vector<Bit8u> central_dir;
 		Bit32u local_file_offset = 0, save_size = 0;
 		Bit16u file_count = 0;
+		DOS_File* df;
 		bool failed = false;
 		for (SaveFile& sf : save_files)
 		{
 			Bit32u size = sf.size;
 			char* path = sf.path;
 			sbuf.clear();
-			Bit8u* filedata = NULL;
+			const Bit8u* filedata = NULL;
 			Bit16u pathLen = (Bit16u)(strlen(path) + (sf.is_dir ? 1 : 0));
+			bool under_match_size = false, is_swap = (pathLen > 4 && !memcmp(path + pathLen - 4, ".SWP", 4));
 			if (size == (Bit32u)-1) // generate file modifications meta file
 			{
 				for (Union_Modification* m : impl->modifications) m->Serialize(sbuf);
 				size = (Bit32u)sbuf.size();
 				filedata = (Bit8u*)&sbuf[0];
 			}
-			else if (!sf.is_dir)
+			else if (!sf.is_dir && under->FileOpen(&df, path, 0))
 			{
 				// Read file data in both over and under drive to compare
-				DOS_File* df;
-				bool under_match_size = false;
-				if (under->FileOpen(&df, path, 0))
-				{
-					Bit32u under_size = 0;
-					df->AddRef();
-					df->Seek(&under_size, DOS_SEEK_END);
-					under_match_size = (under_size == size);
-					ReadAndClose(df, sbuf, (under_match_size ? size : 0));
-				}
+				Bit32u under_size = 0;
+				df->AddRef();
+				df->Seek(&under_size, DOS_SEEK_END);
+				under_match_size = (under_size == size);
+				ReadAndClose(df, sbuf, (under_match_size ? size : 0));
+			}
 
-				bool opened = over->FileOpen(&df, (char*)path, 0);
-				bool fullyread = ReadAndClose(df, sbuf, size);
-				DBP_ASSERT(opened && fullyread);
+			if (under_match_size || is_swap)
+			{
+				const bool fullyread = over->FileOpen(&df, (char*)path, 0) && ReadAndClose(df, sbuf, size);
+				DBP_ASSERT(fullyread && sbuf.size() == (size_t)size * (under_match_size ? 2 : 1));
 				filedata = (Bit8u*)&sbuf[under_match_size ? size : 0];
 
 				// If content matches, don't store in save file
 				if (under_match_size && (!size || !memcmp(filedata, &sbuf[0], size))) continue;
 
 				// Don't write files with .SWP ending that are either empty or filled with zero bytes (temporary swap files)
-				if (pathLen > 4 && !memcmp(path + pathLen - 4, ".SWP", 4))
+				if (is_swap)
 				{
 					bool allzeros = true;
-					for (Bit8u *p = (Bit8u*)&sbuf[0], *pEnd = p + size; p != pEnd; p++) { if (*p) { allzeros = false; break; } }
+					for (const Bit8u *p = filedata, *pEnd = p + size; p != pEnd; p++) { if (*p) { allzeros = false; break; } }
 					if (allzeros) continue;
 					#if !defined(NDEBUG) && defined(_MSC_VER)
 					extern void emuthread_notify(int duration, LOG_SEVERITIES lvl, char const* format,...);
@@ -440,14 +440,12 @@ struct unionDriveImpl
 			// Generate local file header
 			Bit8u lfh[30 + DOS_PATHLENGTH + 8];
 			const Bit16u date = (Bit16u)(sf.datetime >> 16), time = (Bit16u)sf.datetime;
-			const Bit32u crc32 = (size ? DriveCalculateCRC32(filedata, size) : 0);
 			ZIP_WRITE_LE32(lfh+ 0, 0x04034b50); // Local file header signature
 			ZIP_WRITE_LE16(lfh+ 4, 0);          // Version needed to extract (minimum)
 			ZIP_WRITE_LE16(lfh+ 6, 0);          // General purpose bit flag 
 			ZIP_WRITE_LE16(lfh+ 8, 0);          // Compression method
 			ZIP_WRITE_LE16(lfh+10, time);       // File last modification time
 			ZIP_WRITE_LE16(lfh+12, date);       // File last modification date
-			ZIP_WRITE_LE32(lfh+14, crc32);      // CRC-32 of uncompressed data
 			ZIP_WRITE_LE32(lfh+18, size);       // Compressed size
 			ZIP_WRITE_LE32(lfh+22, size);       // Uncompressed size
 			ZIP_WRITE_LE16(lfh+26, pathLen);    // File name length
@@ -459,6 +457,50 @@ struct unionDriveImpl
 				*pOut = (*pIn == '\\' ? '/' : *pIn);
 			if (sf.is_dir)
 				lfh[lfhlen - 1] = '/';
+
+			// Check if the file was modified since last save and if so force writing
+			if (matches_existing && impl->dirty_paths.size())
+			{
+				const Bit32u namecrc = DriveCalculateCRC32((const Bit8u*)path, pathLen);
+				for (std::vector<Bit32u>::iterator it = impl->dirty_paths.begin(); it != impl->dirty_paths.end(); ++it)
+				{
+					if (namecrc != *it) continue;
+					matches_existing = false;
+					impl->dirty_paths.erase(it);
+					break;
+				}
+			}
+
+			// Check if the file already exists at this position, and skip writing it if so
+			if (matches_existing)
+			{
+				Bit8u matchlfh[sizeof(lfh)];
+				matches_existing = (fread(matchlfh, lfhlen, 1, fsave) == 1);
+				memcpy(lfh+14, matchlfh+14, 4); // Use existing CRC-32 (skip need to calculate it)
+				matches_existing &= !memcmp(lfh, matchlfh, lfhlen); // compare local file header
+				if (!matches_existing)
+					fseek(fsave, local_file_offset, SEEK_SET); // mismatch, seek back before lfh
+				else if (size)
+					fseek(fsave, (int)size, SEEK_CUR); // still matching, seek past data to next file
+				// We could do additional checks like confirming the first few and last few bytes of the file or even the CRC
+				// but for now we keep things fast under the assumption that the save ZIP has not been tampered with
+			}
+
+			if (!matches_existing)
+			{
+				if (!sf.is_dir && !filedata)
+				{
+					const bool fullyread = over->FileOpen(&df, (char*)path, 0) && ReadAndClose(df, sbuf, size);
+					DBP_ASSERT(fullyread && sbuf.length() == (size_t)size);
+					filedata = (Bit8u*)&sbuf[0];
+				}
+
+				const Bit32u crc32 = (size ? DriveCalculateCRC32(filedata, size) : 0);
+				ZIP_WRITE_LE32(lfh+14, crc32); // CRC-32 of uncompressed data
+
+				// Write local file header followed by file data
+				failed |= !(fwrite(lfh, lfhlen, 1, fsave) && (!size || fwrite(filedata, size, 1, fsave)));
+			}
 
 			// Generate central directory file header
 			const size_t centralDirPos = central_dir.size();
@@ -473,25 +515,6 @@ struct unionDriveImpl
 			ZIP_WRITE_LE32(cd+38, (sf.is_dir ? 0x10 : 0)); // External file attributes
 			ZIP_WRITE_LE32(cd+42, local_file_offset);      // Relative offset of local file header
 			memcpy(cd + 46, lfh + 30, pathLen);            // File name
-
-			// Check if the file already exists at this position, and skip writing it if so
-			if (matches_existing)
-			{
-				Bit32u match_len = (size > 16 ? 16 : size);
-				Bit8u matchbuf[30 + DOS_PATHLENGTH + 8 + 16];
-				matches_existing = fread(matchbuf, lfhlen + match_len, 1, fsave) && !memcmp(lfh, matchbuf, lfhlen)
-					&& (!size || (!memcmp(filedata, matchbuf + lfhlen, match_len)
-						&& (size == match_len || (!fseek(fsave, (int)(size - match_len - match_len), SEEK_CUR)
-							&& fread(matchbuf, match_len, 1, fsave)
-							&& !memcmp(filedata + size - match_len, matchbuf, match_len)))));
-				if (!matches_existing) fseek(fsave, local_file_offset, SEEK_SET);
-			}
-
-			if (!matches_existing)
-			{
-				// Write local file header followed by file data
-				failed |= !(fwrite(lfh, lfhlen, 1, fsave) && (!size || fwrite(filedata, size, 1, fsave)));
-			}
 
 			local_file_offset += (lfhlen + size);
 			save_size += size;
@@ -529,9 +552,10 @@ struct unionDriveImpl
 		if (failed) { LOG_MSG("[DOSBOX] Error while writing file %s", impl->save_file.c_str()); goto reporterror; }
 		impl->save_size = save_size;
 		impl->dirty = false;
+		impl->dirty_paths.clear();
 	}
 
-	void ScheduleSave(float delay_ms = 0)
+	void ScheduleSave(const char* path = NULL, float delay_ms = 0)
 	{
 		if (save_file.empty()) return;
 		if (!delay_ms)
@@ -539,6 +563,13 @@ struct unionDriveImpl
 			// The larger the save data, the bigger the delay until we write it to disk (1 up to 60 seconds)
 			delay_ms = 1000.f + 1000.f * (save_size / (float)(1024 * 1024));
 			if (delay_ms > 60000.f) delay_ms = 60000.f;
+		}
+		if (path)
+		{
+			const Bit32u namecrc = DriveCalculateCRC32((const Bit8u*)path, (size_t)strlen(path));
+			for (Bit32u it : dirty_paths) { if (it == namecrc) { goto alreadydirty; } }
+			dirty_paths.push_back(namecrc);
+			alreadydirty:;
 		}
 		PIC_RemoveSpecificEvents(WriteSaveFile, (Bitu)this);
 		PIC_AddEvent(WriteSaveFile, delay_ms, (Bitu)this);
@@ -548,7 +579,7 @@ struct unionDriveImpl
 	void ForceCloseFileAndScheduleSave(DOS_Drive* drv, const char* path, bool isFile)
 	{
 		if (isFile) DriveForceCloseFile(drv, path);
-		ScheduleSave();
+		ScheduleSave(path);
 	}
 };
 
@@ -590,7 +621,7 @@ struct Union_WriteHandle : public DOS_File
 		}
 		if (dirty)
 		{
-			impl->ScheduleSave();
+			impl->ScheduleSave(name);
 			dirty = false;
 		}
 		return true;
@@ -792,7 +823,7 @@ bool unionDrive::FileCreate(DOS_File** file, char * path, Bit16u attributes)
 		}
 	}
 	*file = new Union_WriteHandle(impl, real_file, OPEN_READWRITE, path_org, false);
-	impl->ScheduleSave();
+	impl->ScheduleSave(path);
 	return TRUE_RESET_DOSERR;
 }
 
@@ -889,7 +920,7 @@ bool unionDrive::MakeDir(char* dir_path)
 			return false;
 		}
 	}
-	impl->ScheduleSave();
+	impl->ScheduleSave(dir_path);
 	return TRUE_RESET_DOSERR;
 }
 
