@@ -1108,7 +1108,7 @@ struct ZIP_Unpacker
 struct Zip_Entry
 {
 protected:
-	Zip_Entry(Bit16u _attr, const char* _name, Bit16u _date = 0, Bit16u _time = 0) : date(_date), time(_time), attr(_attr)
+	Zip_Entry(Bit16u _attr, const char* _name, Bit16u _date = 0, Bit16u _time = 0, bool _haslfn = false) : date(_date), time(_time), attr(_attr), haslfn(_haslfn)
 	{
 		size_t namesize = strlen(_name) + 1;
 		if (namesize > sizeof(name)) { DBP_ASSERT(false); namesize = sizeof(name); }
@@ -1126,6 +1126,7 @@ public:
 	Bit16u time;
 	Bit16u attr;
 	char name[DOS_NAMELENGTH_ASCII];
+	bool haslfn;
 };
 
 struct Zip_File : Zip_Entry
@@ -1137,8 +1138,8 @@ struct Zip_File : Zip_Entry
 	Bit64u data_ofs;
 	ZIP_Unpacker* unpacker;
 
-	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, Bit64u _data_ofs, Bit32u _decomp_size, Bit32u _comp_size, Bit32u _crc, Bit8u _bit_flags, Bit8u _method)
-		: Zip_Entry(_attr, filename, _date, _time), decomp_size(_decomp_size), comp_size(_comp_size), crc(_crc), refs(0), ofs_past_header(0), bit_flags(_bit_flags), method(_method), have_pic(0), data_ofs(_data_ofs), unpacker(NULL) {}
+	Zip_File(Bit16u _attr, const char* filename, Bit16u _date, Bit16u _time, bool _haslfn, Bit64u _data_ofs, Bit32u _decomp_size, Bit32u _comp_size, Bit32u _crc, Bit8u _bit_flags, Bit8u _method)
+		: Zip_Entry(_attr, filename, _date, _time, _haslfn), decomp_size(_decomp_size), comp_size(_comp_size), crc(_crc), refs(0), ofs_past_header(0), bit_flags(_bit_flags), method(_method), have_pic(0), data_ofs(_data_ofs), unpacker(NULL) {}
 
 	~Zip_File()
 	{
@@ -1661,12 +1662,12 @@ struct Zip_Handle : public DOS_File
 	}
 };
 
-struct Zip_Directory: Zip_Entry
+struct Zip_Directory : Zip_Entry
 {
 	StringToPointerHashMap<Zip_Entry> entries;
 	Bit64u ofs;
 
-	Zip_Directory(Bit16u _attr, const char* dirname, Bit16u _date, Bit16u _time, Bit64u _ofs) : Zip_Entry(_attr, dirname, _date, _time), ofs(_ofs) {}
+	Zip_Directory(Bit16u _attr, const char* dirname, Bit16u _date, Bit16u _time, bool _haslfn, Bit64u _ofs) : Zip_Entry(_attr, dirname, _date, _time, _haslfn), ofs(_ofs) {}
 
 	~Zip_Directory()
 	{
@@ -1728,7 +1729,7 @@ struct zipDriveImpl
 		MZ_ZIP_LDH_FILENAME_LEN_OFS = 26, MZ_ZIP_LDH_EXTRA_LEN_OFS = 28,
 	};
 
-	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir, std::string** out_parent = NULL, bool* out_multi_parent = NULL, zipDriveImpl* child_impl = NULL) : archive(_zip, enable_crc_check), root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, 0), total_decomp_size(0)
+	zipDriveImpl(DOS_File* _zip, bool enable_crc_check, bool enter_solo_root_dir, std::string** out_parent = NULL, bool* out_multi_parent = NULL, zipDriveImpl* child_impl = NULL) : archive(_zip, enable_crc_check), root(DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0xFFFF, 0xFFFF, false, 0), total_decomp_size(0)
 	{
 		// Basic sanity checks - reject files which are too small.
 		if (archive.size < MZ_ZIP_END_OF_CENTRAL_DIR_HEADER_SIZE)
@@ -1897,7 +1898,7 @@ struct zipDriveImpl
 				if (n == nEnd && !is_dir)
 				{
 					while (parent->entries.Get(p_dos)) { if (!parent->IncrementName(p_dos)) goto skip_zip_entry; }
-					parent->entries.Put(p_dos, new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, local_header_ofs, (Bit32u)decomp_size, (Bit32u)comp_size, crc, (Bit8u)bit_flag, (Bit8u)method));
+					parent->entries.Put(p_dos, new Zip_File(DOS_ATTR_ARCHIVE, p_dos, file_date, file_time, diff8dot3, local_header_ofs, (Bit32u)decomp_size, (Bit32u)comp_size, crc, (Bit8u)bit_flag, (Bit8u)method));
 					break;
 				}
 
@@ -1908,7 +1909,7 @@ struct zipDriveImpl
 				if (!zdir)
 				{
 					while (parent->entries.Get(p_dos)) { if (!parent->IncrementName(p_dos)) goto skip_zip_entry; }
-					zdir = new Zip_Directory(DOS_ATTR_DIRECTORY, p_dos, file_date, file_time, local_header_ofs);
+					zdir = new Zip_Directory(DOS_ATTR_DIRECTORY, p_dos, file_date, file_time, diff8dot3, local_header_ofs);
 					parent->entries.Put(p_dos, zdir);
 					directories.Put(dos_path, zdir);
 					if (diff8dot3) lfnDirs.Put(lfnHash, zdir);
@@ -2159,7 +2160,7 @@ bool zipDrive::GetLongFileName(const char* path, char longname[256])
 {
 	DOSPATH_REMOVE_ENDINGDOTS(path);
 	Zip_Entry* e = impl->Get(path);
-	if (!e || !*path || (e->IsFile() && e->AsFile()->ofs_past_header == 0xFFFF)) return false;
+	if (!e || !e->haslfn || !*path || (e->IsFile() && e->AsFile()->ofs_past_header == 0xFFFF)) return false;
 
 	Bit64u ldh_ofs = (e->IsFile() ? e->AsFile()->data_ofs - e->AsFile()->ofs_past_header : e->AsDirectory()->ofs);
 	char ldh[zipDriveImpl::MZ_ZIP_LOCAL_DIR_HEADER_SIZE + CROSS_LEN * 2];
