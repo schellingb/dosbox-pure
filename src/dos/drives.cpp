@@ -671,11 +671,22 @@ bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u 
 
 Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc)
 {
-	// Karl Malbrain's compact CRC-32. See "A compact CCITT crc16 and crc32 C implementation that balances processor cache usage against speed": http://www.geocities.com/malbrain/
-	static const Bit32u s_crc32[16] = { 0, 0x1db71064, 0x3b6e20c8, 0x26d930ac, 0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c, 0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c, 0x9b64c2b0, 0x86d3d2d4, 0xa00ae278, 0xbdbdf21c };
-	Bit32u crcu32 = (Bit32u)~crc;
-	while (len--) { Bit8u b = *ptr++; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b & 0xF)]; crcu32 = (crcu32 >> 4) ^ s_crc32[(crcu32 & 0xF) ^ (b >> 4)]; }
-	return ~crcu32;
+	static Bit32u tbl[4][256];
+	struct Local { static void Init()
+	{
+		for (unsigned int i = 0; i <= 0xFF; i++) { Bit32u w = i; for (unsigned int j = 0; j < 8; j++) w = (w >> 1) ^ ((w & 1) * 0xEDB88320U); tbl[0][i] = w; }
+		for (unsigned int i = 0; i <= 0xFF; i++) { for (unsigned int j = 0; j <= 2; j++) { tbl[j+1][i] = (tbl[j][i] >> 8) ^ tbl[0][tbl[j][i] & 0xFF]; } }
+	}};
+	if (!tbl[0][1]) Local::Init();
+	Bit32u res = ~crc;
+	const Bit32u* p4 = (const Bit32u*)ptr;
+	#ifdef WORDS_BIGENDIAN
+	if (!((size_t)ptr & 3)) { for (; len >= 4; len -= 4) { res = host_readd((Bit8u*)&res) ^ *p4++; res = tbl[0][res & 0xFF] ^ tbl[1][(res>>8) & 0xFF] ^ tbl[2][(res>>16) & 0xFF] ^ tbl[3][(res>>24) & 0xFF]; } }
+	#else
+	if (!((size_t)ptr & 3)) { for (; len >= 4; len -= 4) { res ^= *p4++; res = tbl[3][res & 0xFF] ^ tbl[2][(res>>8) & 0xFF] ^ tbl[1][(res>>16) & 0xFF] ^ tbl[0][res>>24]; } }
+	#endif
+	for (const Bit8u* p1 = (const Bit8u*)p4; len--; p1++) res = (res >> 8) ^ tbl[0][(res & 0xFF) ^ *p1];
+	return ~res; 
 }
 
 //DBP: utility function to evaluate an entire drives filesystem
