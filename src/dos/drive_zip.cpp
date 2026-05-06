@@ -1914,6 +1914,7 @@ struct zipDriveImpl
 					directories.Put(dos_path, zdir);
 					if (diff8dot3) lfnDirs.Put(lfnHash, zdir);
 				}
+				else if (n + 1 >= nEnd) { zdir->date = file_date; zdir->time = file_time; } // don't just use date of contained file that came before
 				if (n + 1 >= nEnd) break;
 				parent = zdir;
 				p_dos += dos_len;
