@@ -1959,14 +1959,18 @@ DOS_Drive* zipDrive::MountWithDependencies(const char* path, std::string*& error
 		static DOS_Drive* Open(const ZFILE& z, std::string*& error_msg, bool enable_crc_check, bool enter_solo_root_dir, const char* dosc_path = NULL)
 		{
 			const char* path = z.path;
-			FILE* zip_file_h = fopen_wrap(path, "rb");
-			if (!zip_file_h)
-				return NULL;
 
+			DOS_File *df = NULL;
+			if (path[0] == '$' && (df = FindAndOpenDosFile(path)) != NULL)
+				df->refCtr--; // dereference what FindAndOpenDosFile did because zipDriveImpl constructor will reference it again
+			else if (FILE* zip_file_h = fopen_wrap(path, "rb"))
+				df = new rawFile(zip_file_h, false); // kept unreferenced until zipDriveImpl constructor will reference it
+
+			if (!df) return NULL;
 			bool multi_parent = false;
 			std::string* parent = NULL;
 			DOS_Drive* parent_drive = NULL;
-			zipDriveImpl* impl = new zipDriveImpl(new rawFile(zip_file_h, false), enable_crc_check, enter_solo_root_dir, &parent, &multi_parent, z.child_impl);
+			zipDriveImpl* impl = new zipDriveImpl(df, enable_crc_check, enter_solo_root_dir, &parent, &multi_parent, z.child_impl);
 
 			if (parent)
 			{

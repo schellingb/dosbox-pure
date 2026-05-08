@@ -87,7 +87,7 @@ static struct retro_hw_render_callback dbp_hw_render;
 static void (*dbp_opengl_draw)(const DBP_Buffer& buf);
 
 // DOSBOX DISC MANAGEMENT
-struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false, imgmount = false, imfat = false, imiso = false; char drive; int dirlen, dd; };
+struct DBP_Image { std::string path, longpath; bool mounted = false, remount = false, image_disk = false, imgmount = false, imfat = false, imiso = false, imzip = false; char drive; int dirlen, dd; };
 static std::vector<DBP_Image> dbp_images;
 static std::vector<std::string> dbp_osimages, dbp_shellzips;
 static StringToPointerHashMap<void> dbp_vdisk_filter;
@@ -955,6 +955,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 		// somewhat dangerous to set ext as not part of path but it is OK for the IMG and ISO code paths below
 		if (dbpimage->imfat) ext = "IMG";
 		if (dbpimage->imiso) ext = "ISO";
+		if (dbpimage->imzip) ext = "ZIP";
 		if (!remount_letter) letter = remount_letter = dbpimage->drive;
 	}
 	else if (fragment)
@@ -1145,8 +1146,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 	mem_writeb(Real2Phys(dos.tables.mediaid) + (letter-'A') * 9, media_byte);
 
 	// Register virtual drives with MSCDEX
-	bool attachedVirtualDrive = (letter > 'C' && !disk && !cdrom);
-	if (attachedVirtualDrive)
+	if (letter > 'C' && !disk && !cdrom)
 	{
 		Bit8u subUnit;
 		MSCDEX_AddDrive(letter, "", subUnit);
@@ -1224,7 +1224,7 @@ static void DBP_Remount(char drive1, char drive2)
 	}
 }
 
-void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso)
+void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso, bool zip)
 {
 	for (const std::string& path : paths)
 	{
@@ -1233,6 +1233,7 @@ void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bo
 		i.imgmount = true;
 		i.imfat = fat;
 		i.imiso = iso;
+		i.imzip = zip;
 	}
 	DBP_Mount(DBP_AppendImage(paths[0].c_str(), false));
 }

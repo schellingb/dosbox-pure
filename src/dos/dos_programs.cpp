@@ -1460,7 +1460,11 @@ public:
 		if(type == "cdrom") type = "iso"; //Tiny hack for people who like to type -t cdrom
 
 		//Check type and exit early.
-		if (type != "floppy" && type != "hdd" && type != "iso") {
+		if (type != "floppy" && type != "hdd" && type != "iso"
+#ifndef C_DBP_ENABLE_DRIVE_MANAGER
+				&& type != "zip"
+#endif
+			) {
 			WriteOut(MSG_Get("PROGRAM_IMGMOUNT_TYPE_UNSUPPORTED"),type.c_str());
 			return;
 		}
@@ -1712,9 +1716,10 @@ public:
 					break;
 			}
 #else
-			void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso);
-			DBP_ImgMountLoadDisks(drive, paths, true, false);
-			
+			const bool is_zip = (type == "zip");
+			void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso, bool zip);
+			DBP_ImgMountLoadDisks(drive, paths, !is_zip, false, is_zip);
+
 			std::string tmp(paths[0]);
 			for (std::vector<std::string>::size_type i = 1; i < paths.size(); i++) {
 				tmp += "; " + paths[i];
@@ -1767,8 +1772,8 @@ public:
 			// Set the correct media byte in the table 
 			mem_writeb(Real2Phys(dos.tables.mediaid) + (drive - 'A') * 9, mediaid);
 #else
-			void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso);
-			DBP_ImgMountLoadDisks(drive, paths, false, true);
+			void DBP_ImgMountLoadDisks(char drive, const std::vector<std::string>& paths, bool fat, bool iso, bool zip);
+			DBP_ImgMountLoadDisks(drive, paths, false, true, false);
 
 			std::vector<std::string>::size_type i;
 #endif
