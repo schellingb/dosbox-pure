@@ -782,10 +782,17 @@ static bool DBP_IsMounted(char drive)
 void DBP_Unmount(char drive)
 {
 	DBP_ASSERT(drive >= 'A' && drive <= 'Z');
+	restart_loop:
 	for (DBP_Image& i : dbp_images)
 	{
-		if (!i.mounted || i.drive != drive) continue;
-		i.mounted = false;
+		if (i.mounted && i.drive == drive)
+			i.mounted = false;
+		else if (i.path.c_str()[0] == '$' && i.path.c_str()[1] == drive)
+		{
+			if (i.mounted) DBP_Unmount(i.drive);
+			else dbp_images.erase(dbp_images.begin() + (int)(&i - &dbp_images[0]));
+			goto restart_loop;
+		}
 	}
 	DOS_Drive *drv = Drives[drive-'A'], *tst;
 	if (drv && drv->UnMount() != 0) { DBP_ASSERT(false); return; }
