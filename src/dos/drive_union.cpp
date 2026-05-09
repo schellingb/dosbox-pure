@@ -465,6 +465,8 @@ struct unionDriveImpl
 				for (std::vector<Bit32u>::iterator it = impl->dirty_paths.begin(); it != impl->dirty_paths.end(); ++it)
 				{
 					if (namecrc != *it) continue;
+					// When switching a stream opened with rb+ from reading to writing, an intervening call to a file-positioning function must be used (i.e. fseek)
+					fseek(fsave, 0, SEEK_CUR);
 					matches_existing = false;
 					impl->dirty_paths.erase(it);
 					break;
