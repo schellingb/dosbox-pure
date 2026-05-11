@@ -942,7 +942,7 @@ static bool DBP_IsDiskCDISO(imageDisk* id)
 	return false;
 }
 
-static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = true, char remount_letter = 0, const char* boot = NULL)
+static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = true, char remount_letter = 0, const char* boot = NULL, bool no_register_just_get_drive = false)
 {
 	DBP_Image* dbpimage = (!boot ? &dbp_images[image_index] : NULL);
 	const char *path = (dbpimage ? dbpimage->path.c_str() : boot), *path_file, *ext, *fragment; char letter;
@@ -998,7 +998,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 			goto TRY_DIRECTORY;
 		}
 		DBP_SetDriveLabelFromContentPath(drive, path, letter, path_file, ext);
-		if (boot && letter == 'C') return drive;
+		if ((boot && letter == 'C') || no_register_just_get_drive) return drive;
 	}
 	else if (!strcasecmp(ext, "IMG") || !strcasecmp(ext, "IMA") || !strcasecmp(ext, "VHD") || !strcasecmp(ext, "JRC"))
 	{
@@ -1012,6 +1012,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 		else if (!fat->created_successfully)
 		{
 			if (DBP_IsDiskCDISO(fat->loadedDisk)) goto FAT_TRY_ISO;
+			if (no_register_just_get_drive) { delete fat; return NULL; }
 			// Neither FAT nor ISO, just register with BIOS/CMOS for raw sector access and set media table byte
 			disk = fat->loadedDisk;
 			fat->loadedDisk = NULL; // don't want it deleted by ~fatDrive
@@ -1027,6 +1028,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 			fat->FindFirst((char*)"", dta);
 			dos.dta(save_dta);
 
+			if (no_register_just_get_drive) return fat;
 			drive = fat;
 			disk = fat->loadedDisk;
 
@@ -1067,6 +1069,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 			error_type = "CD-ROM image";
 			goto TRY_DIRECTORY;
 		}
+		if (no_register_just_get_drive) return iso;
 		cdrom = iso->GetInterface();
 		drive = iso;
 	}
@@ -1085,19 +1088,31 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 		if (!fread(m3u, m3u_file_size, 1, m3u_file_h)) { DBP_ASSERT(0); }
 		fclose(m3u_file_h);
 		m3u[m3u_file_size] = '\0';
+		bool overlay = false;
+		patchDrive* pd = NULL;
 		for (char* p = m3u, *pEnd = p + m3u_file_size; p <= pEnd; p++)
 		{
 			if (*p <= ' ') continue;
-			char* m3u_line = (*p == '#' ? NULL : p);
+			char* m3u_line = p;
 			while (*p != '\0' && *p != '\r' && *p != '\n') p++;
 			*p = '\0';
-			if (!m3u_line) continue;
+			if (*m3u_line == '#') { overlay |= !strcasecmp(m3u_line, "#EXT-DOSBOX-PURE-OVERLAY"); continue; }
 			size_t m3u_baselen = (m3u_line[0] == '\\' || m3u_line[0] == '/' || m3u_line[1] == ':' ? 0 : path_file - path);
 			std::string m3u_path = std::string(path, m3u_baselen) + m3u_line;
-			DBP_AppendImage(m3u_path.c_str(), false);
+			if (overlay)
+			{
+				overlay = false;
+				if (m3u_path == path) continue;
+				DOS_Drive* drv = DBP_Mount(0, true, 0, m3u_path.c_str(), true);
+				if (!drv) continue;
+				if (!drive) { drive = drv; continue; }
+				if (!pd) { pd = new patchDrive(); pd->AddLayer(*drive, true, NULL, dbp_strict_mode); drive = pd; }
+				pd->AddLayer(*drv, true, NULL, dbp_strict_mode);
+			}
+			else DBP_AppendImage(m3u_path.c_str(), false);
 		}
 		delete [] m3u;
-		return NULL;
+		if (!drive || (boot && !letter) || no_register_just_get_drive) return drive;
 	}
 	else // path or executable file
 	{
@@ -1122,6 +1137,7 @@ static DOS_Drive* DBP_Mount(unsigned image_index = 0, bool unmount_existing = tr
 
 		localDrive* localdrive = new localDrive(dir.c_str(), 512, 32, 32765, 16000, 0xF8);
 		DBP_SetDriveLabelFromContentPath(localdrive, path, letter, path_file, ext);
+		if (no_register_just_get_drive) return localdrive;
 		if (!isDir && (ext[2]|0x20) == 'n') dbp_conf_loading = 'o'; // conf loading mode set to 'o'utside will load the requested .conf file
 		drive = localdrive;
 		if (boot) path = NULL; // don't treat as disk image, but always register with Drives

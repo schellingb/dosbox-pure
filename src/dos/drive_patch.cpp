@@ -554,9 +554,7 @@ struct patchDriveImpl
 			directories.Clear();
 		}
 
-		DBP_ASSERT(!layer_top || layer_top == &layers.back()); // fixed once first used
-		layer_top = &layers.back();
-		layer_bottom = &layers.front();
+		DBP_ASSERT(layer_top == &layers.back() && layer_bottom == &layers.front());
 		if (ActiveVariantIndex == -2) ActiveVariantIndex = -1; // because we fill out dos_yml for the default config now
 
 		Bit32u ignoreLayers = 0, layerLast = (Bit32u)(layer_top - layer_bottom);
@@ -703,11 +701,13 @@ struct patchDriveImpl
 
 patchDrive::patchDrive() : impl(new patchDriveImpl()) { }
 
-void patchDrive::AddLayer(DOS_Drive& under, bool autodelete_under, DOS_File* patchzip, bool enable_crc_check, bool is_final)
+void patchDrive::AddLayer(DOS_Drive& under, bool autodelete_under, DOS_File* patchzip, bool enable_crc_check, bool final_layer_load_yml)
 {
 	impl->layers.emplace_back(under, autodelete_under, (patchzip ? new zipDrive(patchzip, enable_crc_check) : NULL));
+	impl->layer_top = &impl->layers.back();
+	impl->layer_bottom = &impl->layers.front();
 	if (impl->layers.size() == 1) label.SetLabel(under.GetLabel(), false, true);
-	if (is_final) { patchDrive::dos_yml.clear(); impl->Reload(); }
+	if (final_layer_load_yml) { patchDrive::dos_yml.clear(); impl->Reload(); }
 }
 
 patchDrive::~patchDrive()
