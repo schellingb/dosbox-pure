@@ -59,7 +59,7 @@ static retro_system_av_info av_info;
 // DOSBOX STATE
 static enum DBP_State : Bit8u { DBPSTATE_BOOT, DBPSTATE_EXITED, DBPSTATE_SHUTDOWN, DBPSTATE_REBOOT, DBPSTATE_FIRST_FRAME, DBPSTATE_RUNNING } dbp_state;
 static enum DBP_SerializeMode : Bit8u { DBPSERIALIZE_STATES, DBPSERIALIZE_REWIND, DBPSERIALIZE_DISABLED } dbp_serializemode;
-static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_biosreboot, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
+static bool dbp_game_running, dbp_pause_events, dbp_paused_midframe, dbp_frame_pending, dbp_biosreboot, dbp_biospoweroff, dbp_system_cached, dbp_system_scannable, dbp_refresh_memmaps;
 static bool dbp_optionsupdatecallback, dbp_reboot_set64mem, dbp_use_network, dbp_had_game_running, dbp_strict_mode, dbp_legacy_save, dbp_wasloaded, dbp_skip_c_mount;
 static signed char dbp_menu_time, dbp_conf_loading, dbp_reboot_machine;
 static Bit8u dbp_alphablend_base;
@@ -1280,6 +1280,14 @@ void DBP_OnBIOSReboot()
 	if ((MEM_TotalPages() / 256) == 64 && atoi(DBP_Option::Get(DBP_Option::memory_size)) < 32)
 		dbp_reboot_set64mem = true; // avoid another restart via DBP_Run::BootOS
 	dbp_biosreboot = true;
+	if (first_shell) DBP_DOSBOX_ForceShutdown();
+}
+
+void DBP_OnBIOSPoweroff()
+{
+	// to be called on the DOSBox thread
+	dbp_biosreboot = true;
+	dbp_biospoweroff = true;
 	if (first_shell) DBP_DOSBOX_ForceShutdown();
 }
 
@@ -2812,7 +2820,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 		else
 		{
 			// Boot into puremenu, it will take care of further auto start options
-			((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += "Z:PUREMENU") += ((!force_puremenu || dbp_biosreboot) ? " -BOOT" : "")) += '\n';
+			(((((static_cast<Section_line*>(autoexec)->data += "echo off") += '\n') += (dbp_biospoweroff ? "cls\n" : "")) += "Z:PUREMENU") += (dbp_biospoweroff ? " -FINISH" : ((!force_puremenu || dbp_biosreboot) ? " -BOOT" : ""))) += '\n';
 		}
 		autoexec->ExecuteInit();
 
@@ -2825,7 +2833,7 @@ static void init_dosbox(bool forcemenu = false, bool reinit = false, const std::
 				DBP_Mount(i, dbp_images[i].remount);
 		if (!newcontent) dbp_image_index = (active_disk_image_index >= dbp_images.size() ? 0 : active_disk_image_index);
 	}
-	dbp_biosreboot = dbp_reboot_set64mem = false;
+	dbp_biosreboot = dbp_biospoweroff = dbp_reboot_set64mem = false;
 	dbp_wasloaded = true;
 	DBP_ReportCoreMemoryMaps();
 
@@ -3508,6 +3516,7 @@ void retro_run(void)
 	{
 		if (dbp_state == DBPSTATE_EXITED || dbp_state == DBPSTATE_SHUTDOWN || dbp_state == DBPSTATE_REBOOT)
 		{
+			handle_state_exited:
 			DBP_Buffer& buf = dbp_buffers[buffer_active];
 			if (!dbp_crash_message.empty()) // unexpected shutdown
 				DBP_Shutdown();
@@ -3572,7 +3581,8 @@ void retro_run(void)
 
 		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME);
 		DBP_ThreadControl(TCM_FINISH_FRAME);
-		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME || (dbp_state == DBPSTATE_EXITED && (dbp_biosreboot || dbp_crash_message.size())));
+		if (dbp_state == DBPSTATE_EXITED) goto handle_state_exited; // crash or result of dbp_biospoweroff
+		DBP_ASSERT(dbp_state == DBPSTATE_FIRST_FRAME);
 		const char* midiarg, *midierr = DBP_MIDI_StartupError(control->GetSection("midi"), midiarg);
 		if (midierr) retro_notify(0, RETRO_LOG_ERROR, midierr, midiarg);
 		if (dbp_state == DBPSTATE_FIRST_FRAME) dbp_state = DBPSTATE_RUNNING;

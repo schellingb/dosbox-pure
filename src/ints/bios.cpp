@@ -744,6 +744,7 @@ static Bitu INT14_Handler(void) {
 
 //DBP: Moved out of the function, added reinit to zero
 Bit16u biosConfigSeg=0;
+static bool biosAPMConnected;
 
 static Bitu INT15_Handler(void) {
 	switch (reg_ah) {
@@ -1078,6 +1079,60 @@ static Bitu INT15_Handler(void) {
 			goto unhandled;
 		}
 		break;
+	//DBP: Added very simple handling of APM command to allow Windows to automatically shut down
+	case 0x53: {
+		Bit8u errcode = 0;
+		switch (reg_al) {
+		case 0x00: // installation check
+			reg_ax = 0x0102; // version 1.2
+			reg_bx = 0x504d; // 'PM'
+			reg_cx = 0; // flags (0x01: allow in 16-bit protected mode, 0x02: allow in 32-bit protected mode)
+			break;
+		case 0x01: // connect real mode interface
+			if      (reg_bx != 0)      errcode = 0x09; // 0x09: unrecognized device ID
+			else if (biosAPMConnected) errcode = 0x02; // 0x02: already connected to real mode interface
+			else biosAPMConnected = true;
+			break;
+		case 0x04: // disconnect interface
+			if      (reg_bx != 0)       errcode = 0x09; // 0x09: unrecognized device ID
+			else if (!biosAPMConnected) errcode = 0x03; // 0x03: interface not connected
+			else biosAPMConnected = false;
+			break;
+		case 0x0e: // set APM version
+			if      (reg_bx != 0)       errcode = 0x09; // 0x09: unrecognized device ID
+			else if (!biosAPMConnected) errcode = 0x03; // 0x03: interface not connected
+			else if (reg_ch != 1)       errcode = 0x0A; // 0x0A: invalid parameter value in CX
+			else { reg_ah = 1; reg_al = (reg_cl < 2 ? reg_cl : 2); } // desired version in CH,CL, return actual version in AH,AL
+			break;
+		case 0x08: // enable power management
+			if      (reg_bx > 1)        errcode = 0x09; // 0x09: unrecognized device ID
+			else if (!biosAPMConnected) errcode = 0x03; // 0x03: interface not connected
+			else if (reg_cx > 1)        errcode = 0x0A; // 0x0A: invalid parameter value in CX
+			break;
+		case 0x0d: // CPU Idle (according to dosbox-x source code this needs to be answered to avoid hanging in Windows 98)
+			if      (reg_bx > 1)        errcode = 0x09; // 0x09: unrecognized device ID
+			else if (!biosAPMConnected) errcode = 0x03; // 0x03: interface not connected
+			else if (reg_cx > 1)        errcode = 0x0A; // 0x0A: invalid parameter value in CX
+			break;
+		case 0x07: // power off
+			if      (reg_bx > 1)        errcode = 0x09; // 0x09: unrecognized device ID
+			else if (!biosAPMConnected) errcode = 0x03; // 0x03: interface not connected
+			else if (reg_cx != 3)       errcode = 0x0A; // 0x0A: invalid parameter value in CX (we only support power state off)
+			else
+			{
+				LOG_MSG("Power down by BIOS APM requested");
+				void DBP_OnBIOSPoweroff();
+				DBP_OnBIOSPoweroff();
+				return CBRET_STOP;
+			}
+			break;
+		default: // Ignore others (i.e. 0x0f: APM engage/disengage)
+			goto unhandled;
+		}
+		if (errcode) reg_ah = errcode;
+		CALLBACK_SCF(errcode != 0);
+		break;
+	}
 	default:
 	unhandled:
 		LOG(LOG_BIOS,LOG_ERROR)("INT15:Unknown call %4X",reg_ax);
@@ -1461,6 +1516,7 @@ public:
 			tandy_DAC_callback[1]=NULL;
 			//DBP: Moved out of the function, added reinit to zero
 			biosConfigSeg=0;
+			biosAPMConnected=false;
 		}
 	}
 };

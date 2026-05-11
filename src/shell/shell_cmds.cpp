@@ -309,7 +309,7 @@ void DOS_Shell::CMD_EXIT(char * args) {
 	if (this != first_shell || DBP_WantAutoShutDown())
 		exit = true;
 	else
-		WriteOut("\nUnable to exit top DOS shell\n\nChange the core option 'General' -> 'Start Menu' to\n'shut down core .. after .. exit' to enable shutting\ndown of the core with the exit command.\n\n");
+		WriteOut("\nUnable to exit top DOS shell\n\nTo enable shutting down the emulator with the exit command, change the setting\nGeneral > Advanced > Start Menu to [ Exit ... after auto started game ends ]\n\n");
 #endif
 }
 

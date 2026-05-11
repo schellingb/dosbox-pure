@@ -2278,12 +2278,16 @@ static void DBP_PureMenuProgram(Program** make)
 		virtual void gfx(DBP_Buffer& _buf) override
 		{
 			char msgbuf[100];
-			if      (msgType == 1) sprintf(msgbuf, "* GAME ENDED - EXITTING IN %u SECONDS - PRESS ANY KEY TO CONTINUE *", ((Bit32u)dbp_menu_time - ((DBP_GetTicks() - opentime) / 1000)));
+			if      (msgType == 1) sprintf(msgbuf, "* GAME ENDED - EXITING IN %u SECONDS - PRESS ANY KEY TO CONTINUE *", ((Bit32u)dbp_menu_time - ((DBP_GetTicks() - opentime) / 1000)));
 			else if (msgType == 2) sprintf(msgbuf, "* PRESS ANY KEY TO RETURN TO START MENU *");
 			DBP_BufferDrawing& buf = static_cast<DBP_BufferDrawing&>(_buf);
 			int lh = (buf.height >= 400 ? 14 : 8), w = buf.width, h = buf.height, y = h - lh*5/2;
 			buf.DrawBox(8, y-3, w-16, lh+6, buf.BGCOL_MENU, buf.COL_LINEBOX);
 			buf.PrintCenteredOutlined(lh, 0, w, y, msgbuf);
+			#ifndef STATIC_LINKING
+			if (msgType == 2 && dbp_menu_time == 99)
+				buf.PrintCenteredOutlined(lh, 0, w, h - lh - 2, "Use setting General > Advanced > Start Menu to enable exiting automatically", 0x40FFFFFF, 0x40000000);
+			#endif
 		}
 
 		virtual bool evnt(DBP_Event_Type type, int val, int) override
