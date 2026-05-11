@@ -2709,4 +2709,10 @@ const std::string& DBPS_GetContentName()
 {
 	return dbp_content_name;
 }
+
+void DBPS_InitLEDs(uint16_t key_modifiers)
+{
+	int leds = ((key_modifiers & RETROKMOD_NUMLOCK) ? KLED_NUMLOCK : 0) | ((key_modifiers & RETROKMOD_CAPSLOCK) ? KLED_CAPSLOCK : 0) | ((key_modifiers & RETROKMOD_SCROLLOCK) ? KLED_SCROLLLOCK : 0);
+	BIOS_SetKeyboardLEDOverwrite(KBD_scrolllock, (KBD_LEDS)leds); // pass KBD_scrolllock to only apply static values during startup
+}
 #endif

@@ -35,6 +35,7 @@ bool DBPS_HaveSaveSlot();
 bool DBPS_ApplyConfigOverrides(const std::string& json);
 bool DBPS_IsConfigOverride(const char* key);
 void DBPS_ToggleConfigOverride(const char* key, const char* defaultval);
+void DBPS_InitLEDs(uint16_t key_modifiers);
 std::string DBPS_GetConfigOverrideJSON();
 const std::string& DBPS_GetContentName();
 retro_time_t dbp_cpu_features_get_time_usec(void);
