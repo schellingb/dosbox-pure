@@ -380,7 +380,7 @@ const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg)
 	if (midi.handler == &Midi_retro && (!Midi_retro.midi_interface.output_enabled || !Midi_retro.midi_interface.output_enabled()))
 		{ arg = NULL; return "The frontend MIDI output is not set up correctly"; }
 	#endif
-	if (midi.handler == &Midi_none)
+	if (midi.handler != &Midi_tsf && midi.handler != &Midi_mt32)
 	{
 		const char* conf = midisec->GetProp("midiconfig")->GetValue();
 		if (conf[0] == '^' && conf[1] == 'S')
