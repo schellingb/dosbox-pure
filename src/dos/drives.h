@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2025  Bernhard Schelling
+ *  Copyright (C) 2020-2026  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -720,7 +720,7 @@ struct rawFile : public DOS_File
 	virtual bool Read(Bit8u* data, Bit16u* size) { *size = (Bit16u)fread(data, 1, *size, f); return open; }
 	virtual bool Write(Bit8u* data, Bit16u* size) { if (!OPEN_IS_WRITING(flags)) return false; *size = (Bit16u)fwrite(data, 1, *size, f); return (*size && open); }
 	virtual bool Seek(Bit32u* pos, Bit32u type) { fseek(f, (long)*pos, type); *pos = (Bit32u)ftell_wrap(f); return open; }
-	virtual bool Seek64(Bit64u* pos, Bit32u type) { fseek_wrap(f, *pos, type); *pos = (Bit64u)ftell_wrap(f); return open; }
+	virtual bool Seek64(Bit64u* pos, Bit32u type) { if (fseek_wrap(f, *pos, type) || type != DOS_SEEK_SET) { *pos = (Bit64u)ftell_wrap(f); } return open; }
 	virtual Bit16u GetInformation(void) { return (OPEN_IS_WRITING(flags) ? 0x40 : 0); }
 	static rawFile* TryOpen(const char* path) { FILE* f = fopen_wrap(path, "rb"); return (f ? new rawFile(f, false) : NULL); }
 };
