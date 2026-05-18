@@ -295,6 +295,9 @@ static void DISNEY_PlayStereo(Bitu len, Bit8u* l, Bit8u* r) {
 static void DISNEY_CallBack(Bitu len) {
 	if (!len) return;
 
+	// DBP: Added to avoid potential memory corruption
+	if (len > DISNEY_SIZE) len = DISNEY_SIZE;
+
 	// get the smaller used
 	Bitu real_used;
 	if (disney.stereo) {
