@@ -1342,10 +1342,13 @@ static Bitu INT13_DiskHandler(void) {
 				CALLBACK_SCF(true);
 				return CBRET_NONE;
 			}
-			//DBP: Changed loop to use mem_writeb_inline
+			//DBP: Use our optimized MEM_BlockWrite if possible
+			if (bufptr<=0xFE00) { // no segment overlap
+				MEM_BlockWrite((segat<<4)+bufptr,sectbuf,512);
+				bufptr+=512;
+			} else
 			for(t=0;t<512;t++) {
-				//real_writeb(segat,bufptr,sectbuf[t]);
-				mem_writeb_inline((segat<<4)+bufptr,sectbuf[t]);
+				real_writeb(segat,bufptr,sectbuf[t]);
 				bufptr++;
 			}
 		}
@@ -1363,11 +1366,14 @@ static Bitu INT13_DiskHandler(void) {
 
 		bufptr = reg_bx;
 		for(i=0;i<reg_al;i++) {
-			//DBP: Changed loop to use mem_readb_inline (and fixed sector size like write)
+			//DBP: Use our optimized MEM_BlockRead if possible (and fixed sector size like write)
 			DBP_ASSERT(imageDiskList[drivenum]->getSectSize() == 512);
+			if (bufptr<=0xFE00) { // no segment overlap
+				MEM_BlockRead((SegValue(es)<<4)+bufptr,sectbuf,512);
+				bufptr+=512;
+			} else
 			for(t=0;t<512;t++) {
-				//sectbuf[t] = real_readb(SegValue(es),bufptr);
-				sectbuf[t] = mem_readb_inline((SegValue(es)<<4)+bufptr);
+				sectbuf[t] = real_readb(SegValue(es),bufptr);
 				bufptr++;
 			}
 
@@ -1557,10 +1563,13 @@ static Bitu INT13_DiskHandler(void) {
 				CALLBACK_SCF(true);
 				return CBRET_NONE;
 			}
-			//DBP: Changed loop to use mem_writeb_inline
+			//DBP: Use our optimized MEM_BlockWrite if possible
+			if (bufptr<=0xFE00) { // no segment overlap
+				MEM_BlockWrite((segat<<4)+bufptr,sectbuf,512);
+				bufptr+=512;
+			} else
 			for(t=0;t<512;t++) {
-				//real_writeb(segat,bufptr,sectbuf[t]);
-				mem_writeb_inline((segat<<4)+bufptr,sectbuf[t]);
+				real_writeb(segat,bufptr,sectbuf[t]);
 				bufptr++;
 			}
 		}
@@ -1578,11 +1587,14 @@ static Bitu INT13_DiskHandler(void) {
 		readDAP(SegValue(ds),reg_si,dap);
 		bufptr = dap.off;
 		for(i=0;i<dap.num;i++) {
-			//DBP: Changed loop to use mem_readb_inline (and fixed sector size like write)
+			//DBP: Use our optimized MEM_BlockRead if possible (and fixed sector size like write)
 			DBP_ASSERT(imageDiskList[drivenum]->getSectSize() == 512);
+			if (bufptr<=0xFE00) { // no segment overlap
+				MEM_BlockRead((dap.seg<<4)+bufptr,sectbuf,512);
+				bufptr+=512;
+			} else
 			for(t=0;t<512;t++) {
-				//sectbuf[t] = real_readb(dap.seg,bufptr);
-				sectbuf[t] = mem_readb_inline((dap.seg<<4)+bufptr);
+				sectbuf[t] = real_readb(dap.seg,bufptr);
 				bufptr++;
 			}
 

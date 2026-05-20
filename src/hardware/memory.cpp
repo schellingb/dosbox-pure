@@ -202,6 +202,26 @@ void mem_memcpy(PhysPt dest,PhysPt src,Bitu size) {
 	while (size--) mem_writeb_inline(dest++,mem_readb_inline(src++));
 }
 
+//DBP: Optimized MEM_BlockRead and MEM_BlockWrite to potentially use memcpy if possible
+#if defined(USE_FULL_TLB)
+void MEM_BlockRead(PhysPt pt,void * data,Bitu size) {
+	Bit8u * write=reinterpret_cast<Bit8u *>(data);
+	for (PhysPt block; size; size -= block, write += block, pt += block) {
+		PhysPt tlb_num = pt>>12;
+		if (HostPt tlb_addr = paging.tlb.read[tlb_num]) { block = ((tlb_num == (pt+size-1)>>12) ? size : ((pt&~0xfff)+0x1000-pt)); memcpy(write, tlb_addr+pt, block); }
+		else { block = 1; *write = (Bit8u)paging.tlb.readhandler[tlb_num]->readb(pt); }
+	}
+}
+
+void MEM_BlockWrite(PhysPt pt,void const * const data,Bitu size) {
+	Bit8u const * read = reinterpret_cast<Bit8u const * const>(data);
+	for (PhysPt block; size; size -= block, read += block, pt += block) {
+		PhysPt tlb_num = pt>>12;
+		if (HostPt tlb_addr = paging.tlb.write[tlb_num]) { block = ((tlb_num == (pt+size-1)>>12) ? size : ((pt&~0xfff)+0x1000-pt)); memcpy(tlb_addr+pt, read, block); }
+		else { block = 1; paging.tlb.writehandler[tlb_num]->writeb(pt, *read); }
+	}
+}
+#else
 void MEM_BlockRead(PhysPt pt,void * data,Bitu size) {
 	Bit8u * write=reinterpret_cast<Bit8u *>(data);
 	while (size--) {
@@ -215,6 +235,7 @@ void MEM_BlockWrite(PhysPt pt,void const * const data,Bitu size) {
 		mem_writeb_inline(pt++,*read++);
 	}
 }
+#endif
 
 void MEM_BlockCopy(PhysPt dest,PhysPt src,Bitu size) {
 	mem_memcpy(dest,src,size);
