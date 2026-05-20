@@ -1625,7 +1625,7 @@ void GFX_EndUpdate(const Bit16u *changedLines)
 		if (ffrate > 0 && (dbp_state == DBPSTATE_RUNNING || dbp_state == DBPSTATE_FIRST_FRAME))
 		{
 			// If fast forwarding at a desired rate, apply custom max cycle rules
-			CPU_CycleMax = (Bit32s)(old_max / (CPU_CycleAutoAdjust ? ffrate / av_info.timing.fps : 1.0f));
+			CPU_CycleMax = (Bit32s)(((cpu.pmode == old_pmode || CPU_CycleLimit <= 0) ? old_max : CPU_CycleLimit) / (CPU_CycleAutoAdjust ? (ffrate / av_info.timing.fps) : 1.0) + .4999);
 		}
 		else
 		{
