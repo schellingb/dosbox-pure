@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2022-2024  Bernhard Schelling
+ *  Copyright (C) 2022-2026  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -32,6 +32,9 @@
 #include "paging.h"
 
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
+#include <time.h>
+#include <stdlib.h>
+
 struct discardDisk
 {
 	std::vector<Bit8u*> tempwrites;
@@ -246,6 +249,7 @@ struct fatFromDOSDrive
 		SECT_BOOT         = 32,
 		CACHECOUNT        = 256,
 		KEEPOPENCOUNT     = 4,
+		FAT32_ROOTCLUSTER = 2,
 	};
 
 	partTable  mbr;
@@ -311,7 +315,7 @@ struct fatFromDOSDrive
 					diridx = ffdd.dirs.size();
 					ffdd.dirs.resize(diridx + entriesPerCluster);
 					memset(&ffdd.dirs[diridx], 0, sizeof(direntry) * entriesPerCluster);
-					SetFAT(ffdd, 2 + diridx / entriesPerCluster, (Bit32u)0xFFFFFFFF); // set as last cluster in chain for now
+					SetFAT(ffdd, 2 + diridx / entriesPerCluster, (Bit32u)0x0FFFFFFF); // set as last cluster in chain for now
 				}
 				else if (useFAT16Root && diridx && (diridx % 512) == 0)
 				{
@@ -634,7 +638,7 @@ struct fatFromDOSDrive
 		{
 			var_write(&mbr.pentry[0].parttype, 0x0C); //FAT32
 			var_write((Bit32u*)&bootsec.bootcode[0], sectorsPerFat);
-			var_write((Bit32u*)&bootsec.bootcode[8], (Bit32u)2); // First cluster number of the root directory
+			var_write((Bit32u*)&bootsec.bootcode[8], (Bit32u)FAT32_ROOTCLUSTER); // First cluster number of the root directory
 			var_write((Bit16u*)&bootsec.bootcode[12], (Bit16u)1); // Sector of FSInfo structure in offset from top of the FAT32 volume
 			var_write((Bit16u*)&bootsec.bootcode[14], (Bit16u)6); // Sector of backup boot sector in offset from top of the FAT32 volume
 			bootsec.bootcode[28] = 0x80; //Physical drive (harddisk) flag
@@ -643,11 +647,12 @@ struct fatFromDOSDrive
 			memcpy(&bootsec.bootcode[35], "NO NAME    ", 11); // volume label
 			memcpy(&bootsec.bootcode[46], "FAT32   ", 8); // file system string name
 
+			const Bit32u freeClusterCount = totalClusters - fileCluster;
 			memset(fsinfosec, 0, sizeof(fsinfosec));
 			var_write((Bit32u*)&fsinfosec[0], (Bit32u)0x41615252); //lead signature
 			var_write((Bit32u*)&fsinfosec[484], (Bit32u)0x61417272); //Another signature
-			var_write((Bit32u*)&fsinfosec[488], (Bit32u)0xFFFFFFFF); //last known free cluster count (all FF is unknown)
-			var_write((Bit32u*)&fsinfosec[492], (Bit32u)0xFFFFFFFF); //the cluster number at which the driver should start looking for free clusters (all FF is unknown)
+			var_write((Bit32u*)&fsinfosec[488], freeClusterCount); //last known free cluster count (all FF is unknown)
+			var_write((Bit32u*)&fsinfosec[492], fileCluster); //the cluster number at which the driver should start looking for free clusters (all FF is unknown)
 			var_write((Bit32u*)&fsinfosec[508], (Bit32u)0xAA550000); //ending signature
 		}
 
@@ -764,6 +769,314 @@ struct fatFromDOSDrive
 			if (src != cachedata) memcpy(cachedata, data, BYTESPERSECTOR);
 		}
 		return 0;
+	}
+};
+
+struct sparseVhd
+{
+	struct VHDFooter
+	{
+		char cookie[8]; // "conectix"
+		Bit8u features[4], version[4], data_offset[8], time_stamp[4], creator_app[4], vpc_major[2], vpc_minor[2], creator_os[4];
+		Bit8u disk_size[8], current_size[8], cylinders[2], heads, sectors_per_track, disk_type[4];
+		Bit8u checksum[4], unique_id[16], saved_state, reserved[427];
+	};
+
+	struct VHDSparseHeader
+	{
+		char cookie[8]; // "cxsparse"
+		Bit8u data_offset[8], bat_offset[8], header_version[4], max_table_entries[4], block_size[4], checksum[4], parent_unique_id[16], parent_timestamp[4], reserved_1[4];
+		Bit16u parent_unicode_name[256]; Bit8u parent_locators[8*24], reserved_2[256];
+	};
+
+	enum vhdDefs : Bit32u { BYTESPERSECTOR = 512, CACHECOUNT = 256 };
+	enum EAction { NONE,READ,WRITE } last_action = NONE;
+	Bit32u  footer_sector, bat_sector, total_sectors, sectors_per_block, bitmap_sectors, cache_blocknum = 0;
+	Bit32u* bat = NULL;
+	Bit8u   *seen_blocks;
+	Bit64u  current_fpos = 0;
+	Bit8u   cacheSectorData[CACHECOUNT][BYTESPERSECTOR];
+	Bit32u  cacheSectorNumber[CACHECOUNT];
+
+	#define VHD_READ_BE16(p) (((Bit16u)static_cast<const Bit8u*>(p)[0] << 8U) | (Bit16u)static_cast<const Bit8u*>(p)[1])
+	#define VHD_READ_BE32(p) (((Bit32u)static_cast<const Bit8u*>(p)[0] << 24U) | ((Bit32u)static_cast<const Bit8u*>(p)[1] << 16U) | ((Bit32u)static_cast<const Bit8u*>(p)[2] << 8U) | (Bit32u)static_cast<const Bit8u*>(p)[3])
+	#define VHD_READ_BE64(p) (((Bit64u)static_cast<const Bit8u*>(p)[0] << 56U) | ((Bit64u)static_cast<const Bit8u*>(p)[1] << 48U) | ((Bit64u)static_cast<const Bit8u*>(p)[2] << 40U) | ((Bit64u)static_cast<const Bit8u*>(p)[3] << 32U) | ((Bit64u)static_cast<const Bit8u*>(p)[4] << 24U) | ((Bit64u)static_cast<const Bit8u*>(p)[5] << 16U) | ((Bit64u)static_cast<const Bit8u*>(p)[6] << 8U) | (Bit64u)static_cast<const Bit8u*>(p)[7])
+	#define VHD_WRITE_BE16(p,v) { static_cast<Bit8u*>(p)[0] = (Bit8u)((Bit16u)(v) >> 8U); static_cast<Bit8u*>(p)[1] = (Bit8u)((Bit16u)(v)); }
+	#define VHD_WRITE_BE32(p,v) { static_cast<Bit8u*>(p)[0] = (Bit8u)((Bit32u)(v) >> 24U); static_cast<Bit8u*>(p)[1] = (Bit8u)(((Bit32u)(v) >> 16U)); static_cast<Bit8u*>(p)[2] = (Bit8u)(((Bit32u)(v) >> 8U)); static_cast<Bit8u*>(p)[3] = (Bit8u)((Bit32u)(v)); }
+	#define VHD_WRITE_BE64(p,v) { static_cast<Bit8u*>(p)[0] = (Bit8u)((Bit64u)(v) >> 56U); static_cast<Bit8u*>(p)[1] = (Bit8u)((Bit64u)(v) >> 48U); static_cast<Bit8u*>(p)[2] = (Bit8u)((Bit64u)(v) >> 40U); static_cast<Bit8u*>(p)[3] = (Bit8u)((Bit64u)(v) >> 32U); static_cast<Bit8u*>(p)[4] = (Bit8u)((Bit64u)(v) >> 24U); static_cast<Bit8u*>(p)[5] = (Bit8u)((Bit64u)(v) >> 16U); static_cast<Bit8u*>(p)[6] = (Bit8u)((Bit64u)(v) >> 8U); static_cast<Bit8u*>(p)[7] = (Bit8u)(Bit64u)(v); }
+
+	static sparseVhd* Init(imageDisk* id, Bit32u numsectors)
+	{
+		VHDFooter vhd_header, vhd_footer;
+		VHDSparseHeader vhd_sparse;
+		vhd_header.cookie[0] = vhd_footer.cookie[0] = vhd_sparse.cookie[0] = '\0';
+		if (id->Read_AbsoluteSector(0, &vhd_header) || memcmp(vhd_header.cookie, "conectix", 8) || id->Read_AbsoluteSector(numsectors-1, &vhd_footer) || memcmp(&vhd_header, &vhd_footer, BYTESPERSECTOR) || VHD_READ_BE32(vhd_header.disk_type) != 3 /* sparse */)
+			return NULL; // no sparse VHD
+		const Bit64u sparse_offset = VHD_READ_BE64(vhd_footer.data_offset);
+		if ((sparse_offset % BYTESPERSECTOR) || id->Read_AbsoluteSector((Bit32u)(sparse_offset / BYTESPERSECTOR), &vhd_sparse) || memcmp(vhd_sparse.cookie, "cxsparse", 8) || vhd_sparse.parent_unicode_name[0])
+			{ DBP_ASSERT(false); return NULL; } // invalid VHD
+
+		const Bit64u disk_size = VHD_READ_BE64(vhd_footer.disk_size);
+		const Bit64u bat_offset = VHD_READ_BE64(vhd_sparse.bat_offset);
+		const Bit32u block_size = VHD_READ_BE32(vhd_sparse.block_size);
+		const Bit32u max_table_entries = VHD_READ_BE32(vhd_sparse.max_table_entries);
+		const Bit32u calc_table_entries = (Bit32u)((disk_size + block_size - 1) / block_size);
+		const Bit32u bat_length = (max_table_entries < calc_table_entries ? max_table_entries : calc_table_entries);
+		const Bit32u sectors_per_block = ((block_size + (BYTESPERSECTOR-1)) / BYTESPERSECTOR);
+		const Bit32u max_sectors = ((disk_size + (BYTESPERSECTOR-1)) / BYTESPERSECTOR), calc_sectors = bat_length * sectors_per_block;
+		DBP_ASSERT(bat_offset >= 1536 && (bat_offset % BYTESPERSECTOR) == 0 && max_table_entries == calc_table_entries);
+		DBP_ASSERT(VHD_READ_BE32(vhd_footer.checksum) == ~((~CalcChecksum((Bit8u*)&vhd_footer, sizeof(vhd_footer))) - vhd_footer.checksum[0] - vhd_footer.checksum[1] - vhd_footer.checksum[2] - vhd_footer.checksum[3])); // can't check sparse checksum because we didn't read it fully
+
+		//// We ignore the CHS numbers specified in the VHD footer because it's not guaranteed to be as correct as what Set_GeometryForHardDisk detects (if used, setting of active to false would need to be moved before the call to sparseVhd::Init)
+		//Set_Geometry(vhd_footer.heads, VHD_READ_BE16(vhd_footer.cylinders), vhd_footer.sectors_per_track, BYTESPERSECTOR);
+
+		sparseVhd* vhd = new sparseVhd;
+		vhd->footer_sector = numsectors - 1;
+		vhd->bat_sector = (Bit32u)(bat_offset / BYTESPERSECTOR);
+		vhd->total_sectors = (max_sectors < calc_sectors ? max_sectors : calc_sectors);
+		vhd->sectors_per_block = sectors_per_block;
+		vhd->bitmap_sectors = ((((sectors_per_block + 7) / 8) + (BYTESPERSECTOR-1)) / BYTESPERSECTOR);
+		vhd->bat = new Bit32u[bat_length + (((bat_length+7)/8) + (sizeof(Bit32u)-1)) / sizeof(Bit32u)];
+		vhd->seen_blocks = (Bit8u*)(vhd->bat + bat_length);
+		memset(vhd->seen_blocks, 0, ((bat_length+7)/8)); // seen no blocks
+		vhd->cacheSectorNumber[0] = 1; // must not state that sector 0 is already cached
+		memset(&vhd->cacheSectorNumber[1], 0, sizeof(vhd->cacheSectorNumber) - sizeof(vhd->cacheSectorNumber[0]));
+
+		Bit32u* pbat = vhd->bat;
+		for (Bit32u bat_sector = vhd->bat_sector, bat_remain = bat_length; bat_remain; bat_sector++)
+		{
+			Bit8u batblock[BYTESPERSECTOR];
+			id->Read_AbsoluteSector(bat_sector, batblock);
+			for (Bit8u *pbatblock = batblock; bat_remain && pbatblock != &batblock[BYTESPERSECTOR]; pbatblock += 4, bat_remain--)
+				*(pbat++) = VHD_READ_BE32(pbatblock);
+		}
+
+		return vhd;
+	}
+
+	static Bit32u CalcChecksum(Bit8u *buf, size_t size)
+	{
+		Bit32u res = 0;
+		for (size_t i = 0; i < size; i++) res += *(buf++);
+		return ~res;
+	}
+
+	static void Export(imageDisk* id, FILE* f, Bit32u totalsectors, Bit32u onlyzeroafter, Bit32u heads, Bit32u cyl, Bit32u sect)
+	{
+		enum : Bit32u { block_size = 0x200000, sectors_per_block = ((block_size + (BYTESPERSECTOR-1)) / BYTESPERSECTOR), bitmap_sectors = ((((sectors_per_block + 7) / 8) + (BYTESPERSECTOR-1)) / BYTESPERSECTOR) };
+		const Bit32u bat_length = (totalsectors + (block_size/BYTESPERSECTOR-1)) / (block_size/BYTESPERSECTOR), timestamp = (Bit32u)time(NULL);
+		const Bit64u totalsize = (Bit64u)totalsectors * BYTESPERSECTOR;
+
+		VHDFooter vhd_footer;
+		VHDSparseHeader vhd_sparse;
+		memset(&vhd_footer, 0, sizeof(vhd_footer));
+		memset(&vhd_sparse, 0, sizeof(vhd_sparse));
+		DBP_STATIC_ASSERT(sizeof(vhd_footer)+sizeof(vhd_sparse) == 1536);
+		memcpy(vhd_footer.cookie, "conectix", 8);
+		VHD_WRITE_BE32(vhd_footer.features, 0x02);
+		VHD_WRITE_BE32(vhd_footer.version, 0x00010000);
+		VHD_WRITE_BE64(vhd_footer.data_offset, sizeof(VHDFooter));
+		VHD_WRITE_BE32(vhd_footer.time_stamp, timestamp - (Bit32u)946684800); // reduce by seconds since Jan 1, 2000 0:00:00 (UTC)
+		memcpy(vhd_footer.creator_app, "pure", 4);
+		VHD_WRITE_BE16(vhd_footer.vpc_major, 5); // Version of Virtual PC 2007
+		VHD_WRITE_BE16(vhd_footer.vpc_minor, 3); // Version of Virtual PC 2007
+		memcpy(vhd_footer.creator_os, "Wi2k", 4);
+		VHD_WRITE_BE64(vhd_footer.disk_size, totalsize);
+		VHD_WRITE_BE64(vhd_footer.current_size, totalsize);
+		VHD_WRITE_BE16(vhd_footer.cylinders, (Bit16u)cyl);
+		vhd_footer.heads = (Bit8u)heads;
+		vhd_footer.sectors_per_track = (Bit8u)sect;
+		VHD_WRITE_BE32(vhd_footer.disk_type, 3); /* sparse */;
+		srand((int)timestamp);
+		for (int i = 0; i != 8; i++) vhd_footer.unique_id[i] = (Bit8u)rand();
+		vhd_footer.unique_id[8] = (vhd_footer.unique_id[8] & 0x3f) | 0x80;
+		vhd_footer.unique_id[6] = (vhd_footer.unique_id[6] & 0xf) | 0x40;
+		Bit32u vhd_footer_checksum = CalcChecksum((Bit8u*)&vhd_footer, sizeof(vhd_footer));
+		VHD_WRITE_BE32(vhd_footer.checksum, vhd_footer_checksum);
+
+		memcpy(vhd_sparse.cookie, "cxsparse", 8);
+		VHD_WRITE_BE64(vhd_sparse.data_offset, (Bit64u)-1);
+		VHD_WRITE_BE64(vhd_sparse.bat_offset, sizeof(vhd_footer)+sizeof(vhd_sparse));
+		VHD_WRITE_BE32(vhd_sparse.header_version, 0x10000);
+		VHD_WRITE_BE32(vhd_sparse.max_table_entries, bat_length);
+		VHD_WRITE_BE32(vhd_sparse.block_size, block_size);
+		Bit32u vhd_sparse_checksum = CalcChecksum((Bit8u*)&vhd_sparse, sizeof(vhd_sparse));
+		VHD_WRITE_BE32(vhd_sparse.checksum, vhd_sparse_checksum);
+
+		fwrite(&vhd_footer, sizeof(vhd_footer), 1, f); // footer copy at start
+		fwrite(&vhd_sparse, sizeof(vhd_sparse), 1, f); // sparse meta data
+
+		const Bit32u bat_sector_count = (bat_length + (BYTESPERSECTOR/sizeof(Bit32u)-1)) / (BYTESPERSECTOR/sizeof(Bit32u));
+		Bit32u* bat = new Bit32u[bat_sector_count * (BYTESPERSECTOR/sizeof(Bit32u))];
+		memset(bat, 0xFF, bat_sector_count*BYTESPERSECTOR); // all blocks unallocated
+		fwrite(bat, bat_sector_count*BYTESPERSECTOR, 1, f);
+
+		Bit8u zeros[BYTESPERSECTOR] = {0}, ones[BYTESPERSECTOR];
+		memset(ones, 0xFF, sizeof(ones)); // mark as fully used
+		Bit32u lastblocknum = (Bit32u)-1, lastblocksec = sectors_per_block, block_address = ((sizeof(vhd_footer)+sizeof(vhd_sparse))/BYTESPERSECTOR) + bat_sector_count;
+		for (Bit32u sectnum = 0; sectnum != onlyzeroafter; sectnum++)
+		{
+			Bit8u data[BYTESPERSECTOR];
+			id->Read_AbsoluteSector(sectnum, data);
+			bool is_zero = true;
+			for (Bit64u* p = (Bit64u*)data, *pEnd = p + (BYTESPERSECTOR / sizeof(Bit64u)); p != pEnd; p++) { if (*p) { is_zero = false; break; } }
+			if (is_zero) continue;
+
+			const Bit32u blocknum = (sectnum / sectors_per_block), blocksec = (sectnum % sectors_per_block);
+			if (blocknum != lastblocknum)
+			{
+				for (Bit32u i = lastblocksec; i != sectors_per_block; i++) fwrite(zeros, BYTESPERSECTOR, 1, f);
+				VHD_WRITE_BE32((Bit8u*)(bat+blocknum), block_address);
+				block_address += (bitmap_sectors + sectors_per_block);
+				for (Bit32u i = 0; i != bitmap_sectors; i++) fwrite(ones, BYTESPERSECTOR, 1, f); // block is fully used
+				lastblocksec = 0;
+				lastblocknum = blocknum;
+			}
+			for (Bit32u i = lastblocksec; i != blocksec; i++) fwrite(zeros, BYTESPERSECTOR, 1, f);
+			fwrite(data, BYTESPERSECTOR, 1, f);
+			lastblocksec = blocksec + 1;
+		}
+		for (Bit32u i = lastblocksec; i != sectors_per_block; i++) fwrite(zeros, BYTESPERSECTOR, 1, f);
+
+		fwrite(&vhd_footer, sizeof(vhd_footer), 1, f); // actual footer at end
+		fseek(f, sizeof(vhd_footer)+sizeof(vhd_sparse), SEEK_SET);
+		fwrite(bat, bat_sector_count*BYTESPERSECTOR, 1, f);
+		delete [] bat;
+	}
+
+	~sparseVhd()
+	{
+		delete [] bat;
+	}
+
+	INLINE void SeekTo(DOS_File* dos_file, Bit32u sectnum, EAction action)
+	{
+		Bit64u bytenum = (Bit64u)sectnum * BYTESPERSECTOR;
+		if (last_action == action && current_fpos == bytenum) return;
+		dos_file->Seek64(&bytenum, DOS_SEEK_SET);
+		current_fpos = bytenum;
+		last_action = action;
+	}
+
+	bool SeeBlock(DOS_File* dos_file, const Bit32u blocknum, Bit32u readsectnum = 0)
+	{
+		// Similar to QEMU's implementation, we enforce a bitmap with all sectors marked as used. To make sure, existing blocks not allocated by us are confirmed in this function.
+		// For writable VHDs we convert all sectors to be used. A theoretical read-only VHD with unused sectors and non-zero bytes in the actual data ends up with bad performance.
+		seen_blocks[blocknum/8] |= (1<<(blocknum%8));
+		Bit16u sector_size = (Bit16u)BYTESPERSECTOR;
+		Bit8u bitmap[BYTESPERSECTOR], test[BYTESPERSECTOR], zeros[BYTESPERSECTOR] = {0};
+		const bool read_only = !OPEN_IS_WRITING(dos_file->flags);
+		if (read_only) readsectnum = bat[blocknum] + bitmap_sectors + (readsectnum - (blocknum * sectors_per_block));
+		for (Bit32u bitmap_sector = bat[blocknum], i = 0, bits_per_sector = (BYTESPERSECTOR * 8); i < sectors_per_block; i += bits_per_sector, bitmap_sector++)
+		{
+			SeekTo(dos_file, bitmap_sector, READ);
+			if (!dos_file->Read(bitmap, &sector_size) || sector_size != BYTESPERSECTOR) { DBP_ASSERT(false); return false; } else { current_fpos += sector_size; }
+			bool modified = false;
+			for (Bit8u* pBitmap = bitmap; pBitmap != &bitmap[BYTESPERSECTOR]; pBitmap++)
+			{
+				if (*pBitmap == 0xFF) continue;
+				Bit32u psector = bat[blocknum] + bitmap_sectors + (pBitmap-bitmap) * 8, maxsector = bat[blocknum] + bitmap_sectors + sectors_per_block;
+				for (Bit8u bitmapval = *pBitmap, mask = 0x80; mask; mask >>= 1, psector++)
+				{
+					if ((bitmapval & mask) || psector >= maxsector) continue;
+					SeekTo(dos_file, psector, READ);
+					if (!dos_file->Read((Bit8u*)test, &sector_size) || sector_size != BYTESPERSECTOR) { DBP_ASSERT(false); return false; } else { current_fpos += sector_size; }
+					bool has_garbage = false;
+					for (Bit64u* pTest = (Bit64u*)test, *pTestEnd = pTest + (BYTESPERSECTOR / sizeof(Bit64u)); pTest != pTestEnd; pTest++) { if (*pTest) { has_garbage = true; break; } }
+					if (read_only)
+					{
+						if (has_garbage) seen_blocks[blocknum/8] ^= (1<<(blocknum%8)); // can't mark block as confirmed fully used (bad performance scenario)
+						if (has_garbage && psector == readsectnum) return false; // force caller to return zero bytes
+						continue;
+					}
+					*pBitmap |= mask;
+					modified = true;
+					if (!has_garbage) continue; // already filled with zeros
+					SeekTo(dos_file, psector, WRITE);
+					if (!dos_file->Write((Bit8u*)zeros, &sector_size) || sector_size != BYTESPERSECTOR) { DBP_ASSERT(false); return false; } else { current_fpos += sector_size; }
+				}
+			}
+			if (!modified) continue;
+			SeekTo(dos_file, bitmap_sector, WRITE);
+			if (!dos_file->Write(bitmap, &sector_size) || sector_size != BYTESPERSECTOR) { DBP_ASSERT(false); return false; }
+			current_fpos += sector_size;
+		}
+		return true;
+	}
+
+	Bit8u ReadSector(DOS_File* dos_file, const Bit32u sectnum, void* data)
+	{
+		const Bit32u sectorHash = (sectnum % CACHECOUNT);
+		Bit8u* cachedata = cacheSectorData[sectorHash];
+		if (cacheSectorNumber[sectorHash] != sectnum)
+		{
+			cacheSectorNumber[sectorHash] = sectnum;
+			const Bit32u blocknum = (sectnum / sectors_per_block), blocksec = (sectnum % sectors_per_block);
+			if (sectnum >= total_sectors || bat[blocknum] == (Bit32u)-1 || (!(seen_blocks[blocknum/8] & (1<<(blocknum%8))) && !SeeBlock(dos_file, blocknum, sectnum)))
+			{
+				memset(data, 0, BYTESPERSECTOR);
+			}
+			else
+			{
+				SeekTo(dos_file, bat[blocknum] + bitmap_sectors + blocksec, READ);
+				Bit16u read_size = (Bit16u)BYTESPERSECTOR;
+				current_fpos += (dos_file->Read(cachedata, &read_size) ? read_size : 0);
+			}
+		}
+		memcpy(data, cachedata, BYTESPERSECTOR);
+		return 0x00;
+	}
+
+	Bit8u WriteSector(DOS_File* dos_file, Bit32u sectnum, const void* data)
+	{
+		if (sectnum >= total_sectors) return 0x05;
+		const Bit32u blocknum = (sectnum / sectors_per_block), blocksec = (sectnum % sectors_per_block);
+		if (bat[blocknum] == (Bit32u)-1)
+		{
+			bool is_zero = true;
+			for (Bit64u* p = (Bit64u*)data, *pEnd = p + (BYTESPERSECTOR / sizeof(Bit64u)); p != pEnd; p++) { if (*p) { is_zero = false; break; } }
+			if (is_zero) return 0x00;
+			AllocNewBlock(dos_file, blocknum);
+		}
+		else if (!(seen_blocks[blocknum/8] & (1<<(blocknum%8)))) SeeBlock(dos_file, blocknum);
+
+		const Bit32u sectorHash = (sectnum % CACHECOUNT);
+		cacheSectorNumber[sectorHash] = sectnum;
+		memcpy(cacheSectorData[sectorHash], data, BYTESPERSECTOR);
+
+		SeekTo(dos_file, bat[blocknum] + bitmap_sectors + blocksec, WRITE);
+		Bit16u write_size = (Bit16u)BYTESPERSECTOR;
+		size_t ret = (dos_file->Write((Bit8u*)data, &write_size) ? write_size : 0);
+		current_fpos += ret;
+		return (ret ? 0x00 : 0x05);
+	}
+
+	void AllocNewBlock(DOS_File* dos_file, const Bit32u blocknum)
+	{
+		VHDFooter vhd_footer;
+		SeekTo(dos_file, footer_sector, READ);
+		Bit16u footer_len = (Bit16u)sizeof(vhd_footer);
+		dos_file->Read((Bit8u*)&vhd_footer, &footer_len);
+		DBP_ASSERT(!memcmp(vhd_footer.cookie, "conectix", 8) && VHD_READ_BE32(vhd_footer.disk_type) == 3 /* sparse */);
+
+		bat[blocknum] = footer_sector;
+		Bit64u batofs = ((Bit64u)bat_sector * BYTESPERSECTOR) + ((Bit64u)blocknum * sizeof(Bit32u));
+		Bit32u bat_be = VHD_READ_BE32((Bit8u*)&bat[blocknum]);
+		Bit16u bat_num_len = (Bit16u)sizeof(Bit32u);
+		dos_file->Seek64(&batofs, DOS_SEEK_SET); // forced seek
+		dos_file->Write((Bit8u*)&bat_be, &bat_num_len);
+
+		SeekTo(dos_file, footer_sector, WRITE); // last SeekTo was READ so seek is forced and ignores currently invalid current_fpos
+		seen_blocks[blocknum/8] |= (1<<(blocknum%8));
+		Bit16u sector_size = (Bit16u)BYTESPERSECTOR;
+		Bit8u zeros[BYTESPERSECTOR] = {0}, ones[BYTESPERSECTOR];
+		memset(ones, 0xFF, sizeof(ones)); // mark as fully used
+		for (Bit32u i = 0; i != (bitmap_sectors + sectors_per_block); i++)
+			if (!dos_file->Write((i < bitmap_sectors ? ones : zeros), &sector_size) || sector_size != BYTESPERSECTOR) { DBP_ASSERT(false); break; }
+
+		dos_file->Write((Bit8u*)&vhd_footer, &footer_len);
+		footer_sector += bitmap_sectors + sectors_per_block;
+		last_action = NONE; // force next seek
 	}
 };
 #endif // C_DBP_SUPPORT_DISK_FAT_EMULATOR
@@ -917,6 +1230,9 @@ Bit8u imageDisk::Read_AbsoluteSector(Bit32u sectnum, void * data) {
 	if (differencing && differencing->GetDiff(sectnum, data))
 		return 0x00;
 
+	if (vhd)
+		return vhd->ReadSector(dos_file, sectnum, data);
+
 	Bit64u bytenum = (Bit64u)sectnum * sector_size;
 	if (last_action==WRITE || bytenum!=current_fpos) dos_file->Seek64(&bytenum, DOS_SEEK_SET);
 	DBP_ASSERT(sector_size <= 0xFFFF);
@@ -968,6 +1284,9 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 		return 0x00;
 	}
 
+	if (vhd)
+		return vhd->WriteSector(dos_file, sectnum, data);
+
 	Bit64u bytenum = (Bit64u)sectnum * sector_size;
 	if (last_action==READ || bytenum!=current_fpos) dos_file->Seek64(&bytenum, DOS_SEEK_SET);
 	DBP_ASSERT(sector_size <= 0xFFFF);
@@ -987,13 +1306,12 @@ Bit8u imageDisk::Write_AbsoluteSector(Bit32u sectnum, void *data) {
 	last_action=WRITE;
 
 	return ((ret>0)?0x00:0x05);
-
 }
 
 #ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 Bit32u imageDisk::Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len)
 {
-	if (seek != current_fpos)
+	if (last_action == WRITE || seek != current_fpos)
 	{
 		current_fpos = seek;
 		dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
@@ -1006,6 +1324,7 @@ Bit32u imageDisk::Read_Raw(Bit8u *buffer, Bit32u seek, Bit32u len)
 		buffer += sz;
 	}
 	current_fpos += (Bit32u)len;
+	last_action = READ;
 	return len;
 }
 
@@ -1016,6 +1335,27 @@ void imageDisk::SetDifferencingDisk(const char* savePath)
 	if (differencing) delete differencing;
 	differencing = new differencingDisk();
 	differencing->SetupSave(savePath, heads*cylinders*sectors);
+}
+
+bool imageDisk::ExportToFile(const char* path, bool vhd_format)
+{
+	if (sector_size > 512) return false; // unsupported here
+	FILE* f = fopen_wrap(path, "wb");
+	if (!f) return false;
+
+	const Bit32u totalsectors = heads * cylinders * sectors, sectsize = sector_size;
+	const Bit32u onlyzeroafter = ((ffdd && ffdd->difference.diffSectors.empty()) ? ffdd->sect_files_end : totalsectors);
+	if (!vhd_format)
+	{
+		for (Bit32u i = 0; i != onlyzeroafter; i++) { Bit8u data[512]; Read_AbsoluteSector(i, data); fwrite(data, sectsize, 1, f); }
+		if (onlyzeroafter != totalsectors) fseek_wrap(f, (Bit64s)totalsectors * sectsize, SEEK_CUR);
+	}
+	else
+	{
+		sparseVhd::Export(this, f, totalsectors, onlyzeroafter, heads, cylinders, sectors);
+	}
+	fclose(f);
+	return true;
 }
 
 imageDisk::~imageDisk()
@@ -1041,6 +1381,7 @@ imageDisk::~imageDisk()
 			imageDiskList[i] = NULL;
 	if (discard) delete discard;
 	if (differencing) delete differencing;
+	if (vhd) delete vhd;
 #ifdef C_DBP_SUPPORT_DISK_FAT_EMULATOR
 	if (ffdd) delete ffdd;
 #endif
@@ -1060,7 +1401,9 @@ imageDisk::imageDisk(FILE *imgFile, const char *imgName, Bit32u imgSizeK, bool i
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	DBP_ASSERT(imgFile->refCtr >= 1);
 	dos_file = imgFile;
-	dos_file->Seek64(&current_fpos, DOS_SEEK_SET);
+	dos_file->Seek64(&current_fpos, DOS_SEEK_END);
+	vhd = sparseVhd::Init(this, current_fpos/512);
+	if (vhd) isHardDisk = true;
 	if (!OPEN_IS_WRITING(dos_file->flags))
 		discard = new discardDisk();
 	#else
@@ -1117,7 +1460,9 @@ Bit32u imageDisk::Set_GeometryForHardDisk()
 	#ifdef C_DBP_SUPPORT_DISK_MOUNT_DOSFILE
 	DBP_ASSERT(dos_file || ffdd);
 	Bit64u diskimgsize = 0;
-	if (dos_file)
+	if (vhd)
+		diskimgsize = (Bit64u)vhd->total_sectors * 512;
+	else if (dos_file)
 	{
 		dos_file->Seek64(&diskimgsize, DOS_SEEK_END);
 		dos_file->Seek64(&current_fpos, DOS_SEEK_SET);

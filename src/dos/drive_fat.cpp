@@ -765,6 +765,9 @@ fatDrive::fatDrive(const char *sysFilename, Bit32u bytesector, Bit32u cylsector,
 		return;
 	}
 
+	/* DBP: Read back actual hard drive flag */
+	is_hdd = loadedDisk->hardDrive;
+
 	if(is_hdd) {
 		/* DBP: Avoid crash */
 		if (bytesector > sizeof(mbrData)) bytesector = (Bit32u)sizeof(mbrData);

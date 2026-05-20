@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2025 Bernhard Schelling
+ *  Copyright (C) 2020-2026 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -195,14 +195,10 @@ struct DBP_Run
 			memoryDrive* memDrv = new memoryDrive();
 			DBP_SetDriveLabelFromContentPath(memDrv, path.c_str(), 'C', filename, path.c_str() + path.size() - 3);
 			imageDisk* memDsk = new imageDisk(memDrv, (Bit32u)(osidx_or_size*8));
-			Bit32u heads, cyl, sect, sectSize;
-			memDsk->Get_Geometry(&heads, &cyl, &sect, &sectSize);
-			FILE* f = fopen_wrap(path.c_str(), "wb");
-			if (!f) { emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s%s", "OS image", path.c_str(), " (create file failed)"); return; }
-			for (Bit32u i = 0, total = heads * cyl * sect; i != total; i++) { Bit8u data[512]; memDsk->Read_AbsoluteSector(i, data); fwrite(data, 512, 1, f); }
-			fclose(f);
+			bool exported = memDsk->ExportToFile(path.c_str(), true);
 			delete memDsk;
 			delete memDrv;
+			if (!exported) { emuthread_notify(0, LOG_ERROR, "Unable to open %s file: %s%s", "OS image", path.c_str(), " (create file failed)"); return; }
 
 			// If using system directory index cache, append the new OS image to that now
 			if (dbp_system_cached)

@@ -1595,7 +1595,7 @@ struct DBP_PureMenuState final : DBP_MenuState
 			std::string osimg = DBP_GetSaveFile(SFT_NEWOSIMAGE, &filename);
 			list.emplace_back(IT_NONE, INFO_HEADER, "Hard Disk Size For Install");
 			list.emplace_back(IT_NONE);
-			list.emplace_back(IT_NONE, INFO_WARN, "Create a new hard disk image in the following location:");
+			list.emplace_back(IT_NONE, INFO_WARN, "Create a new dynamic hard disk image in the following location:");
 			if (filename > &osimg[0]) { list.emplace_back(IT_NONE, INFO_WARN); list.back().str.assign(&osimg[0], filename - &osimg[0]); }
 			list.emplace_back(IT_NONE, INFO_WARN, filename);
 			list.emplace_back(IT_NONE);

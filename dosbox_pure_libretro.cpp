@@ -890,13 +890,13 @@ static std::string DBP_GetSaveFile(DBP_SaveFileType type, const char** out_filen
 	}
 	else if (type == SFT_NEWOSIMAGE)
 	{
-		res.append(!dbp_content_name.empty() ? dbp_content_name.c_str() : "Installed OS").append(".img");
+		res.append(!dbp_content_name.empty() ? dbp_content_name.c_str() : "Installed OS").append(".vhd");
 		size_t num = 1, baselen = res.size() - 4;
 		while (FILE* f = fopen_wrap(res.c_str(), "rb"))
 		{
 			fclose(f);
 			res.resize(baselen + 16);
-			res.resize(baselen + sprintf(&res[baselen], " (%d).img", (int)++num));
+			res.resize(baselen + sprintf(&res[baselen], " (%d).vhd", (int)++num));
 		}
 	}
 	if (out_filename) *out_filename = res.c_str() + dir_len;
