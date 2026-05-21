@@ -1084,6 +1084,10 @@ static Bitu INT15_Handler(void) {
 		Bit8u errcode = 0;
 		switch (reg_al) {
 		case 0x00: // installation check
+			// We return "not supported" during protected mode to avoid Windows 9x installing a APM system device driver which then forever
+			// shows an exclamation mark due to there being no 32-bit protected mode interface. This does not prevent the automatic
+			// shutdown of the emulator via Windows 9x shutdown because that happens in real mode without the need for a driver.
+			if (cpu.pmode) { errcode = 0x08; break; } // 0x08: not supported
 			reg_ax = 0x0102; // version 1.2
 			reg_bx = 0x504d; // 'PM'
 			reg_cx = 0; // flags (0x01: allow in 16-bit protected mode, 0x02: allow in 32-bit protected mode)
