@@ -1189,7 +1189,7 @@ static void dyn_ret_near(Bitu bytes) {
 		gen_call_function_raw((void*)&dynrec_pop_word);
 		gen_extend_word(false,FC_RETOP);
 	}
-	gen_mov_word_from_reg(FC_RETOP,decode.big_op?(void*)(&reg_eip):(void*)(&reg_ip),true);
+	gen_mov_word_from_reg(FC_RETOP,decode.big_op?(void*)(&reg_eip):(void*)(&reg_ip),decode.big_op);
 
 	if (bytes) gen_add_direct_word(&reg_esp,bytes,true);
 	dyn_return(BR_Normal);
