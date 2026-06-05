@@ -690,7 +690,7 @@ Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc)
 }
 
 //DBP: utility function to evaluate an entire drives filesystem
-void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data, const char* root)
+void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data), Bitu data, Bit32u limitDirVisits, const char* root)
 {
 	if (!drv) return;
 	struct Iter
@@ -726,6 +726,8 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 			dos.dta(save_dta);
 		}
 	};
+	// Unless root is specified, the loop will always visit the drive root first, but if we're limiting visits, the drive current directory will be scanned immediately after
+	const char *checkCurDir = ((limitDirVisits != (Bit32u)-1 && drv->curdir[0] && !root) ? drv->curdir : NULL), *skipCurDir = NULL;
 	std::vector<std::string> dirs;
 	dirs.emplace_back(root ? root : "");
 	std::string dir;
@@ -733,7 +735,12 @@ void DriveFileIterator(DOS_Drive* drv, void(*func)(const char* path, bool is_dir
 	{
 		dirs.back().swap(dir);
 		dirs.pop_back();
+		if (skipCurDir && dir == skipCurDir) { skipCurDir = NULL; continue; }
+		doCurDir:
 		Iter::ParseDir(drv, dir.c_str(), dirs, func, data);
+		if (limitDirVisits == (Bit32u)-1) continue;
+		if (!--limitDirVisits) break;
+		if (checkCurDir) { dir = checkCurDir; skipCurDir = checkCurDir; checkCurDir = NULL; goto doCurDir; }
 	}
 }
 

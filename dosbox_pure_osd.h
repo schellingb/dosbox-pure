@@ -1553,14 +1553,14 @@ struct DBP_PureMenuState final : DBP_MenuState
 
 			if (fs_rows) { list.emplace_back(IT_NONE); fs_rows++; }
 
-			// Scan drive C first, any others after
+			// Scan drive C first, any others after (limit to 1000 directories to avoid scanning an absurd number of directories if someone mounts an enormous host hard drive)
 			sel = ('C'-'A'); // use sel to have access to it in FileIter
 			exe_count = 0;
-			DriveFileIterator(Drives[sel], FileIter, (Bitu)this);
+			DriveFileIterator(Drives[sel], FileIter, (Bitu)this, 1000);
 			for (sel = ('A'-'A'); sel != ('Z'-'A'); sel++)
 			{
 				if (sel == ('C'-'A') || !Drives[sel]) continue;
-				DriveFileIterator(Drives[sel], FileIter, (Bitu)this);
+				DriveFileIterator(Drives[sel], FileIter, (Bitu)this, 1000);
 				multidrive = true;
 			}
 			if (exe_count) list.emplace_back(IT_NONE);

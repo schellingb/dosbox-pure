@@ -2062,7 +2062,7 @@ static void DBP_PureXCopyProgram(Program** make)
 			d.srclen = (int)strlen(d.srcdst[0].full);
 			FileIter(d.srcdst[0].full, true, 0, 0, 0, 0, (Bitu)&d);
 			if (d.srclen) d.srclen++; // now also skip backslash
-			DriveFileIterator(d.srcdst[0].drive, FileIter, (Bitu)&d, d.srcdst[0].full);
+			DriveFileIterator(d.srcdst[0].drive, FileIter, (Bitu)&d, (Bit32u)-1, d.srcdst[0].full);
 		}
 		static void FileIter(const char* path, bool is_dir, Bit32u size, Bit16u , Bit16u, Bit8u attr, Bitu ptr)
 		{
@@ -2640,9 +2640,10 @@ static void init_dosbox_parse_drives()
 		}
 	}};
 
+	// Iterate all mounted drives (but limit to 500 directory visits for localDrive because it has a hard limit of MAX_OPENDIRS)
 	for (int i = 0; i != ('Z'-'A'); i++)
 		if (Drives[i])
-			DriveFileIterator(Drives[i], Local::FileIter, i);
+			DriveFileIterator(Drives[i], Local::FileIter, i, (dynamic_cast<localDrive*>(Drives[i]) ? (Bit32u)500 : (Bit32u)-1));
 
 	for (size_t i = 0; i != dbp_images.size(); i++)
 	{
