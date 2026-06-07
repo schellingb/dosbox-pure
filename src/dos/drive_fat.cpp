@@ -1204,17 +1204,16 @@ nextfile:
 	memset(extension,0,4);
 	memcpy(find_name,&sectbuf[entryoffset].entryname[0],8);
 	memcpy(extension,&sectbuf[entryoffset].entryname[8],3);
-	//DBP: Spaces are allowed in volume labels
+	//DBP: Spaces are allowed in volume labels (maybe removeTrailingSpaces would be enough for every type but we'll keep the original DOSBox behavior for non-volume entries now)
 	if (!(sectbuf[entryoffset].attrib & DOS_ATTR_VOLUME)) {
 		trimString(&find_name[0]);
 		trimString(&extension[0]);
 	}
 	else {
+		removeTrailingSpaces(&find_name[0]);
 		removeTrailingSpaces(&extension[0]);
-		if (extension[0] == ' ' && extension[1] == 0) {
-			extension[0] = 0;
-			removeTrailingSpaces(&find_name[0]);
-		}
+		if (find_name[0] == ' ' && find_name[1] == '\0') find_name[0] = '\0';
+		if (extension[0] == ' ' && extension[1] == '\0') extension[0] = '\0';
 	}
 	
 	//if(!(sectbuf[entryoffset].attrib & DOS_ATTR_DIRECTORY))
