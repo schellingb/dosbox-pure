@@ -1014,7 +1014,7 @@ struct sparseVhd
 			const Bit32u blocknum = (sectnum / sectors_per_block), blocksec = (sectnum % sectors_per_block);
 			if (sectnum >= total_sectors || bat[blocknum] == (Bit32u)-1 || (!(seen_blocks[blocknum/8] & (1<<(blocknum%8))) && !SeeBlock(dos_file, blocknum, sectnum)))
 			{
-				memset(data, 0, BYTESPERSECTOR);
+				memset(cachedata, 0, BYTESPERSECTOR);
 			}
 			else
 			{
