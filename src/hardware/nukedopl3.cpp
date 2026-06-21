@@ -1,5 +1,8 @@
+
 /* Nuked OPL3
+ *
  * Copyright (C) 2013-2020 Nuke.YKT
+ * Copyright (C) 2026 Tony Gies (Nuked-OPL3-fast modifications)
  *
  * This file is part of Nuked OPL3.
  *
@@ -15,7 +18,7 @@
  *
  * You should have received a copy of the GNU Lesser General Public License
  * along with Nuked OPL3. If not, see <https://www.gnu.org/licenses/>.
-
+ *
  *  Nuked OPL3 emulator.
  *  Thanks:
  *      MAME Development Team(Jarek Burczynski, Tatsuyuki Satoh):
@@ -27,60 +30,63 @@
  *      siliconpr0n.org(John McMaster, digshadow):
  *          YMF262 and VRC VII decaps and die shots.
  *
- * version: 1.8DBP
+ * Upstream version: 1.8 (commit cfedb09)
+ * Fork version:    1.8-fast.2
+ * Fork home:       https://github.com/tgies/Nuked-OPL3-fast
  *
- * This version was optimized for DOSBox-Pure with the following changes:
- *   - Activate channel slots only when used
- *   - Deactivate unused channel slots after a while
- *   - Added INLINE/GCC_LIKELY/GCC_UNLIKELY compiler hints
- *   - Removed resampling (done by DOSBox), fix rate at 49716hz
- *   - Simplified some expressions and loops, unrolled loops in OPL3_Generate
+ * Nuked-OPL3-fast is a bit-exact performance-optimized fork of Nuked-OPL3.
+ * Audio output is identical to upstream for the same register stream.
  *
- * If an activated channel becomes inactive, some tiny audio differences can be
- * measured (but not heard). To keep channels from becoming inactive, the macro
- * DBP_NUKED_BIT_ACCURATE can be set so the output matches the original.
+ * Modifications vs. upstream:
+ *
+ *   - Replaced 8 runtime waveform math functions with a unified 8x1024
+ *     logsin lookup table (logsin_wf). In the upstream fork this is a
+ *     precomputed header; in DBP it is computed on first reset from the
+ *     base logsinrom[256] table to avoid embedding 16KB of data.
+ *   - Pre-shifted the exprom table at compile time to eliminate a runtime
+ *     shift in OPL3_SlotGenerate.
+ *   - Hoisted per-sample envelope rate resolution out of OPL3_EnvelopeCalc
+ *     into OPL3_EnvelopeUpdateRate (eg_rate_hi[4], eg_rate_lo[4]).
+ *   - Added write-time caches on opl3_slot: eg_tl_ksl (TL + KSL sum),
+ *     eg_ks (envelope key-scale shift), pg_inc (non-vibrato phase
+ *     increment).
+ *   - Added fast paths in OPL3_ProcessSlot for fully-attenuated key-off
+ *     non-rhythm slots, permanently-dead uninitialized slots, and
+ *     sustain-with-rate-zero slots.
+ *   - Added OPL3_SlotGenerateSilent: when eg_out >= 0x180 the exprom
+ *     result is provably zero, so output reduces to the waveform sign bit.
+ *     Used by the key-off fast path.
+ *   - Unrolled both 18-channel mix loops in OPL3_Generate4Ch using a
+ *     per-channel out_cnt, skipping dummy reads for muted/2-op voices.
+ *   - All 36 slots are processed (channel-grouped modulator/carrier pairs,
+ *     with channel->fb loaded once per pair) before either mix pass; the
+ *     CHANNELSAMPLEDELAY snapshots come from per-channel out_left/out_right
+ *     pointer lists that read delayed slots through prout, and the right
+ *     mix is its own function (OPL3_MixRight).
+ *   - Fused the rhythm-mode special cases in OPL3_PhaseGenerate into a
+ *     single switch indexed by slot_num for jump-table dispatch.
+ *   - Reordered opl3_slot to put hot per-sample fields in the first cache
+ *     line; struct size reduced from 96 to 88 bytes.
+ *   - Per-slot pg_inc_vib[8] (phase increment per vibrato position) replaces
+ *     the per-sample vibrato recomputation; rebuilt on the writes that affect
+ *     it (f_num/block/mult/vibshift).
+ *   - Hoisted the noise LFSR out of slot processing into a word-parallel
+ *     36-step advance at the top of OPL3_Generate4Ch.
+ *   - Minor: __builtin_ctz for the envelope timer on GCC/Clang with a
+ *     portable fallback; replaced the tremolo-position modulo with an
+ *     explicit wrap.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-//// Enable this generate bit exact results as the original library (see above)
-//#define DBP_NUKED_BIT_ACCURATE
-
-//// Enable this to compare the result against the original unoptimized library
-//#define DBP_NUKED_COMPARE_ORG
-#ifdef DBP_NUKED_COMPARE_ORG
-    #include "dosbox.h"
-    namespace NukedOPLOrg {
-    #include "nukedopl.org.h"
-    #include "nukedopl.org.inl"
-    #undef OPL_OPL3_H
-    #define DBP_NUKED_COMPARE_ASSERT(cond) (void)((cond) ? ((int)0) : *(volatile int*)0 = 0xbad|fprintf(stderr, "FAILED ASSERT (%s)\n", #cond))
-    static Bit8u newm; static opl3_chip chip; };
-#endif
-//------------------------------
-
 #include "nukedopl3.h"
-
-//// Enable this to print out performance stats
-//#define DBP_NUKED_PERF_TEST
-
-//// Enable this (together with DBP_NUKED_PERF_TEST) to count a percentage of how often the LIKELY macros are correct
-//#define DBP_NUKED_COUNT_LIKELY
-#ifdef DBP_NUKED_COUNT_LIKELY
-   static unsigned likelyhit[2000], likelymiss[2000];
-   bool OPL3_RECORD_LIKELY(bool b, unsigned ln) { (b ? likelyhit : likelymiss)[ln]++; return b; }
-   void OPL3_LIKELY_DUMP() { for (int i = 0; i != 2000; i++) { if (likelyhit[i] || likelymiss[i]) printf("LIKELY ON LINE %4d HIT RATIO: %3d%% (%u/%u/%u access)\n", i, (unsigned)(likelyhit[i]*100.0 / (likelyhit[i]+likelymiss[i])), likelyhit[i], likelymiss[i], (likelyhit[i]+likelymiss[i])); } }
-   #undef GCC_LIKELY
-   #undef GCC_UNLIKELY
-   #define GCC_LIKELY(x)   OPL3_RECORD_LIKELY((x), __LINE__)
-   #define GCC_UNLIKELY(x) !OPL3_RECORD_LIKELY(!(x), __LINE__)
-#endif
+#include <cstddef>
 
 #define RSM_FRAC    10
 
-// Channel types
+/* Channel types */
 
 enum {
     ch_2op = 0,
@@ -89,17 +95,16 @@ enum {
     ch_drum = 3
 };
 
-// Envelope key types
+/* Envelope key types */
 
 enum {
     egk_norm = 0x01,
     egk_drum = 0x02
 };
 
-
-//
-// logsin table
-//
+/*
+    logsin table
+*/
 
 static const Bit16u logsinrom[256] = {
     0x859, 0x6c3, 0x607, 0x58b, 0x52e, 0x4e4, 0x4a6, 0x471,
@@ -136,58 +141,64 @@ static const Bit16u logsinrom[256] = {
     0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000, 0x000
 };
 
-//
-// exp table
-//
+/*
+    logsin waveform lookup table
+*/
+
+static Bit16u logsin_wf[8][1024];
+
+/*
+    exp table
+*/
 
 static const Bit16u exprom[256] = {
-    0x7fa, 0x7f5, 0x7ef, 0x7ea, 0x7e4, 0x7df, 0x7da, 0x7d4,
-    0x7cf, 0x7c9, 0x7c4, 0x7bf, 0x7b9, 0x7b4, 0x7ae, 0x7a9,
-    0x7a4, 0x79f, 0x799, 0x794, 0x78f, 0x78a, 0x784, 0x77f,
-    0x77a, 0x775, 0x770, 0x76a, 0x765, 0x760, 0x75b, 0x756,
-    0x751, 0x74c, 0x747, 0x742, 0x73d, 0x738, 0x733, 0x72e,
-    0x729, 0x724, 0x71f, 0x71a, 0x715, 0x710, 0x70b, 0x706,
-    0x702, 0x6fd, 0x6f8, 0x6f3, 0x6ee, 0x6e9, 0x6e5, 0x6e0,
-    0x6db, 0x6d6, 0x6d2, 0x6cd, 0x6c8, 0x6c4, 0x6bf, 0x6ba,
-    0x6b5, 0x6b1, 0x6ac, 0x6a8, 0x6a3, 0x69e, 0x69a, 0x695,
-    0x691, 0x68c, 0x688, 0x683, 0x67f, 0x67a, 0x676, 0x671,
-    0x66d, 0x668, 0x664, 0x65f, 0x65b, 0x657, 0x652, 0x64e,
-    0x649, 0x645, 0x641, 0x63c, 0x638, 0x634, 0x630, 0x62b,
-    0x627, 0x623, 0x61e, 0x61a, 0x616, 0x612, 0x60e, 0x609,
-    0x605, 0x601, 0x5fd, 0x5f9, 0x5f5, 0x5f0, 0x5ec, 0x5e8,
-    0x5e4, 0x5e0, 0x5dc, 0x5d8, 0x5d4, 0x5d0, 0x5cc, 0x5c8,
-    0x5c4, 0x5c0, 0x5bc, 0x5b8, 0x5b4, 0x5b0, 0x5ac, 0x5a8,
-    0x5a4, 0x5a0, 0x59c, 0x599, 0x595, 0x591, 0x58d, 0x589,
-    0x585, 0x581, 0x57e, 0x57a, 0x576, 0x572, 0x56f, 0x56b,
-    0x567, 0x563, 0x560, 0x55c, 0x558, 0x554, 0x551, 0x54d,
-    0x549, 0x546, 0x542, 0x53e, 0x53b, 0x537, 0x534, 0x530,
-    0x52c, 0x529, 0x525, 0x522, 0x51e, 0x51b, 0x517, 0x514,
-    0x510, 0x50c, 0x509, 0x506, 0x502, 0x4ff, 0x4fb, 0x4f8,
-    0x4f4, 0x4f1, 0x4ed, 0x4ea, 0x4e7, 0x4e3, 0x4e0, 0x4dc,
-    0x4d9, 0x4d6, 0x4d2, 0x4cf, 0x4cc, 0x4c8, 0x4c5, 0x4c2,
-    0x4be, 0x4bb, 0x4b8, 0x4b5, 0x4b1, 0x4ae, 0x4ab, 0x4a8,
-    0x4a4, 0x4a1, 0x49e, 0x49b, 0x498, 0x494, 0x491, 0x48e,
-    0x48b, 0x488, 0x485, 0x482, 0x47e, 0x47b, 0x478, 0x475,
-    0x472, 0x46f, 0x46c, 0x469, 0x466, 0x463, 0x460, 0x45d,
-    0x45a, 0x457, 0x454, 0x451, 0x44e, 0x44b, 0x448, 0x445,
-    0x442, 0x43f, 0x43c, 0x439, 0x436, 0x433, 0x430, 0x42d,
-    0x42a, 0x428, 0x425, 0x422, 0x41f, 0x41c, 0x419, 0x416,
-    0x414, 0x411, 0x40e, 0x40b, 0x408, 0x406, 0x403, 0x400
+    0xff4, 0xfea, 0xfde, 0xfd4, 0xfc8, 0xfbe, 0xfb4, 0xfa8,
+    0xf9e, 0xf92, 0xf88, 0xf7e, 0xf72, 0xf68, 0xf5c, 0xf52,
+    0xf48, 0xf3e, 0xf32, 0xf28, 0xf1e, 0xf14, 0xf08, 0xefe,
+    0xef4, 0xeea, 0xee0, 0xed4, 0xeca, 0xec0, 0xeb6, 0xeac,
+    0xea2, 0xe98, 0xe8e, 0xe84, 0xe7a, 0xe70, 0xe66, 0xe5c,
+    0xe52, 0xe48, 0xe3e, 0xe34, 0xe2a, 0xe20, 0xe16, 0xe0c,
+    0xe04, 0xdfa, 0xdf0, 0xde6, 0xddc, 0xdd2, 0xdca, 0xdc0,
+    0xdb6, 0xdac, 0xda4, 0xd9a, 0xd90, 0xd88, 0xd7e, 0xd74,
+    0xd6a, 0xd62, 0xd58, 0xd50, 0xd46, 0xd3c, 0xd34, 0xd2a,
+    0xd22, 0xd18, 0xd10, 0xd06, 0xcfe, 0xcf4, 0xcec, 0xce2,
+    0xcda, 0xcd0, 0xcc8, 0xcbe, 0xcb6, 0xcae, 0xca4, 0xc9c,
+    0xc92, 0xc8a, 0xc82, 0xc78, 0xc70, 0xc68, 0xc60, 0xc56,
+    0xc4e, 0xc46, 0xc3c, 0xc34, 0xc2c, 0xc24, 0xc1c, 0xc12,
+    0xc0a, 0xc02, 0xbfa, 0xbf2, 0xbea, 0xbe0, 0xbd8, 0xbd0,
+    0xbc8, 0xbc0, 0xbb8, 0xbb0, 0xba8, 0xba0, 0xb98, 0xb90,
+    0xb88, 0xb80, 0xb78, 0xb70, 0xb68, 0xb60, 0xb58, 0xb50,
+    0xb48, 0xb40, 0xb38, 0xb32, 0xb2a, 0xb22, 0xb1a, 0xb12,
+    0xb0a, 0xb02, 0xafc, 0xaf4, 0xaec, 0xae4, 0xade, 0xad6,
+    0xace, 0xac6, 0xac0, 0xab8, 0xab0, 0xaa8, 0xaa2, 0xa9a,
+    0xa92, 0xa8c, 0xa84, 0xa7c, 0xa76, 0xa6e, 0xa68, 0xa60,
+    0xa58, 0xa52, 0xa4a, 0xa44, 0xa3c, 0xa36, 0xa2e, 0xa28,
+    0xa20, 0xa18, 0xa12, 0xa0c, 0xa04, 0x9fe, 0x9f6, 0x9f0,
+    0x9e8, 0x9e2, 0x9da, 0x9d4, 0x9ce, 0x9c6, 0x9c0, 0x9b8,
+    0x9b2, 0x9ac, 0x9a4, 0x99e, 0x998, 0x990, 0x98a, 0x984,
+    0x97c, 0x976, 0x970, 0x96a, 0x962, 0x95c, 0x956, 0x950,
+    0x948, 0x942, 0x93c, 0x936, 0x930, 0x928, 0x922, 0x91c,
+    0x916, 0x910, 0x90a, 0x904, 0x8fc, 0x8f6, 0x8f0, 0x8ea,
+    0x8e4, 0x8de, 0x8d8, 0x8d2, 0x8cc, 0x8c6, 0x8c0, 0x8ba,
+    0x8b4, 0x8ae, 0x8a8, 0x8a2, 0x89c, 0x896, 0x890, 0x88a,
+    0x884, 0x87e, 0x878, 0x872, 0x86c, 0x866, 0x860, 0x85a,
+    0x854, 0x850, 0x84a, 0x844, 0x83e, 0x838, 0x832, 0x82c,
+    0x828, 0x822, 0x81c, 0x816, 0x810, 0x80c, 0x806, 0x800,
 };
 
-//
-// freq mult table multiplied by 2
-//
-// 1/2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 12, 12, 15, 15
-//
+/*
+    freq mult table multiplied by 2
+
+    1/2, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 12, 12, 15, 15
+*/
 
 static const Bit8u mt[16] = {
     1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 20, 24, 24, 30, 30
 };
 
-//
-// ksl table
-//
+/*
+    ksl table
+*/
 
 static const Bit8u kslrom[16] = {
     0, 32, 40, 45, 48, 51, 53, 55, 56, 58, 59, 60, 61, 62, 63, 64
@@ -197,9 +208,9 @@ static const Bit8u kslshift[4] = {
     8, 1, 2, 0
 };
 
-//
-// envelope generator constants
-//
+/*
+    envelope generator constants
+*/
 
 static const Bit8u eg_incstep[4][4] = {
     { 0, 0, 0, 0 },
@@ -208,9 +219,9 @@ static const Bit8u eg_incstep[4][4] = {
     { 1, 1, 1, 0 }
 };
 
-//
-// address decoding
-//
+/*
+    address decoding
+*/
 
 static const Bit8s ad_slot[0x20] = {
     0, 1, 2, 3, 4, 5, -1, -1, 6, 7, 8, 9, 10, 11, -1, -1,
@@ -221,117 +232,10 @@ static const Bit8u ch_slot[18] = {
     0, 1, 2, 6, 7, 8, 12, 13, 14, 18, 19, 20, 24, 25, 26, 30, 31, 32
 };
 
-//
-// Envelope generator
-//
 
-static INLINE Bit16s OPL3_EnvelopeCalcExp(Bit32u level)
-{
-    if (GCC_UNLIKELY(level > 0x1fff))
-    {
-        level = 0x1fff;
-    }
-    return (exprom[level & 0xff] << 1) >> (level >> 8);
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin0(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out = logsinrom[(phase & 0x100) ? ((phase & 0xff) ^ 0xff) : (phase & 0xff)];
-    Bit16u neg = ((phase & 0x200) ? 0xffff : 0);
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3)) ^ neg;
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin1(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out;
-    if (phase & 0x200)
-    {
-        out = 0x1000;
-    }
-    else if (phase & 0x100)
-    {
-        out = logsinrom[(phase & 0xff) ^ 0xff];
-    }
-    else
-    {
-        out = logsinrom[phase & 0xff];
-    }
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3));
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin2(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out = logsinrom[(phase & 0x100) ? ((phase & 0xff) ^ 0xff) : (phase & 0xff)];
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3));
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin3(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out = ((phase & 0x100) ? 0x1000 : logsinrom[phase & 0xff]);
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3));
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin4(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out, neg;
-    phase &= 0x3ff;
-    neg = (((phase & 0x300) == 0x100) ? 0xffff : 0);
-    if (phase & 0x200)
-    {
-        out = 0x1000;
-    }
-    else if (phase & 0x80)
-    {
-        out = logsinrom[((phase ^ 0xff) << 1) & 0xff];
-    }
-    else
-    {
-        out = logsinrom[(phase << 1) & 0xff];
-    }
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3)) ^ neg;
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin5(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out;
-    phase &= 0x3ff;
-    if (phase & 0x200)
-    {
-        out = 0x1000;
-    }
-    else if (phase & 0x80)
-    {
-        out = logsinrom[((phase ^ 0xff) << 1) & 0xff];
-    }
-    else
-    {
-        out = logsinrom[(phase << 1) & 0xff];
-    }
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3));
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin6(Bit16u phase, Bit16u envelope)
-{
-    Bit16u neg = ((phase & 0x200) ? 0xffff : 0);
-    return OPL3_EnvelopeCalcExp(envelope << 3) ^ neg;
-}
-
-static INLINE Bit16s OPL3_EnvelopeCalcSin7(Bit16u phase, Bit16u envelope)
-{
-    Bit16u out, neg;
-    phase &= 0x3ff;
-    if (phase & 0x200)
-    {
-        neg = 0xffff;
-        phase = (phase & 0x1ff) ^ 0x1ff;
-    }
-    else
-    {
-        neg = 0;
-    }
-    out = phase << 3;
-    return OPL3_EnvelopeCalcExp(out + (envelope << 3)) ^ neg;
-}
+/*
+    Envelope generator
+*/
 
 enum envelope_gen_num
 {
@@ -343,66 +247,75 @@ enum envelope_gen_num
 
 static void OPL3_EnvelopeUpdateKSL(opl3_slot *slot)
 {
-    Bit16s ksl = (kslrom[slot->channel->f_num >> 6] << 2)
+    Bit16s ksl = (kslrom[slot->channel->f_num >> 6u] << 2)
                - ((0x08 - slot->channel->block) << 5);
     if (ksl < 0)
     {
         ksl = 0;
     }
     slot->eg_ksl = (Bit8u)ksl;
+    /* Refresh the cached (reg_tl << 2) + (eg_ksl >> kslshift[reg_ksl])
+     * sum used by OPL3_EnvelopeCalc. Both reg_tl/reg_ksl-driven changes
+     * (via SlotWrite40, which calls this function) and eg_ksl-driven
+     * changes (f_num/block updates via Channel{A0,B0}) flow through
+     * here, so this covers all dirty cases. */
+    slot->eg_tl_ksl = (Bit16u)((slot->reg_tl << 2)
+                              + (slot->eg_ksl >> kslshift[slot->reg_ksl]));
 }
 
-static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
+static void OPL3_EnvelopeUpdateRate(opl3_slot *slot)
+{
+    Bit8u ii;
+
+    slot->eg_ks = slot->channel->ksv >> ((slot->reg_ksr ^ 1) << 1);
+    for (ii = 0; ii < 4; ii++)
+    {
+        Bit8u rate = slot->eg_ks + (slot->eg_rates[ii] << 2);
+        Bit8u rate_hi = rate >> 2;
+        if (rate_hi & 0x10)
+        {
+            rate_hi = 0x0f;
+        }
+        slot->eg_rate_hi[ii] = rate_hi;
+        slot->eg_rate_lo[ii] = rate & 0x03;
+    }
+}
+
+static void OPL3_EnvelopeCalc(opl3_slot *slot)
 {
     Bit8u nonzero;
-    Bit8u rate;
     Bit8u rate_hi;
     Bit8u rate_lo;
     Bit8u reg_rate = 0;
-    Bit8u ks;
-    Bit8u shift;
+    Bit8u eg_shift, shift;
     Bit16u eg_rout;
     Bit16s eg_inc;
     Bit8u eg_off;
     Bit8u reset = 0;
-    slot->eg_out = slot->eg_rout + (slot->reg_tl << 2)
-                 + (slot->eg_ksl >> kslshift[slot->reg_ksl]) + *slot->trem;
+
+    slot->eg_out = slot->eg_rout + slot->eg_tl_ksl + *slot->trem;
     if (slot->key && slot->eg_gen == envelope_gen_num_release)
     {
         reset = 1;
-        reg_rate = slot->reg_ar;
+        reg_rate = slot->eg_rates[0];
     }
     else
     {
-        switch (slot->eg_gen)
-        {
-        case envelope_gen_num_attack:
-            reg_rate = slot->reg_ar;
-            break;
-        case envelope_gen_num_decay:
-            reg_rate = slot->reg_dr;
-            break;
-        case envelope_gen_num_sustain:
-            if (!slot->reg_type)
-            {
-                reg_rate = slot->reg_rr;
-            }
-            break;
-        case envelope_gen_num_release:
-            reg_rate = slot->reg_rr;
-            break;
-        }
+        reg_rate = slot->eg_rates[slot->eg_gen];
     }
     slot->pg_reset = reset;
-    ks = slot->channel->ksv >> ((slot->reg_ksr ^ 1) << 1);
     nonzero = (reg_rate != 0);
-    rate = ks + (reg_rate << 2);
-    rate_hi = rate >> 2;
-    rate_lo = rate & 0x03;
-    if (GCC_UNLIKELY(rate_hi & 0x10))
+    if (reset)
     {
-        rate_hi = 0x0f;
+        rate_hi = slot->eg_rate_hi[0];
+        rate_lo = slot->eg_rate_lo[0];
     }
+    else
+    {
+        rate_hi = slot->eg_rate_hi[slot->eg_gen];
+        rate_lo = slot->eg_rate_lo[slot->eg_gen];
+    }
+    eg_shift = rate_hi + slot->chip->eg_add;
     shift = 0;
     if (nonzero)
     {
@@ -410,7 +323,7 @@ static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
         {
             if (slot->chip->eg_state)
             {
-                switch (rate_hi + slot->chip->eg_add)
+                switch (eg_shift)
                 {
                 case 12:
                     shift = 1;
@@ -428,7 +341,7 @@ static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
         }
         else
         {
-            shift = (rate_hi & 0x03) + eg_incstep[rate_lo][slot->chip->timer & 0x03];
+            shift = (rate_hi & 0x03) + eg_incstep[rate_lo][slot->chip->eg_timer_lo];
             if (shift & 0x04)
             {
                 shift = 0x03;
@@ -439,17 +352,23 @@ static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
             }
         }
     }
-    // Envelope off / Instant attack
-    eg_off = ((slot->eg_rout & 0x1f8) == 0x1f8);
+    eg_rout = slot->eg_rout;
+    eg_inc = 0;
+    eg_off = 0;
+    /* Instant attack */
+    if (reset && rate_hi == 0x0f)
+    {
+        eg_rout = 0x00;
+    }
+    /* Envelope off */
+    if ((slot->eg_rout & 0x1f8) == 0x1f8)
+    {
+        eg_off = 1;
+    }
     if (slot->eg_gen != envelope_gen_num_attack && !reset && eg_off)
     {
         eg_rout = 0x1ff;
     }
-    else
-    {
-        eg_rout = (reset && rate_hi == 0x0f ? 0x00 : slot->eg_rout);
-    }
-    eg_inc = 0;
     switch (slot->eg_gen)
     {
     case envelope_gen_num_attack:
@@ -459,7 +378,7 @@ static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
         }
         else if (slot->key && shift > 0 && rate_hi != 0x0f)
         {
-            eg_inc = ((~slot->eg_rout) << shift) >> 4;
+            eg_inc = ~slot->eg_rout >> (4 - shift);
         }
         break;
     case envelope_gen_num_decay:
@@ -481,8 +400,8 @@ static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
         break;
     }
     slot->eg_rout = (eg_rout + eg_inc) & 0x1ff;
-    // Key off
-    if (GCC_UNLIKELY(reset))
+    /* Key off */
+    if (reset)
     {
         slot->eg_gen = envelope_gen_num_attack;
     }
@@ -495,38 +414,29 @@ static INLINE void OPL3_EnvelopeCalc(opl3_slot *slot)
 static void OPL3_EnvelopeKeyOn(opl3_slot *slot, Bit8u type)
 {
     slot->key |= type;
-    slot->active = 255;
 }
 
 static void OPL3_EnvelopeKeyOff(opl3_slot *slot, Bit8u type)
 {
     slot->key &= ~type;
-    slot->active = 255;
 }
 
-//
-// Phase Generator
-//
+/*
+    Phase Generator
+*/
 
-static INLINE void OPL3_PhaseGenerate(opl3_slot *slot)
+static void OPL3_PhaseUpdateInc(opl3_slot *slot)
 {
-    opl3_chip *chip;
-    Bit16u f_num;
-    Bit32u basefreq;
-    Bit8u rm_xor;
-    Bit32u noise;
-    Bit16u phase;
-
-    chip = slot->chip;
-    f_num = slot->channel->f_num;
-    if (slot->reg_vib)
+    Bit32u basefreq = ((Bit32u)slot->channel->f_num << slot->channel->block) >> 1;
+    Bit8u vibpos;
+    slot->pg_inc = (basefreq * mt[slot->reg_mult]) >> 1;
+    /* Per-vibpos increments (exact replica of the vibrato f_num adjustment
+     * the phase generator applies per sample), so vib slots resolve their
+     * increment with one load. Rebuilt when vibshift changes */
+    for (vibpos = 0; vibpos < 8; vibpos++)
     {
-        Bit8s range;
-        Bit8u vibpos;
-
-        range = (f_num >> 7) & 7;
-        vibpos = slot->chip->vibpos;
-
+        Bit16u f_num = slot->channel->f_num;
+        Bit8s range = (f_num >> 7) & 7;
         if (!(vibpos & 3))
         {
             range = 0;
@@ -536,73 +446,91 @@ static INLINE void OPL3_PhaseGenerate(opl3_slot *slot)
             range >>= 1;
         }
         range >>= slot->chip->vibshift;
-
         if (vibpos & 4)
         {
             range = -range;
         }
         f_num += range;
+        slot->pg_inc_vib[vibpos] =
+            ((((Bit32u)f_num << slot->channel->block) >> 1) * mt[slot->reg_mult]) >> 1;
     }
-    basefreq = (f_num << slot->channel->block) >> 1;
+}
+
+static void OPL3_PhaseGenerate(opl3_slot *slot)
+{
+    opl3_chip *chip;
+    Bit32u phaseinc;
+    Bit8u rm_xor;
+    Bit16u phase;
+
+    chip = slot->chip;
+    if (slot->reg_vib)
+    {
+        phaseinc = slot->pg_inc_vib[chip->vibpos];
+    }
+    else
+    {
+        phaseinc = slot->pg_inc;
+    }
     phase = (Bit16u)(slot->pg_phase >> 9);
     if (slot->pg_reset)
     {
         slot->pg_phase = 0;
     }
-    slot->pg_phase += (basefreq * mt[slot->reg_mult]) >> 1;
-    // Rhythm mode
-    noise = chip->noise;
+    slot->pg_phase += phaseinc;
+    /* Rhythm mode: dispatch on slot_num via a single switch so non-rhythm
+     * slots (33 of 36) hit the default case and skip everything. The
+     * fused switch also lets gcc emit a jump table instead of branches. */
     slot->pg_phase_out = phase;
-
-    if (slot->is_hhsdtc)
+    switch (slot->slot_num)
     {
-        if (slot->slot_num == 13) // hh
-        {
-            chip->rm_hh_bit2 = (phase >> 2) & 1;
-            chip->rm_hh_bit3 = (phase >> 3) & 1;
-            chip->rm_hh_bit7 = (phase >> 7) & 1;
-            chip->rm_hh_bit8 = (phase >> 8) & 1;
-        }
-        if (slot->slot_num == 17 && (chip->rhy & 0x20)) // tc
-        {
-            chip->rm_tc_bit3 = (phase >> 3) & 1;
-            chip->rm_tc_bit5 = (phase >> 5) & 1;
-        }
+    case 13: /* hh */
+        chip->rm_hh_bit2 = (phase >> 2) & 1;
+        chip->rm_hh_bit3 = (phase >> 3) & 1;
+        chip->rm_hh_bit7 = (phase >> 7) & 1;
+        chip->rm_hh_bit8 = (phase >> 8) & 1;
         if (chip->rhy & 0x20)
         {
             rm_xor = (chip->rm_hh_bit2 ^ chip->rm_hh_bit7)
                    | (chip->rm_hh_bit3 ^ chip->rm_tc_bit5)
                    | (chip->rm_tc_bit3 ^ chip->rm_tc_bit5);
-            switch (slot->slot_num)
+            slot->pg_phase_out = rm_xor << 9;
+            if (rm_xor ^ (chip->noise_hh & 1))
             {
-            case 13: // hh
-                slot->pg_phase_out = rm_xor << 9;
-                if (rm_xor ^ (noise & 1))
-                {
-                    slot->pg_phase_out |= 0xd0;
-                }
-                else
-                {
-                    slot->pg_phase_out |= 0x34;
-                }
-                break;
-            case 16: // sd
-                slot->pg_phase_out = (chip->rm_hh_bit8 << 9)
-                                   | ((chip->rm_hh_bit8 ^ (noise & 1)) << 8);
-                break;
-            case 17: // tc
-                slot->pg_phase_out = (rm_xor << 9) | 0x80;
-                break;
-            default:
-                break;
+                slot->pg_phase_out |= 0xd0;
+            }
+            else
+            {
+                slot->pg_phase_out |= 0x34;
             }
         }
+        break;
+    case 16: /* sd */
+        if (chip->rhy & 0x20)
+        {
+            slot->pg_phase_out = (chip->rm_hh_bit8 << 9)
+                               | ((chip->rm_hh_bit8 ^ (chip->noise_sd & 1)) << 8);
+        }
+        break;
+    case 17: /* tc */
+        if (chip->rhy & 0x20)
+        {
+            chip->rm_tc_bit3 = (phase >> 3) & 1;
+            chip->rm_tc_bit5 = (phase >> 5) & 1;
+            rm_xor = (chip->rm_hh_bit2 ^ chip->rm_hh_bit7)
+                   | (chip->rm_hh_bit3 ^ chip->rm_tc_bit5)
+                   | (chip->rm_tc_bit3 ^ chip->rm_tc_bit5);
+            slot->pg_phase_out = (rm_xor << 9) | 0x80;
+        }
+        break;
+    default:
+        break;
     }
 }
 
-//
-// Slot
-//
+/*
+    Slot
+*/
 
 static void OPL3_SlotWrite20(opl3_slot *slot, Bit8u data)
 {
@@ -616,16 +544,17 @@ static void OPL3_SlotWrite20(opl3_slot *slot, Bit8u data)
     }
     slot->reg_vib = (data >> 6) & 0x01;
     slot->reg_type = (data >> 5) & 0x01;
+    slot->eg_rates[2] = slot->reg_type ? 0 : slot->reg_rr;
     slot->reg_ksr = (data >> 4) & 0x01;
     slot->reg_mult = data & 0x0f;
-    slot->active = 255;
+    OPL3_EnvelopeUpdateRate(slot);
+    OPL3_PhaseUpdateInc(slot);
 }
 
 static void OPL3_SlotWrite40(opl3_slot *slot, Bit8u data)
 {
     slot->reg_ksl = (data >> 6) & 0x03;
     slot->reg_tl = data & 0x3f;
-    slot->active = 255;
     OPL3_EnvelopeUpdateKSL(slot);
 }
 
@@ -633,7 +562,9 @@ static void OPL3_SlotWrite60(opl3_slot *slot, Bit8u data)
 {
     slot->reg_ar = (data >> 4) & 0x0f;
     slot->reg_dr = data & 0x0f;
-    slot->active = 255;
+    slot->eg_rates[0] = slot->reg_ar;
+    slot->eg_rates[1] = slot->reg_dr;
+    OPL3_EnvelopeUpdateRate(slot);
 }
 
 static void OPL3_SlotWrite80(opl3_slot *slot, Bit8u data)
@@ -644,7 +575,9 @@ static void OPL3_SlotWrite80(opl3_slot *slot, Bit8u data)
         slot->reg_sl = 0x1f;
     }
     slot->reg_rr = data & 0x0f;
-    slot->active = 255;
+    slot->eg_rates[2] = slot->reg_type ? 0 : slot->reg_rr;
+    slot->eg_rates[3] = slot->reg_rr;
+    OPL3_EnvelopeUpdateRate(slot);
 }
 
 static void OPL3_SlotWriteE0(opl3_slot *slot, Bit8u data)
@@ -656,32 +589,49 @@ static void OPL3_SlotWriteE0(opl3_slot *slot, Bit8u data)
     }
 }
 
-static INLINE void OPL3_SlotGenerate(opl3_slot *slot)
+static inline void OPL3_SlotGenerate(opl3_slot *slot)
 {
-    // Having this function table locally allows more compilers to better improve this
-    typedef Bit16s(*envelope_sinfunc)(Bit16u phase, Bit16u envelope);
-    static const envelope_sinfunc envelope_sin[8] = {
-        OPL3_EnvelopeCalcSin0,
-        OPL3_EnvelopeCalcSin1,
-        OPL3_EnvelopeCalcSin2,
-        OPL3_EnvelopeCalcSin3,
-        OPL3_EnvelopeCalcSin4,
-        OPL3_EnvelopeCalcSin5,
-        OPL3_EnvelopeCalcSin6,
-        OPL3_EnvelopeCalcSin7
-    };
-    slot->out = envelope_sin[slot->reg_wf](slot->pg_phase_out + *slot->mod, slot->eg_out);
+    Bit16u phase = slot->pg_phase_out + *slot->mod;
+    Bit16u envelope = slot->eg_out;
+    Bit16u wf_data = logsin_wf[slot->reg_wf][phase & 0x3ff];
+    Bit16u neg = (Bit16u)(((Bit16s)wf_data) >> 15);
+    Bit32u level = (wf_data & 0x7fff) + (envelope << 3);
+    if (level > 0x1fff)
+    {
+        level = 0x1fff;
+    }
+    slot->out = ((exprom[level & 0xffu] >> (level >> 8)) ^ neg);
 }
 
-static INLINE void OPL3_SlotCalcFB(opl3_slot *slot)
+/* Silent-regime variant: when the caller has proven eg_out >= 0x180, the
+ * exprom lookup always reads through to zero (max exprom value 0xff4 >> 12
+ * = 0), so the final out reduces to just the sign bit of wf_data. Skips a
+ * load, an add, a clamp, a shift, and a xor. */
+static inline void OPL3_SlotGenerateSilent(opl3_slot *slot)
 {
-    slot->fbmod = (slot->channel->fb == 0x00 ? 0 : ((slot->prout + slot->out) >> (0x09 - slot->channel->fb)));
+    Bit16u phase = slot->pg_phase_out + *slot->mod;
+    Bit16u wf_data = logsin_wf[slot->reg_wf][phase & 0x3ff];
+    slot->out = (Bit16s)wf_data >> 15;
+}
+
+/* fb is the slot's channel->fb, loaded once per channel pair by the caller
+ * (slot processing cannot change it, only register writes can). */
+static inline void OPL3_SlotCalcFB(opl3_slot *slot, Bit8u fb)
+{
+    if (fb != 0x00)
+    {
+        slot->fbmod = (slot->prout + slot->out) >> (0x09 - fb);
+    }
+    else
+    {
+        slot->fbmod = 0;
+    }
     slot->prout = slot->out;
 }
 
-//
-// Channel
-//
+/*
+    Channel
+*/
 
 static void OPL3_ChannelSetupAlg(opl3_channel *channel);
 
@@ -702,14 +652,17 @@ static void OPL3_ChannelUpdateRhythm(opl3_chip *chip, Bit8u data)
         channel6->out[1] = &channel6->slots[1]->out;
         channel6->out[2] = &chip->zeromod;
         channel6->out[3] = &chip->zeromod;
+        channel6->out_cnt = 2;
         channel7->out[0] = &channel7->slots[0]->out;
         channel7->out[1] = &channel7->slots[0]->out;
         channel7->out[2] = &channel7->slots[1]->out;
         channel7->out[3] = &channel7->slots[1]->out;
+        channel7->out_cnt = 4;
         channel8->out[0] = &channel8->slots[0]->out;
         channel8->out[1] = &channel8->slots[0]->out;
         channel8->out[2] = &channel8->slots[1]->out;
         channel8->out[3] = &channel8->slots[1]->out;
+        channel8->out_cnt = 4;
         for (chnum = 6; chnum < 9; chnum++)
         {
             chip->channel[chnum].chtype = ch_drum;
@@ -717,7 +670,7 @@ static void OPL3_ChannelUpdateRhythm(opl3_chip *chip, Bit8u data)
         OPL3_ChannelSetupAlg(channel6);
         OPL3_ChannelSetupAlg(channel7);
         OPL3_ChannelSetupAlg(channel8);
-        //hh
+        /* hh */
         if (chip->rhy & 0x01)
         {
             OPL3_EnvelopeKeyOn(channel7->slots[0], egk_drum);
@@ -726,7 +679,7 @@ static void OPL3_ChannelUpdateRhythm(opl3_chip *chip, Bit8u data)
         {
             OPL3_EnvelopeKeyOff(channel7->slots[0], egk_drum);
         }
-        //tc
+        /* tc */
         if (chip->rhy & 0x02)
         {
             OPL3_EnvelopeKeyOn(channel8->slots[1], egk_drum);
@@ -735,7 +688,7 @@ static void OPL3_ChannelUpdateRhythm(opl3_chip *chip, Bit8u data)
         {
             OPL3_EnvelopeKeyOff(channel8->slots[1], egk_drum);
         }
-        //tom
+        /* tom */
         if (chip->rhy & 0x04)
         {
             OPL3_EnvelopeKeyOn(channel8->slots[0], egk_drum);
@@ -744,7 +697,7 @@ static void OPL3_ChannelUpdateRhythm(opl3_chip *chip, Bit8u data)
         {
             OPL3_EnvelopeKeyOff(channel8->slots[0], egk_drum);
         }
-        //sd
+        /* sd */
         if (chip->rhy & 0x08)
         {
             OPL3_EnvelopeKeyOn(channel7->slots[1], egk_drum);
@@ -753,7 +706,7 @@ static void OPL3_ChannelUpdateRhythm(opl3_chip *chip, Bit8u data)
         {
             OPL3_EnvelopeKeyOff(channel7->slots[1], egk_drum);
         }
-        //bd
+        /* bd */
         if (chip->rhy & 0x10)
         {
             OPL3_EnvelopeKeyOn(channel6->slots[0], egk_drum);
@@ -788,12 +741,20 @@ static void OPL3_ChannelWriteA0(opl3_channel *channel, Bit8u data)
                  | ((channel->f_num >> (0x09 - channel->chip->nts)) & 0x01);
     OPL3_EnvelopeUpdateKSL(channel->slots[0]);
     OPL3_EnvelopeUpdateKSL(channel->slots[1]);
+    OPL3_EnvelopeUpdateRate(channel->slots[0]);
+    OPL3_EnvelopeUpdateRate(channel->slots[1]);
+    OPL3_PhaseUpdateInc(channel->slots[0]);
+    OPL3_PhaseUpdateInc(channel->slots[1]);
     if (channel->chip->newm && channel->chtype == ch_4op)
     {
         channel->pair->f_num = channel->f_num;
         channel->pair->ksv = channel->ksv;
         OPL3_EnvelopeUpdateKSL(channel->pair->slots[0]);
         OPL3_EnvelopeUpdateKSL(channel->pair->slots[1]);
+        OPL3_EnvelopeUpdateRate(channel->pair->slots[0]);
+        OPL3_EnvelopeUpdateRate(channel->pair->slots[1]);
+        OPL3_PhaseUpdateInc(channel->pair->slots[0]);
+        OPL3_PhaseUpdateInc(channel->pair->slots[1]);
     }
 }
 
@@ -809,6 +770,10 @@ static void OPL3_ChannelWriteB0(opl3_channel *channel, Bit8u data)
                  | ((channel->f_num >> (0x09 - channel->chip->nts)) & 0x01);
     OPL3_EnvelopeUpdateKSL(channel->slots[0]);
     OPL3_EnvelopeUpdateKSL(channel->slots[1]);
+    OPL3_EnvelopeUpdateRate(channel->slots[0]);
+    OPL3_EnvelopeUpdateRate(channel->slots[1]);
+    OPL3_PhaseUpdateInc(channel->slots[0]);
+    OPL3_PhaseUpdateInc(channel->slots[1]);
     if (channel->chip->newm && channel->chtype == ch_4op)
     {
         channel->pair->f_num = channel->f_num;
@@ -816,10 +781,14 @@ static void OPL3_ChannelWriteB0(opl3_channel *channel, Bit8u data)
         channel->pair->ksv = channel->ksv;
         OPL3_EnvelopeUpdateKSL(channel->pair->slots[0]);
         OPL3_EnvelopeUpdateKSL(channel->pair->slots[1]);
+        OPL3_EnvelopeUpdateRate(channel->pair->slots[0]);
+        OPL3_EnvelopeUpdateRate(channel->pair->slots[1]);
+        OPL3_PhaseUpdateInc(channel->pair->slots[0]);
+        OPL3_PhaseUpdateInc(channel->pair->slots[1]);
     }
 }
 
-static void OPL3_ChannelSetupAlg(opl3_channel *channel)
+static void OPL3_ChannelSetupAlgBody(opl3_channel *channel)
 {
     if (channel->chtype == ch_drum)
     {
@@ -852,6 +821,7 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
         channel->pair->out[1] = &channel->chip->zeromod;
         channel->pair->out[2] = &channel->chip->zeromod;
         channel->pair->out[3] = &channel->chip->zeromod;
+        channel->pair->out_cnt = 0;
         switch (channel->alg & 0x03)
         {
         case 0x00:
@@ -863,6 +833,7 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
             channel->out[1] = &channel->chip->zeromod;
             channel->out[2] = &channel->chip->zeromod;
             channel->out[3] = &channel->chip->zeromod;
+            channel->out_cnt = 1;
             break;
         case 0x01:
             channel->pair->slots[0]->mod = &channel->pair->slots[0]->fbmod;
@@ -873,6 +844,7 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
             channel->out[1] = &channel->slots[1]->out;
             channel->out[2] = &channel->chip->zeromod;
             channel->out[3] = &channel->chip->zeromod;
+            channel->out_cnt = 2;
             break;
         case 0x02:
             channel->pair->slots[0]->mod = &channel->pair->slots[0]->fbmod;
@@ -883,6 +855,7 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
             channel->out[1] = &channel->slots[1]->out;
             channel->out[2] = &channel->chip->zeromod;
             channel->out[3] = &channel->chip->zeromod;
+            channel->out_cnt = 2;
             break;
         case 0x03:
             channel->pair->slots[0]->mod = &channel->pair->slots[0]->fbmod;
@@ -893,6 +866,7 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
             channel->out[1] = &channel->slots[0]->out;
             channel->out[2] = &channel->slots[1]->out;
             channel->out[3] = &channel->chip->zeromod;
+            channel->out_cnt = 3;
             break;
         }
     }
@@ -907,6 +881,7 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
             channel->out[1] = &channel->chip->zeromod;
             channel->out[2] = &channel->chip->zeromod;
             channel->out[3] = &channel->chip->zeromod;
+            channel->out_cnt = 1;
             break;
         case 0x01:
             channel->slots[0]->mod = &channel->slots[0]->fbmod;
@@ -915,15 +890,59 @@ static void OPL3_ChannelSetupAlg(opl3_channel *channel)
             channel->out[1] = &channel->slots[1]->out;
             channel->out[2] = &channel->chip->zeromod;
             channel->out[3] = &channel->chip->zeromod;
+            channel->out_cnt = 2;
             break;
         }
     }
 }
 
-static void OPL3_ChannelWriteC0(opl3_channel *channel, Bit8u data)
+/* Rebuild out_left/out_right from out[]: entries pointing at a delayed
+ * slot's out (15-35 for the left mix, 33-35 for the right) are redirected to
+ * that slot's prout. zeromod entries, and the transient NULLs while
+ * OPL3_Reset is wiring channels up, pass through unchanged. */
+static void OPL3_ChannelUpdateDelayedOuts(opl3_channel *channel)
 {
-    channel->fb = (data & 0x0e) >> 1;
-    channel->con = data & 0x01;
+    opl3_chip *chip = channel->chip;
+    Bit8u k;
+    for (k = 0; k < 4; k++)
+    {
+        Bit16s *p = channel->out[k];
+        Bit16s *pl = p;
+        Bit16s *pr = p;
+        if (p != NULL && p != &chip->zeromod)
+        {
+            /* p is always &chip->slot[sn].out here; recover containing slot */
+            opl3_slot *sp = (opl3_slot *)((char *)p - offsetof(opl3_slot, out));
+            Bit8u sn = (Bit8u)(sp - &chip->slot[0]);
+            if (sn >= 15)
+            {
+                pl = &chip->slot[sn].prout;
+            }
+            if (sn >= 33)
+            {
+                pr = &chip->slot[sn].prout;
+            }
+        }
+        channel->out_left[k] = pl;
+        channel->out_right[k] = pr;
+    }
+}
+
+/* Every out[] mutation goes through here (directly, or via
+ * OPL3_ChannelUpdateRhythm which rewrites out[] before calling this), so the
+ * mix pointer lists are rebuilt for the channel and its pair. */
+static void OPL3_ChannelSetupAlg(opl3_channel *channel)
+{
+    OPL3_ChannelSetupAlgBody(channel);
+    OPL3_ChannelUpdateDelayedOuts(channel);
+    if (channel->pair)
+    {
+        OPL3_ChannelUpdateDelayedOuts(channel->pair);
+    }
+}
+
+static void OPL3_ChannelUpdateAlg(opl3_channel *channel)
+{
     channel->alg = channel->con;
     if (channel->chip->newm)
     {
@@ -948,16 +967,28 @@ static void OPL3_ChannelWriteC0(opl3_channel *channel, Bit8u data)
     {
         OPL3_ChannelSetupAlg(channel);
     }
+}
+
+static void OPL3_ChannelWriteC0(opl3_channel *channel, Bit8u data)
+{
+    channel->fb = (data & 0x0e) >> 1;
+    channel->con = data & 0x01;
+    OPL3_ChannelUpdateAlg(channel);
     if (channel->chip->newm)
     {
         channel->cha = ((data >> 4) & 0x01) ? ~0 : 0;
         channel->chb = ((data >> 5) & 0x01) ? ~0 : 0;
+        channel->chc = ((data >> 6) & 0x01) ? ~0 : 0;
+        channel->chd = ((data >> 7) & 0x01) ? ~0 : 0;
     }
     else
     {
         channel->cha = channel->chb = (Bit16u)~0;
+        // TODO: Verify on real chip if DAC2 output is disabled in compat mode
+        channel->chc = channel->chd = 0;
     }
 }
+
 
 static void OPL3_ChannelKeyOn(opl3_channel *channel)
 {
@@ -1021,84 +1052,280 @@ static void OPL3_ChannelSet4Op(opl3_chip *chip, Bit8u data)
         if ((data >> bit) & 0x01)
         {
             chip->channel[chnum].chtype = ch_4op;
-            chip->channel[chnum + 3].chtype = ch_4op2;
+            chip->channel[chnum + 3u].chtype = ch_4op2;
+            OPL3_ChannelUpdateAlg(&chip->channel[chnum]);
         }
         else
         {
             chip->channel[chnum].chtype = ch_2op;
-            chip->channel[chnum + 3].chtype = ch_2op;
+            chip->channel[chnum + 3u].chtype = ch_2op;
+            OPL3_ChannelUpdateAlg(&chip->channel[chnum]);
+            OPL3_ChannelUpdateAlg(&chip->channel[chnum + 3u]);
         }
     }
 }
 
-static INLINE Bit16s OPL3_ClipSample(Bit32s sample)
+static Bit16s OPL3_ClipSample(Bit32s sample)
 {
-    return (GCC_LIKELY(sample <= 32767 && sample >= -32768) ? sample : (sample > 0 ? 32767 : -32768));
+    if (sample > 32767)
+    {
+        sample = 32767;
+    }
+    else if (sample < -32768)
+    {
+        sample = -32768;
+    }
+    return (Bit16s)sample;
 }
 
-static INLINE void OPL3_SlotUpdate(opl3_chip *chip, opl3_slot *slot)
+static void OPL3_ProcessSlot(opl3_slot *slot, Bit8u fb)
 {
-    if (slot->active)
+    /* Fast path for fully-attenuated key-off non-rhythm slots. The envelope
+     * rate machine cannot change eg_rout here, but the full path still updates
+     * feedback history, eg_out/eg_gen/pg_reset, phase output, noise, and out. */
+    if (!slot->key && slot->eg_rout == 0x1ff
+        && slot->slot_num != 13 && slot->slot_num != 16 && slot->slot_num != 17)
     {
-        OPL3_SlotCalcFB(slot);
-        OPL3_EnvelopeCalc(slot);
-        OPL3_PhaseGenerate(slot);
-        OPL3_SlotGenerate(slot);
+        opl3_chip *chip = slot->chip;
+        Bit32u phaseinc;
+        Bit16u phase;
+
+        if (fb == 0 && slot->pg_inc == 0 && slot->out == 0
+            && *slot->mod == 0 && slot->eg_tl_ksl == 0 && *slot->trem == 0
+            && slot->pg_phase == 0 && slot->reg_vib == 0 && slot->reg_wf == 0)
+        {
+            slot->fbmod = 0;
+            slot->prout = 0;
+            slot->eg_out = 0x1ff;
+            slot->pg_reset = 0;
+            slot->eg_gen = envelope_gen_num_release;
+            slot->pg_phase_out = 0;
+            return;
+        }
+
+        OPL3_SlotCalcFB(slot, fb);
+
+        slot->eg_out = slot->eg_rout + slot->eg_tl_ksl + *slot->trem;
+        slot->pg_reset = 0;
+        slot->eg_gen = envelope_gen_num_release;
+
+        if (slot->reg_vib)
+        {
+            phaseinc = slot->pg_inc_vib[chip->vibpos];
+        }
+        else
+        {
+            phaseinc = slot->pg_inc;
+        }
+
+        phase = (Bit16u)(slot->pg_phase >> 9);
+        slot->pg_phase += phaseinc;
+        slot->pg_phase_out = phase;
+
+        /* eg_out = eg_rout + eg_tl_ksl + *trem >= 0x1ff here, so the
+         * silent-regime shortcut is always valid. */
+        OPL3_SlotGenerateSilent(slot);
+        return;
     }
-    Bit32u noise = chip->noise;
-    Bit8u n_bit = ((noise >> 14) ^ noise) & 0x01;
-    chip->noise = (noise >> 1) | (n_bit << 22);
+    if (slot->eg_gen == envelope_gen_num_sustain && slot->key
+        && slot->eg_rates[envelope_gen_num_sustain] == 0)
+    {
+        OPL3_SlotCalcFB(slot, fb);
+        slot->eg_out = slot->eg_rout + slot->eg_tl_ksl + *slot->trem;
+        slot->pg_reset = 0;
+        if ((slot->eg_rout & 0x1f8) == 0x1f8)
+        {
+            slot->eg_rout = 0x1ff;
+        }
+
+        if (!slot->reg_vib
+            && slot->slot_num != 13 && slot->slot_num != 16 && slot->slot_num != 17)
+        {
+            Bit16u phase = (Bit16u)(slot->pg_phase >> 9);
+
+            slot->pg_phase += slot->pg_inc;
+            slot->pg_phase_out = phase;
+        }
+        else
+        {
+            OPL3_PhaseGenerate(slot);
+        }
+
+        OPL3_SlotGenerate(slot);
+        return;
+    }
+    OPL3_SlotCalcFB(slot, fb);
+    OPL3_EnvelopeCalc(slot);
+    OPL3_PhaseGenerate(slot);
+    OPL3_SlotGenerate(slot);
+}
+
+/* Inlined pre-check skipping the ProcessSlot call for trivially-silent slots.
+ * The prout == 0 and eg_gen == release conditions are critical because their
+ * silence values are not implied by the other conditions (a key-on pulse with
+ * AR=0 parks eg_gen in attack; prout can hold the last pre-silence output),
+ * so the transition sample runs the trivial path inside ProcessSlot, which
+ * writes both. The remaining fields the trivial path writes (fbmod, eg_out,
+ * pg_reset, pg_phase_out) are recomputed by every ProcessSlot tier. */
+static inline void OPL3_ProcessSlotMaybeInline(opl3_slot *slot, Bit8u fb)
+{
+    if (!slot->key && slot->eg_rout == 0x1ff
+        && slot->eg_gen == envelope_gen_num_release
+        && slot->slot_num != 13 && slot->slot_num != 16 && slot->slot_num != 17
+        && fb == 0 && slot->pg_inc == 0 && slot->out == 0
+        && slot->prout == 0
+        && *slot->mod == 0 && slot->eg_tl_ksl == 0 && *slot->trem == 0
+        && slot->pg_phase == 0 && slot->reg_vib == 0 && slot->reg_wf == 0)
+    {
+        return;
+    }
+    OPL3_ProcessSlot(slot, fb);
+}
+
+/* Process a channel's slot pair (modulator then carrier). */
+static inline void OPL3_ProcessChannelSlots(opl3_channel *channel)
+{
+    Bit8u fb = channel->fb;
+    OPL3_ProcessSlotMaybeInline(channel->slots[0], fb);
+    OPL3_ProcessSlotMaybeInline(channel->slots[1], fb);
+}
+
+/* Right-channel mix over the out_right pointer lists, into mixbuff[1] and
+ * mixbuff[3]. */
+static void OPL3_MixRight(opl3_chip *chip)
+{
+    Bit32s mix0 = 0;
+    Bit32s mix1 = 0;
+    Bit8u ii;
+    for (ii = 0; ii < 18; ii++)
+    {
+        opl3_channel *channel = &chip->channel[ii];
+        Bit16s **out;
+        Bit16s accm;
+        if (!channel->out_cnt)
+        {
+            continue;
+        }
+        out = channel->out_right;
+        accm = *out[0];
+        if (channel->out_cnt > 1)
+        {
+            accm += *out[1];
+            if (channel->out_cnt > 2)
+            {
+                accm += *out[2];
+                if (channel->out_cnt > 3)
+                {
+                    accm += *out[3];
+                }
+            }
+        }
+        mix0 += (Bit16s)(accm & channel->chb);
+        mix1 += (Bit16s)(accm & channel->chd);
+    }
+    chip->mixbuff[1] = mix0;
+    chip->mixbuff[3] = mix1;
 }
 
 static void OPL3_WriteReg(opl3_chip *chip, Bit16u reg, Bit8u v);
 
-static INLINE void OPL3_Generate(opl3_chip *chip, Bit16s *buf)
+static INLINE void OPL3_Generate4Ch(opl3_chip *chip, Bit16s *buf4)
 {
-    opl3_channel *channels = chip->channel, *channels_end = channels + 18, *c;
-    opl3_slot* slot = chip->slot;
+    opl3_channel *channel;
+    opl3_writebuf *writebuf;
+    Bit16s **out;
+    Bit32s mix[2];
+    Bit8u ii;
+    Bit16s accm;
+    Bit8u shift = 0;
+    Bit8u update_tremolo;
 
-    buf[1] = OPL3_ClipSample(chip->mixbuff[1]);
+    buf4[1] = OPL3_ClipSample(chip->mixbuff[1]);
+    buf4[3] = OPL3_ClipSample(chip->mixbuff[3]);
 
-    for (opl3_slot* slot_end = slot + 15; slot != slot_end; slot++)
+    /* Advance the noise LFSR for the whole sample up front (36 steps, one per
+     * slot), capturing the bits the hh (slot 13) and sd (slot 16) operators
+     * read. This way slot processing does not touch the LFSR so it doesn't need
+     * to run in strict slot order.
+     *
+     * The 36 feedback bits are computable word-parallel as:
+     * fb_i = s_i ^ s_{i+14} for i in [0,8],
+     * fb_i = s_i ^ fb_{i-9} for i in [9,22],
+     * fb_i = fb_{i-23} ^ fb_{i-9} for i >= 23,
+     * and the state after 36 steps is fb_13..fb_35. The hh/sd taps only read
+     * bit 0 of the intermediate state, which is s_13 / s_16. */
     {
-        OPL3_SlotUpdate(chip, slot);
+        Bit32u s = chip->noise;
+        Bit32u f0_8   = (s ^ (s >> 14)) & 0x1ffu;          /* fb 0..8   */
+        Bit32u f9_17  = ((s >> 9) ^ f0_8) & 0x1ffu;        /* fb 9..17  */
+        Bit32u f18_22 = ((s >> 18) ^ f9_17) & 0x1fu;       /* fb 18..22 */
+        Bit32u f23_31 = f0_8 ^ ((f9_17 >> 5) | (f18_22 << 4)); /* fb 23..31 */
+        Bit32u f32_35 = (f9_17 ^ f23_31) & 0x0fu;          /* fb 32..35 */
+        chip->noise_hh = (s >> 13) & 1u;
+        chip->noise_sd = (s >> 16) & 1u;
+        chip->noise = ((f9_17 >> 4) & 0x1fu)
+                    | (f18_22 << 5)
+                    | (f23_31 << 10)
+                    | (f32_35 << 19);
     }
 
-    chip->mixbuff[0] = 0;
-    for (c = channels; c != channels_end; c++)
+    /* Process all 36 slots (channel-grouped pairs) before either mix pass.
+     * The mixes read the delayed slots' previous-sample out through prout
+     * via the out_left/out_right pointer lists. */
+    for (ii = 0; ii < 18; ii++)
     {
-        chip->mixbuff[0] += (Bit16s)((*c->out[0] + *c->out[1] + *c->out[2] + *c->out[3]) & c->cha);
+        OPL3_ProcessChannelSlots(&chip->channel[ii]);
     }
 
-    buf[0] = OPL3_ClipSample(chip->mixbuff[0]);
-
-    for (opl3_slot* slot_end = slot + 18; slot != slot_end; slot++)
+    mix[0] = mix[1] = 0;
+    for (ii = 0; ii < 18; ii++)
     {
-        OPL3_SlotUpdate(chip, slot);
+        channel = &chip->channel[ii];
+        if (!channel->out_cnt) continue;
+        if (!(channel->cha | channel->chc)) continue;
+        out = channel->out_left;
+        accm = *out[0];
+        if (channel->out_cnt > 1)
+        {
+            accm += *out[1];
+            if (channel->out_cnt > 2)
+            {
+                accm += *out[2];
+                if (channel->out_cnt > 3) accm += *out[3];
+            }
+        }
+        mix[0] += (Bit16s)(accm & channel->cha);
+        mix[1] += (Bit16s)(accm & channel->chc);
     }
+    chip->mixbuff[0] = mix[0];
+    chip->mixbuff[2] = mix[1];
 
-    chip->mixbuff[1] = 0;
-    for (c = channels; c != channels_end; c++)
-    {
-        chip->mixbuff[1] += (Bit16s)((*c->out[0] + *c->out[1] + *c->out[2] + *c->out[3]) & c->chb);
-    }
+    buf4[0] = OPL3_ClipSample(chip->mixbuff[0]);
+    buf4[2] = OPL3_ClipSample(chip->mixbuff[2]);
 
-    for (opl3_slot* slot_end = slot + 3; slot != slot_end; slot++)
-    {
-        OPL3_SlotUpdate(chip, slot);
-    }
+    /* The right mix (OPL3_MixRight) runs after the housekeeping below */
 
+    update_tremolo = chip->tremolo_dirty;
     if ((chip->timer & 0x3f) == 0x3f)
     {
-        chip->tremolopos = (chip->tremolopos + 1) % 210;
+        chip->tremolopos++;
+        if (chip->tremolopos == 210)
+        {
+            chip->tremolopos = 0;
+        }
+        update_tremolo = 1;
     }
-    if (chip->tremolopos < 105)
+    if (update_tremolo)
     {
-        chip->tremolo = chip->tremolopos >> chip->tremoloshift;
-    }
-    else
-    {
-        chip->tremolo = (210 - chip->tremolopos) >> chip->tremoloshift;
+        if (chip->tremolopos < 105)
+        {
+            chip->tremolo = chip->tremolopos >> chip->tremoloshift;
+        }
+        else
+        {
+            chip->tremolo = (210 - chip->tremolopos) >> chip->tremoloshift;
+        }
+        chip->tremolo_dirty = 0;
     }
 
     if ((chip->timer & 0x3ff) == 0x3ff)
@@ -1108,108 +1335,142 @@ static INLINE void OPL3_Generate(opl3_chip *chip, Bit16s *buf)
 
     chip->timer++;
 
-    chip->eg_add = 0;
-    if (chip->eg_timer)
+    if (chip->eg_state)
     {
-        Bit8u shift = 0;
-        while (shift < 36 && ((chip->eg_timer >> shift) & 1) == 0)
-        {
-            shift++;
-        }
-        if (shift > 12)
+        Bit32u eg_timer_low = (Bit32u)chip->eg_timer & 0x1fffu;
+        if (!eg_timer_low)
         {
             chip->eg_add = 0;
         }
         else
         {
+#if defined(__GNUC__) || defined(__clang__)
+            shift = (Bit8u)__builtin_ctz(eg_timer_low);
+#else
+            while (((eg_timer_low >> shift) & 1) == 0)
+            {
+                shift++;
+            }
+#endif
             chip->eg_add = shift + 1;
         }
+        chip->eg_timer_lo = (Bit8u)(chip->eg_timer & 0x3u);
     }
 
     if (chip->eg_timerrem || chip->eg_state)
     {
-        if (GCC_LIKELY(chip->eg_timer != 0xfffffffff))
-        {
-            chip->eg_timer++;
-            chip->eg_timerrem = 0;
-        }
-        else
+        if (chip->eg_timer == ((Bit64u)0xfffffffff))
         {
             chip->eg_timer = 0;
             chip->eg_timerrem = 1;
+        }
+        else
+        {
+            chip->eg_timer++;
+            chip->eg_timerrem = 0;
         }
     }
 
     chip->eg_state ^= 1;
 
-    while (chip->writebuf[chip->writebuf_cur].time <= chip->writebuf_samplecnt)
+    /* The right mix reads channel state the register writes below may
+     * mutate, so it must complete first. */
+    OPL3_MixRight(chip);
+
+    while ((writebuf = &chip->writebuf[chip->writebuf_cur]), writebuf->time <= chip->writebuf_samplecnt)
     {
-        if (!(chip->writebuf[chip->writebuf_cur].reg & 0x200))
+        if (!(writebuf->reg & 0x200))
         {
             break;
         }
-        chip->writebuf[chip->writebuf_cur].reg &= 0x1ff;
-        OPL3_WriteReg(chip, chip->writebuf[chip->writebuf_cur].reg,
-                      chip->writebuf[chip->writebuf_cur].data);
+        writebuf->reg &= 0x1ff;
+        OPL3_WriteReg(chip, writebuf->reg, writebuf->data);
         chip->writebuf_cur = (chip->writebuf_cur + 1) % OPL_WRITEBUF_SIZE;
     }
     chip->writebuf_samplecnt++;
-
-    #if defined(DBP_NUKED_COMPARE_ORG) && defined(DBP_NUKED_BIT_ACCURATE)
-    for (slot = chip->slot; slot != chip->slot+36; slot++)
-    {
-        DBP_NUKED_COMPARE_ASSERT(!memcmp(&slot->out, &NukedOPLOrg::chip.slot[slot - chip->slot].out, ((char*)&slot->fbmod) - ((char*)&slot->out)));
-        DBP_NUKED_COMPARE_ASSERT(!memcmp(&slot->prout, &NukedOPLOrg::chip.slot[slot - chip->slot].prout, ((char*)&slot->trem) - ((char*)&slot->prout)));
-        DBP_NUKED_COMPARE_ASSERT(!memcmp(&slot->reg_vib, &NukedOPLOrg::chip.slot[slot - chip->slot].reg_vib, ((char*)&slot->slot_num) - ((char*)&slot->reg_vib)));
-    }
-    #endif
 }
+
+static void OPL3_Generate(opl3_chip *chip, Bit16s *buf)
+{
+    Bit16s samples[4];
+    OPL3_Generate4Ch(chip, samples);
+    buf[0] = samples[0];
+    buf[1] = samples[1];
+}
+
+
 
 static void OPL3_Reset(opl3_chip *chip, Bit32u samplerate)
 {
+    opl3_slot *slot;
+    opl3_channel *channel;
     Bit8u slotnum;
     Bit8u channum;
+    Bit8u local_ch_slot;
+
+    if (!logsin_wf[0][0])
+    {
+        for (Bit16u p = 0; p != 1024; p++)
+        {
+            const Bit16u c2 = ((p & 0x100) ? logsinrom[(p & 0xff) ^ 0xff] : logsinrom[p & 0xff]), c6 = ((p & 0x200) ? 0x8000 : 0);
+            const Bit16u c5 = (c6 ? 0x1000 : ((p & 0x80) ? logsinrom[((p ^ 0xff) << 1) & 0xff] : logsinrom[(p << 1) & 0xff]));
+            logsin_wf[0][p] = c6 | c2;
+            logsin_wf[1][p] = (c6 ? 0x1000 : c2);
+            logsin_wf[2][p] = c2;
+            logsin_wf[3][p] = ((p & 0x100) ? 0x1000 : logsinrom[p & 0xff]);
+            logsin_wf[4][p] = (((p & 0x300) == 0x100) ? 0x8000 : 0) | c5;
+            logsin_wf[5][p] = c5;
+            logsin_wf[6][p] = c6;
+            logsin_wf[7][p] = c6 | ((c6 ? ((p & 0x1ff) ^ 0x1ff) : p) << 3);
+        }
+    }
 
     memset(chip, 0, sizeof(opl3_chip));
     for (slotnum = 0; slotnum < 36; slotnum++)
     {
-        chip->slot[slotnum].chip = chip;
-        chip->slot[slotnum].mod = &chip->zeromod;
-        chip->slot[slotnum].eg_rout = 0x1ff;
-        chip->slot[slotnum].eg_out = 0x1ff;
-        chip->slot[slotnum].eg_gen = envelope_gen_num_release;
-        chip->slot[slotnum].trem = (Bit8u*)&chip->zeromod;
-        chip->slot[slotnum].slot_num = slotnum;
-        chip->slot[slotnum].is_hhsdtc = (slotnum == 13 || slotnum == 16 || slotnum == 17);
+        slot = &chip->slot[slotnum];
+        slot->chip = chip;
+        slot->mod = &chip->zeromod;
+        slot->eg_rout = 0x1ff;
+        slot->eg_out = 0x1ff;
+        slot->eg_gen = envelope_gen_num_release;
+        slot->trem = (Bit8u*)&chip->zeromod;
+        slot->eg_rates[0] = slot->eg_rates[1] = slot->eg_rates[2] = slot->eg_rates[3] = 0;
+        slot->slot_num = slotnum;
     }
     for (channum = 0; channum < 18; channum++)
     {
-        chip->channel[channum].slots[0] = &chip->slot[ch_slot[channum]];
-        chip->channel[channum].slots[1] = &chip->slot[ch_slot[channum] + 3];
-        chip->slot[ch_slot[channum]].channel = &chip->channel[channum];
-        chip->slot[ch_slot[channum] + 3].channel = &chip->channel[channum];
+        channel = &chip->channel[channum];
+        local_ch_slot = ch_slot[channum];
+        channel->slots[0] = &chip->slot[local_ch_slot];
+        channel->slots[1] = &chip->slot[local_ch_slot + 3u];
+        chip->slot[local_ch_slot].channel = channel;
+        chip->slot[local_ch_slot + 3u].channel = channel;
         if ((channum % 9) < 3)
         {
-            chip->channel[channum].pair = &chip->channel[channum + 3];
+            channel->pair = &chip->channel[channum + 3u];
         }
         else if ((channum % 9) < 6)
         {
-            chip->channel[channum].pair = &chip->channel[channum - 3];
+            channel->pair = &chip->channel[channum - 3u];
         }
-        chip->channel[channum].chip = chip;
-        chip->channel[channum].out[0] = &chip->zeromod;
-        chip->channel[channum].out[1] = &chip->zeromod;
-        chip->channel[channum].out[2] = &chip->zeromod;
-        chip->channel[channum].out[3] = &chip->zeromod;
-        chip->channel[channum].chtype = ch_2op;
-        chip->channel[channum].cha = 0xffff;
-        chip->channel[channum].chb = 0xffff;
-        chip->channel[channum].ch_num = channum;
-        OPL3_ChannelSetupAlg(&chip->channel[channum]);
+        channel->chip = chip;
+        channel->out[0] = &chip->zeromod;
+        channel->out[1] = &chip->zeromod;
+        channel->out[2] = &chip->zeromod;
+        channel->out[3] = &chip->zeromod;
+        channel->out_cnt = 0;
+        channel->chtype = ch_2op;
+        channel->cha = 0xffff;
+        channel->chb = 0xffff;
+        channel->ch_num = channum;
+        OPL3_ChannelSetupAlg(channel);
     }
     chip->noise = 1;
+    chip->rateratio = (samplerate << RSM_FRAC) / 49716;
     chip->tremoloshift = 4;
     chip->vibshift = 1;
+
 }
 
 static void OPL3_WriteReg(opl3_chip *chip, Bit16u reg, Bit8u v)
@@ -1243,69 +1504,83 @@ static void OPL3_WriteReg(opl3_chip *chip, Bit16u reg, Bit8u v)
         break;
     case 0x20:
     case 0x30:
-        if (ad_slot[regm & 0x1f] >= 0)
+        if (ad_slot[regm & 0x1fu] >= 0)
         {
-            OPL3_SlotWrite20(&chip->slot[18 * high + ad_slot[regm & 0x1f]], v);
+            OPL3_SlotWrite20(&chip->slot[18u * high + ad_slot[regm & 0x1fu]], v);
         }
         break;
     case 0x40:
     case 0x50:
-        if (ad_slot[regm & 0x1f] >= 0)
+        if (ad_slot[regm & 0x1fu] >= 0)
         {
-            OPL3_SlotWrite40(&chip->slot[18 * high + ad_slot[regm & 0x1f]], v);
+            OPL3_SlotWrite40(&chip->slot[18u * high + ad_slot[regm & 0x1fu]], v);
         }
         break;
     case 0x60:
     case 0x70:
-        if (ad_slot[regm & 0x1f] >= 0)
+        if (ad_slot[regm & 0x1fu] >= 0)
         {
-            OPL3_SlotWrite60(&chip->slot[18 * high + ad_slot[regm & 0x1f]], v);
+            OPL3_SlotWrite60(&chip->slot[18u * high + ad_slot[regm & 0x1fu]], v);
         }
         break;
     case 0x80:
     case 0x90:
-        if (ad_slot[regm & 0x1f] >= 0)
+        if (ad_slot[regm & 0x1fu] >= 0)
         {
-            OPL3_SlotWrite80(&chip->slot[18 * high + ad_slot[regm & 0x1f]], v);
+            OPL3_SlotWrite80(&chip->slot[18u * high + ad_slot[regm & 0x1fu]], v);
         }
         break;
     case 0xe0:
     case 0xf0:
-        if (ad_slot[regm & 0x1f] >= 0)
+        if (ad_slot[regm & 0x1fu] >= 0)
         {
-            OPL3_SlotWriteE0(&chip->slot[18 * high + ad_slot[regm & 0x1f]], v);
+            OPL3_SlotWriteE0(&chip->slot[18u * high + ad_slot[regm & 0x1fu]], v);
         }
         break;
     case 0xa0:
         if ((regm & 0x0f) < 9)
         {
-            OPL3_ChannelWriteA0(&chip->channel[9 * high + (regm & 0x0f)], v);
+            OPL3_ChannelWriteA0(&chip->channel[9u * high + (regm & 0x0fu)], v);
         }
         break;
     case 0xb0:
         if (regm == 0xbd && !high)
         {
-            chip->tremoloshift = (((v >> 7) ^ 1) << 1) + 2;
-            chip->vibshift = ((v >> 6) & 0x01) ^ 1;
+            Bit8u tremoloshift = (((v >> 7) ^ 1) << 1) + 2;
+            Bit8u vibshift = ((v >> 6) & 0x01) ^ 1;
+            if (chip->tremoloshift != tremoloshift)
+            {
+                chip->tremolo_dirty = 1;
+            }
+            chip->tremoloshift = tremoloshift;
+            if (chip->vibshift != vibshift)
+            {
+                Bit8u ii;
+                chip->vibshift = vibshift;
+                for (ii = 0; ii < 36; ii++)
+                {
+                    OPL3_PhaseUpdateInc(&chip->slot[ii]);
+                }
+            }
             OPL3_ChannelUpdateRhythm(chip, v);
         }
         else if ((regm & 0x0f) < 9)
         {
-            OPL3_ChannelWriteB0(&chip->channel[9 * high + (regm & 0x0f)], v);
+            OPL3_ChannelWriteB0(&chip->channel[9u * high + (regm & 0x0fu)], v);
             if (v & 0x20)
             {
-                OPL3_ChannelKeyOn(&chip->channel[9 * high + (regm & 0x0f)]);
+                OPL3_ChannelKeyOn(&chip->channel[9u * high + (regm & 0x0fu)]);
             }
             else
             {
-                OPL3_ChannelKeyOff(&chip->channel[9 * high + (regm & 0x0f)]);
+                OPL3_ChannelKeyOff(&chip->channel[9u * high + (regm & 0x0fu)]);
             }
         }
         break;
     case 0xc0:
         if ((regm & 0x0f) < 9)
         {
-            OPL3_ChannelWriteC0(&chip->channel[9 * high + (regm & 0x0f)], v);
+            OPL3_ChannelWriteC0(&chip->channel[9u * high + (regm & 0x0fu)], v);
         }
         break;
     }
@@ -1314,18 +1589,22 @@ static void OPL3_WriteReg(opl3_chip *chip, Bit16u reg, Bit8u v)
 static void OPL3_WriteRegBuffered(opl3_chip *chip, Bit16u reg, Bit8u v)
 {
     Bit64u time1, time2;
+    opl3_writebuf *writebuf;
+    Bit32u writebuf_last;
 
-    if (chip->writebuf[chip->writebuf_last].reg & 0x200)
+    writebuf_last = chip->writebuf_last;
+    writebuf = &chip->writebuf[writebuf_last];
+
+    if (writebuf->reg & 0x200)
     {
-        OPL3_WriteReg(chip, chip->writebuf[chip->writebuf_last].reg & 0x1ff,
-                      chip->writebuf[chip->writebuf_last].data);
+        OPL3_WriteReg(chip, writebuf->reg & 0x1ff, writebuf->data);
 
-        chip->writebuf_cur = (chip->writebuf_last + 1) % OPL_WRITEBUF_SIZE;
-        chip->writebuf_samplecnt = chip->writebuf[chip->writebuf_last].time;
+        chip->writebuf_cur = (writebuf_last + 1) % OPL_WRITEBUF_SIZE;
+        chip->writebuf_samplecnt = writebuf->time;
     }
 
-    chip->writebuf[chip->writebuf_last].reg = reg | 0x200;
-    chip->writebuf[chip->writebuf_last].data = v;
+    writebuf->reg = reg | 0x200;
+    writebuf->data = v;
     time1 = chip->writebuf_lasttime + OPL_WRITEBUF_DELAY;
     time2 = chip->writebuf_samplecnt;
 
@@ -1334,21 +1613,15 @@ static void OPL3_WriteRegBuffered(opl3_chip *chip, Bit16u reg, Bit8u v)
         time1 = time2;
     }
 
-    chip->writebuf[chip->writebuf_last].time = time1;
+    writebuf->time = time1;
     chip->writebuf_lasttime = time1;
-    chip->writebuf_last = (chip->writebuf_last + 1) % OPL_WRITEBUF_SIZE;
+    chip->writebuf_last = (writebuf_last + 1) % OPL_WRITEBUF_SIZE;
 }
 
-#ifdef DBP_NUKED_PERF_TEST
-#ifdef _MSC_VER
-#include <intrin.h>
-#elif defined(__SSE2__) || defined(_M_AMD64) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP == 2)
-static Bit64s __rdtsc() { unsigned long lo, hi; asm( "rdtsc" : "=a" (lo), "=d" (hi) );  return( lo | (hi << 32) ); }
-#else
-#include <sys/time.h>
-static Bit64s __rdtsc() { struct timeval tv; gettimeofday(&tv, NULL); return ((Bit64u)tv.tv_sec * 1000000 + tv.tv_usec)<<8; }
-#endif
-#endif
+
+//
+// DOSBox-Pure NukedOPL::Handler integration
+//
 
 void NukedOPL::Handler::Generate(MixerChannel* chan, Bitu samples)
 {
@@ -1356,84 +1629,11 @@ void NukedOPL::Handler::Generate(MixerChannel* chan, Bitu samples)
     for (Bitu block; samples; samples -= block)
     {
         block = (samples > 1024 ? 1024 : samples);
-
-        #ifdef DBP_NUKED_COMPARE_ORG
-        Bit16s orgbuf[1024 * 2];
-        Bit16s *orgout = orgbuf;
-        #endif
-
-        #ifdef DBP_NUKED_PERF_TEST
-        static Bit64s sum_ticks, sum_samples, avg_ticks, min_ticks, max_ticks, sum_count;
-        Bit64s from = __rdtsc();
-        #endif
-
         for (Bit16s *out = buf, *out_end = buf + block * 2; out != out_end; out += 2)
         {
-            #ifdef DBP_NUKED_COMPARE_ORG
-            NukedOPLOrg::OPL3_Generate(&NukedOPLOrg::chip, orgout);
-            #endif
-
             OPL3_Generate(&chip, out);
-
-            #ifdef DBP_NUKED_COMPARE_ORG
-            #ifdef DBP_NUKED_BIT_ACCURATE
-            DBP_NUKED_COMPARE_ASSERT(out[0] == orgout[0] && out[1] == orgout[1]);
-            #else
-            DBP_NUKED_COMPARE_ASSERT(abs(out[0] - orgout[0]) <= 5 && abs(out[1] - orgout[1]) <= 5);
-            #endif
-            orgout += 2;
-            #endif
         }
-
-        #ifdef DBP_NUKED_PERF_TEST
-        Bit64s to = __rdtsc();
-        sum_ticks += ((to - from) >> 16);
-        sum_samples += block;
-        if (sum_samples > 200000)
-        {
-            int num_active = 0;
-            for (opl3_slot& s : chip.slot) if (s.active) num_active++;
-            if (++sum_count > 3)
-            {
-                avg_ticks += sum_ticks;
-                if (sum_ticks > max_ticks) max_ticks = sum_ticks;
-                if (sum_ticks < min_ticks || !min_ticks) min_ticks = sum_ticks;
-            }
-            printf("[OPL] %u in %u - avg: %u - min: %u - max: %u - active: %d\n", (unsigned)sum_samples,
-                (unsigned)sum_ticks, (unsigned)(avg_ticks / (sum_count < 3 ? 1 : sum_count - 2)), (unsigned)min_ticks, (unsigned)max_ticks, num_active);
-            if (sum_count > 10)
-            {
-                #ifdef DBP_NUKED_COUNT_LIKELY
-                OPL3_LIKELY_DUMP();
-                exit(0);
-                #endif
-            }
-            sum_samples = sum_ticks = 0;
-        }
-        #endif
-
         chan->AddSamples_s16(block, buf);
-
-        #ifndef DBP_NUKED_BIT_ACCURATE
-        active_check += (Bit16u)block;
-        Bit16u reduce_active = (active_check / 128);
-        if (reduce_active)
-        {
-            active_check %= 128;
-            for (opl3_slot& slot : chip.slot)
-            {
-                if (!slot.active) continue;
-                if (slot.eg_gen == envelope_gen_num_release && slot.eg_rout == 0x1ff && slot.eg_out > 510 && slot.out == slot.prout && slot.out >= -1 && slot.out <= 1)
-                {
-                    slot.active = (reduce_active > slot.active ? 0 : (slot.active - reduce_active));
-                }
-                else
-                {
-                    slot.active = 255;
-                }
-            }
-        }
-        #endif
     }
 }
 
@@ -1441,13 +1641,7 @@ void NukedOPL::Handler::WriteReg(Bit32u reg, Bit8u val)
 {
     OPL3_WriteRegBuffered(&chip, (Bit16u)reg, val);
     if (reg == 0x105)
-        newm = reg & 0x01;
-
-    #ifdef DBP_NUKED_COMPARE_ORG
-    NukedOPLOrg::OPL3_WriteRegBuffered(&NukedOPLOrg::chip, (Bit16u)reg, val);
-    if (reg == 0x105)
-        NukedOPLOrg::newm = reg & 0x01;
-    #endif
+        newm = val & 0x01;
 }
 
 Bit32u NukedOPL::Handler::WriteAddr(Bit32u port, Bit8u val)
@@ -1463,11 +1657,5 @@ void NukedOPL::Handler::Init(Bitu rate)
 {
     DBP_ASSERT(rate == 49716); // let DOSBox handle interpolation
     newm = 0;
-    active_check = 0;
     OPL3_Reset(&chip, (Bit32u)rate);
-
-    #ifdef DBP_NUKED_COMPARE_ORG
-    NukedOPLOrg::newm = 0;
-    NukedOPLOrg::OPL3_Reset(&NukedOPLOrg::chip, (Bit32u)rate);
-    #endif
 }
