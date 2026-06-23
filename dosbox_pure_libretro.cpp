@@ -3824,13 +3824,17 @@ bool retro_unserialize(const void *data, size_t size)
 	return true;
 }
 
+void retro_deinit(void)
+{
+	for (DBP_Buffer& buf : dbp_buffers) { if (buf.video) { free(buf.video); buf.video = NULL; } }
+}
+
 // Unused features
 void *retro_get_memory_data(unsigned id) { (void)id; return NULL; }
 size_t retro_get_memory_size(unsigned id) { (void)id; return 0; }
 void retro_cheat_reset(void) { }
 void retro_cheat_set(unsigned index, bool enabled, const char *code) { (void)index; (void)enabled; (void)code; }
 bool retro_load_game_special(unsigned type, const struct retro_game_info *info, size_t num) { return false; }
-void retro_deinit(void) { }
 
 // UTF8 fopen
 #include <sys/stat.h>
