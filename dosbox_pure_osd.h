@@ -1358,6 +1358,7 @@ struct DBP_PureMenuState final : DBP_MenuState
 			if (DBP_Run::autoboot.startup.mode == DBP_Run::RUN_VARIANT) DBP_Run::autoboot.use = false; // DBP_Run::WriteAutoBoot force enables auto boot for RUN_VARIANT
 		}
 		else if (patchDrive::variants.Len()) RefreshList(IT_VARIANTLIST);
+		open_ticks = DBP_GetTicks(); // avoid very slow RefreshList causing this to be too long ago already
 	}
 
 	~DBP_PureMenuState()
