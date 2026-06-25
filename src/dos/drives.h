@@ -725,6 +725,17 @@ struct rawFile : public DOS_File
 	static rawFile* TryOpen(const char* path) { FILE* f = fopen_wrap(path, "rb"); return (f ? new rawFile(f, false) : NULL); }
 };
 
+struct invalidFileHandle : public DOS_File
+{
+	invalidFileHandle(DOS_File& base) : DOS_File(base) { }
+	invalidFileHandle(bool _open, const char* _name) { open = _open; SetName(_name); }
+	virtual bool Read(Bit8u* data, Bit16u* size) { return (dos.errorcode = (Drives[GetDrive()] ? DOSERR_FILE_NOT_FOUND : DOSERR_DRIVE_NOT_READY), false); }
+	virtual bool Write(Bit8u* data, Bit16u* size) { return (dos.errorcode = (Drives[GetDrive()] ? DOSERR_FILE_NOT_FOUND : DOSERR_DRIVE_NOT_READY), false); }
+	virtual bool Seek(Bit32u* pos, Bit32u type) { return (dos.errorcode = (Drives[GetDrive()] ? DOSERR_FILE_NOT_FOUND : DOSERR_DRIVE_NOT_READY), false); }
+	virtual bool Close() { if (refCtr == 1) open = false; return true; }
+	virtual Bit16u GetInformation(void) { return (OPEN_IS_WRITING(flags) ? 0x40 : 0); }
+};
+
 class memoryDrive : public DOS_Drive {
 public:
 	memoryDrive();

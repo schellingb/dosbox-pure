@@ -126,10 +126,11 @@ void DOS_Drive::ForceCloseAll() {
 		if (Drives[i] != this) continue;
 		for (Bit8u j = 0; j < DOS_FILES; j++) {
 			if (Files[j] && Files[j]->GetDrive() == i) {
-				DBP_ASSERT((Files[j]->refCtr > 0) == Files[j]->open); // closed files can hang around while the DOS program still holds the handle
-				while (Files[j]->refCtr > 0) { if (Files[j]->IsOpen()) Files[j]->Close(); Files[j]->RemoveRef(); }
-				delete Files[j];
-				Files[j] = NULL;
+				DOS_File* oldfile = Files[j];
+				Files[j] = new invalidFileHandle(*oldfile); // keep everything (name, flags, ref count) so Int 21 access continues to work as expected
+				DBP_ASSERT((oldfile->refCtr > 0) == oldfile->open); // closed files can hang around while the DOS program still holds the handle
+				while (oldfile->refCtr > 0) { if (oldfile->IsOpen()) oldfile->Close(); oldfile->RemoveRef(); }
+				delete oldfile;
 			}
 		}
 		for (;;) { // unmount any drives that shadow this drive

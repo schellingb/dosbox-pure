@@ -1436,18 +1436,10 @@ void DBPSerialize_Files(DBPArchive& ar)
 			}
 			else
 			{
-				if (!refCtr)
-				{
-					// real file was closed but the DOS program still holds a handle to it (create valid closed dummy file instance)
-					Files[i] = new rawFile(NULL, false);
-					Files[i]->AddRef();
-					Files[i]->SetName(&buf[0]);
-				}
-				else if (!Drives[drive] || (
-					!Drives[drive]->FileOpen(&Files[i], &buf[0], flags) &&
-						(!OPEN_IS_WRITING(flags) || !Drives[drive]->FileCreate(&Files[i], &buf[0], attr))))
-					{ ar.warnings |= DBPArchive::WARN_WRONGDRIVES; continue; }
-				DBP_ASSERT(Files[i]);
+				if (!refCtr) // file was closed but the DOS program still holds a handle to it
+					Files[i] = new invalidFileHandle(false, &buf[0]);
+				else if (!Drives[drive] || (!Drives[drive]->FileOpen(&Files[i], &buf[0], flags) && (!OPEN_IS_WRITING(flags) || !Drives[drive]->FileCreate(&Files[i], &buf[0], attr))))
+					{ Files[i] = new invalidFileHandle(true, &buf[0]); ar.warnings |= DBPArchive::WARN_WRONGDRIVES; }
 				Files[i]->SetDrive(drive);
 			}
 			if (!refCtr && Files[i]->open) Files[i]->Close();

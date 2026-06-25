@@ -248,7 +248,8 @@ static INLINE Bit16u DOS_PackDate(Bit16u year,Bit16u mon,Bit16u day) {
 #define DOSERR_NOT_SAME_DEVICE 17
 #define DOSERR_NO_MORE_FILES 18
 #define DOSERR_FILE_ALREADY_EXISTS 80
-
+//DBP: Added for invalidFileHandle
+#define DOSERR_DRIVE_NOT_READY 21
 
 /* Remains some classes used to access certain things */
 #define sOffset(s,m) ((char*)&(((s*)NULL)->m)-(char*)NULL)
