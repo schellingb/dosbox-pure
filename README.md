@@ -300,5 +300,12 @@ The makefile explicitly is set to use g++-9 because there are codegen bugs in GC
 any version of DOSBox on certain platforms.  
 You can edit the simple Makefile to set a different compiler or add hardware specific compiler flags.
 
+## Strict No LLM / No AI Policy
+No LLMs for issues. No LLMs for source contributions/patches/pull requests.
+
+AI must not be used to generate code for contributions to this project.
+
+Any pull request to this project will ask you to confirm that you are the author and that you are contributing your changes under the license of the project.
+
 ## License
 DOSBox Pure, as well as original DOSBox, is available under the [GNU General Public License, version 2 or later](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
