@@ -318,8 +318,17 @@ CDROM_Interface_Image::CDROM_Interface_Image(Bit8u subUnit)
 
 CDROM_Interface_Image::~CDROM_Interface_Image()
 {
+#ifndef C_DBP_USE_SDL
+	extern void DBP_MIXER_MutexLock(bool flag);
+	DBP_MIXER_MutexLock(true);
+#endif
 	refCount--;
-	if (player.cd == this) player.cd = NULL;
+	if (player.cd == this)
+	{
+		//DBP: Stop audio so thread doesn't try to play
+		StopAudio();
+		player.cd = NULL;
+	}
 	ClearTracks();
 	if (refCount == 0) {
 #ifdef C_DBP_USE_SDL
@@ -327,6 +336,9 @@ CDROM_Interface_Image::~CDROM_Interface_Image()
 #endif
 		player.channel->Enable(false);
 	}
+#ifndef C_DBP_USE_SDL
+	DBP_MIXER_MutexLock(false);
+#endif
 }
 
 void CDROM_Interface_Image::InitNewMedia()

@@ -896,6 +896,11 @@ void DBP_MIXER_ApplyVolumes()
 	for (MixerChannel* chan = mixer.channels; chan; chan = chan->next) chan->UpdateVolume();
 }
 
+void DBP_MIXER_MutexLock(bool flag)
+{
+	if (flag) { SDL_LockAudio(); } else { SDL_UnlockAudio(); }
+}
+
 #include <dbp_serialize.h>
 
 DBPArchiveOptional::DBPArchiveOptional(DBPArchive& ar_outer, MixerChannel* chan) : DBPArchiveOptional(ar_outer, chan, (chan && chan->ever_enabled))
