@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2011  The DOSBox Team
- *  Copyright (C) 2022-2025  Bernhard Schelling
+ *  Copyright (C) 2022-2026  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -4017,7 +4017,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 
 	//GFX_ShowMsg("[VOGL] mainthread W:%d H:%d - commands: %d - draw polys: %d", v->fbi.width, v->fbi.height, vogl->cmdbuf.flushed_commands, vogl->cmdbuf.flushed_vertices/3);
 
-	// Peform readback prepared the previous frame
+	// Perform readback prepared the previous frame
 	ogl_readbackdata& readback = vogl->readback;
 	if (ogl_pixels* lastreadpixels = readback.GetReadyPixels(vogl->drawbuffers))
 	{
@@ -4169,7 +4169,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 		}
 		else
 		{
-			UINT32 idx = cmd.vertex_index, idxNext = (cmdIdx != cmdLast ? vogl->cmdbuf.commands.data[cmdIdx+1].vertex_index : flush_vertices);
+			const UINT32 idx = cmd.vertex_index, idxNext = (cmdIdx != cmdLast ? vogl->cmdbuf.commands.data[cmdIdx+1].vertex_index : flush_vertices);
 			DBP_ASSERT(idx < idxNext);
 
 			const UINT32 FBZMODE = cmd.geometry.eff.fbz_mode;
@@ -4267,7 +4267,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			else if (FBZMODE_ENABLE_ALPHA_PLANES(FBZMODE) == 0)
 			{
 				if (FBZMODE_ENABLE_DEPTHBUF(FBZMODE)) { use_depth_test = 1; depth_func = FBZMODE_DEPTH_FUNCTION(FBZMODE); }
-				else if (FBZMODE_AUX_BUFFER_MASK(FBZMODE) > 0) { use_depth_test = 1; depth_func = MYGL_ALWAYS - MYGL_NEVER; }
+				else if (FBZMODE_AUX_BUFFER_MASK(FBZMODE) == 1) { use_depth_test = 1; depth_func = MYGL_ALWAYS - MYGL_NEVER; }
 				else { use_depth_test = 0; depth_func = 0; }
 			}
 			else { use_depth_test = 1; depth_func = MYGL_ALWAYS - MYGL_NEVER; }
@@ -4496,13 +4496,13 @@ static void voodoo_ogl_fastfill()
 	vogl->cmdbuf.AddCommand(cmd);
 }
 
-static INLINE void voodoo_ogl_draw_pixel_raw(UINT8 drawbuffer, int x, int y, bool set_rgb, bool set_alpha, bool set_depth, float r, float g, float b, float a)
+static INLINE void voodoo_ogl_draw_pixel_raw(UINT8 drawbuffer, int x, int y, bool set_rgb, bool set_alpha, bool set_depth, float r, float g, float b, float a, float d)
 {
 	ogl_command cmd;
 	cmd.geometry.eff.fbz_mode = 0;
 	if (set_rgb)   cmd.geometry.eff.fbz_mode |= FBZMODE_RGB_BUFFER_MASK_BIT;
-	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
-	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
+	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
+	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
 	DBP_ASSERT((set_rgb || set_alpha || set_depth) && ((int)set_alpha + (int)set_depth) < 2); // both together aren't supported
 
 	const ogl_geometrycmd& last_geometry = vogl->cmdbuf.last_geometry;
@@ -4528,7 +4528,7 @@ static INLINE void voodoo_ogl_draw_pixel_raw(UINT8 drawbuffer, int x, int y, boo
 	ogl_vertex& vd = *vogl->cmdbuf.vertices.Add(1);
 	vd.x = (float)x + 0.5f;
 	vd.y = (float)y - 0.5f;
-	vd.d = 0;
+	vd.d = d;
 	vd.r = r;
 	vd.g = g;
 	vd.b = b;
@@ -4544,8 +4544,8 @@ static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y,
 	cmd.geometry.drawbuffer = drawbuffer;
 	cmd.geometry.eff.fbz_mode = 0;
 	if (set_rgb)   cmd.geometry.eff.fbz_mode |= FBZMODE_RGB_BUFFER_MASK_BIT;
-	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
-	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
+	if (set_alpha) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT | FBZMODE_ENABLE_ALPHA_PLANES_BIT;
+	if (set_depth) cmd.geometry.eff.fbz_mode |= FBZMODE_AUX_BUFFER_MASK_BIT;
 	DBP_ASSERT((set_rgb || set_alpha || set_depth) && ((int)set_alpha + (int)set_depth) < 2); // both together aren't supported
 	cmd.geometry.eff.color_path = 0;
 	cmd.geometry.eff.alpha_mode = (reg[alphaMode].u & VOODOO_OGL_ALPHAMODE_USEDBITS);
@@ -4868,7 +4868,6 @@ static void voodoo_ogl_draw_triangle()
 			d += (INT16)reg[zaColor].u;
 			CLAMP(d, 0, 0xffff);
 		}
-
 
 		vd.d = (float)d / (float)0xffff;
 		//vd.w = (float)iterw / (float)0xffffff;
@@ -6650,7 +6649,7 @@ static void register_w(UINT32 offset, UINT32 data) {
 
 	INT64 data64;
 
-	//LOG(LOG_VOODOO,LOG_WARN)("V3D:WR chip %x reg %x value %08x(%s)", chips, regnum<<2, data, voodoo_reg_name[regnum]);
+	//LOG(LOG_VOODOO,LOG_WARN)("voodoo:WR chip %x reg %x value %08x(%s)", chips, regnum<<2, data, voodoo_reg_name[regnum]);
 
 	if (chips == 0)
 		chips = 0xf;
@@ -7516,7 +7515,7 @@ static void lfb_w(UINT32 offset, UINT32 data, UINT32 mem_mask) {
 					bool has_depth = ((mask & (LFB_DEPTH_PRESENT | LFB_DEPTH_PRESENT_MSW)) && !FBZMODE_ENABLE_ALPHA_PLANES(v->reg[fbzMode].u));
 
 					// no dithering (if enabling dithering: output is 565 not 888 anymore)
-					voodoo_ogl_draw_pixel_raw(drawbuffer, x, scry+1, has_rgb, has_alpha, has_depth, sr[pix] / (float)0xff, sg[pix] / (float)0xff, sb[pix] / (float)0xff, sa[pix] / (float)0xff);
+					voodoo_ogl_draw_pixel_raw(drawbuffer, x, scry+1, has_rgb, has_alpha, has_depth, sr[pix] / (float)0xff, sg[pix] / (float)0xff, sb[pix] / (float)0xff, sa[pix] / (float)0xff, sw[pix] / (float)0xffff);
 
 					/* track pixel writes to the frame buffer regardless of mask */
 					v->reg[fbiPixelsOut].u++;
@@ -8022,7 +8021,7 @@ static UINT32 register_r(UINT32 offset)
 {
 	UINT32 regnum  = (offset) & 0xff;
 
-	//LOG(LOG_VOODOO,LOG_WARN)("Voodoo:read chip %x reg %x (%s)", chips, regnum<<2, voodoo_reg_name[regnum]);
+	//LOG(LOG_VOODOO,LOG_WARN)("Voodoo:read chip %x reg %x (%s)", ((offset>>8) & 0xf), regnum<<2, voodoo_reg_name[regnum]);
 
 	/* first make sure this register is readable */
 	if (!(v->regaccess[regnum] & REGISTER_READ))
