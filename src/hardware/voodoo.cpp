@@ -3641,6 +3641,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				|FBZMODE_ENABLE_CHROMAKEY_BIT
 				|FBZMODE_ENABLE_ALPHA_MASK_BIT,
 
+			SHADER_FBZMODE_USE_A_AS_Z = (1 << 29),
+
 			SHADER_ALPHAMODE_USEDBITS = 0
 				|ALPHAMODE_ALPHATEST_BIT
 				|ALPHAMODE_ALPHAFUNCTION_BITS,
@@ -3678,6 +3680,7 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			const bool uset[] = { (eff.tex_mode[0] != VOODOO_OGL_TEXMODE_DISABLED), (eff.tex_mode[1] != VOODOO_OGL_TEXMODE_DISABLED) };
 			const bool usefoglodblend = ((FOGMODE_ENABLE_FOG(FOGMODE) && !FOGMODE_FOG_CONSTANT(FOGMODE)) || (uset[0] && TEXMODE_TC_MSELECT(eff.tex_mode[0]) >= 4) || (uset[1] && TEXMODE_TC_MSELECT(eff.tex_mode[1]) >= 4));
 			const bool usevcolor = (!FBZCP_CC_RGBSELECT(FBZCOLORPATH) || !FBZCP_CC_ASELECT(FBZCOLORPATH) || FBZCP_CC_LOCALSELECT_OVERRIDE(FBZCOLORPATH) || !FBZCP_CC_LOCALSELECT(FBZCOLORPATH) || !(FBZCP_CCA_LOCALSELECT(FBZCOLORPATH) & 1) || (FOGMODE_ENABLE_FOG(FOGMODE) && !FOGMODE_FOG_CONSTANT(FOGMODE) && FOGMODE_FOG_ZALPHA(FOGMODE) == 1));
+			const bool use_a_as_z = ((FBZMODE & SHADER_FBZMODE_USE_A_AS_Z) == SHADER_FBZMODE_USE_A_AS_Z);
 
 			vogl->program_hashes.Put(prog_hash, Local::ProgEqual, vogl->programs.data, eff, vogl->programs.num);
 			ogl_program* prog = &vogl->programs.AddOne();
@@ -3706,14 +3709,10 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			condshdr(v, uset[1], "v_texcoord1 = a_texcoord1;");
 			condshdr(v, usefoglodblend, "v_foglodblend = a_foglodblend;");
 			condshdr(v, !uset[0] && !uset[1], "gl_PointSize = view.w;");
-			addshdr(v, 
-					//"gl_Position = mvp * vec4(a_position, 1.0);" nl
-					"gl_Position = vec4("
-						"a_position.x * view.x - 1.0,"
-						"a_position.y * view.y + view.z,"
-						"a_position.z * 2.0 - 1.0,"
-						"1.0);" nl
-				"}");
+			addshdr(v, "gl_Position = vec4(a_position.x * view.x - 1.0, a_position.y * view.y + view.z, ");
+			condshdr(v, !use_a_as_z, "a_position.z");
+			condshdr(v, use_a_as_z, "a_color.a");
+			addshdr(v, " * 2.0 - 1.0, 1.0);" nl "}");
 
 			//---------------------------------------------------------------------------------------------
 
@@ -4180,19 +4179,50 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 			const UINT8 use_stencil_op = FBZMODE_DEPTH_SOURCE_COMPARE(FBZMODE);
 			if (use_stencil_op)
 			{
-				DBP_ASSERT(!use_stencil_op);
-				static bool loggedmissing; if (!loggedmissing) { loggedmissing = true; GFX_ShowMsg("[VOGL] MISSING STENCIL OP SUPPORT"); }
-				#if 0
-				// TODO
-				// 1. switch to simplest shader program (maybe FBZ/CP/ETC. all 0?)
-				// 2. Disable depth func, depth mask, color mask, alpha mask and belding
-				// 3. myglEnable(MYGL_STENCIL_TEST);
-				// 4. myglClear(MYGL_STENCIL_BUFFER_BIT);
-				// 5. myglStencilFunc(MYGL_ALWAYS, 1, 1);
-				// 6. myglStencilOp(MYGL_KEEP, MYGL_KEEP, MYGL_REPLACE);
-				// 7. myglDrawArrays((cmd.base.type != ogl_cmdbase::TRIANGLE ? MYGL_POINTS : MYGL_TRIANGLES), idx, idxNext - idx);
-				// 8. After rendering normally below, do if (use_stencil_op) myglDisable(MYGL_STENCIL_TEST);
-				#endif
+				// Emulate depth source compare against constant via stencil buffer (constant has been stored into vertex color alpha part)
+				myglClear(MYGL_STENCIL_BUFFER_BIT);
+
+				ogl_effective prog_scl = { Local::SHADER_FBZMODE_USE_A_AS_Z };
+				prog_scl.tex_mode[0] = prog_scl.tex_mode[1] = VOODOO_OGL_TEXMODE_DISABLED;
+				if (!prog || memcmp(&prog->eff, &prog_scl, sizeof(prog_scl)))
+				{
+					UINT32 scl_prog_hash = 2;
+					UINT32* scl_pprogidx = vogl->program_hashes.Get(scl_prog_hash, Local::ProgEqual, vogl->programs.data, prog_scl);
+					prog = (scl_pprogidx ? &vogl->programs.data[*scl_pprogidx] : Local::BuildProgram(prog_scl, scl_prog_hash));
+					myglUseProgram(prog->id); GLERRORASSERT
+				}
+
+				UINT8 yorigin = FBZMODE_Y_ORIGIN(FBZMODE);
+				if (yorigin != last_yorigin)
+				{
+					view[1] = (yorigin ? 2.0f : -2.0f) / (float)fbi_height;
+					view[2] = (yorigin ? -1.0f : 1.0f);
+					last_yorigin = yorigin;
+				}
+				myglUniform4f(prog->u_view, view[0], view[1], view[2], view[3]);
+
+				UINT8 scl_use_depth_test, scl_depth_func;
+				if ((FBZMODE_ENABLE_DEPTHBUF(FBZMODE)) && (FBZMODE_ENABLE_ALPHA_PLANES(FBZMODE) == 0)) { scl_use_depth_test = 1; scl_depth_func = FBZMODE_DEPTH_FUNCTION(FBZMODE); }
+				else { scl_use_depth_test = 0; scl_depth_func = 0; }
+				if (scl_use_depth_test != last_use_depth_test || scl_depth_func != last_depth_func)
+				{
+					(scl_use_depth_test ? myglEnable : myglDisable)(MYGL_DEPTH_TEST);
+					myglDepthFunc(MYGL_NEVER + scl_depth_func);
+					last_use_depth_test = scl_use_depth_test;
+					last_depth_func = scl_depth_func;
+				}
+				if (0 != last_use_blend) { myglDisable(MYGL_BLEND); last_use_blend = 0; }
+				if (0 != last_depth_masked) { myglDepthMask(0); last_depth_masked = 0; }
+				if (0 != last_color_masked || 0 != last_alpha_masked) { myglColorMask(0, 0, 0, 0); last_color_masked = last_alpha_masked = 0; }
+
+				myglEnable(MYGL_STENCIL_TEST);
+				myglStencilFunc(MYGL_ALWAYS, 1, 1);
+				myglStencilOp(MYGL_KEEP, MYGL_KEEP, MYGL_REPLACE);
+
+				if (cmd.base.type != ogl_cmdbase::TRIANGLE && vogl->cmdbuf.live_clipping.active) { myglDisable(MYGL_SCISSOR_TEST); GLERRORASSERT }
+				myglDrawArrays((cmd.base.type != ogl_cmdbase::TRIANGLE ? MYGL_POINTS : MYGL_TRIANGLES), idx, idxNext - idx);
+				if (cmd.base.type != ogl_cmdbase::TRIANGLE && vogl->cmdbuf.live_clipping.active) { myglEnable(MYGL_SCISSOR_TEST); GLERRORASSERT }
+				GLERRORASSERT
 			}
 
 			ogl_effective prog_eff;
@@ -4338,10 +4368,8 @@ bool voodoo_ogl_mainthread() // called while emulation thread is sleeping
 				if (vogl->cmdbuf.live_clipping.active) { myglEnable(MYGL_SCISSOR_TEST); GLERRORASSERT }
 			}
 
-			#if 0
 			if (use_stencil_op)
 				myglDisable(MYGL_STENCIL_TEST);
-			#endif
 		}
 	}
 
@@ -4561,6 +4589,13 @@ static INLINE void voodoo_ogl_draw_pixel_blended(UINT8 drawbuffer, int x, int y,
 
 	if (memcmp(&cmd.geometry, &vogl->cmdbuf.last_geometry, sizeof(cmd.geometry)))
 		vogl->cmdbuf.AddCommand(cmd);
+
+	if (FBZMODE_DEPTH_SOURCE_COMPARE(reg[fbzMode].u))
+	{
+		// To compare depth against the constant value in zaColor, we need to store it somewhere, alpha is hopefully unused for these tricks
+		DBP_ASSERT(!(FBZMODE_AUX_BUFFER_MASK(reg[fbzMode].u) == 1 && FBZMODE_ENABLE_ALPHA_PLANES(reg[fbzMode].u) == 1));
+		a = (reg[zaColor].u & 0xffff) / (float)0xffff;
+	}
 
 	ogl_vertex& vd = *vogl->cmdbuf.vertices.Add(1);
 	vd.x = (float)x + 0.5f;
@@ -4817,6 +4852,13 @@ static void voodoo_ogl_draw_triangle()
 		vd.g = (float)(fbi.startg + ((dy * fbi.dgdy)>>4) + ((dx * fbi.dgdx)>>4)) / (float)(1<<20);
 		vd.b = (float)(fbi.startb + ((dy * fbi.dbdy)>>4) + ((dx * fbi.dbdx)>>4)) / (float)(1<<20);
 		vd.a = (float)(fbi.starta + ((dy * fbi.dady)>>4) + ((dx * fbi.dadx)>>4)) / (float)(1<<20);
+
+		if (FBZMODE_DEPTH_SOURCE_COMPARE(FBZMODE))
+		{
+			// To compare depth against the constant value in zaColor, we need to store it somewhere, alpha is hopefully unused for these tricks
+			DBP_ASSERT(!(FBZMODE_AUX_BUFFER_MASK(FBZMODE) == 1 && FBZMODE_ENABLE_ALPHA_PLANES(FBZMODE) == 1));
+			vd.a = (reg[zaColor].u & 0xffff) / (float)0xffff;
+		}
 
 		const INT32 iterz = fbi.startz + ((dy * fbi.dzdy)>>4) + ((dx * fbi.dzdx)>>4);
 		const INT64 iterw = fbi.startw + ((dy * fbi.dwdy)>>4) + ((dx * fbi.dwdx)>>4);

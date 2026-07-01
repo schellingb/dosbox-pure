@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2024-2025 Bernhard Schelling
+ *  Copyright (C) 2024-2026 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -59,6 +59,7 @@
 #define MYGL_DEPTH_TEST                     0x0B71
 #define MYGL_SCISSOR_TEST                   0x0C11
 #define MYGL_KEEP                           0x1E00
+#define MYGL_REPLACE                        0x1E01
 #define MYGL_PIXEL_PACK_BUFFER              0x88EB
 #define MYGL_READ_FRAMEBUFFER               0x8CA8
 #define MYGL_STREAM_READ                    0x88E1
