@@ -3237,7 +3237,7 @@ struct ogl_readbackdata
 	ogl_pixels depth;
 	ogl_readback_mode ready = OGL_READBACK_MODE_NONE;
 	bool depth_was_prepared = false, read_depth_next = false;
-	void DisablePBO() { GFX_ShowMsg("[VOGL] Disabling unsupoorted PBO Readback"); DBP_ASSERT(0); if (pbo) { myglDeleteBuffers(1, &pbo); pbo = 0; } }
+	void DisablePBO() { GFX_ShowMsg("[VOGL] Disabling unsupported PBO Readback"); DBP_ASSERT(0); if (pbo) { myglDeleteBuffers(1, &pbo); pbo = 0; } }
 	INLINE ogl_pixels* GetReadyPixels(ogl_drawbuffer* dbs) { return (ready == OGL_READBACK_MODE_NONE ? NULL : ready == OGL_READBACK_MODE_DEPTH ? &depth : &dbs[(int)ready-1].color); }
 	INLINE bool SetReady(ogl_drawbuffer* dbs, UINT8 flushed_buffer, unsigned& ready_fbo)
 	{
@@ -4617,14 +4617,22 @@ static INLINE UINT32 voodoo_ogl_read_pixel(int x, int y)
 		case 0: pixels = &vogl->drawbuffers[v->fbi.frontbuf].color; goto case_color_buffer; // front buffer
 		case 1: pixels = &vogl->drawbuffers[v->fbi.backbuf].color; goto case_color_buffer; // back buffer
 		case_color_buffer:
-			if (voodoo_ogl_scale != 1) { x *= voodoo_ogl_scale; y *= voodoo_ogl_scale; } // color buffers are scaled
-			off = (pixels->width * (pixels->height - y) + x);
+			if (voodoo_ogl_scale != 1) // color buffers are scaled
+			{
+				x *= voodoo_ogl_scale;
+				y *= voodoo_ogl_scale;
+				off = (pixels->width * (pixels->height - y - 1) + x);
+				if (off + voodoo_ogl_scale >= pixels->width * pixels->height) goto invalidread;
+				const UINT8 *rgba1 = (const UINT8*)(pixels->data + off), *rgba2 = rgba1 + 4 * voodoo_ogl_scale;
+				return ((rgba1[0]>>3)<<11) | ((rgba1[1]>>2)<<5) | (rgba1[2]>>3) | ((rgba2[0]>>3)<<27) | ((rgba2[1]>>2)<<21) | ((rgba2[2]>>3)<<16);
+			}
+			off = (pixels->width * (pixels->height - y - 1) + x);
 			if (off + 1 >= pixels->width * pixels->height) goto invalidread;
 			rgba = (const UINT8*)(pixels->data + off);
 			return ((rgba[0]>>3)<<11) | ((rgba[1]>>2)<<5) | (rgba[2]>>3) | ((rgba[4]>>3)<<27) | ((rgba[5]>>2)<<21) | ((rgba[6]>>3)<<16);
 		case 2: // aux buffer (size matches fbi, only support depth for now)
 			pixels = &vogl->readback.depth;
-			off = (pixels->width * (pixels->height - y) + x);
+			off = (pixels->width * (pixels->height - y - 1) + x);
 			if (off + 1 >= pixels->width * pixels->height) goto invalidread;
 			rgba = (const UINT8*)(pixels->data + off);
 			return (rgba[0] << 24) | (rgba[1] << 16) | (rgba[4] << 8) | rgba[5];
