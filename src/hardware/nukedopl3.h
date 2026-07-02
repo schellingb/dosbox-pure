@@ -1,5 +1,6 @@
 /* Nuked OPL3
  * Copyright (C) 2013-2020 Nuke.YKT
+ * Copyright (C) 2026 Tony Gies (Nuked-OPL3-fast modifications)
  *
  * This file is part of Nuked OPL3.
  *
@@ -15,7 +16,7 @@
  *
  * You should have received a copy of the GNU Lesser General Public License
  * along with Nuked OPL3. If not, see <https://www.gnu.org/licenses/>.
-
+ *
  *  Nuked OPL3 emulator.
  *  Thanks:
  *      MAME Development Team(Jarek Burczynski, Tatsuyuki Satoh):
@@ -27,7 +28,14 @@
  *      siliconpr0n.org(John McMaster, digshadow):
  *          YMF262 and VRC VII decaps and die shots.
  *
- * version: 1.8DBP
+ * Upstream version: 1.8 (commit cfedb09)
+ * Fork version:    1.8-fast.2
+ * Fork home:       https://github.com/tgies/Nuked-OPL3-fast
+ *
+ * Nuked-OPL3-fast is a bit-exact performance-optimized fork of Nuked-OPL3.
+ * Audio output is identical to upstream for the same register stream.
+ *
+ * Ported into DOSBox-Pure from the standalone Nuked-OPL3-fast library.
  */
 
 #ifndef OPL_OPL3_H
@@ -44,35 +52,44 @@ typedef struct _opl3_chip opl3_chip;
 struct _opl3_slot {
     opl3_channel *channel;
     opl3_chip *chip;
+    Bit16s *mod;
+    Bit8u *trem;
+    Bit32u pg_reset;
+    Bit32u pg_phase;
+    Bit32u pg_inc;
     Bit16s out;
     Bit16s fbmod;
-    Bit16s *mod;
     Bit16s prout;
-    Bit16s eg_rout;
-    Bit16s eg_out;
-    Bit8u eg_inc;
+    Bit16u eg_rout;
+    Bit16u eg_out;
+    /* Cached (reg_tl << 2) + (eg_ksl >> kslshift[reg_ksl]); maintained by
+     * OPL3_EnvelopeUpdateKSL whenever any of those inputs change. Hoists
+     * a load + lookup + shift out of the per-sample envelope hot path. */
+    Bit16u eg_tl_ksl;
+    Bit16u pg_phase_out;
+    Bit8u key;
     Bit8u eg_gen;
-    Bit8u eg_rate;
-    Bit8u eg_ksl;
-    Bit8u *trem;
     Bit8u reg_vib;
+    Bit8u reg_mult;
+    Bit8u reg_wf;
+    Bit8u slot_num;
+    Bit8u eg_ksl;
+    Bit8u eg_ks;
     Bit8u reg_type;
     Bit8u reg_ksr;
-    Bit8u reg_mult;
     Bit8u reg_ksl;
     Bit8u reg_tl;
     Bit8u reg_ar;
     Bit8u reg_dr;
     Bit8u reg_sl;
     Bit8u reg_rr;
-    Bit8u reg_wf;
-    Bit8u key;
-    Bit32u pg_reset;
-    Bit32u pg_phase;
-    Bit16u pg_phase_out;
-    Bit8u slot_num;
-    Bit8u is_hhsdtc;
-    Bit8u active;
+    Bit8u eg_rates[4];
+    Bit8u eg_rate_hi[4];
+    Bit8u eg_rate_lo[4];
+    /* Phase increment per vibrato position, maintained by
+     * OPL3_PhaseUpdateInc (and rebuilt on vibshift changes); pg_inc_vib[pos]
+     * equals the upstream per-sample vibrato f_num adjustment for that pos. */
+    Bit32u pg_inc_vib[8];
 };
 
 struct _opl3_channel {
@@ -80,6 +97,16 @@ struct _opl3_channel {
     opl3_channel *pair;
     opl3_chip *chip;
     Bit16s *out[4];
+    /* Mix-pass pointer lists: identical to out[] except entries pointing at
+     * a delayed slot's out are redirected to its prout, which holds the
+     * previous sample's out once all 36 slots are processed. out_left delays
+     * slots 15-35 and out_right delays 33-35, reproducing the
+     * CHANNELSAMPLEDELAY snapshots without staging slot processing around
+     * the mixes. */
+    Bit16s *out_left[4];
+    Bit16s *out_right[4];
+    Bit8u out_cnt;
+
     Bit8u chtype;
     Bit16u f_num;
     Bit8u block;
@@ -88,6 +115,7 @@ struct _opl3_channel {
     Bit8u alg;
     Bit8u ksv;
     Bit16u cha, chb;
+    Bit16u chc, chd;
     Bit8u ch_num;
 };
 
@@ -105,6 +133,7 @@ struct _opl3_chip {
     Bit8u eg_timerrem;
     Bit8u eg_state;
     Bit8u eg_add;
+    Bit8u eg_timer_lo;
     Bit8u newm;
     Bit8u nts;
     Bit8u rhy;
@@ -113,15 +142,26 @@ struct _opl3_chip {
     Bit8u tremolo;
     Bit8u tremolopos;
     Bit8u tremoloshift;
+    Bit8u tremolo_dirty;
     Bit32u noise;
+    /* Bit 0 of the noise LFSR state as seen by the hh (slot 13) and sd
+     * (slot 16) rhythm operators, precomputed per sample */
+    Bit32u noise_hh;
+    Bit32u noise_sd;
     Bit16s zeromod;
-    Bit32s mixbuff[2];
+    Bit32s mixbuff[4];
     Bit8u rm_hh_bit2;
     Bit8u rm_hh_bit3;
     Bit8u rm_hh_bit7;
     Bit8u rm_hh_bit8;
     Bit8u rm_tc_bit3;
     Bit8u rm_tc_bit5;
+
+    /* OPL3L */
+    Bit32s rateratio;
+    Bit32s samplecnt;
+    Bit16s oldsamples[4];
+    Bit16s samples[4];
 
     Bit64u writebuf_samplecnt;
     Bit32u writebuf_cur;
@@ -138,7 +178,6 @@ namespace NukedOPL
     struct Handler : public Adlib::Handler
     {
         opl3_chip chip;
-        Bit16u active_check;
         Bit8u newm;
         virtual void WriteReg(Bit32u reg, Bit8u val);
         virtual Bit32u WriteAddr(Bit32u port, Bit8u val);
