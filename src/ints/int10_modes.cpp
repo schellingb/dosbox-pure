@@ -1378,6 +1378,11 @@ dac_text16:
 		IO_Write(0x3c4,0x15);
 		IO_Write(0x3c5,0x03);
 
+		//DBP: Added fix to to clear & remove the hardware cursor on S3 reset from DOSBox-X by Jonathan Campbell
+		//     Source: https://github.com/joncampbell123/dosbox-x/commit/eb0dbf8
+		IO_Write(crtc_base,0x45);
+		IO_Write(crtc_base+1,0x00);
+
 		// Accellerator setup 
 		Bitu reg_50=S3_XGA_8BPP;
 		switch (CurMode->type) {
