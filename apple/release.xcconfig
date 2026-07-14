@@ -1,0 +1,15 @@
+#include "base.xcconfig"
+
+GCC_PREPROCESSOR_DEFINITIONS = NDEBUG=1 $(inherited)
+OTHER_CPLUSPLUSFLAGS = $(inherited) -O2
+OTHER_LDFLAGS = $(inherited) -O2
+
+// Auto strip, similar to "strip -xS" (conflicted with archive)
+STRIP_INSTALLED_PRODUCT = NO
+STRIP_STYLE = all
+
+// Needed to include .a lib in the .xcarchive
+BUILD_LIBRARY_FOR_DISTRIBUTION = YES
+SKIP_INSTALL = NO
+INSTALL_PATH = /usr/local/lib
+
