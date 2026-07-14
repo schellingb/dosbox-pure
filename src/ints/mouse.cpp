@@ -1040,7 +1040,17 @@ static Bitu INT33_Handler(void) {
 		{
 			LOG(LOG_MOUSE,LOG_WARN)("Loading driver state...");
 			PhysPt src = SegPhys(es)+reg_dx;
+			// DBP: The saved buffer is a raw copy of the whole mouse struct, which also contains internal IRQ-delivery bookkeeping.
+			//      Those must stay in sync with the live MOUSE_Limit_Events PIC event, which is not part of the saved state.
+			bool cur_timer = mouse.timer_in_progress, cur_in_UIR = mouse.in_UIR;
+			Bit8u cur_events = mouse.events;
+			button_event cur_queue[QUEUE_SIZE];
+			memcpy(cur_queue, mouse.event_queue, sizeof(cur_queue));
 			MEM_BlockRead(src, &mouse, sizeof(mouse));
+			mouse.timer_in_progress = cur_timer;
+			mouse.in_UIR = cur_in_UIR;
+			mouse.events = cur_events;
+			memcpy(mouse.event_queue, cur_queue, sizeof(cur_queue));
 		}
 		break;
 	case 0x1a:	/* Set mouse sensitivity */
