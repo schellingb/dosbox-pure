@@ -3639,7 +3639,7 @@ void retro_run(void)
 	else
 		numSamples = (av_info.timing.sample_rate / dbp_throttle.rate) + dbp_audio_remain;
 	if (fpsboost > 1) numSamples /= (fpsboost*.9); // Without *.9 audio can end up skipping
-	if (numSamples && haveSamples && dbp_audio_remain != -1) // stretch on underrun (allows frontend to catch up with the emulation)
+	if (haveSamples && numSamples >= 1.0 && dbp_audio_remain != -1) // stretch on underrun (allows frontend to catch up with the emulation)
 	{
 		mixSamples = (numSamples > haveSamples ? haveSamples : (Bit32u)numSamples);
 		dbp_audio_remain = ((numSamples <= mixSamples || numSamples > haveSamples) ? 0.0 : (numSamples - mixSamples));

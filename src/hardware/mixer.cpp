@@ -1008,7 +1008,7 @@ float DBPS_AudioMix(short* buffer, Bit32u samples, float speed, int max_wait)
 	}
 
 	Bitu have = mixer.done, use;
-	if (have == 0)
+	if (have == 0 || want == 0)
 	{
 		memset(buffer, 0, samples * 4);
 		return 1.0f;
