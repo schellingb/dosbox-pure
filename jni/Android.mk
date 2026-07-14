@@ -81,6 +81,7 @@ LOCAL_C_INCLUDES   := $(CORE_DIR)/include
 LOCAL_CFLAGS       := $(CFLAGS)
 LOCAL_CPPFLAGS     := $(CFLAGS)
 LOCAL_LDFLAGS      := $(LDFLAGS) #-Wl,-version-script=$(CORE_DIR)/libretro/link.T
+LOCAL_LDFLAGS      += -Wl,-z,max-page-size=16384
 LOCAL_LDLIBS       := -llog
 LOCAL_CPP_FEATURES := rtti
 LOCAL_ARM_MODE     := arm
