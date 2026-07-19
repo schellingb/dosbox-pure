@@ -122,6 +122,8 @@ static const char* DBP_YMLKeyCommands[KBD_LAST+3] =
 static std::vector<DBP_InputBind> dbp_input_binds;
 static Bit8u dbp_port_mode[DBP_MAX_PORTS], dbp_binds_changed, dbp_actionwheel_inputs;
 static Bit16s dbp_mouse_x, dbp_mouse_y;
+int dbp_mouse_max_x_override = 0;
+int dbp_mouse_max_y_override = 0;
 static int dbp_joy_analog_deadzone = (int)(0.15f * (float)DBP_JOY_ANALOG_RANGE);
 #define DBP_GET_JOY_ANALOG_VALUE(V) ((V >= -dbp_joy_analog_deadzone && V <= dbp_joy_analog_deadzone) ? 0.0f : \
 	((float)((V > dbp_joy_analog_deadzone) ? (V - dbp_joy_analog_deadzone) : (V + dbp_joy_analog_deadzone)) / (float)(DBP_JOY_ANALOG_RANGE - dbp_joy_analog_deadzone)))
@@ -2510,6 +2512,32 @@ static bool check_variables()
 
 	dbp_alphablend_base = (Bit8u)((atoi(DBP_Option::Get(DBP_Option::menu_transparency)) + 30) * 0xFF / 130);
 	dbp_joy_analog_deadzone = (int)((float)atoi(DBP_Option::Get(DBP_Option::joystick_analog_deadzone)) * 0.01f * (float)DBP_JOY_ANALOG_RANGE);
+
+    dbp_mouse_max_x_override = 0;
+    dbp_mouse_max_y_override = 0;
+
+    const char* mouse_range_override = DBP_Option::Get(DBP_Option::mouse_range_override);
+
+    if (!strcmp(mouse_range_override, "320x200"))
+    {
+        dbp_mouse_max_x_override = 319;
+        dbp_mouse_max_y_override = 199;
+    }
+    else if (!strcmp(mouse_range_override, "640x200"))
+    {
+        dbp_mouse_max_x_override = 639;
+        dbp_mouse_max_y_override = 199;
+    }
+    else if (!strcmp(mouse_range_override, "640x400"))
+    {
+        dbp_mouse_max_x_override = 639;
+        dbp_mouse_max_y_override = 399;
+    }
+    else if (!strcmp(mouse_range_override, "640x480"))
+    {
+        dbp_mouse_max_x_override = 639;
+        dbp_mouse_max_y_override = 479;
+    }
 
 	return visibility_changed;
 }
