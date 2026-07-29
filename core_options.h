@@ -68,6 +68,7 @@ namespace DBP_Option
 		map_osd,
 		mouse_input,
 		mouse_wheel,
+        mouse_range_override,
 		mouse_speed_factor,
 		mouse_speed_factor_x,
 		actionwheel_inputs,
@@ -390,6 +391,22 @@ static retro_core_option_v2_definition option_defs[DBP_Option::_OPTIONS_TOTAL] =
 		},
 		"67/68"
 	},
+    {
+        "dosbox_pure_mouse_range_override",
+        "Mouse Range Override", NULL,
+        "Forces the DOS mouse coordinate range. Useful for games where direct touch input does not align with the visible cursor.", NULL,
+        // Such as Might and Magic 3/4/5
+		DBP_OptionCat::Input,
+        {
+            { "disabled", "disabled" },
+            { "320x200",  "320x200" },
+            { "640x200",  "640x200" },
+            { "640x400",  "640x400" },
+            { "640x480",  "640x480" },
+            { NULL, NULL },
+        },
+        "disabled"
+    },
 	{
 		"dosbox_pure_mouse_speed_factor",
 		"Mouse Sensitivity", NULL,
