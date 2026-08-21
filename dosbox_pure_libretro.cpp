@@ -3878,6 +3878,15 @@ wchar_t* AllocUTF8ToUTF16(const char *str)
 // wrap the frontend's file handle in a FILE*.
 #if defined(__BIONIC__) || defined(__ANDROID__)
 #define DBP_HAVE_VFS_FILE 1
+// funopen64 only exists from API 24 on, and this core builds against android-16,
+// so below that fall back to funopen and whatever width its offsets have.
+#if defined(__ANDROID_API__) && __ANDROID_API__ >= 24
+typedef fpos64_t DBP_fpos_t;
+#define DBP_FUNOPEN funopen64
+#else
+typedef fpos_t DBP_fpos_t;
+#define DBP_FUNOPEN funopen
+#endif
 static int DBP_VfsRead(void* c, char* buf, int size)
 {
 	int64_t got = dbp_vfs_iface->read((struct retro_vfs_file_handle*)c, buf, (uint64_t)size);
@@ -3888,18 +3897,18 @@ static int DBP_VfsWrite(void* c, const char* buf, int size)
 	int64_t put = dbp_vfs_iface->write((struct retro_vfs_file_handle*)c, buf, (uint64_t)size);
 	return (put < 0 ? -1 : (int)put);
 }
-static fpos64_t DBP_VfsSeek(void* c, fpos64_t off, int whence)
+static DBP_fpos_t DBP_VfsSeek(void* c, DBP_fpos_t off, int whence)
 {
 	int pos = (whence == SEEK_SET ? RETRO_VFS_SEEK_POSITION_START : whence == SEEK_CUR ? RETRO_VFS_SEEK_POSITION_CURRENT : RETRO_VFS_SEEK_POSITION_END);
 	// The VFS seek return value is 0 on success in some frontends and the new offset in others,
 	// so ask tell() for the position instead of trusting it.
-	if (dbp_vfs_iface->seek((struct retro_vfs_file_handle*)c, (int64_t)off, pos) < 0) return (fpos64_t)-1;
-	return (fpos64_t)dbp_vfs_iface->tell((struct retro_vfs_file_handle*)c);
+	if (dbp_vfs_iface->seek((struct retro_vfs_file_handle*)c, (int64_t)off, pos) < 0) return (DBP_fpos_t)-1;
+	return (DBP_fpos_t)dbp_vfs_iface->tell((struct retro_vfs_file_handle*)c);
 }
 static int DBP_VfsClose(void* c) { return dbp_vfs_iface->close((struct retro_vfs_file_handle*)c); }
 static FILE* DBP_VfsWrapFile(struct retro_vfs_file_handle* h)
 {
-	FILE* f = funopen64(h, DBP_VfsRead, DBP_VfsWrite, DBP_VfsSeek, DBP_VfsClose);
+	FILE* f = DBP_FUNOPEN(h, DBP_VfsRead, DBP_VfsWrite, DBP_VfsSeek, DBP_VfsClose);
 	if (!f) dbp_vfs_iface->close(h);
 	return f;
 }
