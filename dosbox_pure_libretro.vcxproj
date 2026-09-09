@@ -337,6 +337,10 @@
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
     </ClCompile>
+    <ClCompile Include="src\hardware\nukedsc55.cpp">
+      <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
+      <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
+    </ClCompile>
     <ClCompile Include="src\hardware\pci_bus.cpp">
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>

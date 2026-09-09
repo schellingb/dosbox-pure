@@ -171,13 +171,14 @@ or connect a multiplayer game with a supported frontend (RetroArch 1.16 and newe
 
 To use the NE2000 card make sure to configure the Windows 95/98 driver to use base address port set to 0x300 and base IRQ set to 10.
 
-### MIDI Playback with SoundFonts or MT-32
-If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
-can be selected via the `Audio > MIDI SoundFont` core option. This sound font will then be used to play General Midi and Sound Canvas music.
+### MIDI Playback with SoundFonts, MT-32 or SC-55
+If DOSBox Pure finds one or more `.SF2` sound font files in the `system` directory of the frontend, one of them
+can be selected via the `Audio > MIDI Output` core option. This sound font will then be used to play General Midi and Sound Canvas music.
 
-If the `system` directory contains a pair of `_control.rom` and `_pcm.rom` files, an MT-32 synthesizer can be emulated with them.
+If the `system` directory contains a pair of `_control.rom` and `_pcm.rom` files, an MT-32 synthesizer can be emulated with them.  
+Similarily, if it contains a set of `rom1.bin`, `rom2.bin`, `waverom1.bin`, etc. files (with or without a prefix), an SC-55 module can be emulated with them.
 
-Alternatively if the content mounted to the C: drive contains a file named DOSBOX.SF2 or MT32_CONTROL.ROM/MT32_PCM.ROM, it will be used as a per-game override to the core option.
+Alternatively if the content mounted to the C: drive contains a file named DOSBOX.SF2, MT32_CONTROL.ROM/MT32_PCM.ROM or ROM1.BIN/etc., it will be used as a per-game override to the core option.
 
 ### Cheat Support
 DOSBox Pure exposes its memory for cheats in the libretro frontend.  

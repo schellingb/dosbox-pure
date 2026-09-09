@@ -115,6 +115,10 @@ MidiHandler Midi_none;
 #include "midi_mt32.h"
 #endif
 
+#ifdef C_DBP_SUPPORT_MIDI_SC55
+#include "midi_sc55.h"
+#endif
+
 #ifdef C_DBP_SUPPORT_MIDI_RETRO
 #include "midi_retro.h"
 #endif
@@ -380,13 +384,15 @@ const char* DBP_MIDI_StartupError(Section* midisec, const char*& arg)
 	if (midi.handler == &Midi_retro && (!Midi_retro.midi_interface.output_enabled || !Midi_retro.midi_interface.output_enabled()))
 		{ arg = NULL; return "The frontend MIDI output is not set up correctly"; }
 	#endif
-	if (midi.handler != &Midi_tsf && midi.handler != &Midi_mt32)
+	if (midi.handler != &Midi_tsf && midi.handler != &Midi_mt32 && midi.handler != &Midi_sc55)
 	{
 		const char* conf = midisec->GetProp("midiconfig")->GetValue();
-		if (conf[0] == '^' && conf[1] == 'S')
+		if (conf[0] == '^' && conf[1] == 'F')
 			{ arg = conf + 2; return "SF2 sound font file '%s' not found - Unable to play music"; }
 		if (conf[0] == '^' && conf[1] == 'M')
 			{ arg = conf + 2; return "MT-32 ROM file '%s' not found - Unable to play music"; }
+		if (conf[0] == '^' && conf[1] == 'S')
+			{ arg = conf + 2; return "SC-55 ROM file '%s' not found - Unable to play music"; }
 	}
 	return NULL;
 }

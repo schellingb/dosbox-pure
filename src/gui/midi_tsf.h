@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2025 Bernhard Schelling
+ *  Copyright (C) 2020-2026 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@ struct MidiHandler_tsf : public MidiHandler
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf[0] == '^' && conf[1] == 'S') // a path to a ZIP on the host file system
+		if (conf[0] == '^' && conf[1] == 'F') // a path to a ZIP on the host file system
 		{
 			FILE* DBP_FileOpenContentOrSystem(const char* fname);
 			FILE* zip_file_h = DBP_FileOpenContentOrSystem(conf + 2);

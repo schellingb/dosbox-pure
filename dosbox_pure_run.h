@@ -415,7 +415,7 @@ struct DBP_Run
 					}
 					else // recursively called from above with 'midiconfig'
 					{
-						((val += '^') += (yml_key[7] == 't' ? 'M' : 'S')).append(Val, (size_t)(ValX - Val));
+						((val += '^') += (yml_key[7] == 't' /*mt32*/ ? 'M' : yml_key[7] == 'c'/*sc55*/ ? 'S' : 'F')).append(Val, (size_t)(ValX - Val));
 					}
 				}
 				else
@@ -533,6 +533,7 @@ struct DBP_Run
 						||Parse("sound_hdma", "sblaster", "hdma", "~")
 						||Parse("sound_midi", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
 						||Parse("sound_mt32", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
+						||Parse("sound_sc55", "midi", "mpu401" , "true","intelligent" , "false","none" , "^")
 						||Parse("sound_gus", "gus", "gus" , "true","true" , "false","false" , "")
 						||Parse("sound_tandy", "speaker", "tandy" , "true","on" , "false","auto" , "")
 					);

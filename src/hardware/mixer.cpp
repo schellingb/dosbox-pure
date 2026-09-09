@@ -165,7 +165,7 @@ void MixerChannel::UpdateVolume(void) {
 	volmul[0]=(Bits)((1 << MIXER_VOLSHIFT)*scale*volmain[0]*mixer.mastervol[0]);
 	volmul[1]=(Bits)((1 << MIXER_VOLSHIFT)*scale*volmain[1]*mixer.mastervol[1]);
 #else
-	DBP_ASSERT(!strcmp(name, "SB") || !strcmp(name, "CMS") || !strcmp(name, "TSF") || !strcmp(name, "MT32") || !strcmp(name, "FM") || !strcmp(name, "SPKR") || !strcmp(name, "CDAUDIO") || !strcmp(name, "TANDY") || !strcmp(name, "TANDYDAC") || !strcmp(name, "GUS") || !strcmp(name, "DISNEY"));
+	DBP_ASSERT(!strcmp(name, "SB") || !strcmp(name, "CMS") || !strcmp(name, "TSF") || !strcmp(name, "MT32") || !strcmp(name, "SC55") || !strcmp(name, "FM") || !strcmp(name, "SPKR") || !strcmp(name, "CDAUDIO") || !strcmp(name, "TANDY") || !strcmp(name, "TANDYDAC") || !strcmp(name, "GUS") || !strcmp(name, "DISNEY"));
 	float vol = 1;
 	switch ((name[0]<<8) | name[1])
 	{
@@ -173,6 +173,7 @@ void MixerChannel::UpdateVolume(void) {
 		case (('C'<<8) | 'M'): vol = dbp_volume_sb;      break; // "CMS"
 		case (('T'<<8) | 'S'): vol = dbp_volume_midi;    break; // "TSF"
 		case (('M'<<8) | 'T'): vol = dbp_volume_midi;    break; // "MT32"
+		case (('S'<<8) | 'C'): vol = dbp_volume_midi;    break; // "SC55"
 		case (('F'<<8) | 'M'): vol = dbp_volume_adlib;   break; // "FM"
 		case (('S'<<8) | 'P'): vol = dbp_volume_speaker; break; // "SPKR"
 		case (('C'<<8) | 'D'): vol = dbp_volume_cdrom;   break; // "CDAUDIO"
