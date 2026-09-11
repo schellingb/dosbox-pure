@@ -88,6 +88,7 @@ public:
 	Value(std::string const& in,Etype _t) :_hex(0),_bool(false),_int(0),_string(0),_double(0),type(V_NONE) {SetValue(in,_t);}
 
 	/* Assigment operators */
+#ifndef C_DBP_LIBRETRO
 	Value& operator= (Hex in)                 { return copy(Value(in));}
 	Value& operator= (int in)                 { return copy(Value(in));}
 	Value& operator= (bool in)                { return copy(Value(in));}
@@ -95,6 +96,15 @@ public:
 	Value& operator= (std::string const& in)  { return copy(Value(in));}
 	Value& operator= (char const * const in)  { return copy(Value(in));}
 	Value& operator= (Value const& in)        { return copy(Value(in));}
+#else
+	Value& operator= (Hex in)                 { DBP_ASSERT(type == V_NONE || type == V_HEX   ); type = V_HEX   ; _hex    = in; return *this; }
+	Value& operator= (int in)                 { DBP_ASSERT(type == V_NONE || type == V_INT   ); type = V_INT   ; _int    = in; return *this; }
+	Value& operator= (bool in)                { DBP_ASSERT(type == V_NONE || type == V_BOOL  ); type = V_BOOL  ; _bool   = in; return *this; }
+	Value& operator= (double in)              { DBP_ASSERT(type == V_NONE || type == V_DOUBLE); type = V_DOUBLE; _double = in; return *this; }
+	Value& operator= (std::string const& in)  { DBP_ASSERT(type == V_NONE || type == V_STRING); set_string(in);                return *this; }
+	Value& operator= (char const * const in)  { DBP_ASSERT(type == V_NONE || type == V_STRING); set_strptr(in);                return *this; }
+	Value& operator= (Value const& in)        { return copy(in); }
+#endif
 
 	bool operator== (Value const & other) const;
 	operator bool () const;
@@ -122,6 +132,16 @@ private:
 	bool set_bool(std::string const& in);
 	void set_string(std::string const& in);
 	bool set_double(std::string const& in);
+#ifdef C_DBP_LIBRETRO
+public:
+	void set_strptr(const char* in)
+	{
+		if(type != V_NONE && type != V_STRING) { DBP_ASSERT(false); return; }
+		type = V_STRING;
+		if(!_string) _string = new std::string();
+		_string->assign(in);
+	}
+#endif
 };
 
 class Property {
@@ -221,7 +241,12 @@ class Prop_string:public Property{
 public:
 	Prop_string(std::string const& _propname, Changeable::Value when, char const * const _value)
 		:Property(_propname,when) {
+#ifndef C_DBP_LIBRETRO
 		default_value = value = _value;
+#else
+		value.set_strptr(_value);
+		default_value.set_strptr(_value);
+#endif
 	}
 	bool SetValue(std::string const& in);
 	virtual bool CheckValue(Value const& in, bool warn);

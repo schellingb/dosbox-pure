@@ -140,10 +140,10 @@ bool Value::operator==(Value const& other) const {
 	return false;
 }
 bool Value::SetValue(string const& in,Etype _type) {
+#ifdef C_DBP_ENABLE_EXCEPTIONS
 	/* Throw exception if the current type isn't the wanted type 
 	 * Unless the wanted type is current.
 	 */
-#ifdef C_DBP_ENABLE_EXCEPTIONS
 	if(_type == V_CURRENT && type == V_NONE) throw WrongType();
 #else
 	if(_type == V_CURRENT && type == V_NONE) { DBP_ASSERT(false); return false; }
@@ -283,15 +283,23 @@ bool Property::CheckValue(Value const& in, bool warn){
 }
 
 void Property::Set_help(string const& in) {
+#ifdef C_DBP_ENABLE_MESSAGEFILE
 	string result = string("CONFIG_") + propname;
 	upcase(result);
 	MSG_Add(result.c_str(),in.c_str());
+#else
+	MSG_Add(propname.c_str(),in.c_str());
+#endif
 }
 
 char const* Property::Get_help() {
+#ifdef C_DBP_ENABLE_MESSAGEFILE
 	string result = string("CONFIG_") + propname;
 	upcase(result);
 	return MSG_Get(result.c_str());
+#else
+	return MSG_Get(propname.c_str());
+#endif
 }
 
 bool Prop_int::SetVal(Value const& in, bool forced, bool warn) {
@@ -310,7 +318,11 @@ bool Prop_int::SetVal(Value const& in, bool forced, bool warn) {
 		//Handle ranges if specified
 		int mi = min;
 		int ma = max;
+#ifndef C_DBP_LIBRETRO
 		int va = static_cast<int>(Value(in));
+#else
+		int va = (int)in;
+#endif
 
 		//No ranges
 		if (mi == -1 && ma == -1) { value = in; return true;}
@@ -334,7 +346,11 @@ bool Prop_int::CheckValue(Value const& in, bool warn) {
 	//No >= and <= in Value type and == is ambigious
 	int mi = min;
 	int ma = max;
+#ifndef C_DBP_LIBRETRO
 	int va = static_cast<int>(Value(in));
+#else
+	int va = (int)in;
+#endif
 	if (mi == -1 && ma == -1) return true;
 	if (va >= mi && va <= ma) return true;
 
@@ -557,8 +573,17 @@ void Property::Set_values(const char * const *in) {
 	size_t oldsize = suggested_values.size(), n = 0;
 	while (in[n]) n++;
 	suggested_values.resize(oldsize + n);
+#ifndef C_DBP_LIBRETRO
 	for (size_t i = 0; in[i]; i++)
 		suggested_values[oldsize + i] = Value(in[i],type);
+#else
+	if (type == Value::V_STRING) // pass string pointer
+		for (size_t i = 0; in[i]; i++)
+			suggested_values[oldsize + i].set_strptr(in[i]);
+	else // do slower std::string conversion
+		for (size_t i = 0; in[i]; i++)
+			suggested_values[oldsize + i].SetValue(in[i],type);
+#endif
 }
 
 Prop_int* Section_prop::Add_int(string const& _propname, Property::Changeable::Value when, int _value) {
