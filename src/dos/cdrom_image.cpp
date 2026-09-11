@@ -768,7 +768,7 @@ bool CDROM_Interface_Image::CanReadPVD(TrackFile *file, int sectorSize, bool mod
 {
 	Bit8u pvd[COOKED_SECTOR_SIZE];
 	int seek = 16 * sectorSize;	// first vd is located at sector 16
-	if (sectorSize == RAW_SECTOR_SIZE && !mode2) seek += 16;
+	if (sectorSize >= RAW_SECTOR_SIZE && !mode2) seek += 16;
 	if (mode2) seek += 24;
 	file->read(pvd, seek, COOKED_SECTOR_SIZE);
 	// pvd[0] = descriptor type, pvd[1..5] = standard identifier, pvd[6] = iso version (+8 for High Sierra)
