@@ -232,6 +232,7 @@ extern retro_time_t dbp_cpu_features_get_time_usec(void);
 static retro_perf_get_time_usec_t time_cb = dbp_cpu_features_get_time_usec;
 static retro_log_printf_t         log_cb = retro_fallback_log;
 static retro_environment_t        environ_cb;
+static struct retro_vfs_interface* dbp_vfs_iface; // frontend VFS, for paths only it can open (Android SAF content:// URIs)
 static retro_video_refresh_t      video_cb;
 static retro_audio_sample_batch_t audio_batch_cb;
 static retro_input_poll_t         input_poll_cb;
@@ -2123,6 +2124,14 @@ void retro_set_environment(retro_environment_t cb) //#2
 	environ_cb = cb;
 	bool allow_no_game = true;
 	cb(RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME, &allow_no_game);
+
+	// Keep the frontend's VFS around for file access. Directory scanning already
+	// asks for it where needed; this is for opening files whose path only the
+	// frontend understands, which on Android is every content:// URI SAF hands
+	// out - and this core is need_fullpath, so it opens them itself.
+	struct retro_vfs_interface_info vfs = { 3, NULL };
+	if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs) && vfs.required_interface_version >= 3 && vfs.iface)
+		dbp_vfs_iface = vfs.iface;
 }
 
 static void set_variables(bool force_midi_scan = false)
@@ -3868,8 +3877,102 @@ wchar_t* AllocUTF8ToUTF16(const char *str)
 #endif
 #endif
 
+
+// A path handed over by the frontend can be one only the frontend can open:
+// Android's Storage Access Framework uses content:// URIs, which no C library
+// resolves, and this core is need_fullpath so it opens content itself. The code
+// base passes FILE* around everywhere, so rather than converting every caller,
+// wrap the frontend's file handle in a FILE*.
+#if defined(__BIONIC__) || defined(__ANDROID__)
+#define DBP_HAVE_VFS_FILE 1
+// funopen64 only exists from API 24 on, and this core builds against android-16,
+// so below that fall back to funopen and whatever width its offsets have.
+#if defined(__ANDROID_API__) && __ANDROID_API__ >= 24
+typedef fpos64_t DBP_fpos_t;
+#define DBP_FUNOPEN funopen64
+#else
+typedef fpos_t DBP_fpos_t;
+#define DBP_FUNOPEN funopen
+#endif
+static int DBP_VfsRead(void* c, char* buf, int size)
+{
+	int64_t got = dbp_vfs_iface->read((struct retro_vfs_file_handle*)c, buf, (uint64_t)size);
+	return (got < 0 ? -1 : (int)got);
+}
+static int DBP_VfsWrite(void* c, const char* buf, int size)
+{
+	int64_t put = dbp_vfs_iface->write((struct retro_vfs_file_handle*)c, buf, (uint64_t)size);
+	return (put < 0 ? -1 : (int)put);
+}
+static DBP_fpos_t DBP_VfsSeek(void* c, DBP_fpos_t off, int whence)
+{
+	int pos = (whence == SEEK_SET ? RETRO_VFS_SEEK_POSITION_START : whence == SEEK_CUR ? RETRO_VFS_SEEK_POSITION_CURRENT : RETRO_VFS_SEEK_POSITION_END);
+	// The VFS seek return value is 0 on success in some frontends and the new offset in others,
+	// so ask tell() for the position instead of trusting it.
+	if (dbp_vfs_iface->seek((struct retro_vfs_file_handle*)c, (int64_t)off, pos) < 0) return (DBP_fpos_t)-1;
+	return (DBP_fpos_t)dbp_vfs_iface->tell((struct retro_vfs_file_handle*)c);
+}
+static int DBP_VfsClose(void* c) { return dbp_vfs_iface->close((struct retro_vfs_file_handle*)c); }
+static FILE* DBP_VfsWrapFile(struct retro_vfs_file_handle* h)
+{
+	FILE* f = DBP_FUNOPEN(h, DBP_VfsRead, DBP_VfsWrite, DBP_VfsSeek, DBP_VfsClose);
+	if (!f) dbp_vfs_iface->close(h);
+	return f;
+}
+#elif defined(__GLIBC__)
+#define DBP_HAVE_VFS_FILE 1
+static ssize_t DBP_VfsRead(void* c, char* buf, size_t size)
+{
+	int64_t got = dbp_vfs_iface->read((struct retro_vfs_file_handle*)c, buf, (uint64_t)size);
+	return (got < 0 ? -1 : (ssize_t)got);
+}
+static ssize_t DBP_VfsWrite(void* c, const char* buf, size_t size)
+{
+	int64_t put = dbp_vfs_iface->write((struct retro_vfs_file_handle*)c, buf, (uint64_t)size);
+	return (put < 0 ? -1 : (ssize_t)put);
+}
+static int DBP_VfsSeek(void* c, off64_t* off, int whence)
+{
+	int pos = (whence == SEEK_SET ? RETRO_VFS_SEEK_POSITION_START : whence == SEEK_CUR ? RETRO_VFS_SEEK_POSITION_CURRENT : RETRO_VFS_SEEK_POSITION_END);
+	// The VFS seek return value is 0 on success in some frontends and the new offset in others,
+	// so ask tell() for the position instead of trusting it.
+	int64_t res = dbp_vfs_iface->seek((struct retro_vfs_file_handle*)c, (int64_t)*off, pos);
+	int64_t at = (res < 0 ? -1 : dbp_vfs_iface->tell((struct retro_vfs_file_handle*)c));
+	if (at < 0) return -1;
+	*off = (off64_t)at;
+	return 0;
+}
+static int DBP_VfsClose(void* c) { return dbp_vfs_iface->close((struct retro_vfs_file_handle*)c); }
+static FILE* DBP_VfsWrapFile(struct retro_vfs_file_handle* h)
+{
+	cookie_io_functions_t fns = { DBP_VfsRead, DBP_VfsWrite, DBP_VfsSeek, DBP_VfsClose };
+	FILE* f = fopencookie(h, "r+", fns);
+	if (!f) dbp_vfs_iface->close(h);
+	return f;
+}
+#endif
+
+static FILE* DBP_VfsFOpen(const char* path, const char* mode)
+{
+	#ifdef DBP_HAVE_VFS_FILE
+	if (!dbp_vfs_iface || !strstr(path, "://")) return NULL;
+	// The VFS has no append mode, so 'a' opens the existing file for writing and seeks to its end.
+	bool append = !!strchr(mode, 'a');
+	unsigned access = (strchr(mode, 'w') ? RETRO_VFS_FILE_ACCESS_WRITE : (append || strchr(mode, '+')) ? (RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING) : RETRO_VFS_FILE_ACCESS_READ);
+	struct retro_vfs_file_handle* h = dbp_vfs_iface->open(path, access, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	if (!h && append) h = dbp_vfs_iface->open(path, RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	if (!h) return NULL;
+	if (append) dbp_vfs_iface->seek(h, 0, RETRO_VFS_SEEK_POSITION_END);
+	return DBP_VfsWrapFile(h);
+	#else
+	(void)path; (void)mode;
+	return NULL;
+	#endif
+}
+
 FILE* fopen_wrap(const char* path, const char* mode)
 {
+	if (FILE* vfs_file = DBP_VfsFOpen(path, mode)) return vfs_file;
 	#ifdef WIN32
 	for (const char* p = path; *p; p++) { if ((Bit8u)*p > 0x7F) goto needw; }
 	#endif
