@@ -331,7 +331,7 @@ struct DBP_Run
 			if (mode == RUN_NONE) return false; // YML had no startup
 			autoboot.use = !ymlload.is_utility; // disable autoboot for utility config
 			autoboot.skip = 0; // otherwise force enable auto start when switching variant
-			WriteAutoBoot(RUN_VARIANT, patch.enabled_variant, str);
+			if (!ymlload.is_utility) WriteAutoBoot(RUN_VARIANT, patch.enabled_variant, str);
 		}
 		else
 		{

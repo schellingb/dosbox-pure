@@ -67,12 +67,12 @@ struct Patch_File : Patch_Entry
 			return stat.size;
 		}
 
-		if (!patched) DoPatch(under, *patchzip);
+		if (!patched) DoPatch(under, patchzip);
 
 		return (Bit32u)mem_data.size();
 	}
 
-	void DoPatch(DOS_Drive& under, zipDrive& patchzip)
+	void DoPatch(DOS_Drive& under, zipDrive* patchzip)
 	{
 		patched = true;
 		char underpath[DOS_PATHLENGTH+1];
@@ -381,7 +381,7 @@ struct Patch_File : Patch_Entry
 		};
 
 		DOS_File* df;
-		if (!patchzip.FileOpen(&df, zippath, 0)) { DBP_ASSERT(false); return; }
+		if (!patchzip->FileOpen(&df, zippath, 0)) { DBP_ASSERT(false); return; }
 		df->AddRef();
 		Bit32u hdr = 0;
 		Local::GetU24(df, hdr);
@@ -522,7 +522,7 @@ struct patchDriveImpl
 	std::vector<Patch_Layer> layers;
 	Patch_Layer *layer_top, *layer_bottom;
 	Bit8u IterateLayer;
-	bool IterateGetVariant, IterateHadVariant, IterateYMLOnly;
+	bool IterateGetVariant, IterateHadVariant, IterateYMLOnly, IterateHaveVariantFiles;
 
 	patchDriveImpl() : root(255, DOS_ATTR_VOLUME|DOS_ATTR_DIRECTORY, "", 0, 0), layer_top(NULL), layer_bottom(NULL) { }
 
@@ -544,7 +544,7 @@ struct patchDriveImpl
 		return ReadAndClose(df, patchDrive::dos_yml);
 	}
 
-	void Reload(bool ymlOnly = false)
+	void Reload(int variant_index, bool ymlOnly = false)
 	{
 		if (layers.empty()) { DBP_ASSERT(false); return; }
 		if (!ymlOnly)
@@ -554,11 +554,11 @@ struct patchDriveImpl
 			directories.Clear();
 		}
 
-		DBP_ASSERT(layer_top == &layers.back() && layer_bottom == &layers.front());
-		if (ActiveVariantIndex == -2) ActiveVariantIndex = -1; // because we fill out dos_yml for the default config now
+		DBP_ASSERT(layer_top == &layers.back() && layer_bottom == &layers.front() && variant_index >= -1);
+		ActiveVariantIndex = variant_index;
 
 		Bit32u ignoreLayers = 0, layerLast = (Bit32u)(layer_top - layer_bottom);
-		for (IterateLayer = 0, IterateGetVariant = false, IterateYMLOnly = ymlOnly;;)
+		for (IterateLayer = 0, IterateGetVariant = IterateHaveVariantFiles = false, IterateYMLOnly = ymlOnly;;)
 		{
 			if (!(ignoreLayers & (1 << IterateLayer)))
 			{
@@ -575,29 +575,61 @@ struct patchDriveImpl
 				IterateGetVariant = true;
 			}
 		}
+
+		if (ymlOnly) return;
+
+		bool isUtility = false;
+		for (const char* p = patchDrive::dos_yml.c_str(); (p = strstr(p, "run_utility")) != NULL;)
+		{
+			p += 11;
+			while (*p == ' ' || *p == ':') p++;
+			isUtility = ((*p|0x20) == 't');
+		}
+
+		static Bit16s LastNonUtilityVariantIndex = -2;
+		if (!isUtility) { LastNonUtilityVariantIndex = (IterateHaveVariantFiles ? variant_index : -2); return; } // remember
+		if (LastNonUtilityVariantIndex < 0) return; // nothing to do if it was default (root)
+		if (IterateHaveVariantFiles) return; // don't load files of last used variant if the utility has files
+
+		// When loading a utility with no own files (other than DOS.YML) we keep using the files of the previously active variant (except DOS.YML)
+		const size_t oldYmlLen = patchDrive::dos_yml.size();
+		ActiveVariantIndex = LastNonUtilityVariantIndex;
+		for (IterateLayer = 0; IterateLayer == layerLast; IterateLayer++)
+			DriveFileIterator(layer_bottom[IterateLayer].patchzip, LoadFiles, (Bitu)this);
+		ActiveVariantIndex = variant_index;
+		patchDrive::dos_yml.resize(oldYmlLen);
 	}
 
-	static bool RootOrVariant(zipDrive& patchzip, const char*& in_out_path)
+	static int GetVariantIndex(zipDrive* patchzip, const char*& in_out_path)
 	{
-		const char* path = in_out_path, *slash, *dirEnd;
-		if (path[0] != DBP_8DOT3_INVALID_CHAR || (dirEnd = ((slash = strchr(path, '\\')) == NULL ? path + strlen(path) : slash))[-1] != DBP_8DOT3_INVALID_CHAR) // check for [VARIANT]
-			return true; // not a [variant]
+		const char* path = in_out_path, *slash;
+		if (path[0] != DBP_8DOT3_INVALID_CHAR || ((slash = strchr(path, '\\')) == NULL ? path + strlen(path) : slash)[-1] != DBP_8DOT3_INVALID_CHAR) // check for [VARIANT]
+			return -1; // root, not a [variant]
 
 		char base[DOS_NAMELENGTH_ASCII], full[256], *fullEnd;
 		if (slash) sprintf(base, "%.*s", (int)(slash - path), path); // zero terminate the directory name
-		if (!patchzip.GetLongFileName((slash ? base : path), full) || full[0] != '[' || (fullEnd = (full+strlen(full)))[-1] != ']')
-			return true; // not a [variant] after all
+		if (!patchzip->GetLongFileName((slash ? base : path), full) || full[0] != '[' || (fullEnd = (full+strlen(full)))[-1] != ']')
+			return -1; // root, not a [variant] after all
 
-		if (!slash) return false; // ignore, directory of variant, only care for files in it
+		if (!slash) return -2; // ignore, directory of variant, only care for files in it
+		in_out_path = slash + 1; // cut off variant
 
-		if (const std::string* v = patchDrive::variants.Get(full + 1, (Bit32u)(fullEnd - 2 - full)))
-		{
-			if (patchDrive::variants.GetStorageIndex(v) != ActiveVariantIndex) return false; // inactive
-			in_out_path = slash + 1; // cut off variant
-			return true;
-		}
-		patchDrive::variants.Add(full + 1, (Bit32u)(fullEnd - 2 - full)).assign(full + 1, (size_t)(fullEnd - 2 - full));
-		return false; // ignore, variant not yet active
+		std::string* v = patchDrive::variants.Get(full + 1, (Bit32u)(fullEnd - 2 - full));
+		if (!v) (v = &patchDrive::variants.Add(full + 1, (Bit32u)(fullEnd - 2 - full)))->assign(full + 1, (size_t)(fullEnd - 2 - full));
+		return patchDrive::variants.GetStorageIndex(v);
+	}
+
+	static bool GetPatchSrc(zipDrive* patchzip, const char* ext, const char* orgpath, const char* path, const char* name, char patchsrc[DOS_PATHLENGTH+1])
+	{
+		if (!ext || (strcmp(ext, "IPS") && strcmp(ext, "BPS") && strcmp(ext, "XDE") && strcmp(ext, "VCD") && strcmp(ext, "XOR"))) return false;
+		char fullbuf[256];
+		const char* fullname = (patchzip->GetLongFileName(orgpath, fullbuf) ? fullbuf : name);
+		const int undernamelen = (int)(strrchr(fullname, '.') - fullname), dirlen = (int)(name - path);
+		if (undernamelen < 1 || undernamelen > DOS_NAMELENGTH) { LOG_MSG("[DOSBOX] ERROR: Patch file name '%s' too long", fullname); return false; };
+		memcpy(patchsrc, path, dirlen);
+		memcpy(patchsrc + dirlen, fullname, undernamelen);
+		patchsrc[dirlen + undernamelen] = '\0';
+		return true;
 	}
 
 	static void LoadFiles(const char* path, bool is_dir, Bit32u size, Bit16u date, Bit16u time, Bit8u attr, Bitu data)
@@ -606,12 +638,11 @@ struct patchDriveImpl
 		Patch_Layer& layer = self.layer_bottom[self.IterateLayer];
 
 		const char* orgpath = path, *ext = NULL;
-		if (!RootOrVariant(*layer.patchzip, path)) return; // ignore other variants
-
-		const bool isVariant = (path != orgpath);
-		if (self.IterateGetVariant != isVariant)
+		const int path_variant_index = GetVariantIndex(layer.patchzip, path);
+		if (path_variant_index != -1 && path_variant_index != ActiveVariantIndex) return; // ignore other variants
+		if (self.IterateGetVariant != (path_variant_index != -1))
 		{
-			self.IterateHadVariant = isVariant;
+			self.IterateHadVariant = (path_variant_index != -1);
 			return; // not looking for this in this iteration
 		}
 
@@ -627,21 +658,10 @@ struct patchDriveImpl
 		if (!dir) return;
 
 		FileStat_Block stat = { size, time, date, attr }, dummystat;
-		char fullname[256], patchsrc[DOS_PATHLENGTH+1];
-		const char* underpath = path;
+		char patchsrc[DOS_PATHLENGTH+1];
+		const char* underpath = (!GetPatchSrc(layer.patchzip, ext, orgpath, path, name, patchsrc) ? path : patchsrc);
 
-		if (ext && (!strcmp(ext, "IPS") || !strcmp(ext, "BPS") || !strcmp(ext, "XDE") || !strcmp(ext, "VCD") || !strcmp(ext, "XOR")))
-		{
-			if (!layer.patchzip->GetLongFileName(orgpath, fullname)) strcpy(fullname, name);
-			int undernamelen = (int)(strrchr(fullname, '.') - fullname), dirlen = (int)(name - path);
-			if (undernamelen < 1 || undernamelen > DOS_NAMELENGTH) { LOG_MSG("[DOSBOX] ERROR: Patch file name '%s' too long", fullname); return; };
-
-			memcpy(patchsrc, path, dirlen);
-			memcpy(patchsrc + dirlen, fullname, undernamelen);
-			patchsrc[dirlen + undernamelen] = '\0';
-			underpath = patchsrc;
-		}
-		else if (!is_dir)
+		if (!is_dir && underpath == path)
 		{
 			// Ignore any overlay files existing in the layers above (but allow binary patches)
 			for (Patch_Layer* l = &layer + 1; l <= self.layer_top; l++)
@@ -672,6 +692,7 @@ struct patchDriveImpl
 		strcpy(e->zippath, orgpath);
 		e->variantlen = (Bit8u)(path - orgpath);
 		dir->entries.Put(e->name, e);
+		if (path_variant_index != -1) self.IterateHaveVariantFiles = true;
 	}
 
 	Patch_Directory* GetParentDir(const char* path, const char** out_name)
@@ -707,7 +728,8 @@ void patchDrive::AddLayer(DOS_Drive& under, bool autodelete_under, DOS_File* pat
 	impl->layer_top = &impl->layers.back();
 	impl->layer_bottom = &impl->layers.front();
 	if (impl->layers.size() == 1) label.SetLabel(under.GetLabel(), false, true);
-	if (final_layer_load_yml) { patchDrive::dos_yml.clear(); impl->Reload(); }
+	if (ActiveVariantIndex == -2) ActiveVariantIndex = -1; // because we fill out dos_yml for the default config now
+	if (final_layer_load_yml) { patchDrive::dos_yml.clear(); impl->Reload(ActiveVariantIndex); }
 }
 
 patchDrive::~patchDrive()
@@ -727,7 +749,7 @@ bool patchDrive::FileOpen(DOS_File * * file, char * name, Bit32u flags)
 		Patch_Layer& layer = impl->layer_bottom[e->layer];
 		if (e->AsFile()->type == Patch_File::TYPE_RAW)
 			return layer.patchzip->FileOpen(file, e->zippath, flags);
-		if (!e->AsFile()->patched) e->AsFile()->DoPatch(layer.under, *layer.patchzip);
+		if (!e->AsFile()->patched) e->AsFile()->DoPatch(layer.under, layer.patchzip);
 		*file = new Patch_Handle(e->AsFile(), flags, name_org);
 		return true;
 	}
@@ -923,32 +945,32 @@ Bits patchDrive::UnMount(void) { delete this; return 0;  }
 
 bool patchDrive::ActivateVariant(int variant_number, bool ymlonly)
 {
-	int newVariantIndex = variant_number - 1;
-	if (ActiveVariantIndex == newVariantIndex) return false;
-	ActiveVariantIndex = newVariantIndex;
-
 	struct Local
 	{
-		static void ReloadAll(DOS_Drive *drv, bool ymlonl)
+		int VariantIndex; bool YMLOnly;
+		void ReloadAll(DOS_Drive *drv)
 		{
 			if (patchDrive* pd = dynamic_cast<patchDrive*>(drv))
 			{
 				DBP_ASSERT(dos_yml.empty()); // it is assumed that there is only ever one drive with a YML
-				pd->impl->Reload(ymlonl);
+				pd->impl->Reload(VariantIndex, YMLOnly);
 				return;
 			}
 			if (dynamic_cast<memoryDrive*>(drv)) return; // DOS.YML is not allowed to be put into save file
 			for (int n = 0;; n++)
 			{
-				if (DOS_Drive* shadow = drv->GetShadow(n, true)) ReloadAll(shadow, ymlonl);
+				if (DOS_Drive* shadow = drv->GetShadow(n, true)) ReloadAll(shadow);
 				else { if (n) return; break; }
 			}
 			DBP_ASSERT(dos_yml.empty()); // it is assumed that there is only ever one drive with a YML
 			patchDriveImpl::AppendYML(drv);
 		}
-	};
+	} l = { variant_number - 1, ymlonly };
+	if (ActiveVariantIndex == l.VariantIndex) return false;
 	dos_yml.clear();
-	if (Drives['C'-'A']) Local::ReloadAll(Drives['C'-'A'], ymlonly);
+	if (Drives['C'-'A']) l.ReloadAll(Drives['C'-'A']);
+	DBP_ASSERT(!variants.Len() || ActiveVariantIndex == l.VariantIndex); // assume patchDriveImpl::Reload was run
+	ActiveVariantIndex = l.VariantIndex; // patchDriveImpl::Reload does this as well but do this here anyway in case no patch drive exists yet
 	return true;
 }
 
@@ -973,32 +995,39 @@ std::vector<std::string> patchDrive::VariantConflictFiles(int variant_number, bo
 		{
 			if (is_dir) return;
 			Local& l = *(Local*)data;
+			const char* orgpath = path, *ext = NULL;
+			const int path_variant_index = patchDriveImpl::GetVariantIndex(l.IterateLayer->patchzip, path);
+			if (l.VariantIndex == -1 && path_variant_index == -1) return; // when loading default (root), only check against files that exist in any variant
+			if (l.VariantIndex != -1 && path_variant_index != l.VariantIndex) return; // when loading a variant, only check against files in that particular variant
+			if ((ext = strrchr(path, '.')) != NULL && *++ext == 'Y' && !strcmp(path, "DOS.YML")) return; // ignore DOS.YML
 
-			FileStat_Block stat;
-			if (!l.MemoryDrive->FileStat(path, &stat)) return;
-			if (stat.size == size)
-			{
-				if (!size) return;
-				l.Buf.clear();
-				DriveGetFileContent(l.MemoryDrive, path, l.Buf);
-				DriveGetFileContent(l.PatchDrive, path, l.Buf);
-				if (!memcmp(&l.Buf[0], &l.Buf[size], size)) return;
-			}
-			l.Result.push_back(path);
+			const char *lastslash = strrchr(path, '\\'), *name = (lastslash ? lastslash + 1 : path);
+			char patchsrc[DOS_PATHLENGTH+1];
+			if (patchDriveImpl::GetPatchSrc(l.IterateLayer->patchzip, ext, orgpath, path, name, patchsrc)) path = patchsrc;
+
+			if (!l.MemoryDrive->FileExists(path)) return; // not modified in zip
+			for (std::string& s : l.Result) if (s == path) return; // already found conflicting
+			l.Buf.clear();
+			DriveGetFileContent(l.MemoryDrive, path, l.Buf);
+			const size_t sz = l.Buf.size();
+			DriveGetFileContent(l.PatchDrive, path, l.Buf);
+			if (sz != (l.Buf.size() - sz) || memcmp(&l.Buf[0], &l.Buf[sz], sz)) l.Result.push_back(path); // different size/content
 		}
-		patchDrive* PatchDrive = NULL;
-		memoryDrive* MemoryDrive = NULL;
+		int PrevVariantIndex, VariantIndex;
+		patchDrive* PatchDrive;
+		memoryDrive* MemoryDrive;
+		Patch_Layer* IterateLayer;
 		std::vector<std::string> Result;
 		std::vector<Bit8u> Buf;
-	} l;
+	} l = { ActiveVariantIndex, variant_number - 1 };
 
 	if (Drives['C'-'A']) Local::GetDrives(Drives['C'-'A'], l);
 	if (l.PatchDrive && l.MemoryDrive)
 	{
-		int oldVariantNumber = ActiveVariantIndex + 1;
-		ActivateVariant(variant_number);
-		DriveFileIterator(l.PatchDrive, Local::CheckFiles, (Bitu)&l);
-		ActivateVariant(oldVariantNumber);
+		if (l.PrevVariantIndex != l.VariantIndex) l.PatchDrive->impl->Reload(l.VariantIndex);
+		for (l.IterateLayer = l.PatchDrive->impl->layer_top; l.IterateLayer >= l.PatchDrive->impl->layer_bottom; l.IterateLayer--)
+			DriveFileIterator(l.IterateLayer->patchzip, Local::CheckFiles, (Bitu)&l);
+		if (l.PrevVariantIndex != l.VariantIndex) l.PatchDrive->impl->Reload(l.PrevVariantIndex);
 		if (reset_conflicts)
 		{
 			for (const std::string& path : l.Result) l.MemoryDrive->FileUnlink((char*)path.c_str());
