@@ -308,8 +308,6 @@ static const char* retro_get_variable(const char* key, const char* default_value
 void DBP_DOSBOX_ForceShutdown(const Bitu = 0);
 void DBP_CPU_ModifyCycles(const char* val, const char* params = NULL);
 void DBP_KEYBOARD_ReleaseKeys();
-void DBP_CGA_SetModelAndComposite(bool new_model, Bitu new_comp_mode);
-void DBP_Hercules_SetPalette(Bit8u pal);
 void DBP_SetMountSwappingRequested();
 Bit32u DBP_MIXER_GetFrequency();
 Bit32u DBP_MIXER_DoneSamplesCount();
@@ -2339,7 +2337,7 @@ static bool check_variables()
 	visibility_changed |= DBP_Option::Apply(sec_dosbox, "machine", new_machine, false, true, machine_changed);
 	DBP_Option::GetAndApply(sec_dosbox, "vmemsize", DBP_Option::svgamem, false, true);
 	if (dbp_reboot_machine) dbp_reboot_machine = 0;
-	const char cur_mchar = (dbp_state == DBPSTATE_BOOT ? '\0' : (machine == MCH_VGA && svgaCard != SVGA_None) ? 's' : machine == MCH_CGA ? 'c' : machine == MCH_HERC ? 'h' : '\0'); // need only these 3
+	const char cur_mchar = *(const char*)sec_dosbox.GetProp("machine")->GetValue(); // query in case prop was fixed
 	const bool show_svga = (new_mchar == 's' || cur_mchar == 's'), show_cga = (new_mchar == 'c' || cur_mchar == 'c'), show_hercules = (new_mchar == 'h' || cur_mchar == 'h');
 	const char active_mchar = (dbp_state == DBPSTATE_BOOT ? new_mchar : cur_mchar);
 
@@ -2457,19 +2455,20 @@ static bool check_variables()
 	DBP_Option::SetDisplay(DBP_Option::cga, show_cga);
 	if (active_mchar == 'c')
 	{
-		const char* cga = DBP_Option::Get(DBP_Option::cga);
-		bool cga_new_model = false;
-		const char* cga_mode = NULL;
-		if (!memcmp(cga, "early_", 6)) { cga_new_model = false; cga_mode = cga + 6; }
-		if (!memcmp(cga, "late_",  5)) { cga_new_model = true;  cga_mode = cga + 5; }
-		DBP_CGA_SetModelAndComposite(cga_new_model, (!cga_mode || cga_mode[0] == 'a' ? 0 : ((cga_mode[0] == 'o' && cga_mode[1] == 'n') ? 1 : 2)));
+		bool cga_new_model = false, cga_changed = false;
+		const char* cga = DBP_Option::Get(DBP_Option::cga, &cga_changed);
+		if      (!memcmp(cga, "early_", 6)) { cga_new_model = false; cga += 6; }
+		else if (!memcmp(cga, "late_",  5)) { cga_new_model = true;  cga += 5; }
+		DBP_Option::Apply(sec_render, "cga_newmodel", (cga_new_model ? "true" : "false"), false, false, cga_changed);
+		DBP_Option::Apply(sec_render, "cga_composite", (!cga || cga[0] == 'a' ? "0" : ((cga[0] == 'o' && cga[1] == 'n') ? "1" : "2")), false, false, cga_changed);
 	}
 
 	DBP_Option::SetDisplay(DBP_Option::hercules, show_hercules);
 	if (active_mchar == 'h')
 	{
-		const char herc_mode = DBP_Option::Get(DBP_Option::hercules)[0];
-		DBP_Hercules_SetPalette(herc_mode == 'a' ? 1 : (herc_mode == 'g' ? 2 : 0));
+		bool herc_changed = false;
+		const char herc_mode = DBP_Option::Get(DBP_Option::hercules, &herc_changed)[0];
+		DBP_Option::Apply(sec_render, "hercules_palette", (herc_mode == 'a' ? "1" : (herc_mode == 'g' ? "2" : "0")), false, false, herc_changed);
 	}
 
 	const char* dbp_aspectratio = DBP_Option::Get(DBP_Option::aspect_correction);

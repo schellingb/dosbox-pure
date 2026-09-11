@@ -807,6 +807,19 @@ void RENDER_Init(Section * sec) {
 	MAPPER_AddHandler(IncreaseFrameSkip,MK_f8,MMOD1,"incfskip","Inc Fskip");
 	GFX_SetTitle(-1,render.frameskip.max,false);
 #endif
+
+#ifdef C_DBP_LIBRETRO
+	if (machine == MCH_CGA)
+	{
+		extern void DBP_SetCGAMode(bool new_model, Bit8u comp_mode);
+		DBP_SetCGAMode(section->Get_bool("cga_newmodel"), (Bit8u)section->Get_int("cga_composite"));
+	}
+	else if (machine == MCH_HERC)
+	{
+		extern void DBP_SetHerculesPalette(Bit8u palette);
+		DBP_SetHerculesPalette((Bit8u)section->Get_int("hercules_palette"));
+	}
+#endif
 }
 
 #include <dbp_serialize.h>

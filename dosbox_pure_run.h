@@ -523,6 +523,7 @@ struct DBP_Run
 						||Parse("video_card", "dosbox", "machine" , "generic_svga","svga_s3" , "generic_hercules","hercules" , "generic_cga","cga" , "generic_ega","ega" , "generic_vga","vgaonly" , "generic_tandy","tandy" , "generic_pcjr","pcjr" , "tandy","tandy" , "pcjr","pcjr" , "svga_s3_trio","svga_s3", "svga_tseng_et3000","svga_et3000" , "svga_tseng_et4000","svga_et4000" , "svga_paradise_pvga1a","svga_paradise" , "")
 						||Parse("video_memory", "dosbox", "vmemsize", "/")
 						||Parse("video_voodoo", "pci", "voodoo" , "v1_8mb","8mb" , "v1_4mb","4mb" , "none","false" , "")
+						||Parse("video_cga_composite", "render", "cga_composite" , "true","1" , "false","2" , "")
 					);
 				case 's':
 					return (0

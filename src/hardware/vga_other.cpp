@@ -870,20 +870,20 @@ void VGA_SetupOther(void) {
 
 }
 
-void DBP_CGA_SetModelAndComposite(bool new_model, Bitu new_comp_mode) {
+void DBP_SetCGAMode(bool new_model, Bit8u comp_mode) {
 	if (new_cga != new_model) {
 		new_cga = new_model;
 		update_cga16_color();
 	}
-	if (cga_comp != new_comp_mode) {
-		cga_comp = new_comp_mode;
+	if (cga_comp != comp_mode) {
+		cga_comp = comp_mode;
 		if (vga.tandy.mode_control & 0x2)
 			write_cga(0x3d8,vga.tandy.mode_control,1);
 	}
 }
 
-void DBP_Hercules_SetPalette(Bit8u pal) {
-	herc_pal = pal;
+void DBP_SetHerculesPalette(Bit8u palette) {
+	herc_pal = palette;
 	if (herc_pal>2) herc_pal=0;
 	Herc_Palette();
 	VGA_DAC_CombineColor(1,7);
