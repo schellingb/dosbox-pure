@@ -201,11 +201,13 @@ libretro-build-tvos-arm64:
     - .core-defs
 
 #################################### CONSOLES #################################
-# Nintendo 3DS
-libretro-build-ctr:
-  extends:
-    - .libretro-ctr-static-retroarch-master
-    - .core-defs
+## Nintendo 3DS
+## Still disabled: libctru declares a Thread type of its own, which collides
+## with this core's struct Thread, and that is a rename rather than a build fix.
+#libretro-build-ctr:
+#  extends:
+#    - .libretro-ctr-static-retroarch-master
+#    - .core-defs
 
 # Nintendo WiiU
 libretro-build-wiiu:
