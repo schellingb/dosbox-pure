@@ -1,0 +1,16 @@
+{
+	"problemMatcher": [
+		{
+			"owner": "msvc-problem-matcher",
+			"pattern": [
+				{
+					"regexp": "^(.*)\\((\\d+)(,\\d+|)\\)\\s*:\\s+(error|warning)\\s+(\\w+\\s*:\\s+.*)$",
+					"file": 1,
+					"line": 2,
+					"severity": 4,
+					"message": 5
+				}
+			]
+		}
+	]
+}
